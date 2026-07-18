@@ -39,7 +39,10 @@ type logFileData struct {
 
 	// MoveCooldowns is keyed by "lo:hi" (decimal), the same encoding
 	// Trace.Cooldowns uses; see FormatHashRangeKey / ParseHashRangeKey.
-	MoveCooldowns map[string]time.Time `json:"move_cooldowns,omitempty"`
+	MoveCooldowns               map[string]time.Time `json:"move_cooldowns,omitempty"`
+	StructuralCooldowns         map[string]time.Time `json:"structural_cooldowns,omitempty"`
+	RecentSourcePartitions      map[int32]time.Time  `json:"recent_source_partitions,omitempty"`
+	RecentDestinationPartitions map[int32]time.Time  `json:"recent_destination_partitions,omitempty"`
 }
 
 // logFile is a small atomic-write helper for the rebalancer logs.
@@ -139,32 +142,47 @@ func (f *logFile) writeReadcacheLog(entries []readcacheassignment.LogEntry) erro
 // rather than an error, because stale or absent cooldowns only relax
 // churn protection — they can't corrupt routing.
 func (f *logFile) readMoveCooldowns() (map[string]time.Time, bool) {
+	state, ok := f.readCooldownState()
+	return state.MoveCooldowns, ok
+}
+
+func (f *logFile) readCooldownState() (logFileData, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	data, err := os.ReadFile(f.filePath)
 	if os.IsNotExist(err) {
-		return nil, false
+		return logFileData{}, false
 	}
 	if err != nil {
 		level.Error(f.logger).Log("msg", "failed to read rebalancer move-cooldowns file", "file", f.filePath, "err", err)
-		return nil, false
+		return logFileData{}, false
 	}
 
 	var parsed logFileData
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		level.Error(f.logger).Log("msg", "failed to parse rebalancer move-cooldowns file", "file", f.filePath, "err", err)
-		return nil, false
+		return logFileData{}, false
 	}
 	if parsed.Version != logFileVersion {
 		level.Error(f.logger).Log("msg", "rebalancer move-cooldowns file has unknown version", "file", f.filePath, "version", parsed.Version)
-		return nil, false
+		return logFileData{}, false
 	}
-	return parsed.MoveCooldowns, true
+	return parsed, true
 }
 
 func (f *logFile) writeMoveCooldowns(cooldowns map[string]time.Time) error {
 	return f.write(logFileData{Version: logFileVersion, MoveCooldowns: cooldowns})
+}
+
+func (f *logFile) writeCooldownState(move, structural map[string]time.Time, roles partitionRoleCooldowns) error {
+	return f.write(logFileData{
+		Version:                     logFileVersion,
+		MoveCooldowns:               move,
+		StructuralCooldowns:         structural,
+		RecentSourcePartitions:      roles.recentSources,
+		RecentDestinationPartitions: roles.recentDestinations,
+	})
 }
 
 func (f *logFile) write(data logFileData) error {

@@ -13,7 +13,8 @@ import (
 // slicer may assign partitions to this round. Precedence:
 //
 //  1. Ring (when wired) — enumerates healthy ACTIVE members of the
-//     readcache ring. Picks up scale-up/scale-down at the next round.
+//     readcache ring. The rebalance path applies two-round membership
+//     hysteresis to this raw observation before placement.
 //  2. Static ReadcacheSlicer.Instances — fallback for tests and
 //     degraded-mode bring-ups where no ring KV is available.
 //

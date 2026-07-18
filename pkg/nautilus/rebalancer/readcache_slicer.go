@@ -47,6 +47,12 @@ type ReadcacheSlicerConfig struct {
 	// partition->instance mapping rather than to the hash space.
 	MovementBudget float64 `yaml:"movement_budget"`
 
+	// LoadHysteresis is the fractional no-op band around target
+	// per-instance load. Sources must be above target*(1+band), and
+	// the source/destination gap must exceed twice the band before
+	// pass 3 moves a partition. Zero disables the band.
+	LoadHysteresis float64 `yaml:"load_hysteresis"`
+
 	// MoveCooldown is the minimum time between consecutive moves of
 	// the same partition. Per-partition anti-flap guard.
 	MoveCooldown time.Duration `yaml:"move_cooldown"`
@@ -57,10 +63,10 @@ type ReadcacheSlicerConfig struct {
 	// loop still ticks at the tier-1 cadence (every
 	// MinRebalanceInterval) but the tier-2 round only fires if at
 	// least RoundInterval has elapsed since the last successful
-	// fire, OR the active instance set changed since the last fire
-	// (which would orphan partitions if we waited). When 0 (the
-	// default), the tier-2 round runs every rebalance tick — the
-	// pre-decoupling behavior.
+	// fire, OR the stabilized active instance set changed since the
+	// last fire. Ring changes enter that set only after two consecutive
+	// observations. When 0 (the default), the tier-2 round runs every
+	// rebalance tick — the pre-decoupling behavior.
 	//
 	// Rationale: every tier-2 move forces the destination
 	// readcache's per-partition EWMA to start from zero, so the
@@ -82,8 +88,9 @@ func (cfg *ReadcacheSlicerConfig) RegisterFlagsWithPrefix(prefix string, f *flag
 	f.Float64Var(&cfg.Alpha, prefix+"alpha", 1.0, "Weight applied to per-partition samples-per-second EWMA (write rate) in the load function. This is the same signal the first-tier slicer balances ranges on.")
 	f.Float64Var(&cfg.Beta, prefix+"beta", 0.0, "Weight applied to per-partition query samples EWMA (read rate) in the load function. Zero (the default) makes the slicer balance write pressure only; set to a non-zero value once query-load telemetry is reliable.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.10, "Maximum fraction of total load that may be moved between instances in a single round.")
+	f.Float64Var(&cfg.LoadHysteresis, prefix+"load-hysteresis", 0.05, "Fractional no-op band around target readcache load. The slicer requires a source above target*(1+band) and a source/destination gap wider than twice the band. Must be in [0, 1); 0 disables.")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 5*time.Minute, "Minimum time between consecutive moves of the same partition.")
-	f.DurationVar(&cfg.RoundInterval, prefix+"round-interval", 0, "Minimum wall-clock interval between consecutive readcache slicer rounds. When >0, the tier-1 (hash-range) slicer still runs every rebalance tick, but the tier-2 (partition->readcache) slicer only fires after this interval has elapsed since the last successful fire (or if the active readcache instance set changed, to avoid orphaning partitions on scale-down/restart). Decouples tier-2 churn from tier-1 cadence so destination readcaches can fully build their per-partition EWMAs before tier-1 next consults them. 0 (the default) preserves the legacy behavior of running both tiers on every tick.")
+	f.DurationVar(&cfg.RoundInterval, prefix+"round-interval", 0, "Minimum wall-clock interval between consecutive readcache slicer rounds. When >0, the tier-1 (hash-range) slicer still runs every rebalance tick, but the tier-2 (partition->readcache) slicer only fires after this interval has elapsed since the last successful fire or after a readcache membership change is observed for two consecutive rounds. Decouples tier-2 churn from tier-1 cadence so destination readcaches can fully build their per-partition EWMAs before tier-1 next consults them. 0 (the default) preserves the legacy behavior of running both tiers on every tick.")
 }
 
 // readcachePlanInput is the input the rebalancer collects each round
@@ -215,6 +222,8 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 		totalLoad += l
 	}
 	target := totalLoad / float64(len(in.instances))
+	upperTarget := target * (1 + cfg.LoadHysteresis)
+	minSourceDestinationGap := 2 * cfg.LoadHysteresis * target
 
 	var moves []readcacheMove
 	movedLoad := 0.0
@@ -226,7 +235,7 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 		if src == dst {
 			break
 		}
-		if loadByInstance[src] <= target {
+		if loadByInstance[src] <= upperTarget || loadByInstance[src]-loadByInstance[dst] <= minSourceDestinationGap {
 			break
 		}
 		// Find the heaviest movable partition currently owned by src.

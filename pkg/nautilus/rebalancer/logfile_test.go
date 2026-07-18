@@ -108,6 +108,26 @@ func TestLogFile_MoveCooldownsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLogFile_StabilizationStateRoundTrip(t *testing.T) {
+	f := newLogFile(filepath.Join(t.TempDir(), moveCooldownsFilename), log.NewNopLogger())
+	deadline := time.Unix(2000, 0).UTC()
+	move := map[assignment.HashRange]time.Time{{Lo: 0, Hi: 99}: deadline}
+	structural := map[assignment.HashRange]time.Time{{Lo: 100, Hi: 199}: deadline.Add(time.Minute)}
+	roles := partitionRoleCooldowns{
+		recentSources:      map[int32]time.Time{1: deadline.Add(2 * time.Minute)},
+		recentDestinations: map[int32]time.Time{2: deadline.Add(3 * time.Minute)},
+	}
+
+	require.NoError(t, f.writeCooldownState(cooldownsToWire(move), cooldownsToWire(structural), roles))
+	state, ok := f.readCooldownState()
+	require.True(t, ok)
+
+	assert.Equal(t, move, cooldownsFromWire(state.MoveCooldowns))
+	assert.Equal(t, structural, cooldownsFromWire(state.StructuralCooldowns))
+	assert.Equal(t, roles.recentSources, state.RecentSourcePartitions)
+	assert.Equal(t, roles.recentDestinations, state.RecentDestinationPartitions)
+}
+
 func TestLogFile_CorruptionFallsBackToColdStart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, assignmentLogFilename)

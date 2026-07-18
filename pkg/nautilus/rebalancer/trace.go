@@ -69,7 +69,11 @@ import (
 // which disables both guards on replay, so v6 traces remain
 // byte-replayable against v7; traces captured under v7 with either
 // guard enabled cannot be replayed by a v6 binary.
-const SlicerVersion = "7"
+//
+// Version "8" adds the load no-op band, partition-role cooldowns,
+// and split/merge structural cooldowns. Their config and live state
+// are captured so replay preserves the new hysteresis decisions.
+const SlicerVersion = "8"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -98,10 +102,13 @@ type RangeRate struct {
 // parameters even if production config changes between capture and
 // replay.
 type ConfigSnapshot struct {
-	MovementBudget     float64       `json:"movement_budget"`
-	MoveCooldown       time.Duration `json:"move_cooldown"`
-	MaxMovesPerRound   int           `json:"max_moves_per_round"`
-	MinMoveImprovement float64       `json:"min_move_improvement"`
+	MovementBudget        float64       `json:"movement_budget"`
+	MoveCooldown          time.Duration `json:"move_cooldown"`
+	MaxMovesPerRound      int           `json:"max_moves_per_round"`
+	MinMoveImprovement    float64       `json:"min_move_improvement"`
+	LoadHysteresis        float64       `json:"load_hysteresis"`
+	PartitionRoleCooldown time.Duration `json:"partition_role_cooldown"`
+	StructuralCooldown    time.Duration `json:"structural_cooldown"`
 }
 
 // Trace is the full input/output of a single rebalance round, with
@@ -149,8 +156,11 @@ type Trace struct {
 	ActivePartitions    []int32            `json:"active_partitions"`
 	// Cooldowns is keyed by "lo:hi" (decimal) so the JSON map is
 	// well-formed; use FormatHashRangeKey / ParseHashRangeKey.
-	Cooldowns map[string]time.Time `json:"cooldowns"`
-	Config    ConfigSnapshot       `json:"config"`
+	Cooldowns                   map[string]time.Time `json:"cooldowns"`
+	StructuralCooldowns         map[string]time.Time `json:"structural_cooldowns,omitempty"`
+	RecentSourcePartitions      map[int32]time.Time  `json:"recent_source_partitions,omitempty"`
+	RecentDestinationPartitions map[int32]time.Time  `json:"recent_destination_partitions,omitempty"`
+	Config                      ConfigSnapshot       `json:"config"`
 
 	// Output of runSlicer + its post-condition.
 	End []assignment.Entry `json:"end_assignment"`
@@ -248,12 +258,20 @@ func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Ti
 func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	r := &Rebalancer{
 		cfg: Config{
-			MovementBudget:     t.Config.MovementBudget,
-			MoveCooldown:       t.Config.MoveCooldown,
-			MaxMovesPerRound:   t.Config.MaxMovesPerRound,
-			MinMoveImprovement: t.Config.MinMoveImprovement,
+			MovementBudget:        t.Config.MovementBudget,
+			MoveCooldown:          t.Config.MoveCooldown,
+			MaxMovesPerRound:      t.Config.MaxMovesPerRound,
+			MinMoveImprovement:    t.Config.MinMoveImprovement,
+			LoadHysteresis:        t.Config.LoadHysteresis,
+			PartitionRoleCooldown: t.Config.PartitionRoleCooldown,
+			StructuralCooldown:    t.Config.StructuralCooldown,
 		},
-		moveCooldowns: cooldownsFromWire(t.Cooldowns),
+		moveCooldowns:       cooldownsFromWire(t.Cooldowns),
+		structuralCooldowns: cooldownsFromWire(t.StructuralCooldowns),
+		partitionRoles: partitionRoleCooldowns{
+			recentSources:      clonePartitionDeadlines(t.RecentSourcePartitions),
+			recentDestinations: clonePartitionDeadlines(t.RecentDestinationPartitions),
+		},
 	}
 	start := &assignment.Assignment{
 		Entries: append([]assignment.Entry(nil), t.Start...),
@@ -274,4 +292,12 @@ func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	// state, so this matches the production behavior exactly.
 	excludedFromSlicer := computeRateZeroExclusions(partitionRateByPID, t.PartitionL, t.ActivePartitions)
 	return r.runSlicer(start, rates, partitionRateByPID, t.ActivePartitions, excludedFromSlicer, t.Now)
+}
+
+func clonePartitionDeadlines(in map[int32]time.Time) map[int32]time.Time {
+	out := make(map[int32]time.Time, len(in))
+	for pid, deadline := range in {
+		out[pid] = deadline
+	}
+	return out
 }

@@ -109,11 +109,9 @@ func TestHarness_Tier2Gate_IntervalPendingSkips(t *testing.T) {
 		"the skipped rounds should produce 'skipping tier-2 round' log entries")
 }
 
-// TestHarness_Tier2Gate_InstanceChangeFiresEarly is the failover
-// guarantee: when a readcache joins or leaves the ring, tier-2
-// must fire on the very next tick regardless of how recently it
-// last fired. Otherwise scale-down would leave partitions orphaned
-// on the departed pod for up to RoundInterval.
+// TestHarness_Tier2Gate_InstanceChangeFiresEarly verifies that a
+// readcache joins or leaves the placement set after two consecutive
+// observations, then tier-2 fires regardless of RoundInterval.
 func TestHarness_Tier2Gate_InstanceChangeFiresEarly(t *testing.T) {
 	h := newHarness(t, harnessOpts{
 		cfg: Config{
@@ -144,23 +142,29 @@ func TestHarness_Tier2Gate_InstanceChangeFiresEarly(t *testing.T) {
 	require.Equal(t, coldStartAt, h.r.lastTier2RoundAt,
 		"the +5min tick must be gated; otherwise the test environment doesn't actually exercise the gate")
 
-	// Scale up by adding a new instance, then run the next tick.
-	// The instance-set change must override interval_pending and
-	// fire tier-2.
+	// Scale up by adding a new instance. The first observation is
+	// deliberately ignored; the second admits it and fires tier-2.
 	h.addReadcache("readcache-2")
 	h.advance(5 * time.Minute)
 	require.NoError(t, h.runRound())
+	require.Equal(t, coldStartAt, h.r.lastTier2RoundAt,
+		"first scale-up observation must remain inside membership hysteresis")
+	h.advance(5 * time.Minute)
+	require.NoError(t, h.runRound())
 	assert.True(t, h.r.lastTier2RoundAt.After(coldStartAt),
-		"scale-up must force tier-2 to fire even though only 10min < 30min interval has elapsed")
+		"second scale-up observation must force tier-2 before the 30min interval")
 
-	// Now scale DOWN. The instance set changes again so the next
-	// tick must also fire tier-2.
+	// Scale down follows the same two-observation rule.
 	prev := h.r.lastTier2RoundAt
 	h.removeReadcache("readcache-2")
 	h.advance(5 * time.Minute)
 	require.NoError(t, h.runRound())
+	require.Equal(t, prev, h.r.lastTier2RoundAt,
+		"first scale-down observation must retain the current placement set")
+	h.advance(5 * time.Minute)
+	require.NoError(t, h.runRound())
 	assert.True(t, h.r.lastTier2RoundAt.After(prev),
-		"scale-down must force tier-2 to fire even though only 5min < 30min has elapsed since the previous fire")
+		"second scale-down observation must force tier-2 before the 30min interval")
 }
 
 // TestHarness_ReadcacheStatsMissDoesNotRemoveReplica documents the
@@ -211,11 +215,10 @@ func TestHarness_ReadcacheStatsMissDoesNotRemoveReplica(t *testing.T) {
 }
 
 // TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe covers
-// a short actual disappearance from the healthy readcache ring. Unlike
-// a single stats miss, leaving the ring changes the eligible instance
-// set; the next tier-2 round fires immediately and moves partitions off
-// the missing replica. If the replica returns shortly after, another
-// instance-set-change round runs and the cluster remains fully owned.
+// an actual disappearance from the healthy readcache ring. The first
+// missing observation retains ownership; the second evacuates it.
+// Recovery likewise requires two healthy observations before the
+// replica receives partitions again.
 func TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe(t *testing.T) {
 	h := newHarness(t, harnessOpts{
 		cfg: Config{
@@ -244,8 +247,13 @@ func TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe(t *testing.T
 	prev := h.r.lastTier2RoundAt
 	h.advance(30 * time.Second)
 	require.NoError(t, h.runRound())
+	assert.Equal(t, prev, h.r.lastTier2RoundAt, "first disappearance observation must not fire tier-2")
+	assert.Contains(t, h.ownersByInstance(), "readcache-1", "first disappearance observation retains ownership")
 
-	assert.True(t, h.r.lastTier2RoundAt.After(prev), "ring disappearance must force a tier-2 round immediately")
+	h.advance(30 * time.Second)
+	require.NoError(t, h.runRound())
+
+	assert.True(t, h.r.lastTier2RoundAt.After(prev), "second ring disappearance observation must force tier-2")
 	assert.NotContains(t, h.ownersByInstance(), "readcache-1",
 		"no active partition should remain assigned to a readcache that left the ring")
 	assert.Len(t, h.tier2Active(), 6, "every partition must remain owned while the replica is away")
@@ -254,8 +262,12 @@ func TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe(t *testing.T
 	prev = h.r.lastTier2RoundAt
 	h.advance(30 * time.Second)
 	require.NoError(t, h.runRound())
+	assert.Equal(t, prev, h.r.lastTier2RoundAt, "first recovery observation must not fire tier-2")
 
-	assert.True(t, h.r.lastTier2RoundAt.After(prev), "replica return must also force a tier-2 round")
+	h.advance(30 * time.Second)
+	require.NoError(t, h.runRound())
+
+	assert.True(t, h.r.lastTier2RoundAt.After(prev), "second recovery observation must force a tier-2 round")
 	assert.Len(t, h.tier2Active(), 6, "every partition must remain owned after the replica returns")
 }
 

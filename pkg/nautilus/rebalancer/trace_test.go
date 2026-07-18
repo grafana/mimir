@@ -380,4 +380,6 @@ func TestSlicerVersion_IsBumpedForNewModel(t *testing.T) {
 		"SlicerVersion must be bumped when the load model changes incompatibly")
 	assert.NotEqual(t, "2", SlicerVersion,
 		"SlicerVersion must be bumped when RangeRate wire shape changes")
+	assert.NotEqual(t, "7", SlicerVersion,
+		"SlicerVersion must be bumped when hysteresis changes slicer decisions")
 }

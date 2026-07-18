@@ -205,7 +205,7 @@ func TestMergeAdjacentCold(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 1}, load: 0.1},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0, nil)
 
 	// All three slices are cold and adjacent; the first two merge
 	// (same partition), then the third merges cross-partition onto
@@ -228,7 +228,7 @@ func TestMergeAdjacentCold_CrossPartition(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 200, Hi: 299}, PartitionID: 0}, load: 0.1},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0, nil)
 
 	// Should merge into fewer entries by moving the B slice onto A's partition.
 	require.Less(t, len(result), 3, "cross-partition merge should reduce entry count")
@@ -259,7 +259,7 @@ func TestMergeAdjacentCold_PerPartitionFloor(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 500, Hi: 599}, PartitionID: 1}, load: 0.05},
 	}
 
-	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 2)
+	result, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 2, nil)
 
 	count := map[int32]int{}
 	for _, rl := range result {
@@ -288,7 +288,7 @@ func TestMergeAdjacentCold_FloorPreventsCompleteDrain(t *testing.T) {
 	}
 
 	// Without floor (==0): partition 1 is fully drained.
-	resultNoFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0)
+	resultNoFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 0, nil)
 	noFloorCount := 0
 	for _, rl := range resultNoFloor {
 		if rl.entry.PartitionID == 1 {
@@ -298,7 +298,7 @@ func TestMergeAdjacentCold_FloorPreventsCompleteDrain(t *testing.T) {
 	require.Equal(t, 0, noFloorCount, "without floor, partition 1 should be fully drained (this is the bug)")
 
 	// With floor=1: partition 1 retains at least one entry.
-	resultFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 1)
+	resultFloor, _ := mergeAdjacentCold(entries, 1.0, math.MaxFloat64, 1.0, 1, 1, nil)
 	floorCount := 0
 	for _, rl := range resultFloor {
 		if rl.entry.PartitionID == 1 {
@@ -2040,13 +2040,11 @@ func TestRunSlicer_PlannedAdditionsPreventDestinationStuffing(t *testing.T) {
 	assert.Equal(t, 0, destCounts[0], "hot partition should not be a destination")
 }
 
-// TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds verifies that
-// within-round plannedAdded state does NOT carry across rounds. In
-// round 2 the slicer should see fresh load values (the test re-
-// submits the same rates) and be free to target the same cold
-// destinations again — no "this partition received moves last round"
-// penalty.
-func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
+// TestRunSlicer_PlannedAdditionsResetBetweenRounds verifies that the
+// arithmetic plannedAdded state itself remains round-local. Production
+// separately records committed partition roles after apply; this unit
+// test intentionally does not record them.
+func TestRunSlicer_PlannedAdditionsResetBetweenRounds(t *testing.T) {
 	partitions := []int32{0, 1}
 	initial := assignment.FineEvenSplit(partitions, 16)
 
@@ -2072,9 +2070,8 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	// Round 2: pretend distributors haven't re-aimed at P1 yet — the
 	// rates fixture is unchanged so P0 is still hotter. The slicer
 	// must be willing to target P1 again as the (still-only) cold
-	// destination; there is no cross-round destination penalty in
-	// the new design (and never was anything that survived the round
-	// once recentMoves was removed).
+	// destination because this isolated runSlicer test has not recorded
+	// the committed role state that the production round records.
 	now2 := now.Add(time.Minute)
 	_, actions2 := r.runSlicer(result1, rates, nil, partitions, nil, now2)
 
@@ -2083,7 +2080,7 @@ func TestRunSlicer_PlannedAdditionsDoNotPersistAcrossRounds(t *testing.T) {
 	for _, a := range actions2 {
 		if a.Kind == ActionMove {
 			assert.Equal(t, int32(1), a.ToPart,
-				"round 2 moves should still target the cold P1; no cross-round destination penalty")
+				"round 2 moves should still target the cold P1 without committed role state")
 		}
 	}
 }

@@ -62,6 +62,29 @@ func TestPlanReadcacheAssignment_PrefersCurrentOwner(t *testing.T) {
 	assert.Empty(t, plan.Moves, "steady-state should produce no moves")
 }
 
+func TestPlanReadcacheAssignment_LoadHysteresisKeepsBalancedRoundQuiet(t *testing.T) {
+	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 1.0, LoadHysteresis: 0.05}
+	in := readcachePlanInput{
+		instances:       []string{"rc-a", "rc-b"},
+		loadByPartition: map[int32]float64{},
+		currentOwner:    map[int32]string{},
+		recentlyMoved:   map[int32]struct{}{},
+	}
+	for pid := int32(0); pid < 40; pid++ {
+		in.partitions = append(in.partitions, pid)
+		in.loadByPartition[pid] = 5
+		if pid < 21 {
+			in.currentOwner[pid] = "rc-a" // load 105
+		} else {
+			in.currentOwner[pid] = "rc-b" // load 95
+		}
+	}
+
+	plan := planReadcacheAssignment(cfg, in)
+
+	assert.Empty(t, plan.Moves, "instance loads inside the ±5% target band must not trigger a move")
+}
+
 func TestPlanReadcacheAssignment_MovesOverloadedPartition(t *testing.T) {
 	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 0.5}
 

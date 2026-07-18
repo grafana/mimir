@@ -67,6 +67,28 @@ type Config struct {
 	// improvement qualifies).
 	MinMoveImprovement float64 `yaml:"min_move_improvement"`
 
+	// LoadHysteresis is the fractional no-op band around the mean
+	// per-partition load. Phase 3 only considers sources above
+	// mean*(1+LoadHysteresis), and requires the hot/cold gap to exceed
+	// twice the band. This keeps balanced rounds quiet without requiring
+	// every useful destination to be below the mean. Values must be in
+	// [0, 1); zero disables the band.
+	LoadHysteresis float64 `yaml:"load_hysteresis"`
+
+	// PartitionRoleCooldown prevents aggregate partition ping-pong that
+	// per-range cooldowns cannot catch. A partition that recently
+	// received ranges cannot become a source, and a partition that
+	// recently shed ranges cannot become a destination, until this
+	// duration elapses. Zero disables role hysteresis.
+	PartitionRoleCooldown time.Duration `yaml:"partition_role_cooldown"`
+
+	// StructuralCooldown prevents a recently merged range (or any
+	// overlapping descendant) from being split, and a recently split
+	// range (or overlapping ancestor) from being merged. It is separate
+	// from MoveCooldown so split children remain immediately eligible
+	// for Phase 3 placement. Zero disables structural hysteresis.
+	StructuralCooldown time.Duration `yaml:"structural_cooldown"`
+
 	// IngesterRPCTimeout bounds each individual HashRangeStats /
 	// SetHashRanges call to a single ingester. RPCs are issued in
 	// parallel, but a stuck ingester (e.g. mid-rollout, with a stale
@@ -211,6 +233,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
 	f.IntVar(&cfg.MaxMovesPerRound, prefix+"max-moves-per-round", 30, "Maximum number of weighted-move (Phase 3) actions per rebalance round. The movement budget bounds the hash-space fraction moved, not the move count, so many small ranges can produce hundreds of moves per round without this cap; every move appends entries to the assignment log and grows query fan-out. Phase 1 reassigns (inactive-partition recovery) are not counted. 0 or negative disables the cap.")
 	f.Float64Var(&cfg.MinMoveImprovement, prefix+"min-move-improvement", 0.01, "Minimum imbalance improvement, as a fraction of the mean per-partition load, that a Phase 3 move must deliver to be committed. Filters out noise-level moves of nearly-empty ranges that consume the per-round move allowance without observably reducing imbalance. 0 or negative disables the floor.")
+	f.Float64Var(&cfg.LoadHysteresis, prefix+"load-hysteresis", 0.05, "Fractional no-op band around mean partition load. Phase 3 requires a source above mean*(1+band) and a hot/cold gap wider than twice the band, so balanced rounds produce no moves. Must be in [0, 1); 0 disables.")
+	f.DurationVar(&cfg.PartitionRoleCooldown, prefix+"partition-role-cooldown", 15*time.Minute, "Minimum time before a partition may reverse its Phase 3 role: a recent destination cannot become a source, and a recent source cannot become a destination. Prevents partition-level ping-pong through different hash ranges. 0 disables.")
+	f.DurationVar(&cfg.StructuralCooldown, prefix+"structural-cooldown", 30*time.Minute, "Minimum time before a split range (or overlapping descendant) may merge, or a merged range (or overlapping ancestor) may split. Does not block Phase 3 placement. 0 disables.")
 	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
 	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 15*time.Minute, "Minimum time between consecutive relocations of the same hash range (or any range overlapping it). Per-range anti-flap guard; aggregate per-round churn is bounded by MovementBudget. Must exceed the steady-state rebalance interval (approximately the lease duration) to have any effect. 0 disables.")
@@ -229,6 +254,12 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 // Validate returns an error if the config is internally inconsistent.
 // Called by pkg/mimir during configuration parsing.
 func (cfg *Config) Validate() error {
+	if cfg.LoadHysteresis < 0 || cfg.LoadHysteresis >= 1 {
+		return fmt.Errorf("nautilus-rebalancer.load-hysteresis must be in [0, 1), got %f", cfg.LoadHysteresis)
+	}
+	if cfg.ReadcacheSlicer.LoadHysteresis < 0 || cfg.ReadcacheSlicer.LoadHysteresis >= 1 {
+		return fmt.Errorf("nautilus-rebalancer.readcache-slicer.load-hysteresis must be in [0, 1), got %f", cfg.ReadcacheSlicer.LoadHysteresis)
+	}
 	if cfg.ActivePartitionCount < 0 {
 		return fmt.Errorf("nautilus-rebalancer.active-partition-count must be >= 0, got %d", cfg.ActivePartitionCount)
 	}
@@ -298,17 +329,32 @@ type Rebalancer struct {
 	// that armed or pruned at least one cooldown.
 	cooldownsFile *logFile
 
+	// partitionRoles tracks recent Phase 3 source/destination roles so
+	// different ranges cannot make the same partition reverse direction
+	// across adjacent rounds.
+	partitionRoles partitionRoleCooldowns
+
+	// structuralCooldowns tracks split/merge lineage by range overlap.
+	// Unlike moveCooldowns, it is consulted only by Phases 2 and 4.
+	structuralCooldowns map[assignment.HashRange]time.Time
+
 	// readcacheCooldowns tracks per-partition cooldowns for the
 	// second slicer round (partition -> readcache instance). Mutated
 	// only by rebalance() / planReadcacheAssignment.
 	readcacheCooldowns readcacheMoveCooldowns
 
+	// readcacheMembership debounces transient changes in the healthy
+	// readcache ring. The first observed fleet is admitted immediately
+	// for cold start; subsequent additions and removals must be observed
+	// for two consecutive rounds before they affect placement.
+	readcacheMembership readcacheMembershipTracker
+
 	// readcacheRing is the ring client the slicer consults to learn
 	// which readcache instances are currently healthy. Nil when
 	// running without a ring (tests, or operators who pin the
 	// instance set via ReadcacheSlicer.Instances). Resolved on each
-	// slicer round so scale-up/scale-down is picked up at most one
-	// round (lease_lookahead by default) after the ring event.
+	// slicer round; membership hysteresis admits a change after two
+	// consecutive observations.
 	readcacheRing readcacheRingReader
 
 	// clock is the time source consulted by rebalance(), the admin
@@ -340,9 +386,8 @@ type Rebalancer struct {
 	// lastTier2Instances is the sorted active readcache instance
 	// set as of the most recent tier-2 fire. When the current
 	// instance set differs (scale-up, scale-down, pod restart with
-	// new ID) we fire tier-2 immediately regardless of the round
-	// interval, because waiting would leave partitions orphaned on
-	// the departed instances or under-utilized on the new ones.
+	// new ID) after membership hysteresis, we fire tier-2 immediately
+	// regardless of the round interval.
 	//
 	// Stored as a sorted slice for cheap equality checking against
 	// activeReadcacheInstances() output (which is already sorted).
@@ -373,17 +418,20 @@ func New(cfg Config, readcacheRing readcacheRingReader, readcachePool *Readcache
 		return nil, fmt.Errorf("readcache pool is required")
 	}
 	r := &Rebalancer{
-		cfg:                cfg,
-		logger:             logger,
-		readcacheRing:      readcacheRing,
-		fleet:              readcachePool,
-		store:              newLogStore(),
-		readcacheStore:     newReadcacheLogStore(),
-		moveCooldowns:      make(map[assignment.HashRange]time.Time),
-		readcacheCooldowns: make(readcacheMoveCooldowns),
-		metrics:            newMetrics(registerer),
-		clock:              wallClock{},
-		spotlights:         newSpotlightStore(time.Now().UnixNano(), defaultSpotlightSampleRate, defaultSpotlightDuration),
+		cfg:                 cfg,
+		logger:              logger,
+		readcacheRing:       readcacheRing,
+		fleet:               readcachePool,
+		store:               newLogStore(),
+		readcacheStore:      newReadcacheLogStore(),
+		moveCooldowns:       make(map[assignment.HashRange]time.Time),
+		partitionRoles:      newPartitionRoleCooldowns(),
+		structuralCooldowns: make(map[assignment.HashRange]time.Time),
+		readcacheCooldowns:  make(readcacheMoveCooldowns),
+		readcacheMembership: newReadcacheMembershipTracker(),
+		metrics:             newMetrics(registerer),
+		clock:               wallClock{},
+		spotlights:          newSpotlightStore(time.Now().UnixNano(), defaultSpotlightSampleRate, defaultSpotlightDuration),
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, nil)
@@ -418,9 +466,20 @@ func (r *Rebalancer) starting(_ context.Context) error {
 		r.readcacheStore.setPersistFn(readcacheFile.writeReadcacheLog, r.logger)
 
 		r.cooldownsFile = newLogFile(filepath.Join(r.cfg.DataDir, moveCooldownsFilename), log.With(r.logger, "component", "move_cooldowns_file"))
-		if cooldowns, ok := r.cooldownsFile.readMoveCooldowns(); ok {
-			r.moveCooldowns = cooldownsFromWire(cooldowns)
-			level.Info(r.logger).Log("msg", "seeded move cooldowns from disk", "cooldowns", len(r.moveCooldowns))
+		if state, ok := r.cooldownsFile.readCooldownState(); ok {
+			r.moveCooldowns = cooldownsFromWire(state.MoveCooldowns)
+			r.structuralCooldowns = cooldownsFromWire(state.StructuralCooldowns)
+			r.partitionRoles = partitionRoleCooldowns{
+				recentSources:      clonePartitionDeadlines(state.RecentSourcePartitions),
+				recentDestinations: clonePartitionDeadlines(state.RecentDestinationPartitions),
+			}
+			level.Info(r.logger).Log(
+				"msg", "seeded stabilization cooldowns from disk",
+				"move_cooldowns", len(r.moveCooldowns),
+				"structural_cooldowns", len(r.structuralCooldowns),
+				"recent_sources", len(r.partitionRoles.recentSources),
+				"recent_destinations", len(r.partitionRoles.recentDestinations),
+			)
 		}
 	}
 
@@ -710,6 +769,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	now := r.now()
+	stableReadcacheInstances := r.stabilizedReadcacheInstances()
 	current := r.store.latestActiveAssignment(now)
 	if current == nil {
 		// Cold start: try to reconstruct the assignment from whatever
@@ -747,7 +807,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// slicer with empty load signals just produces an even
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
-			if instances := r.activeReadcacheInstances(); len(instances) > 0 {
+			if instances := stableReadcacheInstances; len(instances) > 0 {
 				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
@@ -832,9 +892,20 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
 	}
+	// A readcache in its first unavailable round remains in the stable
+	// membership set so its partitions are not evacuated yet, but it
+	// must not look like a zero-load destination. Treat membership
+	// suspects exactly like instances whose stats RPC failed.
+	for instanceID := range r.readcacheMembership.unavailable() {
+		if failedReadcaches == nil {
+			failedReadcaches = map[string]struct{}{}
+		}
+		failedReadcaches[instanceID] = struct{}{}
+	}
 
 	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
 	cooldownsPruned := r.pruneExpiredCooldowns(now)
+	r.pruneStabilizationCooldowns(now)
 	if r.spotlights != nil {
 		r.spotlights.prune(now)
 	}
@@ -926,6 +997,9 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// to reflect what the slicer actually saw.
 	startEntries := append([]assignment.Entry(nil), current.Entries...)
 	cooldownsSnapshot := cooldownsToWire(r.moveCooldowns)
+	structuralCooldownsSnapshot := cooldownsToWire(r.structuralCooldowns)
+	recentSourcesSnapshot := clonePartitionDeadlines(r.partitionRoles.recentSources)
+	recentDestinationsSnapshot := clonePartitionDeadlines(r.partitionRoles.recentDestinations)
 
 	newAssignment, actions := r.runSlicer(current, rates, partitionRateByPID, activePartitions, excludedFromSlicer, now)
 	if err := newAssignment.Validate(); err != nil {
@@ -934,9 +1008,6 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	cooldownsArmed := r.recordMoveCooldowns(now, actions)
-	if cooldownsArmed > 0 || cooldownsPruned > 0 {
-		r.persistMoveCooldowns()
-	}
 
 	actionSummary := countActions(actions)
 	r.metrics.recordRoundActions(actionSummary)
@@ -964,6 +1035,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// reroute, so there's nothing for the destination EWMA to
 		// catch up to.
 		r.predictions.record(now, actions, lm)
+		r.partitionRoles.record(now, r.cfg.PartitionRoleCooldown, actions)
+		r.recordStructuralCooldowns(now, actions)
+	}
+	if cooldownsArmed > 0 || cooldownsPruned > 0 || hashLogChanged {
+		r.persistMoveCooldowns()
 	}
 	r.pushRanges(ctx, newAssignment, now)
 
@@ -990,7 +1066,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// finds zero owners; see refreshReadcacheLeases for the full
 	// failure mode.
 	if r.cfg.ReadcacheSlicer.Enabled {
-		instances := r.activeReadcacheInstances()
+		instances := stableReadcacheInstances
 		if len(instances) > 0 {
 			decision := shouldFireTier2(r.cfg.ReadcacheSlicer.RoundInterval, now, r.lastTier2RoundAt, instances, r.lastTier2Instances)
 			if decision.fire {
@@ -1071,21 +1147,27 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	r.admin.addTrace(Trace{
-		SlicerVersion:         SlicerVersion,
-		Round:                 round,
-		Now:                   now,
-		Start:                 startEntries,
-		Rates:                 ratesToWire(rates),
-		PartitionL:            partitionLByPID,
-		PartitionQuerySamples: partitionQuerySamples,
-		UnnamedQuerySamples:   unnamedPerInstance,
-		ActivePartitions:      append([]int32(nil), activePartitions...),
-		Cooldowns:             cooldownsSnapshot,
+		SlicerVersion:               SlicerVersion,
+		Round:                       round,
+		Now:                         now,
+		Start:                       startEntries,
+		Rates:                       ratesToWire(rates),
+		PartitionL:                  partitionLByPID,
+		PartitionQuerySamples:       partitionQuerySamples,
+		UnnamedQuerySamples:         unnamedPerInstance,
+		ActivePartitions:            append([]int32(nil), activePartitions...),
+		Cooldowns:                   cooldownsSnapshot,
+		StructuralCooldowns:         structuralCooldownsSnapshot,
+		RecentSourcePartitions:      recentSourcesSnapshot,
+		RecentDestinationPartitions: recentDestinationsSnapshot,
 		Config: ConfigSnapshot{
-			MovementBudget:     r.cfg.MovementBudget,
-			MoveCooldown:       r.cfg.MoveCooldown,
-			MaxMovesPerRound:   r.cfg.MaxMovesPerRound,
-			MinMoveImprovement: r.cfg.MinMoveImprovement,
+			MovementBudget:        r.cfg.MovementBudget,
+			MoveCooldown:          r.cfg.MoveCooldown,
+			MaxMovesPerRound:      r.cfg.MaxMovesPerRound,
+			MinMoveImprovement:    r.cfg.MinMoveImprovement,
+			LoadHysteresis:        r.cfg.LoadHysteresis,
+			PartitionRoleCooldown: r.cfg.PartitionRoleCooldown,
+			StructuralCooldown:    r.cfg.StructuralCooldown,
 		},
 		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
@@ -1386,15 +1468,43 @@ func (r *Rebalancer) runSlicer(
 		totalLoad += rl.load
 	}
 	targetLoad := totalLoad / float64(numPartitions)
+	structuralRebalanceNeeded := true
+	if r.cfg.LoadHysteresis > 0 {
+		structuralRebalanceNeeded = false
+		observed := partitionRateByPID
+		if len(observed) == 0 {
+			observed = computePartitionLoads(entries)
+		}
+		bandMean := 0.0
+		for _, pid := range activePartitions {
+			bandMean += observed[pid]
+		}
+		bandMean /= float64(numPartitions)
+		lower := bandMean * (1 - r.cfg.LoadHysteresis)
+		upper := bandMean * (1 + r.cfg.LoadHysteresis)
+		for _, pid := range activePartitions {
+			if observed[pid] < lower || observed[pid] > upper {
+				structuralRebalanceNeeded = true
+				break
+			}
+		}
+	}
 
 	// --- Phase 2: merge adjacent cold slices (defragment) -------------
 	pre2Entries := snapshotRangeLoads(entries)
 	pre2ActionsLen := len(actions)
-	if len(entries) > minSlicesPerPartition*numPartitions {
+	var structuralIdx cooldownIndex
+	if r.cfg.StructuralCooldown > 0 {
+		structuralIdx = newCooldownIndex(now, r.structuralCooldowns)
+	}
+	structurallyBlocked := func(hr assignment.HashRange) bool {
+		return structuralIdx.overlaps(hr)
+	}
+	if structuralRebalanceNeeded && len(entries) > minSlicesPerPartition*numPartitions {
 		meanSliceLoad := totalLoad / float64(len(entries))
 		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1)
 		var mergeActions []Action
-		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, minSlicesPerPartition)
+		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minSlicesPerPartition*numPartitions, minSlicesPerPartition, structurallyBlocked)
 		actions = append(actions, mergeActions...)
 	}
 	if err := validateSlicerPhaseEntries(entries); err != nil {
@@ -1403,6 +1513,12 @@ func (r *Rebalancer) runSlicer(
 		actions = actions[:pre2ActionsLen]
 	}
 	r.spotlightMergeActions(now, actions[pre2ActionsLen:])
+	mergedThisRound := make([]assignment.HashRange, 0, len(actions)-pre2ActionsLen)
+	for _, action := range actions[pre2ActionsLen:] {
+		if action.Kind == ActionMerge {
+			mergedThisRound = append(mergedThisRound, action.Range)
+		}
+	}
 
 	// --- Phase 3: weighted-move using per-partition sample rate ---------
 	pre3Entries := snapshotRangeLoads(entries)
@@ -1434,7 +1550,7 @@ func (r *Rebalancer) runSlicer(
 	pre4Entries := snapshotRangeLoads(entries)
 	pre4ActionsLen := len(actions)
 	maxTotal := maxSlicesPerPartition * numPartitions
-	if len(entries) < maxTotal {
+	if structuralRebalanceNeeded && len(entries) < maxTotal {
 		partitionLoads := computePartitionLoads(entries)
 
 		var nonZeroCount int
@@ -1461,7 +1577,14 @@ func (r *Rebalancer) runSlicer(
 				newEntries = append(newEntries, rl)
 				continue
 			}
-			if rl.load > splitThreshold && rl.entry.Range.Size() > 1 && overloaded[rl.entry.PartitionID] {
+			recentlyMerged := false
+			for _, merged := range mergedThisRound {
+				if hashRangesOverlap(rl.entry.Range, merged) {
+					recentlyMerged = true
+					break
+				}
+			}
+			if !structurallyBlocked(rl.entry.Range) && !recentlyMerged && rl.load > splitThreshold && rl.entry.Range.Size() > 1 && overloaded[rl.entry.PartitionID] {
 				mid := rl.entry.Range.Lo + uint32((uint64(rl.entry.Range.Hi)-uint64(rl.entry.Range.Lo))/2)
 				left := assignment.HashRange{Lo: rl.entry.Range.Lo, Hi: mid}
 				right := assignment.HashRange{Lo: mid + 1, Hi: rl.entry.Range.Hi}
@@ -1656,9 +1779,9 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 //
 //   - Destination side: a within-round plannedAdded[pid] inflates the
 //     effective cold load so the loop spreads moves across multiple
-//     cold partitions rather than stacking on one. No cross-round
-//     destination state: by the next round, the destination's
-//     reported sample rate already reflects writes routed to it.
+//     cold partitions rather than stacking on one. Across rounds,
+//     PartitionRoleCooldown prevents a recent destination from
+//     immediately becoming a source while its observed load settles.
 //
 // partitionLoadByPID is the float-precision per-partition load
 // (sum of per-range samples-per-second) used by Phase 3's hot/cold
@@ -1733,12 +1856,16 @@ func (r *Rebalancer) runPhase3(
 	if knownPartitions > 0 {
 		meanL = totalL / float64(knownPartitions)
 	}
+	upperLoad := meanL * (1 + r.cfg.LoadHysteresis)
+	minHotColdGap := 2 * r.cfg.LoadHysteresis * meanL
 
 	// plannedAdded accumulates within-round additions per destination,
 	// and thisRoundMoves accumulates within-round removals per source.
 	// Both are local to this call so they reset between rounds.
 	plannedAdded := make(map[int32]float64, numPartitions)
 	thisRoundMoves := make(map[int32]float64, numPartitions)
+	thisRoundSources := make(map[int32]bool, numPartitions)
+	thisRoundDestinations := make(map[int32]bool, numPartitions)
 
 	effectiveSource := func(pid int32) float64 {
 		return effL[pid] - thisRoundMoves[pid]
@@ -1750,10 +1877,10 @@ func (r *Rebalancer) runPhase3(
 
 	movable := func(pid int32) float64 {
 		s := effectiveSource(pid)
-		if s <= meanL {
+		if s <= upperLoad {
 			return 0
 		}
-		return s - meanL
+		return s - upperLoad
 	}
 
 	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
@@ -1811,6 +1938,9 @@ func (r *Rebalancer) runPhase3(
 			if excludedFromSlicer[pid] {
 				continue
 			}
+			if thisRoundDestinations[pid] || (r.cfg.PartitionRoleCooldown > 0 && r.partitionRoles.blocksSource(pid, now)) {
+				continue
+			}
 			if !excludedHot[pid] && movable(pid) > 0 {
 				s := effectiveSource(pid)
 				if s > hotL {
@@ -1824,6 +1954,9 @@ func (r *Rebalancer) runPhase3(
 			if excludedFromSlicer[pid] {
 				continue
 			}
+			if thisRoundSources[pid] || (r.cfg.PartitionRoleCooldown > 0 && r.partitionRoles.blocksDestination(pid, now)) {
+				continue
+			}
 			d := effectiveDest(pid)
 			if d < coldL {
 				coldL = d
@@ -1831,7 +1964,7 @@ func (r *Rebalancer) runPhase3(
 				coldFound = true
 			}
 		}
-		if !hotFound || !coldFound || hotPID == coldPID {
+		if !hotFound || !coldFound || hotPID == coldPID || hotL-coldL <= minHotColdGap {
 			break
 		}
 
@@ -1936,6 +2069,8 @@ func (r *Rebalancer) runPhase3(
 		// movable() so the hot's budget shrinks as we move off it.
 		plannedAdded[coldPID] += loadMoved
 		thisRoundMoves[fromPID] += loadMoved
+		thisRoundSources[fromPID] = true
+		thisRoundDestinations[coldPID] = true
 
 		actions = append(actions, Action{
 			Kind:     ActionMove,
@@ -2292,16 +2427,19 @@ func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) int {
 	return armed
 }
 
-// persistMoveCooldowns writes the current cooldown map to disk. No-op
-// when persistence is disabled. Failures are logged but never fail
-// the round: losing cooldown state on the next restart only relaxes
-// churn protection, the same posture as a missing file at startup.
+// persistMoveCooldowns writes all stabilization state to disk. No-op
+// when persistence is disabled. Failures are logged but never fail the
+// round: losing cooldown state on restart only relaxes churn protection.
 func (r *Rebalancer) persistMoveCooldowns() {
 	if r.cooldownsFile == nil {
 		return
 	}
-	if err := r.cooldownsFile.writeMoveCooldowns(cooldownsToWire(r.moveCooldowns)); err != nil {
-		level.Warn(r.logger).Log("msg", "failed to persist move cooldowns", "err", err)
+	if err := r.cooldownsFile.writeCooldownState(
+		cooldownsToWire(r.moveCooldowns),
+		cooldownsToWire(r.structuralCooldowns),
+		r.partitionRoles,
+	); err != nil {
+		level.Warn(r.logger).Log("msg", "failed to persist stabilization cooldowns", "err", err)
 	}
 }
 
@@ -2343,7 +2481,7 @@ func hashRangesOverlap(a, b assignment.HashRange) bool {
 //     "cold" relative to meanSliceLoad and gets absorbed by neighbours
 //     over a few rounds), at which point traffic to that partition's
 //     keyspace flips to other ingesters until Phase 3 floods it back.
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries, perPartitionFloor int) ([]rangeLoad, []Action) {
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries, perPartitionFloor int, structurallyBlocked func(assignment.HashRange) bool) ([]rangeLoad, []Action) {
 	if len(entries) <= 1 || len(entries) <= minEntries {
 		return entries, nil
 	}
@@ -2376,20 +2514,24 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 			result = append(result, curr)
 			continue
 		}
+		mergedRange := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
+		if structurallyBlocked != nil && structurallyBlocked(mergedRange) {
+			result = append(result, curr)
+			continue
+		}
 
 		if prev.entry.PartitionID == curr.entry.PartitionID {
 			if partitionLoads[prev.entry.PartitionID] <= maxPartitionLoad {
 				mergeCost := float64(curr.entry.Range.Size())
 				if churned+mergeCost <= churnBudget {
-					merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
 					actions = append(actions, Action{
 						Kind:   ActionMerge,
-						Range:  merged,
+						Range:  mergedRange,
 						ToPart: prev.entry.PartitionID,
 						Series: prev.series + curr.series,
 						Detail: fmt.Sprintf("same-partition merge on P%d, combined load=%.4f", prev.entry.PartitionID, mergedLoad),
 					})
-					prev.entry.Range = merged
+					prev.entry.Range = mergedRange
 					prev.load = mergedLoad
 					prev.series += curr.series
 					churned += mergeCost
@@ -2430,16 +2572,15 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 				partitionLoads[donorPID] -= donorLoad
 				partitionEntries[donorPID]--
 
-				merged := assignment.HashRange{Lo: prev.entry.Range.Lo, Hi: curr.entry.Range.Hi}
 				actions = append(actions, Action{
 					Kind:     ActionMerge,
-					Range:    merged,
+					Range:    mergedRange,
 					FromPart: donorPID,
 					ToPart:   receiverPID,
 					Series:   prev.series + curr.series,
 					Detail:   fmt.Sprintf("cross-partition merge P%d+P%d→P%d, combined load=%.4f", donorPID, receiverPID, receiverPID, mergedLoad),
 				})
-				prev.entry.Range = merged
+				prev.entry.Range = mergedRange
 				prev.entry.PartitionID = receiverPID
 				prev.load = mergedLoad
 				prev.series += curr.series
