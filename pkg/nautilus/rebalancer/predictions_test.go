@@ -72,7 +72,7 @@ func TestPredictionStore_HalfLifeMatchesEWMA(t *testing.T) {
 // observed rate should sum to the true rate at every point along
 // the settle curve. We simulate the readcache-side EWMA growth and
 // confirm the rebalancer's view (prediction + EWMA) tracks the true
-// rate within tight bounds for the full ~20 minutes of settle.
+// rate within tight bounds for the full ~4 minutes of settle.
 func TestPredictionStore_FullSettleSumIsConstant(t *testing.T) {
 	commit := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	const trueRate = 1000.0

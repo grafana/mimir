@@ -12,7 +12,7 @@ import (
 // ratePrediction records that the slicer moved (or reassigned) a hash
 // range with a known sample rate to a destination partition at a
 // specific wall-clock moment. Until the destination readcache's
-// per-partition EWMA has had time to accumulate that load (~5 minutes
+// per-partition EWMA has had time to accumulate that load (~1 minute
 // for one half-life), the rebalancer's view of the destination's
 // load is systematically understated. predictions let the rebalancer
 // compensate by adding the unobserved-but-expected load to the

@@ -68,8 +68,9 @@ type ReadcacheSlicerConfig struct {
 	// drop to zero even though writes are still flowing. Spacing
 	// tier-2 rounds out lets the destination EWMA settle (≈ 2-3
 	// EWMA half-lives) before tier-1 next consults its rate.
-	// Recommended in production: at least 2 × the EWMA half-life
-	// (currently 5 min), so 10–30 min is a reasonable range.
+	// The EWMA half-life is currently ~1 min. A longer production
+	// interval may still be appropriate to absorb fleet and traffic
+	// churn rather than merely waiting for the EWMA to settle.
 	RoundInterval time.Duration `yaml:"round_interval"`
 }
 

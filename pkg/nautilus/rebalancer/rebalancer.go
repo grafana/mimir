@@ -842,7 +842,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// Drop residue from previous owners before aggregating load.
 	// After a range moves P_old -> P_new the readcache that hosted
 	// P_old still reports a sample rate for (P_old, range) for one
-	// EWMA half-life (~5 min). Summing that into the slicer's per-
+	// EWMA half-life (~1 min). Summing that into the slicer's per-
 	// partition load signal makes P_old look perpetually hot and
 	// causes runPhase3 to shuffle unrelated ranges off P_old to
 	// balance phantom load. Filtering against the current assignment
@@ -869,12 +869,12 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	partitionRateByPID := partitionLoadFromRates(rates, activePartitions)
 
 	// Fold predictions from recent rounds into the partition rates.
-	// The readcache EWMA at the destination of a move takes ~5 min
-	// (one half-life) to reflect half of the moved load and ~20 min
-	// to reflect nearly all of it. Without this correction the
-	// slicer sees the destination as much cooler than it really is
-	// for the next ~10 rounds (at 30s cadence), keeps moving more
-	// ranges into it, and over-shoots. predictions.applyTo adds
+	// The readcache EWMA at the destination of a move takes ~1 min
+	// (one half-life) to reflect half of the moved load and ~4 min
+	// to reflect about 95% of it. Without this correction the slicer
+	// sees the destination as much cooler than it really is during
+	// that settling window, keeps moving more ranges into it, and
+	// over-shoots. predictions.applyTo adds
 	// back the still-unobserved residual from every recent move,
 	// so partitionRateByPID matches what the EWMA WILL say once it
 	// settles. Source-side is already handled by
@@ -1680,7 +1680,7 @@ func formatSlicerWindow(snapshot []assignment.Entry, first, last int) string {
 //
 // The failure mode this guards against: when tier-2 moves a
 // partition from readcache A to readcache B, B's per-partition rate
-// EWMA starts from zero and takes ~5 min (one half-life) to reflect
+// EWMA starts from zero and takes ~1 min (one half-life) to reflect
 // half of the steady-state. If Phase 3 reads "rate=0" for such a
 // partition it concludes the partition is cold and floods it with
 // hash ranges from the hottest sources, overshooting the true
@@ -2115,13 +2115,13 @@ func currentOwnershipSet(current *assignment.Assignment) map[partitionRangeKey]s
 // we suppress residue: when a range moves from P_old to P_new, the
 // readcache that used to own P_old still has the data in its TSDB
 // head and its EWMA still reports a non-zero sample rate for
-// (P_old, range) for one EWMA half-life (~5 minutes). If that residue
+// (P_old, range) for one EWMA half-life (~1 minute). If that residue
 // is summed into partitionLoadFromRates, the slicer sees P_old as
 // hot, declares it a move source, and shuffles unrelated ranges off
 // P_old to balance phantom load. By filtering to current ownership
 // we collapse P_old's apparent load the instant the assignment
-// changes, even though the underlying samples take ~5 minutes to age
-// out.
+// changes, even though the residual rate takes several half-lives to
+// become negligible.
 //
 // When owned is nil (e.g. cold start) the input is returned
 // unchanged; the second return is the number of rates dropped.

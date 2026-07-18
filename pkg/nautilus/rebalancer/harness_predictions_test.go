@@ -125,7 +125,7 @@ func TestHarness_Predictions_RecordedAfterSlicerMoves(t *testing.T) {
 // which is populated immediately after applyTo and before runSlicer.
 //
 // Without this property, the slicer would see the destination as
-// still-cold for ~5 minutes of EWMA settle time and keep piling
+// still-cold for several minutes of EWMA settle time and keep piling
 // ranges onto it.
 func TestHarness_Predictions_AppliedToSlicerView(t *testing.T) {
 	h := newHarness(t, harnessOpts{
