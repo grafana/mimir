@@ -900,12 +900,15 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 		}
 	}(writer)
 
-	// req.ctx is cancelled when RoundTripGRPC returns without handing this response to its
-	// caller (eg. its cancellation branch found the httpResponse channel still empty), or later
-	// when the caller closes the response body. Either way nobody will read the pipe anymore,
-	// so close it to make sure this goroutine isn't left blocked writing body chunks forever.
+	// Normally the client reads the body stream completely, hits EOF, and closes the body via
+	// cleanupReadCloser.Close. This function returns once the querier's stream ends, before that
+	// close happens. On this successful path the caller closes the reader, so defer stop() disarms
+	// the callback below.
+	// In the unsuccessful case the client never reads the body (timeout or cancellation). req.ctx is
+	// cancelled, the callback closes the reader, and writer.Write unblocks so this goroutine finishes
+	// instead of leaking. Close the read side so writer.Write returns the cancel cause, not io.ErrClosedPipe.
 	stop := context.AfterFunc(req.ctx, func() {
-		_ = writer.CloseWithError(context.Cause(req.ctx))
+		_ = reader.CloseWithError(context.Cause(req.ctx))
 	})
 	defer stop()
 
