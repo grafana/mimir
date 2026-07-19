@@ -1641,6 +1641,53 @@ func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
 	}
 }
 
+// TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak reproduces the case where
+// RoundTripGRPC's cancellation branch drains the streaming response from the httpResponse channel
+// but discards it without ever reading its body: cancelling the request context alone (which the
+// deferred cleanup does) must be enough to unblock the handler writing body chunks to the pipe.
+func TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak(t *testing.T) {
+	const userID = "test"
+
+	f, _ := setupFrontend(t, nil, nil)
+
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+	freq := &frontendRequest{
+		queryID:      118,
+		userID:       userID,
+		ctx:          ctx,
+		httpResponse: make(chan queryResultWithBody, 1),
+	}
+	f.requests.put(freq)
+
+	msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+	stream := &mockQueryResultStreamServer{
+		ctx: user.InjectOrgID(t.Context(), userID),
+		msgs: []*frontendv2pb.QueryResultStreamRequest{
+			metadataRequest(msg, http.StatusOK, nil),
+			bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+		},
+	}
+
+	streamReturned := make(chan error, 1)
+	go func() {
+		streamReturned <- f.QueryResultStream(stream)
+	}()
+
+	// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
+	// body, and then its deferred cleanup cancels the request context.
+	res := <-freq.httpResponse
+	cancel(cancellation.NewErrorf("request cancelled"))
+
+	select {
+	case err := <-streamReturned:
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	case <-time.After(time.Second):
+		// Unblock the handler goroutine so it doesn't also trip the leak detector.
+		_ = res.bodyStream.Close()
+		t.Fatal("QueryResultStream is still blocked writing the body of a discarded response")
+	}
+}
+
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		QueryID: msg.QueryID,
