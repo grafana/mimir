@@ -902,10 +902,10 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 		}
 	}(writer)
 
-	// The request context is cancelled once RoundTripGRPC returns on any path. If it returned
-	// without receiving this response (eg. the caller cancelled the request and the cancellation
-	// branch found the httpResponse channel still empty), nothing will ever read the pipe, so
-	// close it to make sure this goroutine isn't left blocked writing body chunks forever.
+	// req.ctx is cancelled when RoundTripGRPC returns without handing this response to its
+	// caller (eg. its cancellation branch found the httpResponse channel still empty), or later
+	// when the caller closes the response body. Either way nobody will read the pipe anymore,
+	// so close it to make sure this goroutine isn't left blocked writing body chunks forever.
 	stop := context.AfterFunc(req.ctx, func() {
 		_ = writer.CloseWithError(context.Cause(req.ctx))
 	})
