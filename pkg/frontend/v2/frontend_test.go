@@ -1614,7 +1614,8 @@ func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
 	f.requests.put(freq)
 
 	// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
-	cancel(cancellation.NewErrorf("request cancelled"))
+	cause := cancellation.NewErrorf("request cancelled")
+	cancel(cause)
 
 	msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
 	stream := &mockQueryResultStreamServer{
@@ -1632,7 +1633,7 @@ func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
 
 	select {
 	case err := <-streamReturned:
-		require.ErrorIs(t, err, io.ErrClosedPipe)
+		require.ErrorIs(t, err, cause)
 	case <-time.After(time.Second):
 		// Unblock the handler goroutine so it doesn't also trip the leak detector.
 		res := <-freq.httpResponse
@@ -1676,11 +1677,12 @@ func TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak(t *testing.T) {
 	// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
 	// body, and then its deferred cleanup cancels the request context.
 	res := <-freq.httpResponse
-	cancel(cancellation.NewErrorf("request cancelled"))
+	cause := cancellation.NewErrorf("request cancelled")
+	cancel(cause)
 
 	select {
 	case err := <-streamReturned:
-		require.ErrorIs(t, err, io.ErrClosedPipe)
+		require.ErrorIs(t, err, cause)
 	case <-time.After(time.Second):
 		// Unblock the handler goroutine so it doesn't also trip the leak detector.
 		_ = res.bodyStream.Close()
