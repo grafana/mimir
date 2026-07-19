@@ -902,6 +902,15 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 		}
 	}(writer)
 
+	// The request context is cancelled once RoundTripGRPC returns on any path. If it returned
+	// without receiving this response (eg. the caller cancelled the request and the cancellation
+	// branch found the httpResponse channel still empty), nothing will ever read the pipe, so
+	// close it to make sure this goroutine isn't left blocked writing body chunks forever.
+	stop := context.AfterFunc(req.ctx, func() {
+		_ = writer.CloseWithError(context.Cause(req.ctx))
+	})
+	defer stop()
+
 	res := queryResultWithBody{
 		queryResult: &frontendv2pb.QueryResultRequest{
 			QueryID: firstMessage.QueryID,
