@@ -1595,6 +1595,52 @@ func TestFrontendStreamingResponse(t *testing.T) {
 	}
 }
 
+// TestFrontendStreamingResponseAfterCancellationDoesNotLeak reproduces the race where the querier's
+// streaming response claims the request just after RoundTripGRPC's cancellation branch found the
+// httpResponse channel still empty and returned: nothing will ever read the response or its body pipe,
+// so the handler must not stay blocked writing body chunks once the request context is done.
+func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
+	const userID = "test"
+
+	f, _ := setupFrontend(t, nil, nil)
+
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+	freq := &frontendRequest{
+		queryID:      117,
+		userID:       userID,
+		ctx:          ctx,
+		httpResponse: make(chan queryResultWithBody, 1),
+	}
+	f.requests.put(freq)
+
+	// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
+	cancel(cancellation.NewErrorf("request cancelled"))
+
+	msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+	stream := &mockQueryResultStreamServer{
+		ctx: user.InjectOrgID(t.Context(), userID),
+		msgs: []*frontendv2pb.QueryResultStreamRequest{
+			metadataRequest(msg, http.StatusOK, nil),
+			bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+		},
+	}
+
+	streamReturned := make(chan error, 1)
+	go func() {
+		streamReturned <- f.QueryResultStream(stream)
+	}()
+
+	select {
+	case err := <-streamReturned:
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	case <-time.After(time.Second):
+		// Unblock the handler goroutine so it doesn't also trip the leak detector.
+		res := <-freq.httpResponse
+		_ = res.bodyStream.Close()
+		t.Fatal("QueryResultStream is still blocked writing the body of a response nobody will read")
+	}
+}
+
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		QueryID: msg.QueryID,
