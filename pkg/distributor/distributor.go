@@ -869,9 +869,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants enrolled in nautilus_ingest_routing when the startup write policy includes the nautilus topic.",
 		}, []string{"partition", "user"}),
 		nautilusPartitionsWrittenPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_distributor_nautilus_partitions_written_per_request",
-			Help:    "Number of distinct partitions successfully written to the nautilus ingest Kafka topic by a push request.",
-			Buckets: prometheus.LinearBuckets(1, 1, 300),
+			Name:                        "cortex_distributor_nautilus_partitions_written_per_request",
+			Help:                        "Number of distinct partitions successfully written to the nautilus ingest Kafka topic by a push request.",
+			NativeHistogramBucketFactor: 1.03457,
 		}),
 
 		spotlights: newDistributorSpotlightTracker(),
