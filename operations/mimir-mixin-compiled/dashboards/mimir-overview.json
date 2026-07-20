@@ -1634,7 +1634,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(max by(user) (max_over_time(cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[15m])))",
+                        "expr": "sum(max by(user) (max_over_time(cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*$read_compartment|cortex|mimir))\"}[15m])))",
                         "format": "time_series",
                         "legendFormat": "blocks",
                         "legendLink": null
@@ -1714,6 +1714,30 @@
                "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
                "refresh": 1,
                "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": "",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "read_compartment",
+               "multi": true,
+               "name": "read_compartment",
+               "options": [ ],
+               "query": "label_values({job=~\"($namespace)/(.*-rc-.*)\"}, job)",
+               "refresh": 1,
+               "regex": "/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g",
                "sort": 1,
                "tagValuesQuery": "",
                "tags": [ ],

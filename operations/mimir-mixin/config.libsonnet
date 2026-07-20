@@ -27,7 +27,7 @@
 
     // If Mimir deployments has compartments enabled, set to true to enable
     // specific dropdowns and job selectors.
-    compartments_enabled: false,
+    compartments_enabled: true,
 
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,

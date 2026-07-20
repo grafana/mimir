@@ -3486,6 +3486,30 @@
                "useTags": false
             },
             {
+               "allValue": "",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "read_compartment",
+               "multi": true,
+               "name": "read_compartment",
+               "options": [ ],
+               "query": "label_values({job=~\"($namespace)/(.*-rc-.*)\"}, job)",
+               "refresh": 1,
+               "regex": "/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
                "current": {
                   "selected": true,
                   "text": "classic",

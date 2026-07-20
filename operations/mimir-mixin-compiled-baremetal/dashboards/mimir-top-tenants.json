@@ -153,7 +153,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -305,7 +305,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -400,7 +400,7 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "(( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ end()\n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ end()\n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n  -\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ start()\n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} @ start()\n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n)\n",
+                        "expr": "(( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ end()\n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ end()\n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n  -\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ start()\n)\n unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} @ start()\n)\n,\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ user }}",
                         "legendLink": null
@@ -877,7 +877,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir|distributor.*|cortex|mimir))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -972,7 +972,7 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval] @ start()))\n)\n",
+                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir|distributor.*|cortex|mimir))\"}[$__rate_interval] @ start()))\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ user }}",
                         "legendLink": null
@@ -1089,7 +1089,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"} unless on (cluster, namespace, job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*$read_compartment|cortex|mimir))\"},\n        \"ingester_id\", \"$1\", \"instance\", \".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1697,7 +1697,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"})\n  and ignoring(user)\n  (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*$read_compartment|cortex|mimir))\"})\n  and ignoring(user)\n  (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*$read_compartment|cortex|mimir))\"}[$__rate_interval])) == 0)\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1849,7 +1849,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  max by (user) (sum by (user, instance) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))\n)\n",
+                        "expr": "topk($limit,\n  max by (user) (sum by (user, instance) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*$read_compartment|cortex|mimir))\"}))\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1964,6 +1964,30 @@
                "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
                "refresh": 1,
                "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": "",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "read_compartment",
+               "multi": true,
+               "name": "read_compartment",
+               "options": [ ],
+               "query": "label_values({job=~\"($namespace)/(.*-rc-.*)\"}, job)",
+               "refresh": 1,
+               "regex": "/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g",
                "sort": 1,
                "tagValuesQuery": "",
                "tags": [ ],
