@@ -15,6 +15,9 @@ package mimirpb
 //
 // The returned requests may still retain references to fields in the original WriteRequest, i.e. they are tied to its lifecycle.
 func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
+	if maxSize <= 0 {
+		return []*WriteRequest{req}
+	}
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}
 	}
@@ -131,55 +134,48 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 		return nil
 	}
 
-	newPartialReq := func() (*WriteRequest, int) {
-		r := &WriteRequest{
-			Source:                          req.Source,
-			SkipLabelValidation:             req.SkipLabelValidation,
-			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
-			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
-		}
-
-		return r, r.Size()
-	}
-
 	// The partial requests returned by this function will not contain any Metadata,
 	// so we first compute the request size without it.
 	reqSizeWithoutMetadata := reqSize - req.MetadataSize()
 	if reqSizeWithoutMetadata <= maxSize {
-		partialReq, _ := newPartialReq()
+		partialReq := newPartialWriteRequest(req)
 		partialReq.Timeseries = req.Timeseries
 		return []*WriteRequest{partialReq}
 	}
 
 	// We assume that different timeseries roughly have the same size (no huge outliers)
-	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
-	estimatedPartialReqs := (reqSizeWithoutMetadata / maxSize) + 2
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up),
+	// capped at the number of timeseries.
+	estimatedPartialReqs := min((reqSizeWithoutMetadata/maxSize)+2, len(req.Timeseries))
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split timeseries into partial write requests.
-	nextReq, nextReqSize := newPartialReq()
+	nextReq := newPartialWriteRequest(req)
+	nextReqSize := nextReq.Size()
 	nextReqTimeseriesStart := 0
 	nextReqTimeseriesLength := 0
 
 	for i := 0; i < len(req.Timeseries); i++ {
 		seriesSize := req.Timeseries[i].Size()
+		seriesFieldSize := embeddedMessageFieldSize(seriesSize)
 
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
-		if nextReqSize+seriesSize > maxSize && nextReqTimeseriesLength > 0 {
+		if nextReqSize+seriesFieldSize > maxSize && nextReqTimeseriesLength > 0 {
 			// Finalize the next partial request.
 			nextReq.Timeseries = req.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqSize = newPartialReq()
+			nextReq = newPartialWriteRequest(req)
+			nextReqSize = nextReq.Size()
 			nextReqTimeseriesStart = i
 			nextReqTimeseriesLength = 0
 		}
 
 		// Add the current series to next partial request.
-		nextReqSize += seriesSize + 1 + sovMimir(uint64(seriesSize)) // Math copied from Size().
+		nextReqSize += seriesFieldSize
 		nextReqTimeseriesLength++
 	}
 
@@ -197,55 +193,48 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 		return nil
 	}
 
-	newPartialReq := func() (*WriteRequest, int) {
-		r := &WriteRequest{
-			Source:                          req.Source,
-			SkipLabelValidation:             req.SkipLabelValidation,
-			skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
-			skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
-			skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
-		}
-		return r, r.Size()
-	}
-
 	// The partial requests returned by this function will not contain any Timeseries,
 	// so we first compute the request size without it.
 	reqSizeWithoutTimeseries := reqSize - req.TimeseriesSize()
 	if reqSizeWithoutTimeseries <= maxSize {
-		partialReq, _ := newPartialReq()
+		partialReq := newPartialWriteRequest(req)
 		partialReq.Metadata = req.Metadata
 		return []*WriteRequest{partialReq}
 	}
 
 	// We assume that different metadata roughly have the same size (no huge outliers)
-	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up).
-	estimatedPartialReqs := (reqSizeWithoutTimeseries / maxSize) + 2
+	// so we preallocate the returned slice just adding 1 extra item (+2 because a +1 is to round up),
+	// capped at the number of metadata entries.
+	estimatedPartialReqs := min((reqSizeWithoutTimeseries/maxSize)+2, len(req.Metadata))
 	partialReqs := make([]*WriteRequest, 0, estimatedPartialReqs)
 
 	// Split metadata into partial write requests.
-	nextReq, nextReqSize := newPartialReq()
+	nextReq := newPartialWriteRequest(req)
+	nextReqSize := nextReq.Size()
 	nextReqMetadataStart := 0
 	nextReqMetadataLength := 0
 
 	for i := 0; i < len(req.Metadata); i++ {
 		metadataSize := req.Metadata[i].Size()
+		metadataFieldSize := embeddedMessageFieldSize(metadataSize)
 
 		// Check if the next partial request is full (or close to be full), and so it's time to finalize it and create a new one.
 		// If the next partial request doesn't have any metadata yet, we add the metadata anyway, in order to avoid an infinite loop
 		// if a single metadata is bigger than the limit.
-		if nextReqSize+metadataSize > maxSize && nextReqMetadataLength > 0 {
+		if nextReqSize+metadataFieldSize > maxSize && nextReqMetadataLength > 0 {
 			// Finalize the next partial request.
 			nextReq.Metadata = req.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
 			partialReqs = append(partialReqs, nextReq)
 
 			// Initialize a new partial request.
-			nextReq, nextReqSize = newPartialReq()
+			nextReq = newPartialWriteRequest(req)
+			nextReqSize = nextReq.Size()
 			nextReqMetadataStart = i
 			nextReqMetadataLength = 0
 		}
 
 		// Add the current metadata to next partial request.
-		nextReqSize += metadataSize + 1 + sovMimir(uint64(metadataSize)) // Math copied from Size().
+		nextReqSize += metadataFieldSize
 		nextReqMetadataLength++
 	}
 
@@ -256,6 +245,21 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 	}
 
 	return partialReqs
+}
+
+func newPartialWriteRequest(req *WriteRequest) *WriteRequest {
+	return &WriteRequest{
+		Source:                          req.Source,
+		SkipLabelValidation:             req.SkipLabelValidation,
+		SkipLabelCountValidation:        req.SkipLabelCountValidation,
+		skipUnmarshalingExemplars:       req.skipUnmarshalingExemplars,
+		skipNormalizeMetadataMetricName: req.skipNormalizeMetadataMetricName,
+		skipDeduplicateMetadata:         req.skipDeduplicateMetadata,
+	}
+}
+
+func embeddedMessageFieldSize(messageSize int) int {
+	return 1 + messageSize + sovMimir(uint64(messageSize))
 }
 
 // maxSeriesSizeAfterResymbolization calculates an upper bound for the size of the given TimeSeries, and its referenced symbols.
