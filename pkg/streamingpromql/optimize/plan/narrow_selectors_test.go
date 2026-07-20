@@ -527,14 +527,10 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
-		// Regression test for a bug where an outer exclude-matching binary expression pushed
-		// matchers built from its LHS labels through an inner "on () group_left" join boundary
-		// into the one-side (RHS) selector, which legitimately doesn't carry those labels,
-		// filtering it to empty. This is the shape of the Asserts anomaly-threshold recording
-		// rules ("prediction + prediction * on() group_left threshold_margin"). The inner
-		// "* on () group_left" is correctly left unhinted (empty on() matches everything), but
-		// the outer "+" still receives an empty-exclude hint. See TestNarrowSelectorsOnEmptyGroupLeftBoundary
-		// for the end-to-end result-correctness reproduction.
+		// Regression: the inner "* on () group_left" is correctly left unhinted, but the outer
+		// "+" still gets an empty-exclude hint. Whose matchers must not reach the one-side
+		// selector is enforced at the operator level; see TestNarrowSelectorsOnEmptyGroupLeftBoundary
+		// for the end-to-end result-correctness check.
 		"outer exclude-matching binop over inner on() group_left cross-metric": {
 			expr: `prediction + prediction * on() group_left threshold_margin`,
 			expectedPlan: `
