@@ -108,6 +108,7 @@
 * [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
 * [BUGFIX] Querier: Stop querying a partition that has been inactive for longer than `-querier.query-ingesters-within`, preventing query failures when the partition is still registered but has no available ingesters to serve the queries. #15721
 * [BUGFIX] Query-frontend: Fix `queue_time_seconds` in the query stats log always reporting 0 when a query is cancelled while still waiting in the query-scheduler queue. #16094
+* [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155
 
 ### Mixin
 

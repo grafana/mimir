@@ -690,18 +690,22 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 
 func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) {
 	testCases := map[string]struct {
-		card          parser.VectorMatchCardinality
-		includeLabels []string // VectorMatching.Include: extra labels sourced from the many side
-		leftSeries    []labels.Labels
-		rightSeries   []labels.Labels
-		hints         *Hints
-		outerMatchers types.Matchers
+		card           parser.VectorMatchCardinality
+		matchingLabels []string // VectorMatching.MatchingLabels: labels the sides join on (with On).
+		on             bool     // VectorMatching.On: "on(...)" (true) vs "ignoring(...)"/default (false).
+		includeLabels  []string // VectorMatching.Include: extra labels sourced from the many side.
+		leftSeries     []labels.Labels
+		rightSeries    []labels.Labels
+		hints          *Hints
+		outerMatchers  types.Matchers
 
 		expectedLeftMatchers  types.Matchers
 		expectedRightMatchers types.Matchers
 	}{
 		"group_left with hints: left (many) side receives hint-built matchers": {
-			card: parser.CardManyToOne,
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"},
+			on:             true,
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "pod", "1"),
 				labels.FromStrings("env", "staging", "pod", "1"),
@@ -720,7 +724,9 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			},
 		},
 		"group_right with hints: right (many) side receives hint-built matchers": {
-			card: parser.CardOneToMany,
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{"env"},
+			on:             true,
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
 			},
@@ -738,7 +744,9 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			},
 		},
 		"group_left without hints: left (many) side receives the same outer matchers as one side": {
-			card: parser.CardManyToOne,
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"},
+			on:             true,
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "pod", "1"),
 			},
@@ -752,7 +760,9 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			expectedRightMatchers: nil,
 		},
 		"group_right without hints: right (many) side receives the same outer matchers as one side": {
-			card: parser.CardOneToMany,
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{"env"},
+			on:             true,
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
 			},
@@ -771,8 +781,10 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 		// and were discarded instead of being passed to the many side when hints were set.
 
 		"group_left with hints and include-label outer matchers: include-label matchers stripped from one side and merged onto many side": {
-			card:          parser.CardManyToOne,
-			includeLabels: []string{"region"}, // region comes from the many (left) side
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"},
+			on:             true,
+			includeLabels:  []string{"region"}, // region comes from the many (left) side
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "region", "us"),
 				labels.FromStrings("env", "prod", "region", "eu"),
@@ -796,8 +808,10 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			},
 		},
 		"group_right with hints and include-label outer matchers: include-label matchers stripped from one side and merged onto many side": {
-			card:          parser.CardOneToMany,
-			includeLabels: []string{"region"}, // region comes from the many (right) side
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{"env"},
+			on:             true,
+			includeLabels:  []string{"region"}, // region comes from the many (right) side
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
 			},
@@ -821,8 +835,10 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			},
 		},
 		"group_left without hints and include-label outer matchers: include-label matchers still stripped from one side": {
-			card:          parser.CardManyToOne,
-			includeLabels: []string{"region"},
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"},
+			on:             true,
+			includeLabels:  []string{"region"},
 			leftSeries: []labels.Labels{
 				labels.FromStrings("env", "prod", "region", "us"),
 			},
@@ -844,6 +860,86 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 				{Type: labels.MatchEqual, Name: "region", Value: "us"},
 			},
 		},
+
+		// Regression: outer matchers for labels the one side does not join on (on() with no
+		// matching labels, or on(...) matchers outside the matching set) must not reach the
+		// one-side selector, else it is filtered to empty.
+		// Shape: "prediction + prediction * on() group_left threshold_margin".
+
+		"group_left with on() (empty matching labels): non-matching outer matchers routed to many side, one side receives none": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{}, // on(): one side joins on nothing.
+			on:             true,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "service", "checkout"),
+				labels.FromStrings("env", "prod", "service", "cart"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: no "service" label.
+			},
+			hints: nil,
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+				{Type: labels.MatchRegexp, Name: "job", Value: "asserts/latency"},
+			},
+			// one side (right) joins on nothing, so it must receive no outer matchers.
+			expectedRightMatchers: nil,
+			// many side (left) still gets the outer matchers to narrow it.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+				{Type: labels.MatchRegexp, Name: "job", Value: "asserts/latency"},
+			},
+		},
+		"group_right with on() (empty matching labels): non-matching outer matchers routed to many side, one side receives none": {
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{}, // on(): one side joins on nothing.
+			on:             true,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: no "service" label.
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "service", "checkout"),
+				labels.FromStrings("env", "prod", "service", "cart"),
+			},
+			hints: nil,
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+				{Type: labels.MatchRegexp, Name: "job", Value: "asserts/latency"},
+			},
+			// one side (left) joins on nothing, so it must receive no outer matchers.
+			expectedLeftMatchers: nil,
+			// many side (right) still gets the outer matchers to narrow it.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+				{Type: labels.MatchRegexp, Name: "job", Value: "asserts/latency"},
+			},
+		},
+		"group_left with on(env) and mixed outer matchers: matching-label matcher kept for one side, non-matching routed to many side": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"}, // join on "env"; "service" is not a matching label.
+			on:             true,
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "service", "checkout"),
+				labels.FromStrings("env", "prod", "service", "cart"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: has "env", no "service".
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+			},
+			// one side (right) gets only the matching-label ("env") matcher; "service" is routed away.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+			},
+			// many side (left) gets the hint-built env matcher merged with the routed "service" matcher.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -856,7 +952,7 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			o, err := NewGroupedVectorVectorBinaryOperation(
 				left,
 				right,
-				parser.VectorMatching{Card: testCase.card, MatchingLabels: []string{"env"}, On: true, Include: testCase.includeLabels},
+				parser.VectorMatching{Card: testCase.card, MatchingLabels: testCase.matchingLabels, On: testCase.on, Include: testCase.includeLabels},
 				parser.ADD,
 				false,
 				memoryConsumptionTracker,
