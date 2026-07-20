@@ -2722,22 +2722,11 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		assert.Equal(t, startOffset-1, lastConsumedOffset)
 	})
 
-	t.Run("clamps retention-based offset to partition start when timestamp lookup resolves ahead of available records", func(t *testing.T) {
-		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
-		consumer := &c
-
-		// Produce records so the partition has available records at offsets [0, recordCount).
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		const recordCount = 5
-		for i := 0; i < recordCount; i++ {
-			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
-		}
-
-		// Simulate a broker whose timestamp index does not yet reflect the newest records: a
-		// timestamp-based lookup (Timestamp > 0) reports "no offset after the requested time"
-		// (offset -1), which kadm.ListOffsetsAfterMilli resolves to the partition end offset.
-		// Start (Timestamp == -2) and end (Timestamp == -1) lookups are left untouched.
+	// interceptListOffsetsByTimestamp intercepts timestamp-based ListOffsets lookups (Timestamp > 0)
+	// and replies with the given offset/timestamp, letting the reader observe a specific broker
+	// response. Start (Timestamp == -2) and end (Timestamp == -1) lookups are passed through so the
+	// fake cluster answers them from the real partition state.
+	interceptListOffsetsByTimestamp := func(cluster *kfake.Cluster, respOffset, respTimestamp int64) {
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			req := kreq.(*kmsg.ListOffsetsRequest)
@@ -2750,12 +2739,32 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 				Topic: topicName,
 				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
 					Partition: partitionID,
-					Offset:    -1,
-					Timestamp: -1,
+					Offset:    respOffset,
+					Timestamp: respTimestamp,
 				}},
 			}}
 			return res, nil, true
 		})
+	}
+
+	// When the timestamp lookup matches no record it resolves to the partition end offset, which can
+	// sit ahead of records still available in the partition. The start offset must be clamped to the
+	// partition start so those records are not skipped.
+	t.Run("clamps to partition start when timestamp lookup matches no record and resolves ahead of available records", func(t *testing.T) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		consumer := &c
+
+		// Produce records so the partition has available records at offsets [0, recordCount).
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		const recordCount = 5
+		for i := 0; i < recordCount; i++ {
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Offset -1 with no error makes kadm.ListOffsetsAfterMilli re-request and resolve to the
+		// partition end offset, with a negative timestamp signalling "no record matched".
+		interceptListOffsetsByTimestamp(cluster, -1, -1)
 
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 			withConsumeFromPositionAtStartup(consumeFromLastOffset),
@@ -2770,6 +2779,40 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		// skip every available record. It must instead start at the partition start (0).
 		assert.Equal(t, int64(0), startOffset)
 		assert.Equal(t, int64(-1), lastConsumedOffset)
+	})
+
+	// When the timestamp lookup matches a real record, the resolved offset correctly honors the max
+	// replay period (older records are intentionally skipped) and must not be clamped to the
+	// partition start, even though it is ahead of it.
+	t.Run("does not clamp when timestamp lookup matches a record ahead of partition start", func(t *testing.T) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		consumer := &c
+
+		// Produce records at offsets [0, recordCount); partition start is 0.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		const recordCount = 5
+		for i := 0; i < recordCount; i++ {
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Simulate the timestamp lookup matching a real record at offset 3 (a non-negative timestamp
+		// marks it as a genuine match, so kadm does not re-request the end offset).
+		const matchedOffset = int64(3)
+		interceptListOffsetsByTimestamp(cluster, matchedOffset, time.Now().Add(-30*time.Minute).UnixMilli())
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+		require.NoError(t, err)
+		// The matched offset honors the max replay period and must be preserved, not clamped to 0.
+		assert.Equal(t, matchedOffset, startOffset)
+		assert.Equal(t, matchedOffset-1, lastConsumedOffset)
 	})
 
 	t.Run("errors when retention period is zero", func(t *testing.T) {
