@@ -90,8 +90,9 @@ block-builders consume those clusters, build the compartment's blocks, and uploa
 - **A job is all-or-nothing across its clusters.** The block-builder reads every cluster's range
   together, and if any read fails the whole job is retried, so committed offsets never advance past
   unread data. One unhealthy write compartment therefore blocks the compartment's block building until
-  it recovers — acceptable because block building is delayed (store-gateways don't need a block for
-  hours) and no worse than a single Kafka cluster being down without compartments.
+  it recovers — no worse than a single Kafka cluster being down without compartments. Block building
+  runs behind live querying rather than on the ingest critical path, so it can absorb some delay,
+  bounded by how long ingesters keep serving the not-yet-built data.
 - **Backlog reconstruction on restart.** As in non-compartments mode, on restart the scheduler rebuilds
   the backlog from what already sits in Kafka — probing historical offsets and replaying them by
   timestamp to reproduce the job boundaries it would have cut live. The compartment difference is that
