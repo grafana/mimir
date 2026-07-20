@@ -527,6 +527,26 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
+		// Regression test for a bug where an outer exclude-matching binary expression pushed
+		// matchers built from its LHS labels through an inner "on () group_left" join boundary
+		// into the one-side (RHS) selector, which legitimately doesn't carry those labels,
+		// filtering it to empty. This is the shape of the Asserts anomaly-threshold recording
+		// rules ("prediction + prediction * on() group_left threshold_margin"). The inner
+		// "* on () group_left" is correctly left unhinted (empty on() matches everything), but
+		// the outer "+" still receives an empty-exclude hint. See TestNarrowSelectorsOnEmptyGroupLeftBoundary
+		// for the end-to-end result-correctness reproduction.
+		"outer exclude-matching binop over inner on() group_left cross-metric": {
+			expr: `prediction + prediction * on() group_left threshold_margin`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS, hints exclude ()
+					- LHS: VectorSelector: {__name__="prediction"}
+					- RHS: BinaryExpression: LHS * on () group_left () RHS
+						- LHS: VectorSelector: {__name__="prediction"}
+						- RHS: VectorSelector: {__name__="threshold_margin"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"binary expression with on (synthesized_label) gets no hints: synthesized label cannot narrow storage selectors": {
 			// "foo" is produced by label_replace on the LHS; it does not exist on the raw
 			// series in storage. filterLabels removes it from the MatchingLabels list, leaving

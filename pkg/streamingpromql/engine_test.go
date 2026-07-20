@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -5977,4 +5978,88 @@ type dummyMaterializer struct{}
 
 func (d dummyMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	panic("not implemented")
+}
+
+// TestNarrowSelectorsOnEmptyGroupLeftBoundary is an end-to-end regression test for a bug in the
+// narrow-binary-selectors optimization pass (enabled via
+// -querier.mimir-query-engine.enable-narrow-binary-selectors).
+//
+// The Asserts anomaly-threshold recording rules have the shape:
+//
+//	prediction + prediction * on() group_left threshold_margin
+//
+// where "threshold_margin" is a low-cardinality cross-metric series that legitimately does NOT
+// share the many-side's labels (which is exactly why the rule joins with "on()"). With narrow
+// selectors enabled, the outer default-matching "+" is given an empty-exclude hint and, at query
+// time, builds matchers from all of the LHS ("prediction") labels. Those matchers are pushed
+// through the inner "on() group_left" join boundary into the one-side ("threshold_margin")
+// selector, which doesn't carry those labels, filtering it to empty and making the whole
+// expression silently evaluate to empty.
+//
+// This test loads data where the one-side has a disjoint label set, then asserts that the Mimir
+// engine (with narrow selectors enabled) produces the same result as both the Mimir engine with
+// the pass disabled and the Prometheus reference engine. It fails while the bug is present.
+func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
+	// "prediction" carries rich labels; "threshold_margin" is a single cross-metric series with a
+	// disjoint label set. This is what forces the rule to use "on() group_left".
+	data := `
+		load 1m
+			prediction{asserts_source="model-builder", job="asserts/latency", service="checkout"} 10+0x5
+			prediction{asserts_source="model-builder", job="asserts/latency", service="cart"}     20+0x5
+			threshold_margin 0.25+0x5
+	`
+
+	// The exact shape of the failing Asserts anomaly-threshold rules, plus the inner subexpression
+	// on its own (which is correctly left unhinted and must keep working).
+	testCases := map[string]string{
+		"inner on() group_left only":                    `prediction * on() group_left threshold_margin`,
+		"outer binop over inner on() group_left (rule)": `prediction + prediction * on() group_left threshold_margin`,
+	}
+
+	store := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	ctx := context.Background()
+	queryTime := timestamp.Time(0).Add(5 * time.Minute)
+
+	// newMimirEngine builds a Mimir engine whose planner registers only the narrow-selectors
+	// optimization pass (when enabled), so we isolate this pass from all other optimizations.
+	newMimirEngine := func(t *testing.T, narrowSelectorsEnabled bool) promql.QueryEngine {
+		opts := NewTestEngineOpts()
+		planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		if narrowSelectorsEnabled {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+		engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		return engine
+	}
+
+	exec := func(t *testing.T, engine promql.QueryEngine, expr string) *promql.Result {
+		q, err := engine.NewInstantQuery(ctx, store, nil, expr, queryTime)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		return res
+	}
+
+	prometheusEngine := promql.NewEngine(NewTestEngineOpts().CommonOpts)
+
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Source of truth: the Prometheus reference engine, which has no such optimization.
+			expected := exec(t, prometheusEngine, expr)
+			require.NotEmpty(t, expected.String(), "test setup error: reference result should not be empty")
+
+			// Sanity check: the Mimir engine WITHOUT the pass matches the reference.
+			withoutPass := exec(t, newMimirEngine(t, false), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withoutPass, false)
+
+			// The bug: the Mimir engine WITH the narrow-selectors pass drops all series.
+			withPass := exec(t, newMimirEngine(t, true), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withPass, false)
+		})
+	}
 }
