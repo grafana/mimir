@@ -781,7 +781,7 @@ func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (star
 	fetchOffset := func(ctx context.Context) (offset, lastConsumedOffset int64, err error) {
 		if r.kafkaCfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
 			ts := time.UnixMilli(r.kafkaCfg.ConsumeFromTimestampAtStartup)
-			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
+			offset, _, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
 			if err != nil {
 				return 0, -1, err
 			}
@@ -808,25 +808,28 @@ func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (star
 			}
 			// No file or file offset stale: try maximum replay period, then partition start.
 			ts := time.Now().Add(-r.kafkaCfg.MaxReplayPeriod)
-			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
+			offset, matchedRecord, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
 			if err != nil {
 				return 0, -1, err
 			}
 			if exists {
-				// The offset-for-timestamp lookup returns the partition end offset when no record has a
-				// timestamp at or after the requested time (see kadm.ListOffsetsAfterMilli). That can happen
+				// When no record has a timestamp at or after the requested time, the offset-for-timestamp
+				// lookup resolves to the partition end offset (see kadm.ListOffsetsAfterMilli). That happens
 				// even while records are available in the partition: on a freshly assigned partition whose
-				// newest records are not yet reflected in the broker's timestamp-based offset lookup, the
-				// returned offset can sit ahead of records that are still present, and replaying from it would
-				// skip them. The timestamp is only a lower bound to cap how far back we replay, so clamp the
-				// start offset to the partition start to guarantee we never skip available records.
-				partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)
-				if err != nil {
-					return 0, -1, err
-				}
-				if startExists && partitionStart < offset {
-					level.Warn(r.logger).Log("msg", "clamping max replay period start offset to partition start to avoid skipping available records", "resolved_offset", offset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
-					offset = partitionStart
+				// newest records are not yet reflected in the broker's timestamp-based offset lookup, the end
+				// offset can sit ahead of records that are still present, and replaying from it would skip them
+				// permanently. In that case clamp the start offset to the partition start so available records
+				// are not skipped. When a record did match the timestamp, the resolved offset correctly honors
+				// MaxReplayPeriod (older data is intentionally skipped) and is left untouched.
+				if !matchedRecord {
+					partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)
+					if err != nil {
+						return 0, -1, err
+					}
+					if startExists && partitionStart < offset {
+						level.Warn(r.logger).Log("msg", "max replay period timestamp lookup matched no records; clamping start offset to partition start to avoid skipping available records", "resolved_offset", offset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
+						offset = partitionStart
+					}
 				}
 				lastConsumedOffset = offset - 1
 				level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, replaying from max period", "max_replay_period", r.kafkaCfg.MaxReplayPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
@@ -917,24 +920,29 @@ func (r *SingleClusterPartitionReader) fetchPartitionStartOffset(ctx context.Con
 }
 
 // fetchFirstOffsetAfterTime returns the first offset at or after the requested timestamp.
-func (r *SingleClusterPartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo.Client, ts time.Time) (offset int64, exists bool, _ error) {
+//
+// matchedRecord reports whether a record with a timestamp at or after ts was actually found.
+// When no such record exists, kadm.ListOffsetsAfterMilli resolves the offset to the partition
+// end offset and the returned timestamp is negative; in that case matchedRecord is false and the
+// returned offset is the partition end offset at lookup time.
+func (r *SingleClusterPartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo.Client, ts time.Time) (offset int64, matchedRecord bool, exists bool, _ error) {
 	offsets, err := kadm.NewClient(cl).ListOffsetsAfterMilli(ctx, ts.UnixMilli(), r.kafkaCfg.Topic)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
-		return 0, false, nil
+		return 0, false, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("unable to list topic offsets: %w", err)
+		return 0, false, false, fmt.Errorf("unable to list topic offsets: %w", err)
 	}
 
 	offsetRes, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
 	if !exists {
-		return 0, false, nil
+		return 0, false, false, nil
 	}
 	if offsetRes.Err != nil {
-		return 0, false, offsetRes.Err
+		return 0, false, false, offsetRes.Err
 	}
 
-	return offsetRes.Offset, true, nil
+	return offsetRes.Offset, offsetRes.Timestamp >= 0, true, nil
 }
 
 // WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
