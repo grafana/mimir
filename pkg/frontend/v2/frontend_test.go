@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -1600,46 +1601,50 @@ func TestFrontendStreamingResponse(t *testing.T) {
 // httpResponse channel still empty and returned: nothing will ever read the response or its body pipe,
 // so the handler must not stay blocked writing body chunks once the request context is done.
 func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
-	const userID = "test"
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
 
-	f, _ := setupFrontend(t, nil, nil)
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
 
-	ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
-	freq := &frontendRequest{
-		queryID:      117,
-		userID:       userID,
-		ctx:          ctx,
-		httpResponse: make(chan queryResultWithBody, 1),
-	}
-	f.requests.put(freq)
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      117,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
 
-	// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
-	cause := cancellation.NewErrorf("request cancelled")
-	cancel(cause)
+		// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
 
-	msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
-	stream := &mockQueryResultStreamServer{
-		ctx: user.InjectOrgID(t.Context(), userID),
-		msgs: []*frontendv2pb.QueryResultStreamRequest{
-			metadataRequest(msg, http.StatusOK, nil),
-			bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
-		},
-	}
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
 
-	streamReturned := make(chan error, 1)
-	go func() {
-		streamReturned <- f.QueryResultStream(stream)
-	}()
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
 
-	select {
-	case err := <-streamReturned:
-		require.ErrorIs(t, err, cause)
-	case <-time.After(time.Second):
-		// Unblock the handler goroutine so it doesn't also trip the leak detector.
-		res := <-freq.httpResponse
-		_ = res.bodyStream.Close()
-		t.Fatal("QueryResultStream is still blocked writing the body of a response nobody will read")
-	}
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			res := <-freq.httpResponse
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a response nobody will read")
+		}
+	})
 }
 
 // TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak reproduces the case where
@@ -1647,47 +1652,51 @@ func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
 // but discards it without ever reading its body: cancelling the request context alone (which the
 // deferred cleanup does) must be enough to unblock the handler writing body chunks to the pipe.
 func TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak(t *testing.T) {
-	const userID = "test"
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
 
-	f, _ := setupFrontend(t, nil, nil)
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
 
-	ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
-	freq := &frontendRequest{
-		queryID:      118,
-		userID:       userID,
-		ctx:          ctx,
-		httpResponse: make(chan queryResultWithBody, 1),
-	}
-	f.requests.put(freq)
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      118,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
 
-	msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
-	stream := &mockQueryResultStreamServer{
-		ctx: user.InjectOrgID(t.Context(), userID),
-		msgs: []*frontendv2pb.QueryResultStreamRequest{
-			metadataRequest(msg, http.StatusOK, nil),
-			bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
-		},
-	}
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
 
-	streamReturned := make(chan error, 1)
-	go func() {
-		streamReturned <- f.QueryResultStream(stream)
-	}()
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
 
-	// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
-	// body, and then its deferred cleanup cancels the request context.
-	res := <-freq.httpResponse
-	cause := cancellation.NewErrorf("request cancelled")
-	cancel(cause)
+		// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
+		// body, and then its deferred cleanup cancels the request context.
+		res := <-freq.httpResponse
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
 
-	select {
-	case err := <-streamReturned:
-		require.ErrorIs(t, err, cause)
-	case <-time.After(time.Second):
-		// Unblock the handler goroutine so it doesn't also trip the leak detector.
-		_ = res.bodyStream.Close()
-		t.Fatal("QueryResultStream is still blocked writing the body of a discarded response")
-	}
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a discarded response")
+		}
+	})
 }
 
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
