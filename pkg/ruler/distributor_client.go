@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -15,13 +16,16 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcencoding/snappy"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -63,6 +67,9 @@ func (c *DistributorConfig) Validate() error {
 	if err := c.GRPCClientConfig.Validate(); err != nil {
 		return fmt.Errorf("ruler's distributor client gRPC settings: %w", err)
 	}
+	if _, err := maxUncompressedPayloadSize(c.GRPCClientConfig.MaxSendMsgSize, c.GRPCClientConfig.GRPCCompression); err != nil {
+		return fmt.Errorf("ruler's distributor client gRPC settings: %w", err)
+	}
 
 	if c.Address == "" {
 		return nil
@@ -95,10 +102,14 @@ type DistributorGRPCClient struct {
 	logger                   log.Logger
 	cfg                      DistributorConfig
 	invalidClusterValidation *prometheus.CounterVec
+	requestsPerWriteRequest  prometheus.Histogram
 
 	mu     sync.RWMutex
 	conn   *grpc.ClientConn
 	client distributorpb.DistributorClient
+	// maxWriteRequestSize is the largest uncompressed protobuf payload guaranteed
+	// to fit within the configured gRPC send limit after compression.
+	maxWriteRequestSize int
 }
 
 func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, logger log.Logger) (*DistributorGRPCClient, error) {
@@ -106,6 +117,11 @@ func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, 
 		logger:                   logger,
 		cfg:                      cfg,
 		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-distributor", util.GRPCProtocol),
+		requestsPerWriteRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ruler_remote_distributor_requests_per_write_request",
+			Help:    "The number of remote distributor requests a single ruler write request has been split into.",
+			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
+		}),
 	}
 	c.Service = services.NewIdleService(c.start, c.stop).WithName("ruler distributor client")
 	return c, nil
@@ -113,6 +129,10 @@ func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, 
 
 func (c *DistributorGRPCClient) start(context.Context) error {
 	if err := c.cfg.Validate(); err != nil {
+		return err
+	}
+	maxWriteRequestSize, err := maxUncompressedPayloadSize(c.cfg.GRPCClientConfig.MaxSendMsgSize, c.cfg.GRPCClientConfig.GRPCCompression)
+	if err != nil {
 		return err
 	}
 
@@ -138,6 +158,7 @@ func (c *DistributorGRPCClient) start(context.Context) error {
 	c.mu.Lock()
 	c.conn = conn
 	c.client = distributorpb.NewDistributorClient(conn)
+	c.maxWriteRequestSize = maxWriteRequestSize
 	c.mu.Unlock()
 
 	return nil
@@ -162,11 +183,47 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 
 	c.mu.RLock()
 	client := c.client
+	maxWriteRequestSize := c.maxWriteRequestSize
 	c.mu.RUnlock()
 	if client == nil {
 		return nil, errDistributorClientNotRunning
 	}
 
+	requests := splitWriteRequest(req, maxWriteRequestSize)
+	c.requestsPerWriteRequest.Observe(float64(len(requests)))
+
+	var resp *mimirpb.WriteResponse
+	for idx, request := range requests {
+		var err error
+		resp, err = c.pushWithRetries(ctx, client, request, idx+1, len(requests))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return resp, nil
+}
+
+func splitWriteRequest(req *mimirpb.WriteRequest, maxSize int) []*mimirpb.WriteRequest {
+	// The ruler currently creates Remote Write 1.0 requests. Preserve an RW2
+	// request instead of partially splitting an unsupported shape.
+	if maxSize <= 0 || len(req.TimeseriesRW2) > 0 {
+		return []*mimirpb.WriteRequest{req}
+	}
+
+	reqSize := req.Size()
+	if reqSize <= maxSize {
+		return []*mimirpb.WriteRequest{req}
+	}
+
+	requests := mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize)
+	if len(requests) == 0 {
+		return []*mimirpb.WriteRequest{req}
+	}
+	return requests
+}
+
+func (c *DistributorGRPCClient) pushWithRetries(ctx context.Context, client distributorpb.DistributorClient, req *mimirpb.WriteRequest, requestNumber, totalRequests int) (*mimirpb.WriteResponse, error) {
 	pushAttempt := func() (*mimirpb.WriteResponse, error) {
 		attemptCtx, cancel := context.WithTimeout(ctx, c.cfg.RemoteTimeout)
 		defer cancel()
@@ -184,7 +241,7 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 		}
 
 		retryable := isRetryableDistributorPushError(err)
-		level.Warn(c.logger).Log("msg", "failed to write to remote distributor", "err", err, "retryable", retryable, "attempt", retry.NumRetries()+1, "max_attempts", maxAttempts)
+		level.Warn(c.logger).Log("msg", "failed to write to remote distributor", "err", err, "retryable", retryable, "attempt", retry.NumRetries()+1, "max_attempts", maxAttempts, "request", requestNumber, "requests", totalRequests)
 		if !retryable {
 			return nil, err
 		}
@@ -226,10 +283,75 @@ func (c *DistributorGRPCClient) Close() error {
 	conn := c.conn
 	c.conn = nil
 	c.client = nil
+	c.maxWriteRequestSize = 0
 	c.mu.Unlock()
 
 	if conn == nil {
 		return nil
 	}
 	return conn.Close()
+}
+
+const (
+	// The common bound covers the gzip header, trailer, and final empty DEFLATE
+	// block, plus the per-block overhead of gzip, framed Snappy, and framed S2.
+	// Go's default DEFLATE writer can fill a block after 1<<14 literal tokens,
+	// which is the smallest block size among these compressors.
+	compressedPayloadFixedOverhead    = 23
+	compressedPayloadBlockSize        = 1 << 14
+	compressedPayloadMaxBlockOverhead = 8
+)
+
+func maxUncompressedPayloadSize(maxSendMsgSize int, compression string) (int, error) {
+	switch compression {
+	case "":
+	case grpcgzip.Name, snappy.Name, s2.Name:
+	default:
+		return 0, fmt.Errorf("compression type %q has no payload-size bound", compression)
+	}
+	if maxSendMsgSize <= 0 {
+		return 0, nil
+	}
+	if compression == "" {
+		return maxSendMsgSize, nil
+	}
+
+	low, high := 0, maxSendMsgSize
+	for low < high {
+		mid := low + (high-low)/2
+		if mid == low {
+			mid++
+		}
+
+		if compressedPayloadFits(mid, maxSendMsgSize) {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+
+	return low, nil
+}
+
+func compressedPayloadFits(uncompressedSize, maxCompressedSize int) bool {
+	upperBound, ok := compressedPayloadSizeUpperBound(uncompressedSize)
+	return ok && upperBound <= maxCompressedSize
+}
+
+func compressedPayloadSizeUpperBound(uncompressedSize int) (int, bool) {
+	if uncompressedSize < 0 || uncompressedSize > math.MaxInt-compressedPayloadFixedOverhead {
+		return 0, false
+	}
+
+	blocks := uncompressedSize / compressedPayloadBlockSize
+	if uncompressedSize%compressedPayloadBlockSize != 0 {
+		blocks++
+	}
+
+	remaining := math.MaxInt - uncompressedSize - compressedPayloadFixedOverhead
+	if blocks > remaining/compressedPayloadMaxBlockOverhead {
+		return 0, false
+	}
+
+	return uncompressedSize + compressedPayloadFixedOverhead + blocks*compressedPayloadMaxBlockOverhead, true
 }

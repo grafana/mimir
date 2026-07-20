@@ -57,6 +57,14 @@ To push rule-result series to remote distributors over native gRPC instead, set 
 Most deployments only need to set this address.
 `ruler.distributor.remote_timeout` configures the per-request timeout, and `ruler.distributor.grpc_client_config` provides advanced standard gRPC client tuning such as TLS, message sizes, compression, retries, and cluster validation.
 
+The ruler splits remote writes along series boundaries so that they fit within `ruler.distributor.grpc_client_config.max_send_msg_size`.
+When compression is enabled, the ruler reserves a conservative amount of space for compression framing, so it can split a write slightly below the configured transport limit.
+It sends the resulting requests sequentially, with independent timeouts and retries; each request also consumes a separate gRPC client rate-limit token when rate limiting is enabled.
+Requests accepted before a later request fails aren't rolled back.
+A single series larger than the effective split limit can't be split and may still fail with a gRPC `ResourceExhausted` error.
+Configure the distributor's `server.grpc_server_max_recv_msg_size` to be at least as large as the ruler client's maximum send size.
+The `cortex_ruler_remote_distributor_requests_per_write_request` histogram reports how many remote requests each ruler write produced.
+
 In Kubernetes deployments, point `ruler.distributor.address` at the distributor headless service on the gRPC port when you want gRPC client-side load balancing.
 A normal ClusterIP service can work for connectivity, but it doesn't provide the intended per-RPC client-side balancing across distributor endpoints.
 
