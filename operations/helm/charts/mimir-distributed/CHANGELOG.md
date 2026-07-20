@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Ruler: make the memory ballast size configurable via `ruler.memBallastSizeBytes` and allow disabling it by setting the value to `0`. The default stays at 1GiB. A ballast larger than the ruler's `GOMEMLIMIT` causes permanent GC thrashing, so deployments setting a lower `GOMEMLIMIT` need to lower or disable the ballast. #16159
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
