@@ -648,6 +648,14 @@
 * [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
 
+## 3.0.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update OpenTelemetry libraries to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15558 #15559
+* [BUGFIX] Update go.mongodb.org/mongo-driver to address [CVE-2026-2303](https://nvd.nist.gov/vuln/detail/CVE-2026-2303) #15746
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16077
+
 ## 3.0.7
 
 ### Grafana Mimir
