@@ -81,7 +81,7 @@ Each read compartment runs its own block-builder scheduler and pool of block-bui
 monitors the compartment's topic across every write compartment's Kafka cluster and cuts jobs; the
 block-builders consume those clusters, build the compartment's blocks, and upload them to its bucket.
 
-- **One job spans every write compartment.** A job is scoped to one partition but carries a separate
+- **One job can span every write compartment.** A job is scoped to one partition but carries a separate
   offset range per cluster, built into a single block with the ranges merged in record-timestamp order.
   Scoping a job to a single cluster instead would produce a separate block per cluster for the same
   window, multiplying blocks and chunks by roughly the number of write compartments until compaction
