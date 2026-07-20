@@ -813,6 +813,21 @@ func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (star
 				return 0, -1, err
 			}
 			if exists {
+				// The offset-for-timestamp lookup returns the partition end offset when no record has a
+				// timestamp at or after the requested time (see kadm.ListOffsetsAfterMilli). That can happen
+				// even while records are available in the partition: on a freshly assigned partition whose
+				// newest records are not yet reflected in the broker's timestamp-based offset lookup, the
+				// returned offset can sit ahead of records that are still present, and replaying from it would
+				// skip them. The timestamp is only a lower bound to cap how far back we replay, so clamp the
+				// start offset to the partition start to guarantee we never skip available records.
+				partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)
+				if err != nil {
+					return 0, -1, err
+				}
+				if startExists && partitionStart < offset {
+					level.Warn(r.logger).Log("msg", "clamping max replay period start offset to partition start to avoid skipping available records", "resolved_offset", offset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
+					offset = partitionStart
+				}
 				lastConsumedOffset = offset - 1
 				level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, replaying from max period", "max_replay_period", r.kafkaCfg.MaxReplayPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 				return offset, lastConsumedOffset, nil

@@ -2722,6 +2722,56 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		assert.Equal(t, startOffset-1, lastConsumedOffset)
 	})
 
+	t.Run("clamps retention-based offset to partition start when timestamp lookup resolves ahead of available records", func(t *testing.T) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		consumer := &c
+
+		// Produce records so the partition has available records at offsets [0, recordCount).
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		const recordCount = 5
+		for i := 0; i < recordCount; i++ {
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Simulate a broker whose timestamp index does not yet reflect the newest records: a
+		// timestamp-based lookup (Timestamp > 0) reports "no offset after the requested time"
+		// (offset -1), which kadm.ListOffsetsAfterMilli resolves to the partition end offset.
+		// Start (Timestamp == -2) and end (Timestamp == -1) lookups are left untouched.
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			if len(req.Topics) == 0 || len(req.Topics[0].Partitions) == 0 || req.Topics[0].Partitions[0].Timestamp <= 0 {
+				return nil, nil, false
+			}
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{{
+				Topic: topicName,
+				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
+					Partition: partitionID,
+					Offset:    -1,
+					Timestamp: -1,
+				}},
+			}}
+			return res, nil, true
+		})
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+		require.NoError(t, err)
+		// Without the clamp the reader would start at the partition end offset (recordCount) and
+		// skip every available record. It must instead start at the partition start (0).
+		assert.Equal(t, int64(0), startOffset)
+		assert.Equal(t, int64(-1), lastConsumedOffset)
+	})
+
 	t.Run("errors when retention period is zero", func(t *testing.T) {
 		clusterAddr, consumer, cleanup := setupTest(t)
 		defer cleanup()
