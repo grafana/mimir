@@ -99,7 +99,7 @@ else
     gh release create "${LAST_RELEASE_TAG}" \
       --draft \
       --prerelease="${PRERELEASE}" \
-      --title "${}" \
+      --title "${LAST_RELEASE_VERSION}" \
       --notes-file "${RELEASE_NOTES_FILE}" > /dev/stderr
   fi
 
