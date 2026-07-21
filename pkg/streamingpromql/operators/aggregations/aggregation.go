@@ -91,7 +91,10 @@ var groupPointerSlicePool = types.NewLimitingBucketedPool(
 	}),
 	limiter.GroupPointerSlices,
 	groupPointerSize,
-	true, nil, nil,
+	true,
+	types.EnableManglingReturnedSlices,
+	nil,
+	nil,
 )
 
 func (a *Aggregation) ExpressionPosition() posrange.PositionRange {

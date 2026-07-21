@@ -2583,17 +2583,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "enable_prune_toggles",
-              "required": false,
-              "desc": "Enable pruning query expressions that are toggled off with constants.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-prune-toggles",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
               "desc": "Enable common subexpression elimination when evaluating queries.",
@@ -7197,7 +7186,7 @@
           "kind": "field",
           "name": "compactor_max_lookback",
           "required": false,
-          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
+          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than the TSDB block range period (default: 2h). A value of 0s means that all blocks are considered regardless of their upload time.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.max-lookback",
@@ -9876,6 +9865,17 @@
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ingester_partition_metric_label_enabled",
+          "required": false,
+          "desc": "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -12534,7 +12534,7 @@
               "kind": "field",
               "name": "retention_period",
               "required": false,
-              "desc": "TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.",
+              "desc": "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.",
               "fieldValue": null,
               "fieldDefaultValue": 46800000000000,
               "fieldFlag": "blocks-storage.tsdb.retention-period",
@@ -13759,6 +13759,883 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "scheduler_client",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Controls whether compactors should contact a scheduler to request work.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "compactor.scheduler-client.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "scheduler_endpoint",
+              "required": false,
+              "desc": "Compactor scheduler endpoint.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "compactor.scheduler-client.scheduler-endpoint",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "max_recv_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max receive message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.grpc-max-recv-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_send_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max send message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.grpc-max-send-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "grpc_compression",
+                  "required": false,
+                  "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.grpc-compression",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit",
+                  "required": false,
+                  "desc": "Rate limit for gRPC client; 0 means disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.grpc-client-rate-limit",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit_burst",
+                  "required": false,
+                  "desc": "Rate limit burst for gRPC client.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.grpc-client-rate-limit-burst",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "backoff_on_ratelimits",
+                  "required": false,
+                  "desc": "Enable backoff and retry when we hit rate limits.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.backoff-on-ratelimits",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "backoff_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "min_period",
+                      "required": false,
+                      "desc": "Minimum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100000000,
+                      "fieldFlag": "compactor.scheduler-client.grpc-client-config.backoff-min-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_period",
+                      "required": false,
+                      "desc": "Maximum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "compactor.scheduler-client.grpc-client-config.backoff-max-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "Number of times to backoff and retry before failing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "compactor.scheduler-client.grpc-client-config.backoff-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_stream_window_size",
+                  "required": false,
+                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.initial-stream-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_connection_window_size",
+                  "required": false,
+                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.initial-connection-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_base_delay",
+                  "required": false,
+                  "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.connect-backoff-base-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_max_delay",
+                  "required": false,
+                  "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "cluster_validation",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "label",
+                      "required": false,
+                      "desc": "Primary cluster validation label.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.grpc-client-config.cluster-validation.label",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "leasing_min_backoff",
+              "required": false,
+              "desc": "Minimum backoff time between scheduler job lease requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "compactor.scheduler-client.leasing-min-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "leasing_max_backoff",
+              "required": false,
+              "desc": "Maximum backoff time between scheduler job lease requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": 120000000000,
+              "fieldFlag": "compactor.scheduler-client.leasing-max-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "update_interval",
+              "required": false,
+              "desc": "Interval between scheduler job lease updates.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "compactor.scheduler-client.update-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "update_min_backoff",
+              "required": false,
+              "desc": "Minimum backoff time for compaction executor retries when sending scheduler status updates.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "compactor.scheduler-client.update-min-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "update_max_backoff",
+              "required": false,
+              "desc": "Maximum backoff time for compaction executor retries when sending scheduler status updates.",
+              "fieldValue": null,
+              "fieldDefaultValue": 32000000000,
+              "fieldFlag": "compactor.scheduler-client.update-max-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "compaction_dir_cleanup_interval",
+              "required": false,
+              "desc": "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1800000000000,
+              "fieldFlag": "compactor.scheduler-client.compaction-dir-cleanup-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "metadata_cache",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "backend",
+                  "required": false,
+                  "desc": "Backend for metadata cache, if not empty. Supported values: memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "compactor.scheduler-client.metadata-cache.backend",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "memcached",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "addresses",
+                      "required": false,
+                      "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.addresses",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "timeout",
+                      "required": false,
+                      "desc": "The socket read/write timeout.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 200000000,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "connect_timeout",
+                      "required": false,
+                      "desc": "The connection timeout.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 200000000,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.connect-timeout",
+                      "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "min_idle_connections_headroom_percentage",
+                      "required": false,
+                      "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": -1,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.min-idle-connections-headroom-percentage",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "The maximum number of idle connections that will be maintained per address.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_async_concurrency",
+                      "required": false,
+                      "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 50,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_async_buffer_size",
+                      "required": false,
+                      "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 25000,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-async-buffer-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_get_multi_concurrency",
+                      "required": false,
+                      "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-get-multi-concurrency",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_get_multi_batch_size",
+                      "required": false,
+                      "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-get-multi-batch-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_item_size",
+                      "required": false,
+                      "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1048576,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-item-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable connecting to Memcached with TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "metafile_content_ttl",
+                  "required": false,
+                  "desc": "How long to cache block metadata content.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 86400000000000,
+                  "fieldFlag": "compactor.scheduler-client.metadata-cache.metafile-content-ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "terminating_final_status_timeout",
+              "required": false,
+              "desc": "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "compactor.scheduler-client.terminating-final-status-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "lanes",
+              "required": false,
+              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.",
+              "fieldValue": null,
+              "fieldDefaultValue": "compact+plan,plan",
+              "fieldFlag": "compactor.scheduler-client.lanes",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_interrupted_reassign",
+              "required": false,
+              "desc": "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.scheduler-client.enable-interrupted-reassign",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "compactor_scheduler",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "max_leases",
+          "required": false,
+          "desc": "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3,
+          "fieldFlag": "compactor-scheduler.max-leases",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "lease_duration",
+          "required": false,
+          "desc": "The duration of time without contact until the scheduler is able to lease a work item to another worker.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "compactor-scheduler.lease-duration",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "planning_interval",
+          "required": false,
+          "desc": "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1800000000000,
+          "fieldFlag": "compactor-scheduler.planning-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "maintenance_interval",
+          "required": false,
+          "desc": "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.",
+          "fieldValue": null,
+          "fieldDefaultValue": 120000000000,
+          "fieldFlag": "compactor-scheduler.maintenance-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "maintenance_intervals_before_lease_expiration",
+          "required": false,
+          "desc": "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3,
+          "fieldFlag": "compactor-scheduler.maintenance-intervals-before-lease-expiration",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "maintenance_intervals_before_cold_start_planning",
+          "required": false,
+          "desc": "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5,
+          "fieldFlag": "compactor-scheduler.maintenance-intervals-before-cold-start-planning",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "tenant_discovery_interval",
+          "required": false,
+          "desc": "The duration of time between bucket listings to discover new tenants.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "compactor-scheduler.tenant-discovery-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "tenant_discovery_backoff",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "min_period",
+              "required": false,
+              "desc": "Minimum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "compactor-scheduler.tenant-discovery-backoff.backoff-min-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_period",
+              "required": false,
+              "desc": "Maximum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "compactor-scheduler.tenant-discovery-backoff.backoff-max-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Number of times to backoff and retry before failing.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "compactor-scheduler.tenant-discovery-backoff.backoff-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "persistence_type",
+          "required": false,
+          "desc": "The type of persistence the compactor scheduler should use. Valid values: none, bbolt",
+          "fieldValue": null,
+          "fieldDefaultValue": "bbolt",
+          "fieldFlag": "compactor-scheduler.persistence-type",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "repeated_failure_report_threshold",
+          "required": false,
+          "desc": "The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "compactor-scheduler.repeated-failure-report-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "bbolt",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "dir",
+              "required": false,
+              "desc": "The directory where bbolt shard database files are stored for the compactor scheduler.",
+              "fieldValue": null,
+              "fieldDefaultValue": "./data-compactor-scheduler",
+              "fieldFlag": "compactor-scheduler.bbolt.dir",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "shard_count",
+              "required": false,
+              "desc": "The target number of bbolt database shards for the compactor scheduler.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16,
+              "fieldFlag": "compactor-scheduler.bbolt.shard-count",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "lane_policy",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "policy",
+              "required": false,
+              "desc": "The lane policy the compactor scheduler should use. Valid values: simple",
+              "fieldValue": null,
+              "fieldDefaultValue": "simple",
+              "fieldFlag": "compactor-scheduler.lane-policy.policy",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

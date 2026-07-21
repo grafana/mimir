@@ -272,7 +272,7 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	require.NoError(t, err)
 	assertTrackerBytes(t, reg, "split job leased (still incomplete)", 100, 200)
 
-	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch)
+	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch, false)
 	require.NoError(t, err)
 	require.True(t, canceled)
 	assertTrackerBytes(t, reg, "split job revived to pending (bytes unchanged)", 100, 200)
@@ -320,7 +320,7 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 	require.Equal(t, planJobId, leaseResp.Key.Id)
 	assertPlanJobLocation("plan job active", 0, 1)
 
-	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch)
+	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch, false)
 	require.NoError(t, err)
 	require.True(t, canceled)
 	assertPlanJobLocation("plan job revived to pending", 1, 0)
@@ -408,8 +408,73 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job, "plan job should always be leaseable")
 
-		canceled, _, err := jt.CancelLease(job.Key.Id, job.Key.Epoch)
+		canceled, _, err := jt.CancelLease(job.Key.Id, job.Key.Epoch, false)
 		require.NoError(t, err)
 		require.True(t, canceled)
+	}
+}
+
+func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		planJob                  bool
+		maxLeases                int
+		threshold                int
+		interrupted              []bool
+		expectedDropped          bool
+		expectedRepeatedFailures float64
+	}{
+		{
+			name:        "interrupted reassigns never count or drop",
+			maxLeases:   1,
+			threshold:   1,
+			interrupted: []bool{true, true},
+		},
+		{
+			name:        "plan jobs never report interrupted reassigns",
+			planJob:     true,
+			threshold:   1,
+			interrupted: []bool{true, true},
+		},
+		{
+			name:                     "uninterrupted reassigns drop after maxLeases and report",
+			maxLeases:                2,
+			threshold:                1,
+			interrupted:              []bool{false, true, false},
+			expectedDropped:          true,
+			expectedRepeatedFailures: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clk := clock.NewMock()
+			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+			jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+
+			lane := compactionLane
+			if tc.planJob {
+				lane = planLane
+				_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
+				require.NoError(t, err)
+			} else {
+				jt.recoverFrom([]*TrackedCompactionJob{
+					NewTrackedCompactionJob("merge-job", &CompactionJob{}, 1, 100, clk.Now()),
+				}, nil)
+			}
+
+			for _, interrupted := range tc.interrupted {
+				lease, _, err := jt.Lease(lane)
+				require.NoError(t, err)
+				require.NotNil(t, lease)
+
+				canceled, _, err := jt.CancelLease(lease.Key.Id, lease.Key.Epoch, interrupted)
+				require.NoError(t, err)
+				require.True(t, canceled)
+			}
+
+			lease, _, err := jt.Lease(lane)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedDropped, lease == nil)
+			require.Equal(t, tc.expectedRepeatedFailures, prom_testutil.ToFloat64(jt.metrics.repeatedJobFailures))
+		})
 	}
 }

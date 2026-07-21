@@ -526,6 +526,7 @@ var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKRangeQuerySeriesSlices,
 	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )
@@ -537,6 +538,7 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	limiter.IntSliceSlice,
 	uint64(unsafe.Sizeof([][]int{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )

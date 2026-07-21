@@ -399,7 +399,7 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 	return false
 }
 
-func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, becamePending *lane, err error) {
+func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (canceled bool, becamePending *lane, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -413,11 +413,15 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		return false, nil, nil
 	}
 
-	revive := jt.canRetry(j)
+	revive := interrupted || jt.canRetry(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
 		jj := j.CopyBase()
 		jj.ClearLease()
+		if interrupted {
+			// Don't count the previous lease against the job
+			jj.DecrementLeaseCount()
+		}
 
 		if jj.ID() == planJobId {
 			err = jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, jt.completedJobsWith())
@@ -445,7 +449,9 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		jt.active.Remove(e)
 		delete(jt.incompleteJobs, id)
 	}
-	jt.trackFailure(j)
+	if !interrupted {
+		jt.trackFailure(j)
+	}
 
 	if id == planJobId {
 		jt.stopTrackingCompleteCompactionJobs()

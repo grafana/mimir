@@ -209,6 +209,87 @@ api:
 # The compactor block configures the compactor component.
 [compactor: <compactor>]
 
+compactor_scheduler:
+  # (experimental) The maximum number of times a compaction job can be retried
+  # before it is removed. Leases that are reassigned due to an interrupted
+  # worker do not count against this limit. 0 for no limit.
+  # CLI flag: -compactor-scheduler.max-leases
+  [max_leases: <int> | default = 3]
+
+  # (experimental) The duration of time without contact until the scheduler is
+  # able to lease a work item to another worker.
+  # CLI flag: -compactor-scheduler.lease-duration
+  [lease_duration: <duration> | default = 10m]
+
+  # (experimental) The duration of time between when plan jobs are submitted
+  # aligned by UTC. Note that -compactor.first-level-compaction-wait-period is
+  # accounted for during alignment of this interval.
+  # CLI flag: -compactor-scheduler.planning-interval
+  [planning_interval: <duration> | default = 30m]
+
+  # (experimental) The duration of time between when maintenance tasks are
+  # performed on job trackers. This includes lease expiration and plan job
+  # submission checks.
+  # CLI flag: -compactor-scheduler.maintenance-interval
+  [maintenance_interval: <duration> | default = 2m]
+
+  # (experimental) The number of maintenance intervals before lease expiration
+  # is enforced. Nonpositive values are all treated as zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-lease-expiration
+  [maintenance_intervals_before_lease_expiration: <int> | default = 3]
+
+  # (experimental) The number of maintenance intervals before planning occurs
+  # when starting from no recovered state. Nonpositive values are all treated as
+  # zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-cold-start-planning
+  [maintenance_intervals_before_cold_start_planning: <int> | default = 5]
+
+  # (experimental) The duration of time between bucket listings to discover new
+  # tenants.
+  # CLI flag: -compactor-scheduler.tenant-discovery-interval
+  [tenant_discovery_interval: <duration> | default = 10m]
+
+  tenant_discovery_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) The type of persistence the compactor scheduler should use.
+  # Valid values: none, bbolt
+  # CLI flag: -compactor-scheduler.persistence-type
+  [persistence_type: <string> | default = "bbolt"]
+
+  # (experimental) The number of times a job can fail before a repeated failure
+  # is recorded. Reassignments due to an interrupted worker are not counted as a
+  # failure. 0 for no limit.
+  # CLI flag: -compactor-scheduler.repeated-failure-report-threshold
+  [repeated_failure_report_threshold: <int> | default = 2]
+
+  bbolt:
+    # (experimental) The directory where bbolt shard database files are stored
+    # for the compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.dir
+    [dir: <string> | default = "./data-compactor-scheduler"]
+
+    # (experimental) The target number of bbolt database shards for the
+    # compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.shard-count
+    [shard_count: <int> | default = 16]
+
+  lane_policy:
+    # (experimental) The lane policy the compactor scheduler should use. Valid
+    # values: simple
+    # CLI flag: -compactor-scheduler.lane-policy.policy
+    [policy: <string> | default = "simple"]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 
@@ -2013,11 +2094,6 @@ store_gateway_client:
 [enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
 
 mimir_query_engine:
-  # (experimental) Enable pruning query expressions that are toggled off with
-  # constants.
-  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
-  [enable_prune_toggles: <boolean> | default = true]
-
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
@@ -3455,6 +3531,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler-client.grpc-client-config`
 - `ingester.client`
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
@@ -5170,9 +5247,9 @@ ruler_alertmanager_client_config:
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
 # (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
+# compactor cycles. If set, this value should be larger than the TSDB block
+# range period (default: 2h). A value of 0s means that all blocks are considered
+# regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
@@ -5816,6 +5893,12 @@ ordered_consumption:
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
 [write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
+
+# (experimental) True to wrap all ingester metrics with an ingester_partition
+# label identifying the Kafka partition the ingester consumes. Planned to become
+# the default in Mimir 3.2 and to be removed in Mimir 3.5.
+# CLI flag: -ingest-storage.ingester-partition-metric-label-enabled
+[ingester_partition_metric_label_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage
@@ -6186,13 +6269,12 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # TSDB blocks retention in the ingester before a block is removed. If shipping
-  # is enabled, the retention will be relative to the time when the block was
-  # uploaded to storage. If shipping is disabled then its relative to the
-  # creation time of the block. This should be larger than the
-  # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
-  # large enough to give store-gateways and queriers enough time to discover
-  # newly uploaded blocks.
+  # TSDB blocks retention before a block is removed. If shipping is enabled, the
+  # retention will be relative to the time when the block was uploaded to
+  # storage. If shipping is disabled then it's relative to the creation time of
+  # the block. The value must be larger than both TSDB block range period
+  # (default: 2h) and -querier.query-store-after, and large enough to give
+  # store-gateways and queriers time to discover newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
   [retention_period: <duration> | default = 13h]
 
@@ -6668,6 +6750,80 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+scheduler_client:
+  # (experimental) Controls whether compactors should contact a scheduler to
+  # request work.
+  # CLI flag: -compactor.scheduler-client.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Compactor scheduler endpoint.
+  # CLI flag: -compactor.scheduler-client.scheduler-endpoint
+  [scheduler_endpoint: <string> | default = ""]
+
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is:
+  # compactor.scheduler-client.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
+  # (experimental) Minimum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-min-backoff
+  [leasing_min_backoff: <duration> | default = 100ms]
+
+  # (experimental) Maximum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-max-backoff
+  [leasing_max_backoff: <duration> | default = 2m]
+
+  # (experimental) Interval between scheduler job lease updates.
+  # CLI flag: -compactor.scheduler-client.update-interval
+  [update_interval: <duration> | default = 15s]
+
+  # (experimental) Minimum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-min-backoff
+  [update_min_backoff: <duration> | default = 1s]
+
+  # (experimental) Maximum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-max-backoff
+  [update_max_backoff: <duration> | default = 32s]
+
+  # (experimental) Defines how frequently to clean up the compaction working
+  # directory. The directory is cleaned on startup and then only when this
+  # interval has elapsed since the last cleanup. Set to 0 to disable periodic
+  # cleanup.
+  # CLI flag: -compactor.scheduler-client.compaction-dir-cleanup-interval
+  [compaction_dir_cleanup_interval: <duration> | default = 30m]
+
+  metadata_cache:
+    # Backend for metadata cache, if not empty. Supported values: memcached.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # compactor.scheduler-client.metadata-cache
+    [memcached: <memcached>]
+
+    # (experimental) How long to cache block metadata content.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-content-ttl
+    [metafile_content_ttl: <duration> | default = 24h]
+
+  # (experimental) Timeout for sending a final job status update to the
+  # scheduler when the parent context is canceled (e.g. during shutdown).
+  # CLI flag: -compactor.scheduler-client.terminating-final-status-timeout
+  [terminating_final_status_timeout: <duration> | default = 30s]
+
+  # (experimental) Lanes to request for each worker goroutine. Each entry is a
+  # '+'-separated list of job types in priority order.
+  # CLI flag: -compactor.scheduler-client.lanes
+  [lanes: <string> | default = "compact+plan,plan"]
+
+  # (experimental) Report a distinct job update status to the scheduler when a
+  # job is interrupted (e.g., clean shutdown).
+  # CLI flag: -compactor.scheduler-client.enable-interrupted-reassign
+  [enable_interrupted_reassign: <boolean> | default = true]
 ```
 
 ### store_gateway
@@ -6854,6 +7010,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`

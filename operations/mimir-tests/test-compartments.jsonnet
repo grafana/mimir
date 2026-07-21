@@ -1,6 +1,6 @@
 // Renders Mimir with the experimental compartments architecture enabled, deployed multi-AZ across all
 // components (write and read path).
-(import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
+local env = (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
   _config+:: {
     multi_zone_availability_zones: ['us-east-2a', 'us-east-2b'],
     ingest_storage_ingester_zones: 2,
@@ -41,4 +41,76 @@
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
     enable_pvc_auto_deletion_for_store_gateways: true,
   },
-}
+};
+
+local rulerDistributorAddress(zone) =
+  'dns:///distributor-zone-%s.%s.svc.%s:9095' % [zone, env._config.namespace, env._config.cluster_domain];
+
+local rulerBlocksBucket(args) = args[env.mimirBlocksStorageBucketNameFlag];
+
+local coexistenceEnv = env {
+  _config+:: {
+    no_compartments_distributor_enabled: true,
+  },
+};
+
+local routedCoexistenceEnv = coexistenceEnv {
+  _config+:: {
+    compartments_distributor_routing_enabled: true,
+  },
+};
+
+assert env._config.compartments_distributor_routing_enabled :
+       'expected compartments-only deployments to route to compartment distributors';
+assert env.distributor_zone_a_service.metadata.name == 'distributor-zone-a' :
+       'expected the stable zone-a distributor service name';
+assert env.distributor_zone_a_service.spec.selector == { 'mimir-service': 'distributor-zone-a' } :
+       'expected the zone-a distributor service to select only compartment distributor pods';
+assert env.distributor_zone_a_service.spec.clusterIP == 'None' :
+       'expected the zone-a distributor service to be headless';
+assert !coexistenceEnv._config.compartments_distributor_routing_enabled :
+       'expected coexistence to route to the no-compartments distributor by default';
+assert coexistenceEnv.distributor_zone_a_service.spec.selector == { name: 'distributor-zone-a' } :
+       'expected coexistence to keep routing to the no-compartments distributor';
+assert routedCoexistenceEnv.distributor_zone_a_service.spec.selector == { 'mimir-service': 'distributor-zone-a' } :
+       'expected the routing option to switch the stable service to compartment distributor pods';
+assert coexistenceEnv.ruler_args['ruler.distributor.address'] == rulerDistributorAddress('a') :
+       'expected the ruler address to stay stable before routing to compartment distributors';
+assert routedCoexistenceEnv.ruler_args['ruler.distributor.address'] == rulerDistributorAddress('a') :
+       'expected the ruler address to stay stable after routing to compartment distributors';
+assert env.ruler_args['ingest-storage.kafka.address'] == env._config.compartments_ingest_storage_kafka_address :
+       'expected single-zone ruler to use the compartments Kafka address template';
+assert env.ruler_args['ruler.distributor.address'] == rulerDistributorAddress('a') :
+       'expected single-zone ruler to write to the stable zone-a distributor service';
+assert env.ruler_zone_a_args['ruler.distributor.address'] == rulerDistributorAddress('a') :
+       'expected zone-a ruler to write to the stable zone-a distributor service';
+assert env.ruler_zone_b_args['ruler.distributor.address'] == rulerDistributorAddress('b') :
+       'expected zone-b ruler to write to the stable zone-b distributor service';
+assert env.ruler_zone_b_args['ingest-storage.kafka.address'] == env._config.compartments_ingest_storage_kafka_address :
+       'expected zone-b ruler to use the compartments Kafka address template';
+assert !std.objectHas(env.ruler_args, 'distributor.write-compartment-id') :
+       'rulers must stay global and must not set distributor.write-compartment-id';
+assert rulerBlocksBucket(env.ruler_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected single-zone ruler to use the parametrised blocks bucket';
+assert rulerBlocksBucket(env.ruler_zone_a_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected zone-a ruler to use the parametrised blocks bucket';
+assert rulerBlocksBucket(env.ruler_zone_b_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected zone-b ruler to use the parametrised blocks bucket';
+
+local schedulerAffinityMatchers = [
+  { key: 'topology.kubernetes.io/zone', operator: 'In', values: ['us-east-2a'] },
+];
+local schedulerAffinityEnv = env {
+  compactor_scheduler_node_affinity_matchers:: schedulerAffinityMatchers,
+};
+local compartmentSchedulerNodeSelectorTerms(compartmentIdx) =
+  local podSpec = schedulerAffinityEnv.compactor_scheduler_statefulsets['compartment_%d' % compartmentIdx].spec.template.spec;
+  if std.objectHas(podSpec, 'affinity')
+  then podSpec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms
+  else [];
+assert compartmentSchedulerNodeSelectorTerms(0) == [{ matchExpressions: schedulerAffinityMatchers }] :
+       'expected per-compartment compactor-schedulers to inherit compactor_scheduler_node_affinity_matchers';
+assert compartmentSchedulerNodeSelectorTerms(1) == [{ matchExpressions: schedulerAffinityMatchers }] :
+       'expected per-compartment compactor-schedulers to inherit compactor_scheduler_node_affinity_matchers';
+
+env

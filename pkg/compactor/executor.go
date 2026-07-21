@@ -106,6 +106,7 @@ type SchedulerClientConfig struct {
 	MetadataCacheConfig           MetadataCacheConfig    `yaml:"metadata_cache"`
 	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
 	Lanes                         flagext.StringSliceCSV `yaml:"lanes" category:"experimental"`
+	EnableInterruptedReassign     bool                   `yaml:"enable_interrupted_reassign" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -119,8 +120,9 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
+	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Defaults to compact+plan,plan")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -354,8 +356,7 @@ func (e *schedulerExecutor) runWorker(ctx context.Context, c *MultitenantCompact
 		ok, err := e.leaseAndExecuteJob(ctx, c, compactDir, req)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
-		}
-		if ok {
+		} else if ok {
 			b.Reset()
 		}
 
@@ -434,6 +435,10 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 // Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
 // If ctx is canceled (e.g. during shutdown), attempting to send a final status can continue for up to TerminatingFinalStatusTimeout.
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
+	if e.cfg.EnableInterruptedReassign && status == compactorschedulerpb.UPDATE_TYPE_REASSIGN && ctx.Err() != nil {
+		status = compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+	}
+
 	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer cancel(nil)
 	stop := context.AfterFunc(ctx, func() {

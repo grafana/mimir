@@ -46,12 +46,13 @@ var (
 	testBlockID2 = ulid.MustNew(2, nil)
 )
 
-func makeTestCompactorConfig() Config {
+func makeTestCompactorConfig(t *testing.T) Config {
+	t.Helper()
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.SchedulerClientConfig.Enabled = true
 	cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
-	cfg.DataDir = "/tmp/compactor-test"
+	cfg.DataDir = t.TempDir()
 	cfg.SparseIndexHeadersSamplingRate = 32
 	return cfg
 }
@@ -326,7 +327,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			mockSchedulerClient := &mockCompactorSchedulerClient{}
 			tc.setupMock(mockSchedulerClient)
 
-			cfg := makeTestCompactorConfig()
+			cfg := makeTestCompactorConfig(t)
 			cfg.SchedulerClientConfig.UpdateInterval = 1 * time.Hour
 			cfg.CompactionConcurrency = 1
 
@@ -379,14 +380,14 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectGrowingDelay: true,
 		},
-		"leased_compaction_job_should_not_backoff": {
+		"leased_compaction_job_that_fails_should_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
 						Key: &compactorschedulerpb.JobKey{Id: "compaction-job"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
-							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs},
+							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs}, // blocks are missing
 							JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 						},
 					}, nil
@@ -395,7 +396,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
 				}
 			},
-			expectGrowingDelay: false,
+			expectGrowingDelay: true,
 		},
 		"leased_planning_job_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -404,7 +405,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 						Key: &compactorschedulerpb.JobKey{Id: "user-1"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
-							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}},
 							JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
 						},
 					}, nil
@@ -560,7 +560,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig()
+	cfg := makeTestCompactorConfig(t)
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 
@@ -594,7 +594,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig()
+	cfg := makeTestCompactorConfig(t)
 	cfg.SchedulerClientConfig.UpdateInterval = 10 * time.Millisecond // Short interval to trigger the updater quickly
 
 	bucketClient := &bucket.ClientMock{}
@@ -626,7 +626,7 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 		},
 	}
 
-	cfg := makeTestCompactorConfig()
+	cfg := makeTestCompactorConfig(t)
 	cfg.SchedulerClientConfig.UpdateInterval = 10 * time.Millisecond
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
@@ -670,7 +670,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 				return &compactorschedulerpb.UpdateJobResponse{}, nil
 			},
 		}
-		exec := newTestSchedulerExecutor(t, makeTestCompactorConfig(), mock)
+		exec := newTestSchedulerExecutor(t, makeTestCompactorConfig(t), mock)
 
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -686,7 +686,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 				return nil, ctx.Err()
 			},
 		}
-		cfg := makeTestCompactorConfig()
+		cfg := makeTestCompactorConfig(t)
 		cfg.SchedulerClientConfig.TerminatingFinalStatusTimeout = time.Millisecond // arbitrary
 
 		exec := newTestSchedulerExecutor(t, cfg, mock)
@@ -766,7 +766,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg := makeTestCompactorConfig()
+			cfg := makeTestCompactorConfig(t)
 			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
@@ -866,7 +866,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg := makeTestCompactorConfig()
+			cfg := makeTestCompactorConfig(t)
 
 			bkt := objstore.NewInMemBucket()
 
@@ -1127,7 +1127,7 @@ func TestSchedulerExecutor_SchedulerCancellation_SkipsFinalStatus(t *testing.T) 
 			}
 			tc.setupUpdate(mockSchedulerClient)
 
-			cfg := makeTestCompactorConfig()
+			cfg := makeTestCompactorConfig(t)
 			cfg.SchedulerClientConfig.UpdateInterval = 1 * time.Millisecond // arbitrary
 
 			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
@@ -1154,6 +1154,61 @@ func TestSchedulerExecutor_SchedulerCancellation_SkipsFinalStatus(t *testing.T) 
 				require.Error(t, <-errCh)
 				require.Equal(t, 1, mockSchedulerClient.GetUpdateJobCallCount()) // no final status sent
 			})
+		})
+	}
+}
+
+func TestSchedulerExecutor_SendFinalJobStatus_Interrupted(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		interrupted               bool
+		enableInterruptedReassign bool
+		status                    compactorschedulerpb.UpdateType
+		want                      compactorschedulerpb.UpdateType
+	}{
+		{
+			name:                      "interrupted reassign with enableInterruptedReassign enabled",
+			interrupted:               true,
+			enableInterruptedReassign: true,
+			status:                    compactorschedulerpb.UPDATE_TYPE_REASSIGN,
+			want:                      compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN,
+		},
+		{
+			name:        "interrupted reassign with enableInterruptedReassign disabled",
+			interrupted: true,
+			status:      compactorschedulerpb.UPDATE_TYPE_REASSIGN,
+			want:        compactorschedulerpb.UPDATE_TYPE_REASSIGN,
+		},
+		{
+			name:                      "different update type not translated",
+			interrupted:               true,
+			enableInterruptedReassign: true,
+			status:                    compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+			want:                      compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockCompactorSchedulerClient{
+				UpdateJobFunc: func(context.Context, *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+					return &compactorschedulerpb.UpdateJobResponse{}, nil
+				},
+			}
+			cfg := makeTestCompactorConfig(t)
+			cfg.SchedulerClientConfig.EnableInterruptedReassign = tc.enableInterruptedReassign
+			exec := newTestSchedulerExecutor(t, cfg, mock)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.interrupted {
+				cancel()
+			}
+
+			exec.sendFinalJobStatus(ctx,
+				&compactorschedulerpb.JobKey{Id: "job-1"},
+				&compactorschedulerpb.JobSpec{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, Tenant: "test-tenant"},
+				tc.status,
+			)
+			require.Equal(t, tc.want.String(), mock.GetLastUpdate().String())
 		})
 	}
 }

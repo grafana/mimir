@@ -37,7 +37,7 @@ type LanePolicyConfig struct {
 }
 
 func (cfg *LanePolicyConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Policy, prefix+".policy", "simple", "The lane policy the compactor scheduler should use. Valid values: "+fmt.Sprintf("(%s)", lanePolicySimple))
+	f.StringVar(&cfg.Policy, prefix+".policy", "simple", "The lane policy the compactor scheduler should use. Valid values: "+lanePolicySimple)
 }
 
 func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {

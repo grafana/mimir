@@ -17,6 +17,7 @@
 * [CHANGE] Query-frontend: the number of query shards is now always rounded up to the next power of two, both for the configured `-query-frontend.query-sharding-total-shards` and for the per-query computed value. #15807
 * [CHANGE] Compactor: `-compactor.split-and-merge-shards` and `-compactor.ooo-split-and-merge-shards` are now rounded up to the next power of two, so compactor and query shards always mesh (one is a divisor or multiple of the other). #15807
 * [CHANGE] Querier: Hedging of query requests to ingesters is now disabled by default. The previous behaviour can be restored by setting `-querier.minimize-ingester-requests-hedging-delay=3s`. #15976
+* [CHANGE] MQE: Removed the experimental prune-toggles optimization pass and its CLI flag `-querier.mimir-query-engine.enable-prune-toggles`. Pruning of toggled query expressions such as `... and on() (vector(0) == 1)` are now handled by the remove-statically-empty-expressions optimization pass, enabled with `-querier.mimir-query-engine.enable-remove-statically-empty-expressions=true`. #16037
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.producer-compression` flag to configure the Kafka producer compression codec. Supported values are `none`, `gzip`, `snappy`, `lz4`, and `zstd`. Set it to `none` to target Azure Event Hub's Kafka-compatible endpoint, which does not support compressed produce requests. #15235
 * [FEATURE] Ingester: Shared tenant-fair compute worker pool. Replaces the previous per-request fanout (which could let a heavy tenant occupy all CPU) with a fixed pool of workers backed by a round-robin per-tenant queue. The label-values-cardinality endpoint is the first consumer. New experimental flags: `-ingester.compute-workers` (default 0 = GOMAXPROCS) and `-ingester.label-values-count-chunk-size` (default 32). #15493
 * [FEATURE] Ingester, Block-builder: Add experimental `-ingester.float-chunk-encoding` flag (per-tenant `float_chunk_encoding` limit) to select the float chunk encoding (`xor` or `xor2`). The overrides-exporter can export it as a numeric value (`4` for `xor`, `7` for `xor2`) when `float_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #15831
@@ -39,10 +40,13 @@
   * Important: When splitting and caching inside MQE is enabled, the `-query-frontend.query-sharding-max-sharded-queries` limit applies per time-split interval and spun-off subquery, rather than to the entire interval (or entire spun-off subquery).
 * [FEATURE] Ruler: Add experimental `-ruler.distributor.address` support for pushing rule evaluation results to distributors over native gRPC instead of using an internal distributor. Configure the per-request timeout with `-ruler.distributor.remote-timeout`. #15891
 * [FEATURE] MQE: Add experimental support for scalar common subexpression elimination. Enabled with `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`. #15991
+* [FEATURE] Compactor scheduler: Add the experimental compactor scheduler component, which coordinates work between compactors and exposes additional metrics about pending and active compaction work. #14493 #14553 #14657 #14747 #14768 #14772 #14781 #14804 #14833 #14844 #14849 #14910 #14937 #14945 #14987 #15026 #15094 #15112 #15113 #15267 #15293 #15321 #15606 #15728 #15850 #15897 #15974 #15989 #16042 #16099
+* [FEATURE] Mimirtool: Add `mimirtool partition-ring remove-all-owners-and-partitions` to forcefully remove all owners and partitions from a partition ring in a single operation. #16081
 * [ENHANCEMENT] Query-frontend: Add experimental `-query-frontend.active-series-max-shard-concurrency` to bound how many sharded active series (and active native histogram metrics) sub-requests are dispatched and merged concurrently within a single request, limiting the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 (the default) keeps the previous unbounded behavior. #15970
 * [ENHANCEMENT] Query-frontend, Querier: Add experimental `-query-frontend.active-series-framed-responses` to request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU (roughly 5-6x faster merges for high shard counts). Queriers that don't support the format fall back to JSON transparently. #15971
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
+* [FEATURE] Ingester: added experimental `-ingest-storage.ingester-partition-metric-label-enabled` flag. When set together with `-ingest-storage.enabled`, every metric emitted by the ingester (and the ingest-storage reader / partition-ring lifecycler it owns) carries an `ingester_partition` label identifying the Kafka partition the ingester consumes. Planned to default to enabled in Mimir 3.2 and to be removed in Mimir 3.5. #15130
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [ENHANCEMENT] Distributor: Avoid allocating a string per received timeseries when aggregating cost attribution samples per attribution group in the write path. #15751
@@ -72,6 +76,7 @@
 * [ENHANCEMENT] MQE: Ensure that intermediate results cache keys can not exceed the cache backend's key-size limit when a query federates over many tenants. #15847
 * [ENHANCEMENT] Query-frontend: add a `retries` field to the "query stats" log line reporting the number of times requests were retried while processing the query. The value is 0 when all requests succeeded on their first attempt. #15929
 * [ENHANCEMENT] Query-frontend: Add `query-frontend.cardinality-sharding-max-sharded-queries` to optionally limit sharding for `cardinality/active_series` and `cardinality/active_native_histogram_metrics` endpoints separately from `query-frontend.query-sharding-max-sharded-queries`. #15922
+* [ENHANCEMENT] MQE: Extended the "remove statically empty expressions" optimization pass to descend into subqueries. Previously it skipped subqueries. #16038
 * [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.write-timeout-overhead` to configure the overhead added on top of the Kafka write timeout (default 2s, unchanged). #16023
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
@@ -83,6 +88,7 @@
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 * [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 * [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16066
 * [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
@@ -97,9 +103,14 @@
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
 * [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
+* [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
 * [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
 * [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
 * [BUGFIX] Querier: Fix experimental search `/api/v1/search/metric_names?include_metadata=true` almost never returning metric metadata. #16062
+* [BUGFIX] Querier: Stop querying a partition that has been inactive for longer than `-querier.query-ingesters-within`, preventing query failures when the partition is still registered but has no available ingesters to serve the queries. #15721
+* [BUGFIX] Query-frontend: Fix `queue_time_seconds` in the query stats log always reporting 0 when a query is cancelled while still waiting in the query-scheduler queue. #16094
+* [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155
+* [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 
 ### Mixin
 
@@ -129,13 +140,15 @@
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `-querier.max-concurrent`, to 8. #15984
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
-* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
+* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.1. #15328, #15626, #16129
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
 * [BUGFIX] Continuous-test: Include `._config.commonConfig` in arguments passed to continuous-test. #15988
 
 
 ### Documentation
+
+* [ENHANCEMENT] Update `MimirRingMembersMismatch` runbook: check for spurious ingesters left in the ring after a scale down. #16169
 
 ### Tools
 
@@ -146,6 +159,13 @@
 * [ENHANCEMENT] kafkatool: Add a README. #15898
 
 ### Query-tee
+
+## 3.1.3
+
+### Grafana Mimir
+
+* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15837
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16078
 
 ## 3.1.2
 
@@ -632,6 +652,14 @@
 * [CHANGE] Make HTTP and gRPC server options configurable through the same dskit `server` flags and config block as Mimir. This begins the deprecation cycle for query-tee's `server.http-service-address`, `server.http-service-port`, `"server.grpc-service-address`, and `server.grpc-service-port` flags. #13328 #13355 #13360
 * [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
+
+## 3.0.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update OpenTelemetry libraries to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15558 #15559
+* [BUGFIX] Update go.mongodb.org/mongo-driver to address [CVE-2026-2303](https://nvd.nist.gov/vuln/detail/CVE-2026-2303) #15746
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16077
 
 ## 3.0.7
 

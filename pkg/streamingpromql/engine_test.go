@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -2456,6 +2457,12 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					subTestName := fmt.Sprintf("%s - delayed name removal enabled=%t", queryType, engineSet.delayedNameRemovalEnabled)
 					t.Run(subTestName, func(t *testing.T) {
 						results := make([]*promql.Result, 0, 2)
+						cleanups := make([]func(), 0, 2)
+						t.Cleanup(func() {
+							for _, cleanup := range cleanups {
+								cleanup()
+							}
+						})
 
 						for _, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
 							if engine == engineSet.prometheusEngine && testCase.skipComparisonWithPrometheusReason != "" {
@@ -2469,7 +2476,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 							t.Run(engineName, func(t *testing.T) {
 								query, err := generator(engine)
 								require.NoError(t, err)
-								t.Cleanup(query.Close)
+								cleanups = append(cleanups, query.Close)
 
 								res := query.Exec(context.Background())
 								require.NoError(t, res.Err)
@@ -3455,8 +3462,7 @@ func TestQueryStats(t *testing.T) {
 		}
 
 		require.NoError(t, err)
-
-		defer q.Close()
+		t.Cleanup(q.Close)
 
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)
@@ -4131,7 +4137,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		}
 
 		require.NoError(t, err)
-		defer q.Close()
+		t.Cleanup(q.Close)
 
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)
@@ -5972,4 +5978,75 @@ type dummyMaterializer struct{}
 
 func (d dummyMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	panic("not implemented")
+}
+
+// TestNarrowSelectorsOnEmptyGroupLeftBoundary is an end-to-end regression test for the
+// narrow-binary-selectors optimization (-querier.mimir-query-engine.enable-narrow-binary-selectors).
+//
+// For "prediction + prediction * on() group_left threshold_margin", the optimization pushed
+// matchers built from the outer "+" LHS through the inner "on()" join into the one-side
+// ("threshold_margin") selector, which doesn't carry those labels, filtering it to empty. The test
+// uses a disjoint one-side label set and asserts the Mimir engine (pass enabled) matches both the
+// Mimir engine with the pass disabled and the Prometheus reference engine.
+func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
+	// "prediction" has rich labels; "threshold_margin" is a single cross-metric series with a
+	// disjoint label set, forcing the rule to use "on() group_left".
+	data := `
+		load 1m
+			prediction{asserts_source="model-builder", job="asserts/latency", service="checkout"} 10+0x5
+			prediction{asserts_source="model-builder", job="asserts/latency", service="cart"}     20+0x5
+			threshold_margin 0.25+0x5
+	`
+
+	// The failing rule shape, plus the inner subexpression on its own (which must keep working).
+	testCases := map[string]string{
+		"inner on() group_left only":                    `prediction * on() group_left threshold_margin`,
+		"outer binop over inner on() group_left (rule)": `prediction + prediction * on() group_left threshold_margin`,
+	}
+
+	store := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	ctx := context.Background()
+	queryTime := timestamp.Time(0).Add(5 * time.Minute)
+
+	// newMimirEngine registers only the narrow-selectors pass (when enabled) to isolate it.
+	newMimirEngine := func(t *testing.T, narrowSelectorsEnabled bool) promql.QueryEngine {
+		opts := NewTestEngineOpts()
+		planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		if narrowSelectorsEnabled {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+		engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		return engine
+	}
+
+	exec := func(t *testing.T, engine promql.QueryEngine, expr string) *promql.Result {
+		q, err := engine.NewInstantQuery(ctx, store, nil, expr, queryTime)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		return res
+	}
+
+	prometheusEngine := promql.NewEngine(NewTestEngineOpts().CommonOpts)
+
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Source of truth: the Prometheus reference engine.
+			expected := exec(t, prometheusEngine, expr)
+			require.NotEmpty(t, expected.String(), "test setup error: reference result should not be empty")
+
+			// Mimir without the pass must match the reference.
+			withoutPass := exec(t, newMimirEngine(t, false), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withoutPass, false)
+
+			// Mimir with the pass must also match (previously dropped all series).
+			withPass := exec(t, newMimirEngine(t, true), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withPass, false)
+		})
+	}
 }

@@ -65,6 +65,7 @@
 // because it overrides their components and builds on their helpers.
 (import 'compartments-common.libsonnet') +
 (import 'compartments-distributor.libsonnet') +
+(import 'compartments-ruler.libsonnet') +
 (import 'compartments-ingester.libsonnet') +
 (import 'compartments-querier.libsonnet') +
 (import 'compartments-query-frontend.libsonnet') +

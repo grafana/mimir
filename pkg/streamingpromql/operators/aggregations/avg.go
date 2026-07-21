@@ -269,7 +269,15 @@ func (g *AvgAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	if len(g.floatPresent) > 0 && len(g.histograms) > 0 {
 		for idx, present := range g.floatPresent {
 			if present {
-				if g.histograms[idx] != nil {
+				if g.histograms[idx] == invalidCombinationOfHistograms {
+					// The histogram point at this index was already discarded and histogramPointCount
+					// decremented because it was an invalid combination of histograms. Remove the
+					// conflicting float from the output too, but don't decrement histogramPointCount again.
+					g.floatPresent[idx] = false
+					g.histograms[idx] = nil
+
+					haveMixedFloatsAndHistograms = true
+				} else if g.histograms[idx] != nil {
 					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
 					// and a warning annotation is emitted.
 					g.floatPresent[idx] = false
