@@ -233,7 +233,7 @@ When you [push the release tag](#how-to-tag-a-release), the [`test-build-deploy.
    - Generates the release description with [`./tools/release/create-draft-release-notes.sh`](tools/release/create-draft-release-notes.sh), which contains:
      - The CHANGELOG section for the version being released.
      - For major and minor releases (including their release candidates), the content of the release notes document [written previously](#write-release-notes-document).
-   - Creates a draft GitHub release titled `Mimir <VERSION>` and attaches the binaries and packages to it.
+   - Creates a draft GitHub release and attaches the binaries and packages to it.
 1. Publishes the release, which makes it immutable. Release candidates are published as pre-releases; stable releases are published as the final release and, when they are the newest stable release, marked as "latest".
 
 Publishing the release makes it immutable, so make sure everything the release description needs is committed to the release branch **before** [tagging the release](#how-to-tag-a-release):
