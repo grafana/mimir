@@ -4,6 +4,7 @@
 # Documentation.
 /.github/workflows/deploy-pr-preview-mimir.yml                              @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/deploy-pr-preview-helm-charts.yml                        @grafana/docs-tooling @grafana/mimir-maintainers
+/.github/workflows/sbom-on-release.yml                                      @grafana/security
 
 /docs/                                                                      @grafana/docs-metrics @grafana/mimir-maintainers
 /docs/docs.mk                                                               @grafana/docs-tooling @grafana/mimir-maintainers
