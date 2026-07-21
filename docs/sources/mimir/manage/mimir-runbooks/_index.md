@@ -1677,8 +1677,9 @@ How it **works**:
 How to **investigate**:
 
 - Check the [hash ring web page](../../references/http-api/#ingesters-ring-status) for the component for which the alert has fired, and look for unexpected instances in the list.
-- Consider manually forgetting unexpected instances in an `Unhealthy` state.
+- If ingesters were recently scaled down, check whether any scaled-down instances were left in the ring. How to handle spurious instances depends on the circumstances that led to them being left in the ring.
 - Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
+- Consider manually forgetting unexpected instances in an `Unhealthy` state. Use caution: forgetting an instance that is still running or still owns data can lead to data loss.
 
 ### RolloutOperatorNotReconciling
 
