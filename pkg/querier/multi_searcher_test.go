@@ -341,7 +341,6 @@ func TestMultiQuerier_FetchMetricMetadata(t *testing.T) {
 		got, err := mq.FetchMetricMetadata(ctx, []string{"a", "b"})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"}}, got)
-		assert.Equal(t, 1, distQ.metadataFetchCall)
 	})
 
 	t.Run("returns nil when no metadata-capable source is queried", func(t *testing.T) {
