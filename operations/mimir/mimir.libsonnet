@@ -21,6 +21,7 @@
 (import 'query-scheduler.libsonnet') +
 (import 'compactor.libsonnet') +
 (import 'compactor-scheduler.libsonnet') +
+(import 'block-builder-scheduler.libsonnet') +
 (import 'store-gateway.libsonnet') +
 (import 'overrides-exporter.libsonnet') +
 
