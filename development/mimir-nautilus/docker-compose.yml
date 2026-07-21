@@ -1,0 +1,375 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Hand-written docker-compose for the nautilus / readcache dev cell.
+# Modelled on development/mimir-ingest-storage but trimmed to the
+# components Phase 2 needs:
+#   - 1 distributor
+#   - 1 vanilla ingester (so the default-tenant path stays intact)
+#   - 2 readcache pods (so the rebalancer has something to balance)
+#   - 1 nautilus-rebalancer with a named volume for its data-dir
+#   - block-builder + scheduler (the long-term block path)
+#   - query-frontend + query-scheduler + querier (so verify.sh can run PromQL)
+#   - store-gateway, compactor (for blocks queries beyond the head)
+#   - 3x kafka (KRaft) for the production + nautilus_ingest topics
+#   - minio, grafana, tempo, redpanda-console
+#
+# Update with `make` (regenerates from no jsonnet template; this
+# stack is small enough to maintain by hand). Use compose-up.sh,
+# compose-down.sh, compose-update-mimir.sh from the shell scripts in
+# this directory.
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    command: ['server', '--console-address', ':9001', '/data']
+    environment:
+      - MINIO_ROOT_USER=mimir
+      - MINIO_ROOT_PASSWORD=supersecret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - '.data-minio:/data:delegated'
+    healthcheck:
+      test: ['CMD', 'curl', '-fs', 'http://localhost:9000/minio/health/ready']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # One-shot bucket creation. MinIO doesn't auto-create buckets for
+  # paths it sees mentioned in API calls; Mimir's sanity-check fails
+  # on first boot without these. We mirror the bucket names used by
+  # the dev-cell config so blocks_storage, ruler_storage, etc. all
+  # land somewhere valid.
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    depends_on:
+      minio: {condition: service_healthy}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        mc alias set local http://minio:9000 mimir supersecret &&
+        mc mb -p local/mimir-blocks &&
+        mc mb -p local/mimir-ruler &&
+        mc mb -p local/mimir-alertmanager &&
+        echo "buckets ready"
+
+  kafka_1:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      - CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg
+      - KAFKA_NUM_PARTITIONS=8
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=2
+      - KAFKA_BROKER_ID=1
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092
+    ports:
+      - '29092:29092'
+    healthcheck:
+      test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  kafka_2:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      - CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg
+      - KAFKA_NUM_PARTITIONS=8
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=2
+      - KAFKA_BROKER_ID=2
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093
+    ports:
+      - '29093:29093'
+    healthcheck:
+      test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  kafka_3:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      - CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg
+      - KAFKA_NUM_PARTITIONS=8
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=2
+      - KAFKA_BROKER_ID=3
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094
+    ports:
+      - '29094:29094'
+    healthcheck:
+      test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redpanda_console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    environment:
+      - KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092
+    ports:
+      - '8090:8080'
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    ports:
+      - '3000:3000'
+
+  tempo:
+    image: grafana/tempo:2.10.3
+    command: ['-config.file=/etc/config/tempo.yaml']
+    volumes:
+      - '../mimir-ingest-storage/config:/etc/config'
+    ports:
+      - '3200'
+      - '9095'
+      - '4317'
+      - '4318'
+
+  # ----- Mimir services -----
+  distributor-1:
+    build:
+      context: .
+      dockerfile: dev.dockerfile
+    image: mimir
+    hostname: distributor-1
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=distributor'
+    ports:
+      - '8000:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      kafka_1:     {condition: service_healthy}
+      kafka_2:     {condition: service_healthy}
+      minio-init:  {condition: service_completed_successfully}
+
+  ingester-1:
+    image: mimir
+    hostname: ingester-1
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=ingester'
+      - '-ingester.ring.instance-availability-zone=zone-a'
+    ports:
+      - '8002:8080'
+    volumes:
+      - './config:/mimir/config'
+      - '.data-ingester-1:/data:delegated'
+    depends_on:
+      kafka_1:    {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+
+  nautilus-rebalancer:
+    image: mimir
+    hostname: nautilus-rebalancer
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=nautilus-rebalancer'
+    ports:
+      - '8019:8080'
+    volumes:
+      - './config:/mimir/config'
+      - 'nautilus-rebalancer-data:/data/nautilus-rebalancer:delegated'
+    depends_on:
+      kafka_1:    {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+
+  readcache-1:
+    image: mimir
+    hostname: readcache-1
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=readcache'
+      - '-readcache.instance-id=readcache-1'
+      # Partition ownership is supplied by the rebalancer's
+      # WatchReadcacheAssignments stream (rebalancer_address in
+      # mimir.yaml). The pod owns nothing until the first snapshot
+      # arrives.
+    ports:
+      - '8014:8080'
+    volumes:
+      - './config:/mimir/config'
+      - '.data-readcache-1:/data:delegated'
+    depends_on:
+      kafka_1:             {condition: service_healthy}
+      minio-init:          {condition: service_completed_successfully}
+      nautilus-rebalancer: {condition: service_started}
+
+  readcache-2:
+    image: mimir
+    hostname: readcache-2
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=readcache'
+      - '-readcache.instance-id=readcache-2'
+    ports:
+      - '8015:8080'
+    volumes:
+      - './config:/mimir/config'
+      - '.data-readcache-2:/data:delegated'
+    depends_on:
+      kafka_1:             {condition: service_healthy}
+      minio-init:          {condition: service_completed_successfully}
+      nautilus-rebalancer: {condition: service_started}
+
+  # readcache-3 exists in the compose file but is started on demand
+  # via `docker compose up -d readcache-3` from inside a test, so the
+  # default `compose-up.sh` brings up only readcache-1/-2 (the cold-
+  # start fleet) and tests can scale up without editing files.
+  readcache-3:
+    image: mimir
+    hostname: readcache-3
+    profiles: ["scaleup"]
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=readcache'
+      - '-readcache.instance-id=readcache-3'
+    ports:
+      - '8016:8080'
+    volumes:
+      - './config:/mimir/config'
+      - '.data-readcache-3:/data:delegated'
+    depends_on:
+      kafka_1:             {condition: service_healthy}
+      minio-init:          {condition: service_completed_successfully}
+      nautilus-rebalancer: {condition: service_started}
+
+  block-builder-scheduler-0:
+    image: mimir
+    hostname: block-builder-scheduler-0
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=block-builder-scheduler'
+    ports:
+      - '8010:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      kafka_1:    {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+
+  block-builder-0:
+    image: mimir
+    hostname: block-builder-0
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=block-builder'
+    ports:
+      - '8009:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      kafka_1:                   {condition: service_healthy}
+      minio-init:                {condition: service_completed_successfully}
+      block-builder-scheduler-0: {condition: service_started}
+
+  query-scheduler:
+    image: mimir
+    hostname: query-scheduler
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=query-scheduler'
+    ports:
+      - '8008:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+
+  query-frontend:
+    image: mimir
+    hostname: query-frontend
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=query-frontend'
+    ports:
+      - '8007:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+
+  querier:
+    image: mimir
+    hostname: querier
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=querier'
+    ports:
+      - '8005:8080'
+    volumes:
+      - './config:/mimir/config'
+    # The querier embeds a Distributor (read-path routing lives
+    # inside distributor.go), so its boot path tries to dial Kafka
+    # too. Wait for the brokers and bucket init like the writer
+    # services do.
+    depends_on:
+      kafka_1:    {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+
+  store-gateway:
+    image: mimir
+    hostname: store-gateway
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=store-gateway'
+    ports:
+      - '8020:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+
+  compactor:
+    image: mimir
+    hostname: compactor
+    command:
+      - './mimir'
+      - '-config.file=./config/mimir.yaml'
+      - '-target=compactor'
+    ports:
+      - '8006:8080'
+    volumes:
+      - './config:/mimir/config'
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+
+volumes:
+  nautilus-rebalancer-data:

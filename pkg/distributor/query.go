@@ -9,8 +9,12 @@ package distributor
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -26,7 +30,9 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -44,6 +50,10 @@ var (
 
 	errStreamClosed = cancellation.NewErrorf("stream closed")
 )
+
+func agentDebugLogDistributorQuery(hypothesisID, message string, data map[string]any) {
+	_ = json.NewEncoder(os.Stderr).Encode(map[string]any{"level": "warn", "sessionId": "cb075f", "runId": "pre-fix", "hypothesisId": hypothesisID, "location": "pkg/distributor/query.go", "message": message, "data": data, "timestamp": time.Now().UnixMilli()})
+}
 
 // QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
 // label matchers. The exemplars in the response are sorted by series labels.
@@ -95,6 +105,18 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
 func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
+	// Allocate the per-query readcache hit tracker outside the
+	// instrument.CollectedRequest closure so the histogram is
+	// always observed exactly once per call — including the error
+	// paths below where the closure returns early. Zero observations
+	// (errored or all-ingester queries) are intentional: they form
+	// the baseline that the readcache routing migration drifts
+	// upward from.
+	hits := newReadcacheHitTracker()
+	defer func() {
+		d.queryReadcacheInstancesHit.Observe(float64(hits.count()))
+	}()
+
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
@@ -103,18 +125,41 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
-		if err != nil {
-			return err
+		var (
+			replicationSets     []ring.ReplicationSet
+			partitionByInstance map[string]int32
+		)
+		if d.shouldRouteReadToReadcache(ctx) {
+			// Nautilus-only tenant: resolve partitions from the
+			// rebalancer assignment log and route exclusively to
+			// readcache. No ingester fallback.
+			userID, err := tenant.TenantID(ctx)
+			if err != nil {
+				return err
+			}
+			replicationSets, partitionByInstance, err = d.getReadcacheReplicationSetsForQuery(userID, from, to, matchers)
+			if err != nil {
+				return err
+			}
+		} else {
+			// partitionByInstance stays nil on the ingester path:
+			// query-load attribution hints only exist for readcache
+			// routing, where the resolved partitions come from the
+			// assignment log.
+			replicationSets, err = d.getIngesterReplicationSetsForQuery(ctx, matchers)
+			if err != nil {
+				return err
+			}
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, partitionByInstance, hits, req, queryMetrics)
 		if err != nil {
 			return err
 		}
 
 		s := trace.SpanFromContext(ctx)
 		s.SetAttributes(attribute.Int("streaming-series", len(result.StreamingSeries)))
+		s.SetAttributes(attribute.Int("readcache-instances-hit", hits.count()))
 		return nil
 	})
 
@@ -125,6 +170,14 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 // that must be queried for a read operation.
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
+//
+// There is deliberately NO metric-name partition pruning here: the
+// production ingest topic and the ingester ring are sharded with the
+// classic all-labels token (tokenForLabels), so a metric's series are
+// spread across all partitions. Pruning by
+// mimirpb.MetricNameHashRange is only valid in the metric-name
+// locality keyspace, which exists exclusively on the Nautilus path
+// (getReadcacheReplicationSetsForQuery).
 func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, matchers []*labels.Matcher) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -202,6 +255,204 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	return []ring.ReplicationSet{replicationSet}, nil
 }
 
+// extractExactMetricName returns the metric name from an exact __name__="..." matcher.
+// Returns ("", false) if no such matcher exists.
+func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
+	for _, m := range matchers {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value != "" {
+			return m.Value, true
+		}
+	}
+	return "", false
+}
+
+// getReadcacheReplicationSetsForQuery builds the replication sets for
+// a read on a nautilus-only tenant. It is the read-path analogue of
+// the write path's getKeysByAssignment: partitions are resolved from
+// the rebalancer's range->partition assignment log (the same log the
+// write path consults), not the production partition ring, because a
+// nautilus tenant's data lives on the nautilus_ingest topic whose
+// partition universe is defined by that log.
+//
+// Resolution is interval-aware. The query's sample-time range
+// [from, to] is padded into the wall-clock window during which those
+// samples could have been written, so the read picks up every
+// partition that owned the hashrange across any range->partition move
+// inside the query interval (not just the partition that owns it at
+// the current instant):
+//   - An exact __name__ matcher narrows the query to the metric
+//     name's hash range [lo, hi] (mimirpb.MetricNameHashRange) and
+//     only the partitions whose tiles overlapped that range during the
+//     window are queried (PartitionsOverlappingInterval).
+//   - Otherwise the query fans out to every partition that owned any
+//     part of the keyspace during the window (AllPartitionsDuring).
+//
+// The partition->readcache instance dimension is resolved over the
+// SAME window via readcacheassignment.Log.OwnersDuring: every readcache
+// that owned the partition at any point during [w0,w1) is queried,
+// because after a partition->readcache move each owner holds only the
+// slice it ingested while it owned the partition (the new owner starts
+// at the Kafka live edge; the previous owner keeps its frozen slice).
+// The per-instance merge dedups the safety-window overlap band.
+//
+// Each (owner, partition) pair becomes its own single-instance
+// ring.ReplicationSet. InstanceDesc.Id is the synthetic
+// "owner/p<partition>" key (unique per pair, since a readcache owns
+// many partitions and a partition may have several owners across the
+// window); InstanceDesc.Addr carries the real readcache instance to
+// dial, so queryClientForInstance dials that specific owner rather
+// than re-resolving to a single current owner. partitionByInstance
+// maps the synthetic Id to the partition for the QueryAttributionHint.
+//
+// Any inability to resolve (no live assignment log, no live readcache
+// log, an uncovered partition, or a partition with no owner during the
+// window) returns errReadcacheRoutingUnavailable. There is no ingester
+// fallback for nautilus-only tenants.
+func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, to model.Time, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
+	log := d.GetNautilusLog()
+	if log == nil {
+		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
+	}
+	rcLog := d.GetReadcacheLog()
+	if rcLog == nil {
+		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
+	}
+
+	w0, w1 := d.readcacheQueryWindow(userID, from, to)
+
+	var partitionIDs []int32
+	metricName, named := extractExactMetricName(matchers)
+	if named {
+		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
+		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
+	} else {
+		partitionIDs = log.AllPartitionsDuring(w0, w1)
+	}
+	if len(partitionIDs) == 0 {
+		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
+	}
+
+	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
+	partitionByInstance := make(map[string]int32, len(partitionIDs))
+	distinctOwners := make(map[string]struct{})
+	for _, partID := range partitionIDs {
+		// Every readcache that owned partID during the window, not
+		// just the owner at `now`: a query spanning a partition move
+		// must reach both the previous owner (frozen slice) and the
+		// current owner (live slice).
+		owners := rcLog.OwnersDuring(partID, w0, w1)
+		if len(owners) == 0 {
+			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d had no readcache owner during the query window", partID))
+		}
+		for _, owner := range owners {
+			// Synthetic, (owner, partition)-unique instance ID: a
+			// readcache owns multiple partitions and a partition may
+			// have several owners across the window, so the key must
+			// combine both. Addr carries the real instance to dial.
+			instanceID := fmt.Sprintf("%s/p%d", owner, partID)
+			sets = append(sets, ring.ReplicationSet{
+				Instances: []ring.InstanceDesc{{Id: instanceID, Addr: owner}},
+			})
+			partitionByInstance[instanceID] = partID
+			distinctOwners[owner] = struct{}{}
+		}
+	}
+
+	if d.readcacheRouteLogSeq.Inc()%readcacheRouteLogEvery == 1 {
+		d.logReadcacheRoutingDecision(userID, metricName, named, from, to, w0, w1, partitionIDs, len(sets), len(distinctOwners), rcLog)
+	}
+
+	return sets, partitionByInstance, nil
+}
+
+// readcacheQueryWindow pads a query's sample-time range [from,to] into
+// the wall-clock window [w0,w1] during which those samples could have
+// been written and could therefore still be resident in a readcache.
+// It is shared by getReadcacheReplicationSetsForQuery (production
+// routing) and ExplainReadcacheQuery (the read-path debug plan) so both
+// resolve an identical window.
+//
+// A sample stamped s is accepted at wallclock w in
+// [s-creationGrace, s+oooWindow], so over s in [from,to] the union is
+// [from-creationGrace, to+oooWindow]. The lower bound is clamped to
+// now-queryIngestersWithin (readcache holds nothing older, and the
+// querier already clamps the request range to the same horizon). The
+// half-open log lookups match a lease iff From < w1, so one millisecond
+// (model.Time resolution) is added to w1 so a lease starting exactly at
+// the last relevant instant is still matched. Finally w1 is clamped to
+// the present: samples written after now can't be visible, and without
+// the clamp a large OOO window would pick up the successor leases the
+// rebalancer pre-issues before each rotation and spuriously fail
+// routing.
+func (d *Distributor) readcacheQueryWindow(userID string, from, to model.Time) (w0, w1 time.Time) {
+	now := d.now()
+	w0 = from.Time().Add(-d.limits.CreationGracePeriod(userID))
+	w1 = to.Time().Add(d.limits.OutOfOrderTimeWindow(userID)).Add(time.Millisecond)
+	if qiw := d.limits.QueryIngestersWithin(userID); qiw > 0 {
+		if floor := now.Add(-qiw); w0.Before(floor) {
+			w0 = floor
+		}
+	}
+	if ceil := now.Add(time.Millisecond); w1.After(ceil) {
+		w1 = ceil
+	}
+	return w0, w1
+}
+
+// readcacheRouteLogEvery is the sampling rate of the readcache
+// routing-decision diagnostic log: 1 in every N readcache-routed
+// queries gets the full per-partition ownership breakdown logged.
+const readcacheRouteLogEvery = 100
+
+// logReadcacheRoutingDecision emits one info-level line explaining a
+// readcache routing resolution end to end: the query's sample-time
+// range, the padded wall-clock window it was expanded to, and — per
+// resolved partition — every lease from the readcache assignment log
+// that overlapped the window, with its [from, to) bounds. Each listed
+// lease is the reason its instance is queried for that partition, so
+// the line answers "why did this query fan out to these readcaches".
+// Sampled (see readcacheRouteLogEvery) because the per-partition
+// breakdown is large on full-fanout queries.
+func (d *Distributor) logReadcacheRoutingDecision(userID, metricName string, named bool, from, to model.Time, w0, w1 time.Time, partitionIDs []int32, pairs, distinctOwners int, rcLog *readcacheassignment.Log) {
+	if d.log == nil {
+		return
+	}
+	const timeFmt = "15:04:05.000"
+	var sb strings.Builder
+	for i, partID := range partitionIDs {
+		if i > 0 {
+			sb.WriteByte(' ')
+		}
+		fmt.Fprintf(&sb, "p%d{", partID)
+		for j, e := range rcLog.EntriesDuring(partID, w0, w1) {
+			if j > 0 {
+				sb.WriteByte(',')
+			}
+			fmt.Fprintf(&sb, "%s[%s,%s)", e.InstanceID, e.From.UTC().Format(timeFmt), e.To.UTC().Format(timeFmt))
+		}
+		sb.WriteByte('}')
+	}
+
+	mode := "full-fanout"
+	if named {
+		mode = "metric-name"
+	}
+	level.Info(d.log).Log(
+		"msg", "readcache routing decision (sampled)",
+		"user", userID,
+		"mode", mode,
+		"metric", metricName,
+		"query_from", from.Time().UTC().Format(time.RFC3339),
+		"query_to", to.Time().UTC().Format(time.RFC3339),
+		"window_w0", w0.UTC().Format(time.RFC3339),
+		"window_w1", w1.UTC().Format(time.RFC3339),
+		"partitions", len(partitionIDs),
+		"owner_partition_pairs", pairs,
+		"distinct_readcaches", distinctOwners,
+		"per_partition_owners", sb.String(),
+	)
+}
+
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
 // Both a and b should be lists of exemplars from the same series.
 // Defined here instead of pkg/util to avoid a import cycle.
@@ -262,7 +513,21 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+//
+// When partitionByInstance is non-nil and a readcache pool is
+// configured, each ingester instance is opportunistically remapped
+// to the readcache pod currently owning its partition (per the log
+// streamed from the rebalancer); on lookup miss, expired lease, or
+// transport error during dial, the call falls back transparently to
+// the ingester. The tenant runtime knob ReadcacheReadRouting gates
+// the swap (see shouldRouteReadToReadcache).
+//
+// Each readcache instance committed to (including any warmup-fallback
+// to a previous lease owner) is recorded in hits so QueryStream can
+// emit the per-query histogram observation. hits is per-call and
+// must not be nil; record() is a no-op when no readcache is dialed,
+// which is the desired behaviour for the all-ingester baseline.
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, partitionByInstance map[string]int32, hits *readcacheHitTracker, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
@@ -298,14 +563,57 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		var result ingesterQueryResult
 
-		client, err := d.ingesterPool.GetClientForInstance(*ing)
+		partID, hasPart := partitionByInstance[ing.Id]
+
+		queryClient, viaReadcache, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, hits, log)
 		if err != nil {
 			return result, err
 		}
 
-		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, req)
+		// When the call is routed to a readcache pod, stamp the
+		// resolved partition into the request so the pod scopes its
+		// read to exactly that partition's TSDB and attributes the
+		// scanned-samples query load to it. The request is shared
+		// across all per-instance goroutines, so copy it before
+		// mutating the hint. Ingester calls keep req untouched (the
+		// ingester ignores the hint after the nautilus revert).
+		streamReq := req
+		if viaReadcache && hasPart {
+			r := *req
+			r.QueryAttributionHint = &ingester_client.QueryAttributionHint{PartitionId: partID}
+			streamReq = &r
+		}
+
+		// Surface readcache fan-out in the per-query stats (and the
+		// query-frontend's "query stats" log line): one count per
+		// QueryStream RPC issued to a readcache instance, including
+		// the warming fallback below.
+		queryStats := stats.FromContext(ctx)
+		if viaReadcache {
+			queryStats.AddReadcacheQueryStreamCalls(1)
+		}
+
+		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
-			return result, err
+			// If readcache says it's still warming, try the
+			// partition's previous lease owner before giving up.
+			// For experimental tenants there is no ingester
+			// fallback (see plan section 2C.4); a failure here
+			// surfaces as 503 to the caller, matching the
+			// failure semantics of a full ingester outage. The
+			// previous owner is also a readcache pod, so it
+			// receives the same partition-hinted request.
+			if readcache.IsStillWarming(err) && hasPart {
+				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+					hits.record(prevID)
+					queryStats.AddReadcacheQueryStreamCalls(1)
+					stream, err = prev.QueryStream(ctx, streamReq)
+				}
+			}
+			if err != nil {
+				return result, err
+			}
 		}
 
 		// Why retain the batches rather than iteratively build a single slice?
@@ -473,12 +781,28 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPe
 	}
 
 	var allSeries []ingester_client.StreamingSeries
+	seenOutputLabels := map[string]int{}
+	loggedDuplicateOutput := false
 
 	for tree.Next() {
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
 		lastSeriesIndex := len(allSeries) - 1
 
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+			labelKey := nextSeriesFromIngester.String()
+			if firstIndex, ok := seenOutputLabels[labelKey]; !loggedDuplicateOutput && ok {
+				// #region agent log
+				agentDebugLogDistributorQuery("H2", "distributor merge emitted duplicate output labels", map[string]any{
+					"firstIndex":  firstIndex,
+					"secondIndex": len(allSeries),
+					"labels":      labelKey,
+				})
+				// #endregion
+				loggedDuplicateOutput = true
+			} else if !ok {
+				seenOutputLabels[labelKey] = len(allSeries)
+			}
+
 			// First time we've seen this series.
 			series := ingester_client.StreamingSeries{
 				Labels:  nextSeriesFromIngester,

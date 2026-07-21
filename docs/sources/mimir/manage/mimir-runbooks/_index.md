@@ -3946,6 +3946,7 @@ When looking at `msg="query stats"` consider the following attributes;
 - encode_time_seconds — time spent serialising the result to JSON
 - remote_execution_request_count — number of requests sent to queriers for execution
 - retries — number of times the query-frontend retried downstream requests while processing the query (0 if all requests succeeded on their first attempt)
+- readcache_query_stream_calls — number of QueryStream RPCs issued to readcache instances for the query (0 when served by ingesters only)
 - split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
 - spun_off_subqueries — the number of subqueries spun off

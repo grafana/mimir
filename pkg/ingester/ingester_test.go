@@ -4380,7 +4380,7 @@ func TestIngester_Push(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						require.Error(t, err)
-						handledErr := mapPushErrorToErrorWithStatus(err)
+						handledErr := MapPushErrorToErrorWithStatus(err)
 						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
 						require.True(t, ok)
 						require.Truef(t, errWithStatus.Equals(testData.expectedErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedErr)
@@ -11650,7 +11650,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID))), userID)
+	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerUserLimitExceeded.WrapError(newPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID))), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-user limit, i.e., 10 series in total.
@@ -11748,7 +11748,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), metricLabelAdapters2)), userID)
+	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerMetricLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), metricLabelAdapters2)), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-metric, i.e., 10 series in total.

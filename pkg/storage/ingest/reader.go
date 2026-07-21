@@ -380,6 +380,7 @@ func (r *SingleClusterPartitionReader) processNextFetches(ctx context.Context, r
 	if err != nil {
 		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
 	}
+	r.metrics.recordsConsumed.WithLabelValues(strconv.Itoa(int(r.partitionID))).Add(float64(fetches.NumRecords()))
 	r.enqueueCommit(fetches)
 	r.notifyLastConsumedOffset(fetches)
 	r.updateHighestConsumedTimestampAfterConsumption(fetches, receiveAndConsumeDelayObserver)
@@ -800,6 +801,23 @@ func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (star
 				if startExists && fileOffset >= partitionStart {
 					offset = fileOffset + 1
 					lastConsumedOffset = fileOffset
+
+					// Cap the replay at MaxReplayPeriod. A file offset that is still valid
+					// (within retention) but very old — e.g. the process was down for a long
+					// time, or the file is a stale leftover from a previous ownership stint —
+					// must not trigger an unbounded backlog replay: records older than the
+					// period are typically not ingestible anymore (outside the TSDB retention
+					// or out-of-order window), so consuming them is wasted work.
+					horizonOffset, horizonExists, err := r.fetchFirstOffsetAfterTime(ctx, cl, time.Now().Add(-r.kafkaCfg.MaxReplayPeriod))
+					if err != nil {
+						return 0, -1, err
+					}
+					if horizonExists && horizonOffset > offset {
+						level.Warn(r.logger).Log("msg", "file-stored offset is older than the max replay period, clamping the start offset", "max_replay_period", r.kafkaCfg.MaxReplayPeriod, "file_offset", fileOffset, "start_offset", horizonOffset, "consumer_group", r.consumerGroup)
+						offset = horizonOffset
+						lastConsumedOffset = horizonOffset - 1
+					}
+
 					level.Info(r.logger).Log("msg", "starting consumption from file-stored offset (enforcement enabled)", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 					return offset, lastConsumedOffset, nil
 				}
@@ -1197,6 +1215,7 @@ type ReaderMetrics struct {
 	fetchedDiscardedRecordBytes        prometheus.Counter
 	strongConsistencyMetrics           *StrongReadConsistencyMetrics
 	lastConsumedOffset                 *prometheus.GaugeVec
+	recordsConsumed                    *prometheus.CounterVec
 	consumeLatency                     prometheus.Histogram
 	kprom                              *kprom.Metrics
 	missedRecords                      prometheus.Counter
@@ -1288,7 +1307,11 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		}),
 		strongConsistencyMetrics: NewStrongReadConsistencyMetrics(reg, component, []string{topic}),
 		lastConsumedOffset:       lastConsumedOffset,
-		kprom:                    kpromMetrics,
+		recordsConsumed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_records_consumed_total",
+			Help: "Total number of records successfully consumed by the partition reader.",
+		}, []string{"partition"}),
+		kprom: kpromMetrics,
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",

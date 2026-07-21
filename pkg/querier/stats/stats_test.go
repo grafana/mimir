@@ -301,12 +301,15 @@ func TestStats_Copy(t *testing.T) {
 			EncodeTime:                  10,
 			SamplesProcessed:            11,
 			SpunOffSubqueries:           12,
+			SamplesProcessedPerStep:     []StepStat{{Timestamp: 1, Value: 2}},
 			RemoteExecutionRequestCount: 13,
 			SplitRangeVectors:           14,
 			EquivalentSamplesRead:       15,
 			PhysicalSamplesRead:         16,
-			Retries:                     17,
+			ReadcacheQueryStreamCalls:   17,
+			Retries:                     18,
 		},
+		mx: sync.Mutex{},
 	}
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)

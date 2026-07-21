@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package rebalancer
+
+import (
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/go-kit/log/level"
+
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
+)
+
+// runReadcacheSlicer executes the second slicer round: balancing the
+// (partition -> readcache instance) mapping using the per-partition
+// load signal collected by collectRates().
+//
+// activeInstances is the set of readcache instance IDs the slicer
+// may assign to this round. The caller resolves it (preferring the
+// ring when wired, falling back to ReadcacheSlicerConfig.Instances)
+// so the slicer itself is agnostic to discovery mechanism.
+//
+// This is a no-op when ReadcacheSlicer.Enabled is false or
+// activeInstances is empty (those gates are checked by the caller).
+// When it runs, it:
+//
+//  1. Reads the current (partition -> instance) mapping from
+//     readcacheStore.
+//  2. Builds the per-partition load vector as
+//     alpha*samples_ewma + beta*query_samples_ewma.
+//  3. Calls planReadcacheAssignment to produce the next mapping.
+//  4. Records the moves into the cooldown map.
+//  5. Applies the plan to readcacheStore (which broadcasts to
+//     subscribers and persists the new state if a data-dir is
+//     configured).
+//
+// partitionRateByPID is the per-partition write-rate EWMA — the
+// same signal the first-tier slicer balances hash ranges on. Using
+// rate (rather than head-series count, which lags by the TSDB head
+// compaction interval) means a partition's reported load drops as
+// soon as its writes are routed elsewhere, so the second-tier
+// slicer can react in the same round as a first-tier reassignment.
+func (r *Rebalancer) runReadcacheSlicer(
+	now time.Time,
+	activePartitions []int32,
+	partitionRateByPID map[int32]float64,
+	partitionQuerySamples map[int32]float64,
+	activeInstances []string,
+	failedInstances map[string]struct{},
+) bool {
+	cfg := r.cfg.ReadcacheSlicer
+
+	// Build the load function: alpha * write rate + beta * query rate.
+	loadByPartition := make(map[int32]float64, len(activePartitions))
+	for _, pid := range activePartitions {
+		loadByPartition[pid] = cfg.Alpha*partitionRateByPID[pid] + cfg.Beta*partitionQuerySamples[pid]
+	}
+
+	// Build the current owner map from the live readcache log.
+	currentOwner := make(map[int32]string, len(activePartitions))
+	for _, entry := range r.readcacheStore.snapshot() {
+		if entry.ActiveAt(now) {
+			// Single-owner mode: each partition has at most one
+			// active entry; if multi-owner gets enabled later this
+			// will need a deterministic tie-break.
+			currentOwner[entry.PartitionID] = entry.InstanceID
+		}
+	}
+
+	r.readcacheCooldowns.prune(now)
+	plan := planReadcacheAssignment(cfg, readcachePlanInput{
+		partitions:      activePartitions,
+		loadByPartition: loadByPartition,
+		instances:       activeInstances,
+		currentOwner:    currentOwner,
+		recentlyMoved:   r.readcacheCooldowns.stillCooling(now),
+		excludedTargets: failedInstances,
+	})
+	if len(failedInstances) > 0 {
+		ids := make([]string, 0, len(failedInstances))
+		for id := range failedInstances {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		level.Info(r.logger).Log(
+			"msg", "excluded readcache instances from tier-2 placement targets",
+			"count", len(failedInstances),
+			"reason", "HashRangeStats RPC failed this round; stats unknown, not zero-load",
+			"instances", strings.Join(ids, ","),
+		)
+	}
+
+	r.readcacheCooldowns.extendForMoves(now, cfg.MoveCooldown, plan.Moves)
+
+	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.readcacheLeaseLookahead(), r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
+	if changed {
+		level.Info(r.logger).Log(
+			"msg", "readcache slicer round produced changes",
+			"moves", len(plan.Moves),
+			"partitions", len(activePartitions),
+			"instances", len(activeInstances),
+			"subscribers", r.readcacheStore.numSubscribers(),
+			"lease_horizon", r.readcacheStore.leaseHorizon(now).Format(time.RFC3339),
+		)
+		for _, m := range plan.Moves {
+			level.Info(r.logger).Log(
+				"msg", "readcache partition move planned",
+				"partition", m.PartitionID,
+				"from", m.From,
+				"to", m.To,
+				"load", m.Load,
+				"reason", m.Reason,
+			)
+		}
+	} else {
+		level.Info(r.logger).Log(
+			"msg", "readcache slicer round unchanged",
+			"partitions", len(activePartitions),
+			"instances", len(activeInstances),
+		)
+	}
+	r.metrics.updateReadcacheRound(plan)
+
+	// Admin trace plumbing: record planned-owner-by-partition and
+	// per-instance load. The trace serializer reads
+	// r.admin.lastReadcachePlan so the in-process /rounds.json reflects
+	// the most recent round.
+	r.admin.setLastReadcachePlan(now, plan, currentOwner)
+
+	// Update load gauges. These are last-write-wins per partition /
+	// per instance, exactly as the partitionLByPID gauges in the
+	// existing slicer.
+	_ = readcacheassignment.LogEntry{} // keep package import warm if no flag branch uses it directly
+	return changed
+}

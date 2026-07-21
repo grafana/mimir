@@ -7,6 +7,7 @@ package stats
 
 import (
 	"context"
+	"sync"
 	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
 	"time"
 
@@ -45,6 +46,7 @@ func IsEnabled(ctx context.Context) bool {
 // SafeStats is a concurrent safe wrapper around the Stats struct.
 type SafeStats struct {
 	Stats
+	mx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
@@ -225,6 +227,19 @@ func (s *SafeStats) LoadSamplesProcessed() uint64 {
 	return atomic.LoadUint64(&s.SamplesProcessed)
 }
 
+func (s *SafeStats) AddSamplesProcessedPerStep(points []StepStat) {
+	s.mergeSamplesProcessedPerStep(points)
+}
+
+func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
+	if s == nil {
+		return nil
+	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	return s.SamplesProcessedPerStep
+}
+
 func (s *SafeStats) AddSpunOffSubqueries(num uint32) {
 	if s == nil {
 		return
@@ -265,6 +280,20 @@ func (s *SafeStats) LoadSplitRangeVectors() uint32 {
 		return 0
 	}
 	return atomic.LoadUint32(&s.SplitRangeVectors)
+}
+
+func (s *SafeStats) AddReadcacheQueryStreamCalls(count uint32) {
+	if s == nil {
+		return
+	}
+	atomic.AddUint32(&s.ReadcacheQueryStreamCalls, count)
+}
+
+func (s *SafeStats) LoadReadcacheQueryStreamCalls() uint32 {
+	if s == nil {
+		return 0
+	}
+	return atomic.LoadUint32(&s.ReadcacheQueryStreamCalls)
 }
 
 func (s *SafeStats) AddEquivalentSamplesRead(c uint64) {
@@ -331,12 +360,60 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddQueueTime(other.LoadQueueTime())
 	s.AddEncodeTime(other.LoadEncodeTime())
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
+	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.AddRemoteExecutionRequests(other.LoadRemoteExecutionRequestCount())
 	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
 	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
 	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 	s.AddRetries(other.LoadRetries())
+	s.AddReadcacheQueryStreamCalls(other.LoadReadcacheQueryStreamCalls())
+}
+
+func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
+	if s == nil {
+		return
+	}
+	// Hold the lock for the entire merge operation to make it atomic
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
+	this := s.SamplesProcessedPerStep // Access directly since we hold the lock
+
+	if len(other) == 0 {
+		// Nothing to merge
+		return
+	}
+
+	merged := make([]StepStat, 0, len(this)+len(other))
+	i, j := 0, 0
+
+	for i < len(this) && j < len(other) {
+		if this[i].Timestamp < other[j].Timestamp {
+			merged = append(merged, this[i])
+			i++
+		} else if other[j].Timestamp < this[i].Timestamp {
+			merged = append(merged, other[j])
+			j++
+		} else {
+			summed := StepStat{
+				Timestamp: this[i].Timestamp,
+				Value:     this[i].Value + other[j].Value,
+			}
+			merged = append(merged, summed)
+			i++
+			j++
+		}
+	}
+
+	// Append any remaining elements
+	for ; i < len(this); i++ {
+		merged = append(merged, this[i])
+	}
+	for ; j < len(other); j++ {
+		merged = append(merged, other[j])
+	}
+	s.SamplesProcessedPerStep = merged // Set directly since we hold the lock
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

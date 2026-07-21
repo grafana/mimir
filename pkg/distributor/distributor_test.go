@@ -87,6 +87,7 @@ var (
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
+		initCfg    func(*Config)
 		initLimits func(*validation.Limits)
 		expected   error
 	}{
@@ -106,6 +107,21 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
+		"should fail if NautilusRequired is set without a rebalancer address": {
+			initCfg: func(cfg *Config) {
+				cfg.NautilusRequired = true
+			},
+			initLimits: func(_ *validation.Limits) {},
+			expected:   errNautilusRequiredWithoutAddress,
+		},
+		"should pass if NautilusRequired is set together with a rebalancer address": {
+			initCfg: func(cfg *Config) {
+				cfg.NautilusRequired = true
+				cfg.NautilusRebalancerAddress = "rebalancer:9095"
+			},
+			initLimits: func(_ *validation.Limits) {},
+			expected:   nil,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -114,6 +130,9 @@ func TestConfig_Validate(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&cfg, &limits)
 
+			if testData.initCfg != nil {
+				testData.initCfg(&cfg)
+			}
 			testData.initLimits(&limits)
 
 			assert.Equal(t, testData.expected, cfg.Validate(limits, compartments.Config{}))
@@ -2534,7 +2553,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 							}
 
 							// Start the distributor.
-							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, true, nil, nil, nil, log.NewNopLogger())
+							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, true, nil, nil, nil, nil, log.NewNopLogger())
 							require.NoError(b, err)
 							require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6618,7 +6637,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionInstanceRings, partitionRings, true, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionInstanceRings, partitionRings, true, true, nil, nil, nil, reg, logger)
 		require.NoError(t, err)
 		if !cfg.disableDistributorService {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, d))
@@ -7144,7 +7163,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 			return nil, err
 		}
 
-		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
+		hash := tokenForLabels(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
 			i.timeseries[hash] = &series

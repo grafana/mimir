@@ -190,8 +190,9 @@ type KafkaConfig struct {
 	TargetConsumerLagAtStartup    time.Duration `yaml:"target_consumer_lag_at_startup"`
 	MaxConsumerLagAtStartup       time.Duration `yaml:"max_consumer_lag_at_startup"`
 
-	// MaxReplayPeriod is used when file-based offset enforcement is enabled but no offset file exists. It specifies
-	//how far back to replay data; typically set to the TSDB retention period.
+	// MaxReplayPeriod caps how far back data is replayed when file-based offset enforcement is
+	// enabled: when no offset file exists it selects the starting offset, and when a file exists
+	// it clamps a stored offset older than the period. Typically set to the TSDB retention period.
 	MaxReplayPeriod time.Duration `yaml:"-"`
 
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`

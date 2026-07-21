@@ -1,0 +1,136 @@
+multitenancy_enabled: true
+
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
+ingest_storage:
+  enabled: true
+  kafka:
+    address: kafka_1:9092
+    topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
+    fetch_concurrency_max: 15
+    # Parallel shard pushes are safe on the ingester (append lock) and on
+    # readcache (per-partition TSDB mutex around append/ApplyConfig/CompactHead).
+    ingestion_concurrency_max: 8
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 8
+
+ingester:
+  push_grpc_method_enabled: false
+  track_ingester_owned_series: true
+  active_series_metrics_update_period: 10s
+  active_series_metrics_idle_timeout: 1m
+
+  ring:
+    num_tokens: 0
+
+  partition_ring:
+    min_partition_owners_count: 1
+    min_partition_owners_duration: 10s
+    delete_inactive_partition_after: 1m
+
+distributor:
+  nautilus_rebalancer_address: nautilus-rebalancer:9095
+  nautilus_ingest_topic: nautilus_ingest
+  # Static readcache addresses left empty: the distributor resolves
+  # instance IDs to dial targets through the readcache instance ring
+  # (kvstore.store=memberlist below). The static `addresses` map
+  # remains available as an operator escape hatch for pinning specific
+  # pods.
+
+nautilus_rebalancer:
+  data_dir: /data/nautilus-rebalancer
+  kafka_topic: nautilus_ingest
+  partition_count: 8
+  # Exercise the active-partition-count cap: the topic has 8
+  # partitions provisioned but the rebalancer slices over [0, 4)
+  # only, decoupled from the ingester partition ring (which has 1
+  # entry in this single-ingester dev cell).
+  active_partition_count: 4
+  # Faster cycle in the dev cell so observability tests don't have
+  # to wait the full production lease window. 30s lookahead on a
+  # 90s lease means one round every ~60s.
+  min_rebalance_interval: 15s
+  max_rebalance_interval: 60s
+  lease_duration: 90s
+  lease_lookahead: 30s
+  readcache_slicer:
+    enabled: true
+    # `instances:` left empty so the slicer enumerates the
+    # readcache instance ring (KV: collectors/readcache) every
+    # round. Adding a pod is "deploy and wait one round"; removing
+    # one (clean shutdown calls LeaveOnStopping) takes effect within
+    # a heartbeat. Setting `instances:` here would re-pin the slicer
+    # to a static list, which is reserved for drain / debug.
+    alpha: 1.0
+    beta: 0.0
+    movement_budget: 0.5
+    move_cooldown: 30s
+
+readcache:
+  data_dir: /data/readcache
+  kafka_topic: nautilus_ingest
+  # The rebalancer is authoritative for partition ownership. Each
+  # readcache pod subscribes to WatchReadcacheAssignments on startup
+  # and only consumes the partitions whose active lease names it;
+  # cold pods own nothing until the rebalancer's first snapshot
+  # arrives.
+  rebalancer_address: nautilus-rebalancer:9095
+  head_compaction_interval: 1m
+  # Must be >= querier query_ingesters_within (6h here) and > query_store_after
+  # (5h). If retention is shorter than the readcache query window, ownership
+  # moves leave gaps: frozen epochs are reaped while the assignment log still
+  # routes to those owners (silent under-counts before fail-fast; 503s after).
+  local_block_retention: 6h
+  instance_ring:
+    # Memberlist matches the rest of the nautilus stack (ingester,
+    # distributor, query-frontend, etc.) so all rings share a single
+    # gossip cluster.
+    kvstore:
+      store: memberlist
+
+block_builder:
+  scheduler_config:
+    address: block-builder-scheduler-0:9095
+    update_interval: 5s
+    max_update_age: 30m
+
+block_builder_scheduler:
+  scheduling_interval: 30s
+  job_size: 1m
+  startup_observe_time: 5s
+
+blocks_storage:
+  s3:
+    bucket_name: mimir-blocks
+  tsdb:
+    dir: /data/tsdb
+    ship_interval: 0s
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
+
+memberlist:
+  join_members:
+    - distributor-1
+    - localhost
+  rejoin_interval: 10s
+
+query_scheduler:
+  service_discovery_mode: "ring"
+
+limits:
+  native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
+
+runtime_config:
+  file: ./config/runtime.yaml
+
+server:
+  log_level: info

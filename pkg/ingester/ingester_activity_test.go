@@ -72,6 +72,22 @@ func TestQueryRequest_CustomStringer(t *testing.T) {
 				},
 			},
 		},
+		"with attribution hint": {
+			request: &client.QueryRequest{
+				StartTimestampMs:     rand.Int63(),
+				EndTimestampMs:       rand.Int63(),
+				QueryAttributionHint: &client.QueryAttributionHint{PartitionId: 42},
+			},
+		},
+		"with attribution hint partition zero": {
+			// Regression guard: partition 0 is a real partition,
+			// not a sentinel; the stringer must render it.
+			request: &client.QueryRequest{
+				StartTimestampMs:     rand.Int63(),
+				EndTimestampMs:       rand.Int63(),
+				QueryAttributionHint: &client.QueryAttributionHint{PartitionId: 0},
+			},
+		},
 	}
 	for tn, tc := range tcs {
 		t.Run(tn, func(t *testing.T) {

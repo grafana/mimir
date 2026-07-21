@@ -529,7 +529,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := mapPushErrorToErrorWithStatus(tc.err)
+			handledErr := MapPushErrorToErrorWithStatus(tc.err)
 			stat, ok := grpcutil.ErrorToStatus(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())

@@ -48,7 +48,8 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
-  reserved 13; // samples_processed_per_step
+  // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
+  repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
   // The number of remote execution requests that were made while evaluating a query.
   uint32 remote_execution_request_count = 14;
   // The number of range vectors that were split in the query.
@@ -65,4 +66,13 @@ message Stats {
   // processing this request.
   // 0 means all requests succeeded on the first attempt.
   uint32 retries = 18;
+  // The number of QueryStream RPCs issued to readcache instances for the query
+  // (nautilus read routing). 0 when the query was served by ingesters only.
+  uint32 readcache_query_stream_calls = 19;
+}
+
+// StepStat represents a sample count at a specific timestamp.
+message StepStat {
+  int64 timestamp = 1; // Unix timestamp in milliseconds.
+  int64 value = 2; // Number of samples at this timestamp.
 }

@@ -868,10 +868,14 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 							# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
 							cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
 
+							# HELP cortex_ingest_storage_reader_records_consumed_total Total number of records successfully consumed by the partition reader.
+							# TYPE cortex_ingest_storage_reader_records_consumed_total counter
+							cortex_ingest_storage_reader_records_consumed_total{partition="1"} 2
+
 							# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 							# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
-						`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+						`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_records_consumed_total", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 					})
 				})
 			})
@@ -1066,7 +1070,7 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 									# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 									# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
 									cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 2
-		
+
 									# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 									# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 									cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
@@ -2762,6 +2766,73 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		require.NoError(t, err)
 		assert.Equal(t, int64(43), startOffset)
 		assert.Equal(t, int64(42), lastConsumedOffset)
+	})
+
+	t.Run("clamps valid file offset older than max replay period", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Offsets 0-2 are older than the replay period, offsets 3-4 are within it.
+		// The delivery timeout is checked against the record timestamp, so it must
+		// exceed the age of the backdated records.
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(3*time.Hour))
+		for i := 0; i < 3; i++ {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("old-record"), time.Now().Add(-2*time.Hour))
+		}
+		for i := 0; i < 2; i++ {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("recent-record"), time.Now())
+		}
+
+		tmpDir := t.TempDir()
+		offsetFilePath := filepath.Join(tmpDir, "offset")
+		offsetFile := newOffsetFile(offsetFilePath, partitionID, log.NewNopLogger())
+		require.NoError(t, offsetFile.Write(0)) // Valid (>= partition start) but older than the replay period.
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+			withOffsetFilePath(offsetFilePath),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), startOffset, "start offset should be clamped to the first offset within the max replay period")
+		assert.Equal(t, int64(2), lastConsumedOffset)
+	})
+
+	t.Run("does not clamp file offset within max replay period", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(3*time.Hour))
+		for i := 0; i < 3; i++ {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("old-record"), time.Now().Add(-2*time.Hour))
+		}
+		for i := 0; i < 2; i++ {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("recent-record"), time.Now())
+		}
+
+		tmpDir := t.TempDir()
+		offsetFilePath := filepath.Join(tmpDir, "offset")
+		offsetFile := newOffsetFile(offsetFilePath, partitionID, log.NewNopLogger())
+		require.NoError(t, offsetFile.Write(3)) // Within the replay period: resume exactly from here.
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+			withOffsetFilePath(offsetFilePath),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), startOffset)
+		assert.Equal(t, int64(3), lastConsumedOffset)
 	})
 
 	t.Run("ignores stale file offset when file offset is behind partition start (retention or lag)", func(t *testing.T) {

@@ -1945,6 +1945,54 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: errors.New("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only"),
 		},
+		"nautilus_ingest_routing rejects unknown values": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NautilusIngestRouting = "shadow"
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(`invalid nautilus_ingest_routing "shadow" (supported values: %s, %s)`, NautilusIngestRoutingDisabled, NautilusIngestRoutingNautilus),
+		},
+		"readcache_read_routing rejects unknown values": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.ReadcacheReadRouting = "primary-with-fallback"
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(`invalid readcache_read_routing "primary-with-fallback" (supported values: %s, %s)`, ReadcacheReadRoutingDisabled, ReadcacheReadRoutingNautilus),
+		},
+		"nautilus/readcache routing knobs must agree (write enabled, read disabled)": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NautilusIngestRouting = NautilusIngestRoutingNautilus
+				cfg.ReadcacheReadRouting = ReadcacheReadRoutingDisabled
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(`nautilus_ingest_routing (%q) and readcache_read_routing (%q) must match; flipping only one yields a half-broken tenant`, NautilusIngestRoutingNautilus, ReadcacheReadRoutingDisabled),
+		},
+		"nautilus/readcache routing knobs must agree (read enabled, write disabled)": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NautilusIngestRouting = NautilusIngestRoutingDisabled
+				cfg.ReadcacheReadRouting = ReadcacheReadRoutingNautilus
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(`nautilus_ingest_routing (%q) and readcache_read_routing (%q) must match; flipping only one yields a half-broken tenant`, NautilusIngestRoutingDisabled, ReadcacheReadRoutingNautilus),
+		},
+		"nautilus/readcache routing knobs match (both nautilus)": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NautilusIngestRouting = NautilusIngestRoutingNautilus
+				cfg.ReadcacheReadRouting = ReadcacheReadRoutingNautilus
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should round shard counts up to the next power of two": {
 			cfg: func() Limits {
 				cfg := Limits{}

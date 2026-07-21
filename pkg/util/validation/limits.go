@@ -85,6 +85,17 @@ const (
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
+
+	// Routing modes for the experimental readcache rollout. The
+	// distributor's write- and read-side runtime knobs share these
+	// values so a tenant either stays on the production path or is
+	// enrolled in the experimental nautilus/readcache path end-to-end.
+	// For enrolled tenants, startup config decides whether writes go
+	// to production ingest, nautilus ingest, or both.
+	NautilusIngestRoutingDisabled = "disabled"
+	NautilusIngestRoutingNautilus = "nautilus-only"
+	ReadcacheReadRoutingDisabled  = "disabled"
+	ReadcacheReadRoutingNautilus  = "nautilus-only"
 )
 
 var (
@@ -342,6 +353,25 @@ type Limits struct {
 	IngestionPartitionsTenantShardSize      int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
 	IngestionPartitionsTenantWriteShardSize int    `yaml:"ingestion_partitions_tenant_write_shard_size" json:"ingestion_partitions_tenant_write_shard_size" category:"experimental"`
 
+	// NautilusIngestRouting enrolls this tenant in the experimental
+	// Nautilus write policy. Valid values:
+	//   - "disabled" (default): use the production ingest topic.
+	//   - "nautilus-only": use the startup-configured Nautilus write
+	//     destinations (production ingest, nautilus ingest, or both).
+	// Must move in lockstep with ReadcacheReadRouting; flipping
+	// only one yields a half-broken tenant (writes land in the
+	// experimental topic but reads still hit the production
+	// ingesters, or vice versa).
+	NautilusIngestRouting string `yaml:"nautilus_ingest_routing" json:"nautilus_ingest_routing" category:"experimental"`
+
+	// ReadcacheReadRouting selects whether the distributor's read
+	// path for this tenant queries readcache or the ingester ring.
+	// Valid values:
+	//   - "disabled" (default): reads served by ingesters.
+	//   - "nautilus-only": reads served by readcache only.
+	// See NautilusIngestRouting; the two knobs must move together.
+	ReadcacheReadRouting string `yaml:"readcache_read_routing" json:"readcache_read_routing" category:"experimental"`
+
 	// NameValidationScheme is the validation scheme for metric and label names.
 	NameValidationScheme model.ValidationScheme `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
 
@@ -549,6 +579,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 	f.IntVar(&l.IngestionPartitionsTenantWriteShardSize, "ingest-storage.ingestion-partition-tenant-write-shard-size", 0, "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.")
+	f.StringVar(&l.NautilusIngestRouting, "distributor.nautilus-ingest-routing", NautilusIngestRoutingDisabled, "Whether this tenant is enrolled in the Nautilus write policy. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (startup-configured Nautilus write destinations: production ingest, nautilus ingest, or both). Must move in lockstep with readcache_read_routing.")
+	f.StringVar(&l.ReadcacheReadRouting, "distributor.readcache-read-routing", ReadcacheReadRoutingDisabled, "Which read path this tenant's queries are routed through. Valid values: 'disabled' (queries served by ingesters), 'nautilus-only' (queries served by readcache). Must move in lockstep with nautilus_ingest_routing.")
 
 	// Ensure the pointer holders are initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
@@ -717,6 +749,25 @@ func (l *Limits) Validate() error {
 
 	if !slices.Contains(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
+	}
+
+	switch l.NautilusIngestRouting {
+	case "", NautilusIngestRoutingDisabled, NautilusIngestRoutingNautilus:
+	default:
+		return fmt.Errorf("invalid nautilus_ingest_routing %q (supported values: %s, %s)", l.NautilusIngestRouting, NautilusIngestRoutingDisabled, NautilusIngestRoutingNautilus)
+	}
+	switch l.ReadcacheReadRouting {
+	case "", ReadcacheReadRoutingDisabled, ReadcacheReadRoutingNautilus:
+	default:
+		return fmt.Errorf("invalid readcache_read_routing %q (supported values: %s, %s)", l.ReadcacheReadRouting, ReadcacheReadRoutingDisabled, ReadcacheReadRoutingNautilus)
+	}
+	// The write- and read-side knobs must agree: a tenant is either
+	// enrolled in the experimental Nautilus/readcache path end-to-end,
+	// or it stays on the production ingester path end-to-end. Mixing
+	// them yields a half-broken tenant whose writes and reads look at
+	// different recent-data sources.
+	if writeIs := l.NautilusIngestRouting == NautilusIngestRoutingNautilus; writeIs != (l.ReadcacheReadRouting == ReadcacheReadRoutingNautilus) {
+		return fmt.Errorf("nautilus_ingest_routing (%q) and readcache_read_routing (%q) must match; flipping only one yields a half-broken tenant", l.NautilusIngestRouting, l.ReadcacheReadRouting)
 	}
 
 	if l.HATrackerUpdateTimeoutJitterMax < 0 {
@@ -1776,6 +1827,26 @@ func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 
 func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
+}
+
+// NautilusIngestRouting returns the per-tenant nautilus_ingest_routing
+// value, defaulting to "disabled" when empty.
+func (o *Overrides) NautilusIngestRouting(userID string) string {
+	v := o.getOverridesForUser(userID).NautilusIngestRouting
+	if v == "" {
+		return NautilusIngestRoutingDisabled
+	}
+	return v
+}
+
+// ReadcacheReadRouting returns the per-tenant readcache_read_routing
+// value, defaulting to "disabled" when empty.
+func (o *Overrides) ReadcacheReadRouting(userID string) string {
+	v := o.getOverridesForUser(userID).ReadcacheReadRouting
+	if v == "" {
+		return ReadcacheReadRoutingDisabled
+	}
+	return v
 }
 
 func (o *Overrides) IngestionPartitionsTenantWriteShardSize(userID string) int {

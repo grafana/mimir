@@ -1268,6 +1268,39 @@ reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -distributor.reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 2]
+
+# (experimental) gRPC address of the nautilus rebalancer. When set, the
+# distributor polls it for hash-range-to-partition assignments.
+# CLI flag: -distributor.nautilus-rebalancer-address
+[nautilus_rebalancer_address: <string> | default = ""]
+
+# (experimental) If true, the distributor rejects write requests with a 503
+# Service Unavailable when the nautilus assignment log is unavailable or doesn't
+# cover a series key, instead of falling back to the partition ring's hash-based
+# routing. Use this in deployments where nautilus assignments are load-bearing
+# for query locality.
+# CLI flag: -distributor.nautilus-required
+[nautilus_required: <boolean> | default = false]
+
+# (experimental) Kafka topic to which writes for tenants in
+# nautilus_ingest_routing=nautilus-only are forwarded. The production
+# -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache
+# pods consume from.
+# CLI flag: -distributor.nautilus-ingest-topic
+[nautilus_ingest_topic: <string> | default = "nautilus_ingest"]
+
+readcache:
+  # (experimental) Optional comma-separated list of instance_id=host:port pairs
+  # identifying readcache pods. When set, each listed instance overrides
+  # ring-based discovery; when empty (the default), the distributor resolves
+  # addresses from the readcache instance ring.
+  # CLI flag: -distributor.readcache.addresses
+  [addresses: <string> | default = ""]
+
+  # Configures the gRPC client used to communicate with readcache pods.
+  # The CLI flags prefix for this block configuration is:
+  # distributor.readcache.grpc-client-config
+  [grpc_client_config: <grpc_client>]
 ```
 
 ### ingester
@@ -3532,6 +3565,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `compactor.scheduler-client.grpc-client-config`
+- `distributor.readcache.grpc-client-config`
 - `ingester.client`
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
@@ -5420,6 +5454,19 @@ ruler_alertmanager_client_config:
 # means the write shard size equals the read shard size.
 # CLI flag: -ingest-storage.ingestion-partition-tenant-write-shard-size
 [ingestion_partitions_tenant_write_shard_size: <int> | default = 0]
+
+# (experimental) Which Kafka topic this tenant's writes are forwarded to. Valid
+# values: 'disabled' (production ingest topic), 'nautilus-only' (experimental
+# nautilus_ingest topic consumed by readcache). Must move in lockstep with
+# readcache_read_routing.
+# CLI flag: -distributor.nautilus-ingest-routing
+[nautilus_ingest_routing: <string> | default = "disabled"]
+
+# (experimental) Which read path this tenant's queries are routed through. Valid
+# values: 'disabled' (queries served by ingesters), 'nautilus-only' (queries
+# served by readcache). Must move in lockstep with nautilus_ingest_routing.
+# CLI flag: -distributor.readcache-read-routing
+[readcache_read_routing: <string> | default = "disabled"]
 
 # (experimental) Validation scheme to use for metric and label names.
 # Distributors reject time series that do not adhere to this scheme. Rulers

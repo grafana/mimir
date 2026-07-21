@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package nautilus.rebalancer;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "rebalancer";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// NautilusRebalancer is the rebalancer-side gRPC surface that
+// distributors (and, in the future, queriers) consume to learn how
+// hash ranges map to ingester partitions.
+service NautilusRebalancer {
+  // WatchAssignments subscribes to the rebalancer's assignment log.
+  // The server sends the current full snapshot immediately on
+  // connect. Subsequent messages depend on the request's
+  // supports_deltas flag: deltas (entries created/mutated since the
+  // previous message, merged across conflated rounds) for new
+  // clients, full snapshots for old ones. Slow subscribers never
+  // miss state: pending deltas are merged, not dropped, and
+  // snapshots are conflated to the most recent.
+  rpc WatchAssignments(WatchAssignmentsRequest) returns (stream WatchAssignmentsResponse);
+
+  // WatchReadcacheAssignments is the readcache-side analogue of
+  // WatchAssignments: instead of (hash range -> partition) leases it
+  // streams (partition -> readcache instance) leases. Distributors
+  // and readcache pods both subscribe — distributors so they can
+  // route reads, readcache pods so they know which partitions to
+  // own. The stream contract (snapshot on connect, conflated
+  // updates) matches WatchAssignments.
+  rpc WatchReadcacheAssignments(WatchReadcacheAssignmentsRequest) returns (stream WatchReadcacheAssignmentsResponse);
+
+  // GetSpotlightedRanges returns the rebalancer's current set of
+  // "spotlighted" hash ranges: ranges flagged for fine-grained
+  // diagnostic logging because the rebalancer recently made a move
+  // decision involving them. Distributors and readcache pods poll
+  // this RPC periodically (typically every 10s) and emit extra
+  // structured log lines about the spotlighted ranges they see
+  // traffic for. Polled (not streamed) because the set churns slowly
+  // and the consumer cadence is independent of the rebalancer round.
+  rpc GetSpotlightedRanges(GetSpotlightedRangesRequest) returns (GetSpotlightedRangesResponse);
+}
+
+message WatchAssignmentsRequest {
+  // supports_deltas opts the subscriber into incremental updates:
+  // the server still sends a full snapshot (reset=true) as the first
+  // message, but subsequent broadcasts carry only the entries
+  // created or mutated since the previous message on this stream
+  // (reset=false), which the client must upsert into its local log
+  // by lease identity (lo, hi, partition_id, from_unix_ms). Leases
+  // are never deleted by the rebalancer — preemption rewrites
+  // to_unix_ms in place (possibly to a zero-length [from, from)
+  // window) — so upsert plus client-side pruning by
+  // prune_before_unix_ms reconstructs the server's log exactly.
+  //
+  // When false (old clients), every message is a full snapshot the
+  // client replaces wholesale, which at production subscriber counts
+  // resends the entire retention window (~hours of lease history)
+  // every rebalance round.
+  bool supports_deltas = 1;
+}
+
+// WatchAssignmentsResponse carries either a full snapshot of the
+// rebalancer's assignment log (reset=true) or an incremental delta
+// (reset=false; only sent to subscribers that set supports_deltas).
+message WatchAssignmentsResponse {
+  repeated LogEntry entries = 1 [(gogoproto.nullable) = false];
+  // reset=true: entries is a complete snapshot; replace any local
+  // state. reset=false: entries are upserts keyed by
+  // (lo, hi, partition_id, from_unix_ms).
+  bool reset = 2;
+  // prune_before_unix_ms is the server's retention horizon at
+  // broadcast time: entries whose to_unix_ms is strictly before it
+  // have been pruned server-side and the client should drop them
+  // too. 0 means "no horizon supplied" (old servers); clients then
+  // skip pruning, matching the historical replace-wholesale
+  // behavior where snapshots were already retention-bounded.
+  int64 prune_before_unix_ms = 3;
+}
+
+// LogEntry is the wire representation of a single (partition, hash
+// range) ownership lease that is valid during the wall-clock window
+// [from_unix_ms, to_unix_ms). Leases are time-boxed: to_unix_ms is
+// always set at creation time and is in the future. On each
+// rebalance round the rebalancer either renews the lease (extends
+// to_unix_ms) or preempts it (truncates to_unix_ms to the current
+// wall-clock).
+//
+// At any single wall-clock time at, the entries with
+// from_unix_ms <= at < to_unix_ms tile the full 32-bit hash space —
+// provided the rebalancer has been alive recently enough to keep
+// leases fresh.
+message LogEntry {
+  uint32 lo = 1;
+  uint32 hi = 2;
+  int32 partition_id = 3;
+  // from_unix_ms and to_unix_ms are wall-clock times in unix
+  // milliseconds. Both are always set; consumers detect expired
+  // leases by comparing to_unix_ms against their local clock.
+  int64 from_unix_ms = 4;
+  int64 to_unix_ms = 5;
+}
+
+message WatchReadcacheAssignmentsRequest {
+  // supports_deltas mirrors WatchAssignmentsRequest.supports_deltas;
+  // delta entries are upserts keyed by
+  // (partition_id, instance_id, from_unix_ms).
+  bool supports_deltas = 1;
+}
+
+// WatchReadcacheAssignmentsResponse carries either a full snapshot
+// of the rebalancer's readcache-assignment log (reset=true) or an
+// incremental delta (reset=false; only sent to subscribers that set
+// supports_deltas). Field semantics mirror WatchAssignmentsResponse.
+message WatchReadcacheAssignmentsResponse {
+  repeated ReadcacheLogEntry entries = 1 [(gogoproto.nullable) = false];
+  bool reset = 2;
+  int64 prune_before_unix_ms = 3;
+}
+
+// ReadcacheLogEntry is the wire representation of a single
+// (partition -> readcache instance) ownership lease valid during
+// [from_unix_ms, to_unix_ms). The schema mirrors LogEntry except the
+// "what is owned" side is a partition (rather than a hash range)
+// and the "by whom" side is a readcache instance ID (rather than a
+// Kafka partition ID).
+//
+// Multiple entries for the same partition_id may be active
+// simultaneously, in which case the partition is multi-owned by
+// every active instance_id. The Phase 2 rebalancer publishes single-
+// owner mode but the wire schema is permissive.
+message ReadcacheLogEntry {
+  int32 partition_id = 1;
+  string instance_id = 2;
+  int64 from_unix_ms = 3;
+  int64 to_unix_ms = 4;
+}
+
+message GetSpotlightedRangesRequest {}
+
+// GetSpotlightedRangesResponse carries the currently-active spotlight
+// set. A spotlight is added by the rebalancer when it commits a
+// move involving the range and lives for a fixed duration; consumers
+// re-poll and replace their local cache wholesale on each response.
+message GetSpotlightedRangesResponse {
+  repeated SpotlightedRange ranges = 1 [(gogoproto.nullable) = false];
+}
+
+// SpotlightedRange describes a single hash range that the rebalancer
+// has flagged for fine-grained diagnostic logging in distributors
+// and readcache pods. trace_id is opaque to consumers; they include
+// it verbatim in any spotlight-related log lines so a single move's
+// downstream effects can be grepped out by ID.
+message SpotlightedRange {
+  string trace_id = 1;
+  uint32 lo = 2;
+  uint32 hi = 3;
+  // started_at_unix_ms and expires_at_unix_ms are wall-clock times
+  // in unix milliseconds. The spotlight is active during
+  // [started_at_unix_ms, expires_at_unix_ms); both are always set.
+  int64 started_at_unix_ms = 4;
+  int64 expires_at_unix_ms = 5;
+  // from_partition_id and to_partition_id are the partitions the
+  // rebalancer moved this range *between*. -1 means "unset"
+  // (e.g. the spotlight was created from a non-move event).
+  int32 from_partition_id = 6;
+  int32 to_partition_id = 7;
+  // reason is a short, free-form tag (e.g. "phase3-move") that
+  // describes why the rebalancer flagged this range. Useful to
+  // segment spotlights when correlating decision-time logs with
+  // post-decision observations.
+  string reason = 8;
+}

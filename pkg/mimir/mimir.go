@@ -61,10 +61,12 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
@@ -151,6 +153,10 @@ type Config struct {
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
+	NautilusRebalancer rebalancer.Config `yaml:"nautilus_rebalancer" category:"experimental" doc:"hidden"`
+
+	Readcache readcache.Config `yaml:"readcache" category:"experimental" doc:"hidden"`
+
 	Common CommonConfig `yaml:"common"`
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
@@ -224,6 +230,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageTracker.RegisterFlags(f, logger)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
+	c.NautilusRebalancer.RegisterFlagsWithPrefix("nautilus-rebalancer.", f)
+	c.Readcache.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
 
@@ -290,6 +298,11 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
+	}
+	if c.isModuleExplicitlyTargeted(NautilusRebalancer) {
+		if err := c.NautilusRebalancer.Validate(); err != nil {
+			return errors.Wrap(err, "invalid nautilus_rebalancer config")
+		}
 	}
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
@@ -981,6 +994,9 @@ type Mimir struct {
 	ContinuousTestManager          *continuoustest.Manager
 	BuildInfoHandler               http.Handler
 	CostAttributionManager         *costattribution.Manager
+	NautilusRebalancer             *rebalancer.Rebalancer
+	Readcache                      *readcache.Readcache
+	ReadcacheInstanceRing          *ring.Ring
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
@@ -1045,6 +1061,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
+			"/cortex.Ingester/HashRangeStats",
+			"/cortex.Ingester/SetHashRanges",
+			"/nautilus.rebalancer.NautilusRebalancer/WatchAssignments",
+			"/nautilus.rebalancer.NautilusRebalancer/WatchReadcacheAssignments",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
