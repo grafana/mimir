@@ -147,6 +147,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Update `MimirRingMembersMismatch` runbook: check for spurious ingesters left in the ring after a scale down. #16169
+
 ### Tools
 
 * [CHANGE] The `mark-blocks`, `listblocks`, `copyblocks`, `splitblocks`, and `undelete-blocks` tools are now subcommands of `mimirtool blocks`: `mark`, `list`, `copy`, `split`, `undelete`. #15757
