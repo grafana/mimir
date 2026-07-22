@@ -67,6 +67,13 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
 	}
 
+	// MQE does not read delayed name removal from the Prometheus engine options: it resolves the
+	// setting per-tenant via the limits provider at query time. Fail loudly if it is enabled the
+	// Prometheus way, so it isn't silently ignored and mistaken for being active.
+	if opts.CommonOpts.EnableDelayedNameRemoval {
+		return nil, errors.New("enabling delayed name removal via the Prometheus engine option is not supported by the Mimir query engine; enable it per-tenant via the enable_delayed_name_removal setting (-querier.enable-delayed-name-removal flag) instead")
+	}
+
 	if planner == nil {
 		return nil, errors.New("no query planner provided")
 	}
