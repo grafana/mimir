@@ -383,15 +383,21 @@ func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 
 func (r *DefaultMultiTenantManager) Stop() {
 	level.Info(r.logger).Log("msg", "stopping user managers")
+	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
 	for userID, manager := range r.userManagers {
 		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", userID)
+		wg.Add(1)
 		go func(manager RulesManager, user string) {
+			defer wg.Done()
 			manager.Stop()
 			level.Debug(r.logger).Log("msg", "user manager shut down", "user", user)
 		}(manager, userID)
 		delete(r.userManagers, userID)
 	}
+	// Wait on calling .Stop() on each manager.
+	wg.Wait()
+	// Wait for the .Run() on each manager to complete.
 	r.userManagersWg.Wait()
 	r.userManagerMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
@@ -400,7 +406,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	// a chance to send any notifications generated while shutting down.
 	// rulerNotifier.stop() may take some time to complete if notifications need to be drained from the queue.
 	level.Info(r.logger).Log("msg", "stopping user notifiers")
-	wg := sync.WaitGroup{}
+	wg = sync.WaitGroup{}
 	r.notifiersMtx.Lock()
 	for _, n := range r.notifiers {
 		wg.Add(1)
