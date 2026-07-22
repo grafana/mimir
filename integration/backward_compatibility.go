@@ -9,7 +9,6 @@ import "github.com/grafana/mimir/integration/e2emimir"
 var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"grafana/mimir:3.1.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
-		removeQuerierRingFlags,
 	),
 }
 
@@ -20,9 +19,4 @@ var defaultPreviousVersionGlobalOverrides = e2emimir.NoopFlagMapper
 var removePartitionRingFlags = e2emimir.RemoveFlagMapper([]string{
 	"-ingester.partition-ring.store",
 	"-ingester.partition-ring.consul.hostname",
-})
-
-var removeQuerierRingFlags = e2emimir.RemoveFlagMapper([]string{
-	"-querier.ring.store",
-	"-querier.ring.consul.hostname",
 })

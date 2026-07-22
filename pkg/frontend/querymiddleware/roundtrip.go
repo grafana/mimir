@@ -65,22 +65,21 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval                    time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCache                              ResultsCacheConfig `yaml:"results_cache"`
-	CacheResults                              bool               `yaml:"cache_results"`
-	UseMQEForSplittingAndCachingResults       bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
-	CacheErrors                               bool               `yaml:"cache_errors"`
-	MaxRetries                                int                `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                         time.Duration      `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                            bool               `yaml:"parallelize_shardable_queries"`
-	EnableRemoteExecution                     bool               `yaml:"enable_remote_execution" category:"experimental"`
-	EnableMultipleNodeRemoteExecutionRequests bool               `yaml:"enable_multiple_node_remote_execution_requests" category:"experimental"`
-	UseMQEForSharding                         bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
-	RewriteQueriesHistogram                   bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
-	RewriteQueriesPropagateMatchers           bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
-	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
-	ActiveSeriesFramedResponses               bool               `yaml:"active_series_framed_responses" category:"experimental"`
+	SplitQueriesByInterval              time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache                        ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults                        bool               `yaml:"cache_results"`
+	UseMQEForSplittingAndCachingResults bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
+	CacheErrors                         bool               `yaml:"cache_errors"`
+	MaxRetries                          int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                   time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                      bool               `yaml:"parallelize_shardable_queries"`
+	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
+	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
+	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
+	RewriteQueriesPropagateMatchers     bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
+	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
+	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -115,9 +114,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -%v=true, -%v=true or -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag, validation.SubquerySpinOffEnabledFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, false, "True to enable query sharding.")
-	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
-	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.")
-	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.")
+	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
+	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, true, fmt.Sprintf("Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -%s=true", ShardedQueriesFlag))
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
