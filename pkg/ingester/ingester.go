@@ -404,6 +404,7 @@ type Ingester struct {
 	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+	committedOffsetClient     *ingest.CommittedOffsetClient
 
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
@@ -695,6 +696,15 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if !cfg.IngestStorageConfig.Enabled {
 			return nil, fmt.Errorf("kafka offset catalogue can only be enabled when ingest storage is enabled")
 		}
+
+		if consumerGroup := cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroup; consumerGroup != "" {
+			kafkaCfg := cfg.IngestStorageConfig.KafkaConfig
+			cl, err := ingest.NewKafkaReaderClient(kafkaCfg, nil, log.With(logger, "component", "committed-offset-client"))
+			if err != nil {
+				return nil, fmt.Errorf("creating kafka client for committed offset reader: %w", err)
+			}
+			i.committedOffsetClient = ingest.NewCommittedOffsetClient(cl, consumerGroup, kafkaCfg.Topic, i.ingestPartitionID)
+		}
 	}
 
 	i.computeWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.ComputeWorkers}, "ingester-compute", registerer, logger)
@@ -839,6 +849,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ingestPartitionLifecycler != nil {
 		servs = append(servs, i.ingestPartitionLifecycler)
+	}
+
+	if i.committedOffsetClient != nil {
+		interval := i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.ConsumerGroupPollInterval
+		// Calling updateCommittedOffset on service's start: this expects all existing TSDBs were opened above.
+		committedOffsetService := services.NewTimerService(interval, i.updateCommittedOffset, i.updateCommittedOffset, nil)
+		servs = append(servs, committedOffsetService)
 	}
 
 	// Since subservices are conditional, We add an idle service if there are no subservices to

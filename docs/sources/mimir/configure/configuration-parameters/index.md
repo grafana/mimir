@@ -6525,6 +6525,16 @@ tsdb:
     # catalogue to disk.
     # CLI flag: -blocks-storage.tsdb.offset-catalogue.sync-concurrency
     [sync_concurrency: <int> | default = 10]
+
+    # (experimental) The Kafka consumer group whose committed offset is compared
+    # against block watermarks to determine when ingester blocks can be deleted.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.consumer-group
+    [consumer_group: <string> | default = ""]
+
+    # (experimental) How frequently the ingester polls Kafka for the committed
+    # offset of the configured consumer group.
+    # CLI flag: -blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval
+    [consumer_group_poll_interval: <duration> | default = 5m]
 ```
 
 ### compactor
