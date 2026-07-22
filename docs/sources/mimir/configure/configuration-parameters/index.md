@@ -2101,7 +2101,7 @@ mimir_query_engine:
 
   # (experimental) Enable subset selector elimination when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
-  [enable_subset_selector_elimination: <boolean> | default = false]
+  [enable_subset_selector_elimination: <boolean> | default = true]
 
   # (experimental) Enable deduplication of range vector selectors in range
   # queries as part of common subexpression elimination. Requires common
