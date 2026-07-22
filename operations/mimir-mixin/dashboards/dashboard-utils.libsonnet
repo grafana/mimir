@@ -2427,36 +2427,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     if !$._config.show_multi_zone_write_path_panels then {} else (
       {
         targets+: std.flatMap(
-          function(zone)
-            local jobMatcher = $.jobMatcher($.multiZoneJobNames(jobNameFormats, zone));
-            [
-              {
-                legendLink: null,
-                expr: |||
-                  sum(
-                      rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
-                  )
-                  -
-                  (sum(
-                      rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
-                  ) or vector(0))
-                ||| % { job_matcher: jobMatcher },
-                format: 'time_series',
-                legendFormat: 'success zone-%s' % zone,
-                refId: 'zone_%s_success' % zone,
-              },
-              {
-                legendLink: null,
-                expr: |||
-                  sum by(reason) (
-                      rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
-                  )
-                ||| % { job_matcher: jobMatcher },
-                format: 'time_series',
-                legendFormat: 'failed - {{ reason }} zone-%s' % zone,
-                refId: 'zone_%s_failed' % zone,
-              },
-            ],
+          function(zone) std.mapWithIndex(
+            // The targets built by queryPanel() have no refId, so it's derived from the index.
+            function(i, target) target {
+              legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+              refId: 'zone_%s_%d' % [zone, i],
+            },
+            $.ingestStorageKafkaProducedRecordsRatePanel(
+              $.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))
+            ).targets
+          ),
           $._config.multi_zone_write_path_zones
         ),
       } + $.aliasColors($.multiZoneSeriesColors({ success: 'green' }))
