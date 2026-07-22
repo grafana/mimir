@@ -2117,7 +2117,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       success: $._colors.success,
     }),
 
-  ingestStorageKafkaProducedRecordsLatencyPanel(jobName)::
+  ingestStorageKafkaProducedRecordsLatencyPanel(jobMatcher)::
     $.timeseriesPanel('Kafka produced records latency') +
     $.panelDescription(
       'Kafka produced records latency',
@@ -2127,10 +2127,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
       ],
       [
         'avg',
@@ -2447,6 +2447,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // ingestStorageKafkaProducedRecordsLatencyPanel(). Only the p99 and p100 percentiles are shown
   // to limit the number of series on the panel.
   multiZoneIngestStorageKafkaProducedRecordsLatencyPanel(jobNameFormats)::
+    // Only these percentiles of the aggregate panel are shown, to limit the number of series
+    // on the panel.
+    local shownPercentiles = [
+      { legend: '99th percentile', refId: 'p99' },
+      { legend: '100th percentile', refId: 'p100' },
+    ];
+    local zoneTargets(zone) =
+      $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))).targets;
     $.timeseriesPanel('Kafka produced records latency per zone') +
     $.panelDescription(
       'Kafka produced records latency per zone',
@@ -2455,22 +2463,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     {
       // Targets are ordered percentile-first, so that the same percentile from different zones is
       // shown next to each other.
-      targets: std.flatMap(
-        function(percentile) [
-          {
-            legendLink: null,
-            expr: 'histogram_quantile(%s, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [percentile.value, $.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))],
-            format: 'time_series',
-            legendFormat: '%s zone-%s' % [percentile.legend, zone],
-            refId: 'zone_%s_%s' % [zone, percentile.refId],
-          }
-          for zone in $._config.multi_zone_write_path_zones
-        ],
-        [
-          { value: '0.99', legend: '99th percentile', refId: 'p99' },
-          { value: '1.0', legend: '100th percentile', refId: 'p100' },
-        ]
-      ),
+      targets: [
+        target {
+          legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+          refId: 'zone_%s_%s' % [zone, percentile.refId],
+        }
+        for percentile in shownPercentiles
+        for zone in $._config.multi_zone_write_path_zones
+        for target in zoneTargets(zone)
+        if target.legendFormat == percentile.legend
+      ],
       fieldConfig+: { defaults+: { unit: 's' } },
     } +
     $.aliasColors($.multiZoneSeriesColors({ '99th percentile': 'blue', '100th percentile': 'red' })),

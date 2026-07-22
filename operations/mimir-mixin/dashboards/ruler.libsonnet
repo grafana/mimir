@@ -148,7 +148,7 @@ local filename = 'mimir-ruler.json';
         $.ingestStorageKafkaProducedRecordsRatePanel($.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
-        $.ingestStorageKafkaProducedRecordsLatencyPanel('ruler')
+        $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($._config.job_names.ruler))
       )
     )
     .addRow(

@@ -293,7 +293,7 @@ local filename = 'mimir-writes.json';
         $.multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin($._config.multi_zone_job_name_formats.distributor)
       )
       .addPanel(
-        $.ingestStorageKafkaProducedRecordsLatencyPanel('distributor')
+        $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($._config.job_names.distributor))
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
