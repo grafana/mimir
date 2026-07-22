@@ -361,12 +361,10 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 			if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 				stats.FromContext(ctx).Merge(resp.queryResult.Stats) // Safe if stats is nil.
 			}
-			if resp.bodyStream != nil {
-				// We're discarding this response (the caller only gets the cancellation error), but if the
-				// querier sent it via QueryResultStream, that call is blocked writing to this pipe until it's
-				// read or closed. Close it so that goroutine isn't leaked.
-				_ = resp.bodyStream.Close()
-			}
+			// We're discarding this response (the caller only gets the cancellation error). If the
+			// querier sent it via QueryResultStream, receiveResultForHTTPRequest closes its body
+			// pipe once the deferred cleanup cancels the request context, so the handler blocked
+			// writing to the pipe isn't leaked.
 		default:
 			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
 		}
@@ -901,6 +899,18 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 			level.Warn(f.log).Log("msg", "failed to close query result body writer", "err", err)
 		}
 	}(writer)
+
+	// Normally the client reads the body stream completely, hits EOF, and closes the body via
+	// cleanupReadCloser.Close. This function returns once the querier's stream ends, before that
+	// close happens. On this successful path the caller closes the reader, so defer stop() disarms
+	// the callback below.
+	// In the unsuccessful case the client never reads the body (timeout or cancellation). req.ctx is
+	// cancelled, the callback closes the reader, and writer.Write unblocks so this goroutine finishes
+	// instead of leaking. Close the read side so writer.Write returns the cancel cause, not io.ErrClosedPipe.
+	stop := context.AfterFunc(req.ctx, func() {
+		_ = reader.CloseWithError(context.Cause(req.ctx))
+	})
+	defer stop()
 
 	res := queryResultWithBody{
 		queryResult: &frontendv2pb.QueryResultRequest{

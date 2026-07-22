@@ -780,9 +780,7 @@ func TestOptimizationPass(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 	observer := streamingpromql.NoopPlanningObserver{}
 
-	runTestCase := func(t *testing.T, expr string, useInstantQuery bool, expected string, enableMiddlewareSharding bool, enableMultiNodeRemoteExec bool, enableSplittingAndCachingInsideMQE bool, supportedQueryPlanVersion planning.QueryPlanVersion) {
-		require.False(t, enableMiddlewareSharding && enableMultiNodeRemoteExec, "invalid test case: cannot enable both middleware sharding and multi-node remote execution")
-
+	runTestCase := func(t *testing.T, expr string, useInstantQuery bool, expected string, enableMiddlewareSharding bool, enableSplittingAndCachingInsideMQE bool, supportedQueryPlanVersion planning.QueryPlanVersion) {
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(supportedQueryPlanVersion))
 		require.NoError(t, err)
@@ -805,7 +803,7 @@ func TestOptimizationPass(t *testing.T) {
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))
+		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 		var timeRange types.QueryTimeRange
 
@@ -836,24 +834,20 @@ func TestOptimizationPass(t *testing.T) {
 		}
 
 		t.Run(name, func(t *testing.T) {
-			t.Run("MQE sharding: multi-node remote execution disabled", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlan, false, false, false, planning.MaximumSupportedQueryPlanVersion)
+			t.Run("MQE sharding: multi-node remote execution not supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlan, false, false, planning.QueryPlanV2)
 			})
 
-			t.Run("MQE sharding: multi-node remote execution enabled but not supported by querier", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlan, false, true, false, planning.QueryPlanV2)
-			})
-
-			t.Run("MQE sharding: multi-node remote execution enabled and supported by querier", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMultiNodeRemoteExec, false, true, false, planning.QueryPlanV3)
+			t.Run("MQE sharding: multi-node remote execution supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMultiNodeRemoteExec, false, false, planning.QueryPlanV3)
 			})
 
 			t.Run("middleware sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMiddlewareSharding, true, false, false, planning.MaximumSupportedQueryPlanVersion)
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMiddlewareSharding, true, false, planning.MaximumSupportedQueryPlanVersion)
 			})
 
 			t.Run("splitting and caching running inside MQE", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithSplittingAndCachingInsideMQE, false, true, true, planning.MaximumSupportedQueryPlanVersion)
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithSplittingAndCachingInsideMQE, false, true, planning.MaximumSupportedQueryPlanVersion)
 			})
 		})
 	}
@@ -1112,7 +1106,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 
 			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
-			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)

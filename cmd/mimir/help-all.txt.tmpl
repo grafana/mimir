@@ -2500,7 +2500,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
     	[experimental] Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-subset-selector-elimination
-    	[experimental] Enable subset selector elimination when evaluating queries.
+    	[experimental] Enable subset selector elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.range-vector-splitting.backend string
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string
@@ -2755,12 +2755,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.
   -query-frontend.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
-  -query-frontend.enable-multiple-node-remote-execution-requests
-    	[experimental] Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution
-    	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
+    	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers. (default true)
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
@@ -2932,7 +2930,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-mimir-query-engine-for-sharding
-    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
+    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
     	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration

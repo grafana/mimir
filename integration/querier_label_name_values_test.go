@@ -139,6 +139,11 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+			// Wait until the query-frontend has updated the querier ring.
+			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 			// Push series.
 			now := time.Now()
 
@@ -343,6 +348,11 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))),
 			)
+
+			// Wait until the query-frontend has updated the querier ring.
+			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 			// Push series.
 			now := time.Now()

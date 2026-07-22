@@ -527,6 +527,22 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
+		// Regression: the inner "* on () group_left" is correctly left unhinted, but the outer
+		// "+" still gets an empty-exclude hint. Whose matchers must not reach the one-side
+		// selector is enforced at the operator level; see TestNarrowSelectorsOnEmptyGroupLeftBoundary
+		// for the end-to-end result-correctness check.
+		"outer exclude-matching binop over inner on() group_left cross-metric": {
+			expr: `prediction + prediction * on() group_left threshold_margin`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS, hints exclude ()
+					- LHS: VectorSelector: {__name__="prediction"}
+					- RHS: BinaryExpression: LHS * on () group_left () RHS
+						- LHS: VectorSelector: {__name__="prediction"}
+						- RHS: VectorSelector: {__name__="threshold_margin"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"binary expression with on (synthesized_label) gets no hints: synthesized label cannot narrow storage selectors": {
 			// "foo" is produced by label_replace on the LHS; it does not exist on the raw
 			// series in storage. filterLabels removes it from the MatchingLabels list, leaving

@@ -2101,7 +2101,7 @@ mimir_query_engine:
 
   # (experimental) Enable subset selector elimination when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
-  [enable_subset_selector_elimination: <boolean> | default = false]
+  [enable_subset_selector_elimination: <boolean> | default = true]
 
   # (experimental) Enable deduplication of range vector selectors in range
   # queries as part of common subexpression elimination. Requires common
@@ -2391,17 +2391,14 @@ results_cache:
 # (experimental) If set to true and the Mimir query engine is in use, use remote
 # execution to evaluate queries in queriers.
 # CLI flag: -query-frontend.enable-remote-execution
-[enable_remote_execution: <boolean> | default = false]
-
-# (experimental) Set to true to allow evaluating multiple query plan nodes
-# within a single remote execution request to queriers.
-# CLI flag: -query-frontend.enable-multiple-node-remote-execution-requests
-[enable_multiple_node_remote_execution_requests: <boolean> | default = false]
+[enable_remote_execution: <boolean> | default = true]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has
+# no effect if sharding is not enabled with
+# -query-frontend.parallelize-shardable-queries=true
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
-[use_mimir_query_engine_for_sharding: <boolean> | default = false]
+[use_mimir_query_engine_for_sharding: <boolean> | default = true]
 
 # (experimental) Set to true to enable rewriting histogram queries for a more
 # efficient order of execution.

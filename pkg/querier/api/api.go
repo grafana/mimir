@@ -2,7 +2,12 @@
 
 package api
 
-import "github.com/prometheus/prometheus/model/labels"
+import (
+	"context"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+)
 
 // ContentTypeRemoteReadStreamedChunks is taken from the prometheus protobuf definitions documentation.
 // See: https://github.com/prometheus/prometheus/blob/d9d51c565c622cdc7d626d3e7569652bc28abe15/prompb/remote.proto#L48
@@ -46,4 +51,10 @@ type LabelNamesCardinalityItem struct {
 
 type ActiveSeriesResponse struct {
 	Data []labels.Labels `json:"data"`
+}
+
+// MetricMetadataFetcher fetches metric metadata for a set of metric names,
+// returning it keyed by metric name.
+type MetricMetadataFetcher interface {
+	FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
 }

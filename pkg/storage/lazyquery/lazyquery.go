@@ -11,9 +11,11 @@ import (
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
@@ -116,6 +118,16 @@ func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, params 
 		return storage.ErrSearchResultSet(fmt.Errorf("wrapped querier %T does not implement search", l.next))
 	}
 	return s.SearchLabelValues(ctx, name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata passes through to the wrapped querier when it can fetch
+// metric metadata; otherwise surfaces a clear error.
+func (l LazyQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	f, ok := l.next.(querierapi.MetricMetadataFetcher)
+	if !ok {
+		return nil, fmt.Errorf("wrapped querier %T does not support metric metadata fetch", l.next)
+	}
+	return f.FetchMetricMetadata(ctx, names)
 }
 
 // Close implements Storage.Querier

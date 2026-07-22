@@ -804,6 +804,9 @@ func (l *Limits) computeCostAttributionConfigHash() uint64 {
 const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
+	if len(l.BlockedQueries) == 0 {
+		return
+	}
 	parser := promqlext.NewPromQLParser()
 
 	for i, q := range l.BlockedQueries {

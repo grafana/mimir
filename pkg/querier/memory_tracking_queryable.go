@@ -8,9 +8,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -83,6 +85,15 @@ func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name stri
 		return storage.ErrSearchResultSet(fmt.Errorf("inner querier %T does not implement search", q.inner))
 	}
 	return s.SearchLabelValues(ctx, name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata passes through to the inner querier's metadata fetcher.
+func (q *memoryTrackingQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	f, ok := q.inner.(querierapi.MetricMetadataFetcher)
+	if !ok {
+		return nil, fmt.Errorf("inner querier %T does not support metric metadata fetch", q.inner)
+	}
+	return f.FetchMetricMetadata(ctx, names)
 }
 
 func (q *memoryTrackingQuerier) Close() error {

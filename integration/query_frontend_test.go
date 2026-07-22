@@ -224,28 +224,6 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 	}
 }
 
-func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				CommonStorageBackendFlags(),
-				BlocksStorageFlags(),
-				map[string]string{
-					"-query-frontend.enable-multiple-node-remote-execution-requests": "true",
-				},
-			)
-
-			minio := e2edb.NewMinio(9000, mimirBucketName)
-			require.NoError(t, s.StartAndWaitReady(minio))
-
-			return "", flags
-		},
-		withHistograms:         true,
-		remoteExecutionEnabled: true,
-		queryStatsEnabled:      true,
-	})
-}
-
 func TestQueryFrontendWithMQEForSplittingAndCaching(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
@@ -594,8 +572,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 // This spins up a minimal query-frontend setup and compares if errors returned
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {
-	t.Run("default config", func(t *testing.T) {
-		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{})
+	t.Run("with remote execution disabled", func(t *testing.T) {
+		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{
+			"-query-frontend.enable-remote-execution":             "false",
+			"-query-frontend.use-mimir-query-engine-for-sharding": "false",
+		})
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
@@ -936,8 +917,9 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 		queryFrontendTestConfig{
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// The query result payload is 202 bytes, so it will be too large for the configured limit.
-					"-querier.frontend-client.grpc-max-send-msg-size": "100",
+					// The first query result payload is 136 bytes, so it will be too large for the configured limit.
+					// We can't set this to less than 112 bytes because otherwise it's even too small for the subsequent attempt to send the "message too small" error message.
+					"-querier.frontend-client.grpc-max-send-msg-size": "120",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -1051,12 +1033,17 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	// Push series for the test user to Mimir.
 	now := time.Now()
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
+	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-really-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
@@ -1095,8 +1082,9 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 	}{
 		"Prometheus' engine": {
 			flags: map[string]string{
-				"-querier.query-engine":        "prometheus",
-				"-query-frontend.query-engine": "prometheus",
+				"-querier.query-engine":                   "prometheus",
+				"-query-frontend.query-engine":            "prometheus",
+				"-query-frontend.enable-remote-execution": "false",
 			},
 		},
 		"MQE with remote execution and sharding disabled": {

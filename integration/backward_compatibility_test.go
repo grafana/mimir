@@ -301,6 +301,11 @@ func checkQueries(
 				labels.MustNewMatcher(labels.MatchEqual, "name", "store-gateway-client"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+			// Wait until the query-frontend has updated the querier ring.
+			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 			// Wait until the store-gateway has loaded the blocks before querying.
 			//
 			// The store-gateway switches to ACTIVE in the ring only after its initial block sync completes,
@@ -319,28 +324,27 @@ func checkQueries(
 			}
 
 			// Query the series.
-			for _, endpoint := range []string{queryFrontend.HTTPEndpoint(), querier.HTTPEndpoint()} {
-				c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
-				require.NoError(t, err)
+			endpoint := queryFrontend.HTTPEndpoint()
+			c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
+			require.NoError(t, err)
 
-				for _, query := range instantQueries {
-					t.Run(fmt.Sprintf("%s: instant query: %s", endpoint, query.expr), func(t *testing.T) {
-						result, err := c.Query(query.expr, query.time)
-						require.NoError(t, err)
-						require.Equal(t, model.ValVector, result.Type())
-						require.Equal(t, query.expectedVector, result.(model.Vector))
-					})
-				}
+			for _, query := range instantQueries {
+				t.Run(fmt.Sprintf("instant query: %s", query.expr), func(t *testing.T) {
+					result, err := c.Query(query.expr, query.time)
+					require.NoError(t, err)
+					require.Equal(t, model.ValVector, result.Type())
+					require.Equal(t, query.expectedVector, result.(model.Vector))
+				})
+			}
 
-				for _, req := range remoteReadRequests {
-					t.Run(fmt.Sprintf("%s: remote read: %s", endpoint, req.metricName), func(t *testing.T) {
-						httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
-						require.NoError(t, err)
-						require.Equal(t, http.StatusOK, httpRes.StatusCode)
-						require.NotNil(t, result)
-						require.Equal(t, req.expectedTimeseries, result.Timeseries)
-					})
-				}
+			for _, req := range remoteReadRequests {
+				t.Run(fmt.Sprintf("remote read: %s", req.metricName), func(t *testing.T) {
+					httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
+					require.NoError(t, err)
+					require.Equal(t, http.StatusOK, httpRes.StatusCode)
+					require.NotNil(t, result)
+					require.Equal(t, req.expectedTimeseries, result.Timeseries)
+				})
 			}
 		})
 	}
