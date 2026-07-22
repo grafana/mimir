@@ -24,10 +24,12 @@ spec:
     - port: {{ .Values.kafka.service.port }}
       protocol: TCP
       name: kafka
+      appProtocol: tcp
       targetPort: kafka
     - port: {{ .Values.kafka.service.controllerPort }}
       protocol: TCP
       name: controller
+      appProtocol: tcp
       targetPort: controller
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "kafka") | nindent 4 }}

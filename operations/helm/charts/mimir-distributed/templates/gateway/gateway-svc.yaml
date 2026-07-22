@@ -29,6 +29,7 @@ spec:
     - port: {{ .Values.gateway.service.port }}
       protocol: TCP
       name: http-metrics
+      appProtocol: http
       targetPort: http-metrics
       {{- if and (eq "NodePort" .Values.gateway.service.type) .Values.gateway.service.nodePort }}
       nodePort: {{ .Values.gateway.service.nodePort }}
@@ -37,6 +38,7 @@ spec:
     - port: {{ . }}
       protocol: TCP
       name: legacy-http-metrics
+      appProtocol: http
       targetPort: http-metrics
     {{- end }}
     {{- if .Values.gateway.service.extraPorts }}

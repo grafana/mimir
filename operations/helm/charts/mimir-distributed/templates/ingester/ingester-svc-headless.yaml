@@ -19,10 +19,12 @@ spec:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
       name: http-metrics
+      appProtocol: http
       targetPort: http-metrics
     - port: {{ include "mimir.serverGrpcListenPort" . }}
       protocol: TCP
       name: grpc
+      appProtocol: grpc
       targetPort: grpc
     {{- if .Values.ingester.service.extraPorts }}
     {{- toYaml .Values.ingester.service.extraPorts | nindent 4 }}
