@@ -65,7 +65,7 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 		return fmt.Errorf("remote execution is only supported when the Mimir query engine is in use (-%v=%v)", queryEngineFlag, querier.MimirEngine)
 	}
 
-	if cfg.QueryMiddleware.UseMQEForSharding {
+	if cfg.QueryMiddleware.ShardedQueries && cfg.QueryMiddleware.UseMQEForSharding {
 		// We don't need to explicitly check that MQE is enabled here: remote execution is only supported when MQE is enabled, and we
 		// enforce that above.
 		if !cfg.QueryMiddleware.EnableRemoteExecution {
