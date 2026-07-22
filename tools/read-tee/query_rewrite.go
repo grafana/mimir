@@ -3,6 +3,7 @@
 package readtee
 
 import (
+	"regexp"
 	"strconv"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -15,6 +16,21 @@ import (
 // exactly the queries the real read path accepts (experimental functions, extended range
 // selectors, duration expressions). parser.Parser instances are safe for concurrent use.
 var promQLParser = promqlext.NewPromQLParser()
+
+// ampVariantsSuffix matches the original value optionally followed by any write-tee amplification
+// suffix (_amp{N}). It is appended (as a regex) to negative matchers so they exclude the value
+// across the base series and every amplified replica, not just a single one. The digit class
+// (rather than .*) keeps the exclusion tight to genuine _amp{N} variants.
+const ampVariantsSuffix = "(?:_amp[0-9]+)?"
+
+// rewriteOptions controls how matchers are rewritten.
+type rewriteOptions struct {
+	// excludeAmplifiedNegative changes how negative matchers are rewritten: a negative matcher
+	// excludes the original value and all _amp{N} variants (independent of the replica) instead of
+	// only the _amp{replica} form. When false, negative matchers are suffixed _amp{replica} like
+	// positive matchers (the original behaviour).
+	excludeAmplifiedNegative bool
+}
 
 // ampSuffix returns the label-value suffix for amplification replica k. It must match exactly the
 // suffix write-tee stamps on amplified series (value + "_amp" + N), so read replica k lands on
@@ -31,7 +47,7 @@ func ampSuffix(k int) string {
 // reference label NAMES (or non-selector syntax), not label values. MatrixSelector embeds a
 // VectorSelector, so parser.Inspect visits the inner VectorSelector and its matchers are rewritten
 // too.
-func rewriteQuery(query string, replica int) (string, error) {
+func rewriteQuery(query string, replica int, opts rewriteOptions) (string, error) {
 	expr, err := promQLParser.ParseExpr(query)
 	if err != nil {
 		return "", err
@@ -39,7 +55,7 @@ func rewriteQuery(query string, replica int) (string, error) {
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if vs, ok := node.(*parser.VectorSelector); ok {
-			vs.LabelMatchers = rewriteMatchers(vs.LabelMatchers, replica)
+			vs.LabelMatchers = rewriteMatchers(vs.LabelMatchers, replica, opts)
 		}
 		return nil
 	})
@@ -51,13 +67,13 @@ func rewriteQuery(query string, replica int) (string, error) {
 // suffixes its label-value matchers for the given replica, and re-serializes it. Serialization
 // goes through a VectorSelector so a present __name__ matcher renders as name{...} and all matchers
 // render with correct escaping.
-func rewriteSelector(sel string, replica int) (string, error) {
+func rewriteSelector(sel string, replica int, opts rewriteOptions) (string, error) {
 	m, err := promQLParser.ParseMetricSelector(sel)
 	if err != nil {
 		return "", err
 	}
 
-	m = rewriteMatchers(m, replica)
+	m = rewriteMatchers(m, replica, opts)
 
 	// Populate Name from an equality __name__ matcher so the selector renders in the canonical
 	// name{...} form (matching how parser.ParseExpr renders vector selectors). Without this the
@@ -82,10 +98,15 @@ func rewriteSelector(sel string, replica int) (string, error) {
 //   - =~ and !~ : value -> "(?:" + value + ")" + suffix (regexes are fully anchored, so grouping
 //     the original regex and appending the literal suffix matches "<original>_amp{k}" exactly).
 //
+// When opts.excludeAmplifiedNegative is set, negative matchers are instead rewritten to exclude the
+// value across the base series and every amplified replica (value + ampVariantsSuffix), rather than
+// only the _amp{replica} form. A != matcher becomes a !~ matcher (its literal value is regex-quoted)
+// because a single != can only exclude one exact string.
+//
 // Regexp matchers must be rebuilt via labels.NewMatcher so the compiled *regexp is regenerated;
 // mutating Matcher.Value in place would leave a stale compiled regex. For consistency we rebuild
 // every changed matcher via NewMatcher.
-func rewriteMatchers(ms []*labels.Matcher, replica int) []*labels.Matcher {
+func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*labels.Matcher {
 	suffix := ampSuffix(replica)
 	out := make([]*labels.Matcher, len(ms))
 	for i, mm := range ms {
@@ -95,12 +116,28 @@ func rewriteMatchers(ms []*labels.Matcher, replica int) []*labels.Matcher {
 			continue
 		}
 
+		newType := mm.Type
 		var newValue string
 		switch mm.Type {
-		case labels.MatchEqual, labels.MatchNotEqual:
+		case labels.MatchEqual:
 			newValue = mm.Value + suffix
-		case labels.MatchRegexp, labels.MatchNotRegexp:
+		case labels.MatchRegexp:
 			newValue = "(?:" + mm.Value + ")" + suffix
+		case labels.MatchNotEqual:
+			if opts.excludeAmplifiedNegative {
+				// Exclude the literal value and all its _amp{N} variants. != can only exclude one
+				// string, so switch to !~ and regex-quote the (literal) value.
+				newType = labels.MatchNotRegexp
+				newValue = regexp.QuoteMeta(mm.Value) + ampVariantsSuffix
+			} else {
+				newValue = mm.Value + suffix
+			}
+		case labels.MatchNotRegexp:
+			if opts.excludeAmplifiedNegative {
+				newValue = "(?:" + mm.Value + ")" + ampVariantsSuffix
+			} else {
+				newValue = "(?:" + mm.Value + ")" + suffix
+			}
 		default:
 			out[i] = mm
 			continue
@@ -109,7 +146,7 @@ func rewriteMatchers(ms []*labels.Matcher, replica int) []*labels.Matcher {
 		// Rebuild so the compiled regex (for regexp matchers) is regenerated. NewMatcher only
 		// fails if the (already-valid) regex fails to recompile with our wrapper, which can't
 		// happen for a well-formed group; fall back to the original matcher if it ever does.
-		nm, err := labels.NewMatcher(mm.Type, mm.Name, newValue)
+		nm, err := labels.NewMatcher(newType, mm.Name, newValue)
 		if err != nil {
 			out[i] = mm
 			continue
