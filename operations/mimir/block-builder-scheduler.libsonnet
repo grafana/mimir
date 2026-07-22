@@ -4,10 +4,7 @@
   local service = $.core.v1.service,
 
   _config+:: {
-    block_builder: {
-      // Disabled by default: the block-builder is an experimental component.
-      enabled: false,
-
+    block_builder+: {
       // How many jobs the scheduler hands out per partition at once. A value of 1 is passed implicitly
       // (it's the block-builder-scheduler default), so only set the flag when it differs.
       scheduler_max_jobs_per_partition: 3,
