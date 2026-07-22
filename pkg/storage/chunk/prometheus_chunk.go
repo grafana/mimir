@@ -246,6 +246,105 @@ func (p *prometheusFloatHistogramChunk) Encoding() Encoding {
 	return PrometheusFloatHistogramChunk
 }
 
+// Wrapper around a Prometheus start-timestamp-capable histogram chunk.
+type prometheusHistogramSTChunk struct {
+	prometheusChunk
+}
+
+func newPrometheusHistogramSTChunk() *prometheusHistogramSTChunk {
+	return &prometheusHistogramSTChunk{}
+}
+
+func (p *prometheusHistogramSTChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float sample to histogram ST chunk")
+}
+
+func (p *prometheusHistogramSTChunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to histogram ST chunk")
+}
+
+// AddHistogram adds another histogram to the chunk with no start timestamp. While AddHistogram works, it is only
+// implemented to make tests work and should not be used in production.
+func (p *prometheusHistogramSTChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewHistogramSTChunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	c, recoded, _, err := app.AppendHistogram(nil, 0, timestamp, h, false)
+	if err != nil || c == nil || recoded {
+		return nil, err
+	}
+	oP := newPrometheusHistogramSTChunk()
+	oP.chunk = c
+	return oP, nil
+}
+
+func (p *prometheusHistogramSTChunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncHistogramST, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus histogram ST chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusHistogramSTChunk) Encoding() Encoding {
+	return PrometheusHistogramSTChunk
+}
+
+// Wrapper around a Prometheus start-timestamp-capable float histogram chunk.
+type prometheusFloatHistogramSTChunk struct {
+	prometheusChunk
+}
+
+func newPrometheusFloatHistogramSTChunk() *prometheusFloatHistogramSTChunk {
+	return &prometheusFloatHistogramSTChunk{}
+}
+
+func (p *prometheusFloatHistogramSTChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float sample to float histogram ST chunk")
+}
+
+func (p *prometheusFloatHistogramSTChunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram sample to float histogram ST chunk")
+}
+
+// AddFloatHistogram adds another float histogram to the chunk with no start timestamp. While AddFloatHistogram works,
+// it is only implemented to make tests work and should not be used in production.
+func (p *prometheusFloatHistogramSTChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewFloatHistogramSTChunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, _, err = app.AppendFloatHistogram(nil, 0, timestamp, h, true)
+	return nil, err
+}
+
+func (p *prometheusFloatHistogramSTChunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncFloatHistogramST, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus float histogram ST chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusFloatHistogramSTChunk) Encoding() Encoding {
+	return PrometheusFloatHistogramSTChunk
+}
+
 type prometheusChunkIterator struct {
 	c  chunkenc.Chunk // we need chunk, because FindAtOrAfter needs to start with fresh iterator.
 	it chunkenc.Iterator

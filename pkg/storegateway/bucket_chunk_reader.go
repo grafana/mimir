@@ -234,6 +234,10 @@ func populateChunk(out *storepb.AggrChunk, in rawChunk) error {
 		enc = storepb.Chunk_FloatHistogram
 	case chunkenc.EncXOR2:
 		enc = storepb.Chunk_XOR2
+	case chunkenc.EncHistogramST:
+		enc = storepb.Chunk_HistogramST
+	case chunkenc.EncFloatHistogramST:
+		enc = storepb.Chunk_FloatHistogramST
 	default:
 		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}
