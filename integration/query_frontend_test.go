@@ -594,8 +594,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 // This spins up a minimal query-frontend setup and compares if errors returned
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {
-	t.Run("default config", func(t *testing.T) {
-		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{})
+	t.Run("with remote execution disabled", func(t *testing.T) {
+		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{
+			"-query-frontend.enable-remote-execution":             "false",
+			"-query-frontend.use-mimir-query-engine-for-sharding": "false",
+		})
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
@@ -1095,8 +1098,9 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 	}{
 		"Prometheus' engine": {
 			flags: map[string]string{
-				"-querier.query-engine":        "prometheus",
-				"-query-frontend.query-engine": "prometheus",
+				"-querier.query-engine":                   "prometheus",
+				"-query-frontend.query-engine":            "prometheus",
+				"-query-frontend.enable-remote-execution": "false",
 			},
 		},
 		"MQE with remote execution and sharding disabled": {
