@@ -76,9 +76,11 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
-		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
-		Parser:                   promqlext.NewPromQLParser(),
+		// Delayed name removal is deliberately not set here. It only applies to the Prometheus
+		// engine, which is constructed separately via NewPrometheusEngineOptions. MQE ignores this
+		// option (it controls the feature per-tenant via limits) and rejects it if it is set, so we
+		// must not propagate it through the shared CommonOpts embedded in the MQE engine options.
+		Parser: promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
@@ -87,4 +89,15 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 	cfg.MimirQueryEngine.Limits = limits
 
 	return cfg.MimirQueryEngine
+}
+
+// NewPrometheusEngineOptions returns the common PromQL engine options for constructing the
+// Prometheus engine, whether it is used as the primary engine or as the Mimir query engine's
+// fallback. It applies delayed name removal, which is intentionally not set on the options returned
+// by NewPromQLEngineOptions so that the setting is never propagated to MQE through the shared
+// CommonOpts. See EnableDelayedNameRemovalPrometheusEngine.
+func NewPrometheusEngineOptions(cfg Config, opts streamingpromql.EngineOpts) promql.EngineOpts {
+	commonOpts := opts.CommonOpts
+	commonOpts.EnableDelayedNameRemoval = cfg.EnableDelayedNameRemovalPrometheusEngine
+	return commonOpts
 }

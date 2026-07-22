@@ -60,16 +60,16 @@ func TestOurTestCases(t *testing.T) {
 		limits := streamingpromql.NewStaticQueryLimitsProvider()
 		limits.EnableDelayedNameRemoval = enableDelayedNameRemoval
 		opts.Limits = limits
-		if enableDelayedNameRemoval {
-			// This line only affects Prometheus engine, as MQE's is in opts.Limits
-			opts.CommonOpts.EnableDelayedNameRemoval = true
-		}
 		planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
 
-		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		// Delayed name removal only affects the Prometheus engine via CommonOpts; MQE reads it from
+		// opts.Limits, so set it on a separate copy used just for the Prometheus engine.
+		prometheusCommonOpts := opts.CommonOpts
+		prometheusCommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
+		prometheusEngine := promql.NewEngine(prometheusCommonOpts)
 
 		return mimirEngine, prometheusEngine
 	}
