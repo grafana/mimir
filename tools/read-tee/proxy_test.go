@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,6 +106,16 @@ func TestNewProxy_Validation(t *testing.T) {
 			},
 			expectedErr: "backend.async-max-in-flight must be greater than 0",
 		},
+		{
+			name: "amplify-all-replicas fraction out of range",
+			cfg: ProxyConfig{
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        1.0,
+				AsyncMaxInFlightPerBackend: 1000,
+				AmplifyAllReplicasFraction: 1.5,
+			},
+			expectedErr: "backend.amplify-all-replicas-fraction must be between 0 and 1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -166,7 +177,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, rewriteOptions{}, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, rewriteOptions{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", `/api/v1/query?query=up`, nil)
 			rec := httptest.NewRecorder()
@@ -235,7 +246,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, rewriteOptions{}, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, rewriteOptions{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -273,4 +284,52 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			require.Len(t, amp, len(tt.expectedAmp))
 		})
 	}
+}
+
+// TestProxyEndpoint_AmplifyAllReplicas verifies that with amplify-all-replicas-fraction=1 a single
+// heavy copy (matching the base value plus all replicas) is sent instead of the N-1 per-replica
+// copies, regardless of the amplification factor.
+func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	const originalQuery = `up{job="api"}`
+
+	registry := prometheus.NewRegistry()
+	metrics := NewProxyMetrics(registry)
+
+	var mu sync.Mutex
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		queries = append(queries, r.URL.Query().Get("query"))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+	route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}}
+	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+
+	// Factor 3 would normally send 2 per-replica copies; with fraction 1.0 we expect a single copy.
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, rewriteOptions{}, 1.0, asyncDispatcher)
+
+	req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
+	rec := httptest.NewRecorder()
+	endpoint.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	asyncDispatcher.Stop()
+	asyncDispatcher.Await()
+
+	mu.Lock()
+	got := append([]string(nil), queries...)
+	mu.Unlock()
+
+	// Exactly the original plus one heavy copy.
+	require.Len(t, got, 2)
+	require.Contains(t, got, originalQuery)
+	require.Contains(t, got, `up{job=~"api(?:_amp[0-9]+)?"}`)
+	require.Equal(t, 1.0, testutil.ToFloat64(metrics.amplifyAllReplicasTotal.WithLabelValues("api_v1_query")))
 }

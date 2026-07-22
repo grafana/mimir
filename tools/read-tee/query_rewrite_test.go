@@ -263,3 +263,79 @@ func TestRewriteQuery_ExcludeAmplifiedNegativeSemantics(t *testing.T) {
 		require.True(t, m.Matches("foobar"), "must not over-exclude values that merely share the prefix")
 	})
 }
+
+func TestRewriteQuery_MatchAllReplicas(t *testing.T) {
+	// replica is ignored in match-all-replicas mode.
+	const replica = 2
+	opts := rewriteOptions{matchAllReplicas: true}
+
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "equal becomes regexp matching value and all amp variants",
+			query: `x{job="api"}`,
+			want:  `x{job=~"api(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "regexp matches value and all amp variants",
+			query: `x{job=~"api.*"}`,
+			want:  `x{job=~"(?:api.*)(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "not-equal excludes value and all amp variants",
+			query: `x{job!="api"}`,
+			want:  `x{job!~"api(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "not-regexp excludes matches and all amp variants",
+			query: `x{job!~"foo|bar"}`,
+			want:  `x{job!~"(?:foo|bar)(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "multiple matchers all target base plus all replicas",
+			query: `x{cluster="c1",job=~"api.*"}`,
+			want:  `x{cluster=~"c1(?:_amp[0-9]+)?",job=~"(?:api.*)(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "absence matcher unchanged",
+			query: `x{job=""}`,
+			want:  `x{job=""}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := rewriteQuery(tc.query, replica, opts)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+
+			_, err = promQLParser.ParseExpr(got)
+			require.NoError(t, err, "rewritten query must be valid PromQL: %q", got)
+		})
+	}
+}
+
+// TestRewriteQuery_MatchAllReplicasSemantics verifies an equality matcher in match-all-replicas mode
+// matches the base value and all its _amp{N} variants (and nothing else).
+func TestRewriteQuery_MatchAllReplicasSemantics(t *testing.T) {
+	got, err := rewriteQuery(`x{job="api"}`, 1, rewriteOptions{matchAllReplicas: true})
+	require.NoError(t, err)
+
+	ms, err := promQLParser.ParseMetricSelector(got)
+	require.NoError(t, err)
+	var m *labels.Matcher
+	for _, mm := range ms {
+		if mm.Name == "job" {
+			m = mm
+		}
+	}
+	require.NotNil(t, m)
+	require.True(t, m.Matches("api"), "must match the base value")
+	require.True(t, m.Matches("api_amp1"))
+	require.True(t, m.Matches("api_amp42"))
+	require.False(t, m.Matches("apix"), "must not match unrelated values sharing the prefix")
+	require.False(t, m.Matches("other"))
+}

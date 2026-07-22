@@ -36,6 +36,7 @@ type ProxyConfig struct {
 	BackendEndpoint                     string
 	AmplificationFactor                 float64
 	NegativeMatchersExcludeAllAmpValues bool
+	AmplifyAllReplicasFraction          float64
 	BackendReadTimeout                  time.Duration
 	BackendSkipTLSVerify                bool
 	AsyncMaxInFlightPerBackend          int
@@ -94,6 +95,10 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 		"When rewriting a query copy, make negative matchers (!=, !~) exclude the value in all its forms - the base value and every _amp{N} variant (value plus the optional _amp{N} suffix) - instead of only the single _amp{replica} form. A != becomes a !~ with its value regex-quoted, since a single != can only exclude one exact string. "+
 			"Set to false to suffix negative matchers with _amp{replica} like positive matchers (the original behaviour).",
 	)
+	f.Float64Var(&cfg.AmplifyAllReplicasFraction, "backend.amplify-all-replicas-fraction", 0.0,
+		"Fraction (0.0-1.0) of incoming reads for which, instead of sending N-1 per-replica copies, a single heavy copy is sent whose matchers target the base series plus all amplified replicas at once (every matcher matches the value optionally followed by any _amp{N}). "+
+			"This raises samples-per-query to resemble heavier production queries. 0 disables it. Requires amplification-factor > 1.",
+	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
 	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight amplified requests (async fire-and-forget). Requests are dropped when at capacity.")
@@ -148,6 +153,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// Validate async max in-flight.
 	if cfg.AsyncMaxInFlightPerBackend <= 0 {
 		return nil, errors.New("backend.async-max-in-flight must be greater than 0")
+	}
+
+	// Validate the amplify-all-replicas fraction.
+	if cfg.AmplifyAllReplicasFraction < 0 || cfg.AmplifyAllReplicasFraction > 1 {
+		return nil, errors.New("backend.amplify-all-replicas-fraction must be between 0 and 1")
 	}
 
 	// Parse the single backend endpoint.
@@ -215,7 +225,7 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.asyncDispatcher)
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.cfg.AmplifyAllReplicasFraction, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -226,7 +236,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.asyncDispatcher)
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.cfg.AmplifyAllReplicasFraction, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.
