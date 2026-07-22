@@ -10,11 +10,13 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
@@ -30,6 +32,11 @@ func TestUpstreamTestCases(t *testing.T) {
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.EnableDelayedNameRemoval = true
 	opts.Limits = limits
+
+	// Enable the experimental fill binary operator modifiers for tests.
+	fillParserOpts := promqlext.NewPromQLParserOptions()
+	fillParserOpts.EnableBinopFillModifiers = true
+	opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
@@ -64,6 +71,11 @@ func TestOurTestCases(t *testing.T) {
 			// This line only affects Prometheus engine, as MQE's is in opts.Limits
 			opts.CommonOpts.EnableDelayedNameRemoval = true
 		}
+
+		// Enable the experimental fill binary operator modifiers for tests.
+		fillParserOpts := promqlext.NewPromQLParserOptions()
+		fillParserOpts.EnableBinopFillModifiers = true
+		opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
 		planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)

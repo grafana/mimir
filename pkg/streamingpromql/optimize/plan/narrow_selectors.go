@@ -77,6 +77,13 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
+		// Skip narrowing when a fill value is set: narrowing the filled side would drop the unmatched
+		// series that fill relies on to produce output.
+		// TODO: still narrow the non-filled side, which is safe.
+		if e.VectorMatching.FillValues.RhsSet || e.VectorMatching.FillValues.LhsSet {
+			return true, nil
+		}
+
 		// Labels created by label_replace or label_join anywhere within this binary
 		// expression's subtree. We must not generate matchers for these labels because they
 		// don't exist on the raw series fetched from storage.

@@ -12,12 +12,14 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const expectedMetricsTemplate = `
@@ -627,6 +629,37 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		// A filled side must not be narrowed, so no hint is added.
+		"binary expression with fill on both sides is not narrowed": {
+			expr: `some_metric + on (cluster) fill(0) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression with fill_right is not narrowed": {
+			expr: `some_metric + on (cluster) fill_right(0) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression with fill_left is not narrowed": {
+			expr: `some_metric + ignoring (env) fill_left(0) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + ignoring (env) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -636,6 +669,12 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			observer := streamingpromql.NoopPlanningObserver{}
 
 			opts := streamingpromql.NewTestEngineOpts()
+
+			// Enable the experimental fill binary operator modifiers for tests.
+			fillParserOpts := promqlext.NewPromQLParserOptions()
+			fillParserOpts.EnableBinopFillModifiers = true
+			opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
+
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
