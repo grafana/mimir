@@ -467,7 +467,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 // sendFinalJobStatus sends a final status update to the scheduler with a retry policy.
 // Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
 // If ctx is canceled (e.g. during shutdown), attempting to send a final status can continue for up to TerminatingFinalStatusTimeout.
-func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
+func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType, cleanupStats *compactorschedulerpb.CleanupJobStats) {
 	if e.cfg.EnableInterruptedReassign && status == compactorschedulerpb.UPDATE_TYPE_REASSIGN && ctx.Err() != nil {
 		status = compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
 	}
@@ -497,7 +497,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 			return err
 		})
 	case compactorschedulerpb.JOB_TYPE_CLEANUP:
-		req := &compactorschedulerpb.UpdateCleanupJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
+		req := &compactorschedulerpb.UpdateCleanupJobRequest{Key: key, Tenant: spec.Tenant, Update: status, Stats: cleanupStats}
 		err = e.retryable.WithContext(graceCtx).Run(func() error {
 			_, err := e.schedulerClient.UpdateCleanupJob(graceCtx, req)
 			return err
@@ -572,11 +572,11 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
 			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
-				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status, nil)
 			}
 			return true, err
 		}
-		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status, nil)
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		planStartTime := time.Now()
@@ -587,7 +587,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
 				// Only send an update on failure if the scheduler still thinks we own the job.
-				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil)
 			}
 			return true, planErr
 		}
@@ -601,18 +601,18 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_CLEANUP:
 		cleanupStartTime := time.Now()
-		status, err := e.executeCleanupJob(jobCtx, c, resp.Spec)
+		status, stats, err := e.executeCleanupJob(jobCtx, c, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute cleanup job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
 			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
-				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status, nil)
 			}
 			return true, err
 		}
 		c.jobDuration.WithLabelValues(jobTypeCleanup, "").Observe(time.Since(cleanupStartTime).Seconds())
-		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status, stats)
 		return true, nil
 	default:
 		// Should not happen because this case is caught above.
@@ -745,32 +745,35 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 }
 
-func (e *schedulerExecutor) executeCleanupJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+func (e *schedulerExecutor) executeCleanupJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, *compactorschedulerpb.CleanupJobStats, error) {
 	userID := spec.Tenant
 	if userID == "" {
-		return compactorschedulerpb.UPDATE_TYPE_ABANDON, errCleanupJobHasNoTenant
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, nil, errCleanupJobHasNoTenant
 	}
 
 	userLogger := util_log.WithUserID(userID, e.logger)
 
 	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, userLogger)
 	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to read tenant deletion mark: %w", err)
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil, fmt.Errorf("failed to read tenant deletion mark: %w", err)
 	}
 
 	level.Info(userLogger).Log("msg", "executing cleanup job from scheduler", "tenant", userID, "marked_for_deletion", mark != nil)
 
+	// A tenant marked for deletion reports no stats: it is being removed, so the scheduler drops its
+	// per-tenant metrics when the tenant disappears from discovery.
+	var stats *compactorschedulerpb.CleanupJobStats
 	if mark != nil {
 		err = c.blocksCleaner.deleteUserMarkedForDeletion(ctx, userID, mark, userLogger)
 	} else {
-		err = c.blocksCleaner.cleanUser(ctx, userID, userLogger)
+		stats, err = c.blocksCleaner.cleanUser(ctx, userID, userLogger)
 	}
 	if err != nil {
-		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil, err
 	}
 
 	level.Info(userLogger).Log("msg", "cleanup job completed", "tenant", userID)
-	return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
+	return compactorschedulerpb.UPDATE_TYPE_COMPLETE, stats, nil
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {

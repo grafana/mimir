@@ -302,8 +302,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				isSplit: job.Job.Split,
 			},
 			// Technically this casting could truncate, but that's an unrealistic case.
-			// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
-			uint32(i+1),
+			// The +2 is a minor detail that ensures plan/cleanup jobs (order of 0 and 1) can deterministically sort first upon recovery if they exist.
+			// This offsetting does not matter when the job types are in separate lanes.
+			uint32(i+2),
 			job.Job.TotalBlocksBytes,
 			now,
 		))
@@ -472,6 +473,9 @@ func (s *Scheduler) UpdateCleanupJob(ctx context.Context, req *compactorschedule
 		}
 		if completed {
 			s.metrics.jobsCompleted.WithLabelValues(jobTypeCleanup).Inc()
+			if req.Stats != nil {
+				s.metrics.tenantCleanupMetrics.Set(req.Tenant, req.Stats.BlocksCount, req.Stats.MarkedBlocksCount, req.Stats.PartialBlocksCount, req.Stats.BucketIndexLastUpdate)
+			}
 			level.Info(logger).Log("msg", "cleanup job completed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}

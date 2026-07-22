@@ -766,7 +766,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		exec.sendFinalJobStatus(canceledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+		exec.sendFinalJobStatus(canceledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil)
 		require.Equal(t, 1, mock.GetUpdateJobCallCount())
 	})
 
@@ -787,7 +787,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
-				exec.sendFinalJobStatus(cancelledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+				exec.sendFinalJobStatus(cancelledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil)
 				close(done) // unblock select
 			}()
 
@@ -881,7 +881,7 @@ func newTestBlocksCleaner(t *testing.T, c *MultitenantCompactor, bkt objstore.Bu
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
 		UpdateBlocksConcurrency:       1,
-		SkipRunMetrics:                true,
+		SchedulerCleanupEnabled:       true,
 	}, bkt, mimir_tsdb.AllUsers, c.cfgProvider, log.NewNopLogger(), nil)
 }
 
@@ -945,7 +945,7 @@ func TestSchedulerExecutor_ExecuteCleanupJob(t *testing.T) {
 			c.blocksCleaner = newTestBlocksCleaner(t, c, bkt)
 
 			spec := &compactorschedulerpb.JobSpec{Tenant: tc.tenant, JobType: compactorschedulerpb.JOB_TYPE_CLEANUP}
-			status, err := schedulerExec.executeCleanupJob(context.Background(), c, spec)
+			status, _, err := schedulerExec.executeCleanupJob(context.Background(), c, spec)
 
 			assert.Equal(t, tc.expectedStatus, status)
 			switch {
@@ -1451,6 +1451,7 @@ func TestSchedulerExecutor_SendFinalJobStatus_Interrupted(t *testing.T) {
 				&compactorschedulerpb.JobKey{Id: "job-1"},
 				&compactorschedulerpb.JobSpec{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, Tenant: "test-tenant"},
 				tc.status,
+				nil,
 			)
 			require.Equal(t, tc.want.String(), mock.GetLastUpdate().String())
 		})
