@@ -289,7 +289,7 @@ local filename = 'mimir-writes.json';
       $._config.show_ingest_storage_panels,
       $.row('Distributor (ingest storage)')
       .addPanel(
-        $.ingestStorageKafkaProducedRecordsRatePanel('distributor', extraMatcher=$.multiZoneJobsExclusionMatcher()) +
+        $.ingestStorageKafkaProducedRecordsRatePanel($.withoutMultiZoneJobs($.jobMatcher($._config.job_names.distributor))) +
         $.multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin($._config.multi_zone_write_path_distributor_job_name_formats)
       )
       .addPanel(

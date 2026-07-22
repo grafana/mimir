@@ -2084,11 +2084,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  // extraMatcher is appended to the job matcher of the aggregate series. It's used by the Writes
-  // dashboard to exclude per-zone jobs when the per-zone panels are enabled (see
+  // On the Writes dashboard the given jobMatcher is wrapped with $.withoutMultiZoneJobs() to
+  // exclude per-zone jobs when the per-zone panels are enabled (see
   // multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin).
-  ingestStorageKafkaProducedRecordsRatePanel(jobName, extraMatcher='')::
-    local jobMatcher = $.jobMatcher($._config.job_names[jobName]) + extraMatcher;
+  ingestStorageKafkaProducedRecordsRatePanel(jobMatcher)::
     $.timeseriesPanel('Kafka produced records / sec') +
     $.panelDescription(
       'Kafka produced records / sec',
@@ -2421,8 +2420,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // Extension for the "Kafka produced records / sec" panel built with
   // ingestStorageKafkaProducedRecordsRatePanel(): adds per-zone series next to the aggregate
-  // ones. The aggregate panel should be built with extraMatcher=$.multiZoneJobsExclusionMatcher(),
-  // so that the aggregate and per-zone series don't overlap. Empty when the per-zone panels are
+  // ones. The aggregate panel's job matcher should be wrapped with $.withoutMultiZoneJobs(), so
+  // that the aggregate and per-zone series don't overlap. Empty when the per-zone panels are
   // disabled.
   multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin(jobNameFormats)::
     if !$._config.show_multi_zone_write_path_panels then {} else (
