@@ -33,11 +33,12 @@ const (
 type ProxyConfig struct {
 	Server server.Config
 
-	BackendEndpoint            string
-	AmplificationFactor        float64
-	BackendReadTimeout         time.Duration
-	BackendSkipTLSVerify       bool
-	AsyncMaxInFlightPerBackend int
+	BackendEndpoint                     string
+	AmplificationFactor                 float64
+	NegativeMatchersExcludeAllAmpValues bool
+	BackendReadTimeout                  time.Duration
+	BackendSkipTLSVerify                bool
+	AsyncMaxInFlightPerBackend          int
 
 	HTTPConnectionTTLMin                time.Duration
 	HTTPConnectionTTLMax                time.Duration
@@ -88,6 +89,10 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"each with all label-value matchers (except __name__) suffixed with _amp{k}. "+
 			"A value of 1 disables amplification (only the original request is sent). "+
 			"Fractional values are not supported in v1 (truncated to the integer part).",
+	)
+	f.BoolVar(&cfg.NegativeMatchersExcludeAllAmpValues, "backend.negative-matchers-exclude-all-amp-values", true,
+		"When rewriting a query copy, make negative matchers (!=, !~) exclude the value in all its forms - the base value and every _amp{N} variant (value plus the optional _amp{N} suffix) - instead of only the single _amp{replica} form. A != becomes a !~ with its value regex-quoted, since a single != can only exclude one exact string. "+
+			"Set to false to suffix negative matchers with _amp{replica} like positive matchers (the original behaviour).",
 	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
@@ -204,9 +209,13 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 	}))
 
+	rewriteOpts := rewriteOptions{
+		excludeAmplifiedNegative: p.cfg.NegativeMatchersExcludeAllAmpValues,
+	}
+
 	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.asyncDispatcher)
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -217,7 +226,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.asyncDispatcher)
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, rewriteOpts, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.

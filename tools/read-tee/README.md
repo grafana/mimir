@@ -30,20 +30,29 @@ The query-frontend receives the original query synchronously (response returned 
 
 ## How Query Rewriting Works
 
-Read-tee does **not** use a fixed query template. For *each* incoming request it parses the PromQL expression (or each `match[]` selector), walks the AST, and — for copy `k` — appends `_amp{k}` to every **label value except `__name__`**. This mirrors how write-tee suffixes *series* labels, so copy `k`'s matchers select exactly the `_amp{k}` series write-tee produced. Because it operates on the parsed query, it adapts to any shape or set of filters.
+Read-tee does **not** use a fixed query template. For *each* incoming request it parses the PromQL expression (or each `match[]` selector), walks the AST, and — for copy `k` — suffixes **label values except `__name__`**. Positive matchers get `_amp{k}`, mirroring how write-tee suffixes *series* labels, so copy `k`'s matchers select exactly the `_amp{k}` series write-tee produced. Negative matchers are handled separately (see below). Because it operates on the parsed query, it adapts to any shape or set of filters.
 
-Per-matcher rules (copy `k`):
+Per-matcher rules (copy `k`, default negative-matcher handling):
 
-| Matcher            | Rewritten                 |
-| ------------------ | ------------------------- |
-| `l="v"`            | `l="v_amp{k}"`            |
-| `l!="v"`           | `l!="v_amp{k}"`           |
-| `l=~"re"`          | `l=~"(?:re)_amp{k}"`      |
-| `l!~"re"`          | `l!~"(?:re)_amp{k}"`      |
+| Matcher            | Rewritten                        |
+| ------------------ | -------------------------------- |
+| `l="v"`            | `l="v_amp{k}"`                   |
+| `l=~"re"`          | `l=~"(?:re)_amp{k}"`             |
+| `l!="v"`           | `l!~"v(?:_amp[0-9]+)?"`          |
+| `l!~"re"`          | `l!~"(?:re)(?:_amp[0-9]+)?"`     |
 | `__name__="…"`     | unchanged (metric names are not suffixed) |
-| `l=""` (absence)   | unchanged                 |
+| `l=""` (absence)   | unchanged                        |
 
-Grouping (`by`/`without`/`on`), functions, range/offset/`@`, and subqueries are left untouched — only leaf selector matchers change. Regexes become `(?:re)_amp{k}` because PromQL regexes are fully anchored, so the group-plus-suffix matches `<value>_amp{k}` exactly.
+Grouping (`by`/`without`/`on`), functions, range/offset/`@`, and subqueries are left untouched — only leaf selector matchers change. Positive regexes become `(?:re)_amp{k}` because PromQL regexes are fully anchored, so the group-plus-suffix matches `<value>_amp{k}` exactly.
+
+### Negative matchers
+
+Positive matchers (`=`, `=~`) restrict a copy to a single replica by suffixing the value `_amp{k}`. **Negative matchers** (`!=`, `!~`) are controlled by `-backend.negative-matchers-exclude-all-amp-values`:
+
+- **Enabled (default):** a negative matcher excludes the value in all its forms — the base value and every `_amp{N}` variant (`(?:_amp[0-9]+)?` — the value optionally followed by any `_amp{N}`). A `!=` becomes a `!~` (its literal value is regex-quoted) because a single `!=` can only exclude one exact string. The digit class (rather than `.*`) keeps the exclusion tight to genuine amplified variants and avoids dropping unrelated values that merely share the prefix. The rationale: suffixing a negative matcher with only `_amp{k}` (see below) excludes just the amp-`k` form, so a copy that isn't otherwise pinned to a single replica would still match the base series and every *other* replica.
+- **Disabled:** negative matchers are suffixed `_amp{k}` like positive matchers.
+
+> **Downside of the default:** converting `!=` to `!~` replaces an exact-value exclusion with a regex one. At query time `!~` is generally heavier than `!=` — instead of subtracting the postings for a single value, the engine must find which label values match the regex. The literal-prefix optimization in Prometheus's matcher (only regex-testing values that start with the literal) limits this, but on a high-cardinality label — especially since the amplified data multiplies distinct values — the amplified copy can be somewhat heavier than a faithful replay of the original `!=`. Disable the option to avoid it.
 
 Examples (factor 3 → original + `_amp1`, `_amp2`):
 
@@ -82,6 +91,7 @@ Copies flow through the full read path (query-frontend → querier → ingesters
 ```
 -backend.endpoint             The query-frontend endpoint to forward reads to. Required.
 -backend.amplification-factor Factor N (default 1 = passthrough). Integer part = original + (N-1) copies.
+-backend.negative-matchers-exclude-all-amp-values  Default true. Negative matchers (!=, !~) exclude the value in all forms (base + every _amp{N}); != becomes a regex-quoted !~. Set false to suffix negative matchers with _amp{k} like positive matchers.
 -backend.async-max-in-flight  Max concurrent in-flight amplified copies; excess dropped and counted.
 -backend.read-timeout         Timeout reading the backend response; set >= the query path's querier.timeout.
 -backend.skip-tls-verify      Skip TLS verification on the backend.

@@ -44,18 +44,20 @@ type ProxyEndpoint struct {
 	metrics             *ProxyMetrics
 	logger              log.Logger
 	amplificationFactor float64
+	rewriteOpts         rewriteOptions
 	asyncDispatcher     *AsyncBackendDispatcher
 
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
 		backend:             backend,
 		route:               route,
 		metrics:             metrics,
 		logger:              logger,
 		amplificationFactor: amplificationFactor,
+		rewriteOpts:         rewriteOpts,
 		asyncDispatcher:     asyncDispatcher,
 	}
 }
@@ -212,7 +214,7 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 
 		// Rewrite URL query params in place (if present).
 		if hasURLParams {
-			rewritten, err := rewriteParams(urlValues, k)
+			rewritten, err := rewriteParams(urlValues, k, p.rewriteOpts)
 			if err != nil {
 				rewriteFailed = true
 			} else {
@@ -223,7 +225,7 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 		// Rewrite POST form body params in place (if present).
 		var cloneBody []byte
 		if !rewriteFailed && hasFormParams {
-			rewritten, err := rewriteParams(formValues, k)
+			rewritten, err := rewriteParams(formValues, k, p.rewriteOpts)
 			if err != nil {
 				rewriteFailed = true
 			} else {
@@ -255,14 +257,14 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 // rewriteParams returns a copy of values with the "query" and "match[]" parameters rewritten for
 // the given replica. All other parameters are copied unchanged. Returns an error if any value
 // fails to rewrite (invalid PromQL), so the caller can skip that copy.
-func rewriteParams(values url.Values, replica int) (url.Values, error) {
+func rewriteParams(values url.Values, replica int, opts rewriteOptions) (url.Values, error) {
 	out := make(url.Values, len(values))
 	for key, vs := range values {
 		switch key {
 		case queryParam:
 			rewritten := make([]string, len(vs))
 			for i, v := range vs {
-				rw, err := rewriteQuery(v, replica)
+				rw, err := rewriteQuery(v, replica, opts)
 				if err != nil {
 					return nil, err
 				}
@@ -272,7 +274,7 @@ func rewriteParams(values url.Values, replica int) (url.Values, error) {
 		case matchParam:
 			rewritten := make([]string, len(vs))
 			for i, v := range vs {
-				rw, err := rewriteSelector(v, replica)
+				rw, err := rewriteSelector(v, replica, opts)
 				if err != nil {
 					return nil, err
 				}

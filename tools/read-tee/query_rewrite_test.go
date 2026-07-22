@@ -5,6 +5,7 @@ package readtee
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,7 +71,7 @@ func TestRewriteQuery(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := rewriteQuery(tc.query, replica)
+			got, err := rewriteQuery(tc.query, replica, rewriteOptions{})
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 
@@ -82,7 +83,7 @@ func TestRewriteQuery(t *testing.T) {
 }
 
 func TestRewriteQuery_InvalidPromQL(t *testing.T) {
-	_, err := rewriteQuery(`this is )( not promql`, 2)
+	_, err := rewriteQuery(`this is )( not promql`, 2, rewriteOptions{})
 	require.Error(t, err)
 }
 
@@ -113,7 +114,7 @@ func TestRewriteSelector(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := rewriteSelector(tc.sel, replica)
+			got, err := rewriteSelector(tc.sel, replica, rewriteOptions{})
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 
@@ -125,7 +126,7 @@ func TestRewriteSelector(t *testing.T) {
 }
 
 func TestRewriteSelector_InvalidSelector(t *testing.T) {
-	_, err := rewriteSelector(`{not a selector`, 2)
+	_, err := rewriteSelector(`{not a selector`, 2, rewriteOptions{})
 	require.Error(t, err)
 }
 
@@ -139,7 +140,7 @@ func TestAmpSuffix(t *testing.T) {
 // value "<original>_amp{k}" produced by write-tee, since Prometheus regex matchers are fully
 // anchored.
 func TestRewriteRegexpAlignment(t *testing.T) {
-	got, err := rewriteQuery(`x{job=~"api.*"}`, 3)
+	got, err := rewriteQuery(`x{job=~"api.*"}`, 3, rewriteOptions{})
 	require.NoError(t, err)
 	require.Equal(t, `x{job=~"(?:api.*)_amp3"}`, got)
 
@@ -154,4 +155,111 @@ func TestRewriteRegexpAlignment(t *testing.T) {
 	}
 	require.True(t, jobMatcher.Matches("apifoo_amp3"), "should match amplified value")
 	require.False(t, jobMatcher.Matches("apifoo"), "should not match un-amplified value")
+}
+
+func TestRewriteQuery_ExcludeAmplifiedNegative(t *testing.T) {
+	const replica = 2
+	opts := rewriteOptions{excludeAmplifiedNegative: true}
+
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "equal matcher still suffixed with replica",
+			query: `x{job="api"}`,
+			want:  `x{job="api_amp2"}`,
+		},
+		{
+			name:  "regexp matcher still suffixed with replica",
+			query: `x{job=~"api.*"}`,
+			want:  `x{job=~"(?:api.*)_amp2"}`,
+		},
+		{
+			name:  "not-equal becomes not-regexp excluding value and all amp variants",
+			query: `x{job!="api"}`,
+			want:  `x{job!~"api(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "not-regexp excludes matches and all amp variants",
+			query: `x{job!~"foo|bar"}`,
+			want:  `x{job!~"(?:foo|bar)(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "mixed positive suffixed, negative excludes all variants",
+			query: `x{cluster="c1",job!~"foo|bar"}`,
+			want:  `x{cluster="c1_amp2",job!~"(?:foo|bar)(?:_amp[0-9]+)?"}`,
+		},
+		{
+			name:  "absence matcher unchanged",
+			query: `x{job=""}`,
+			want:  `x{job=""}`,
+		},
+		{
+			name:  "presence matcher unchanged",
+			query: `x{job!=""}`,
+			want:  `x{job!=""}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := rewriteQuery(tc.query, replica, opts)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+
+			_, err = promQLParser.ParseExpr(got)
+			require.NoError(t, err, "rewritten query must be valid PromQL: %q", got)
+		})
+	}
+}
+
+// TestRewriteQuery_ExcludeAmplifiedNegativeSemantics verifies the compiled matchers behave as
+// intended: negative matchers exclude the original value and its _amp{N} variants only, without
+// over-excluding values that merely share the prefix, and != values are treated literally.
+func TestRewriteQuery_ExcludeAmplifiedNegativeSemantics(t *testing.T) {
+	opts := rewriteOptions{excludeAmplifiedNegative: true}
+
+	extract := func(t *testing.T, query, label string) *labels.Matcher {
+		t.Helper()
+		got, err := rewriteQuery(query, 3, opts)
+		require.NoError(t, err)
+		ms, err := promQLParser.ParseMetricSelector(got)
+		require.NoError(t, err)
+		for _, m := range ms {
+			if m.Name == label {
+				return m
+			}
+		}
+		t.Fatalf("no matcher for label %q in %q", label, got)
+		return nil
+	}
+
+	t.Run("not-equal excludes value and amp variants only", func(t *testing.T) {
+		m := extract(t, `x{job!="api"}`, "job")
+		require.False(t, m.Matches("api"))
+		require.False(t, m.Matches("api_amp3"))
+		require.False(t, m.Matches("api_amp10"))
+		require.True(t, m.Matches("apix"))
+		require.True(t, m.Matches("other"))
+	})
+
+	t.Run("not-equal treats the value literally (regex-quoted)", func(t *testing.T) {
+		m := extract(t, `x{job!="a.b"}`, "job")
+		require.False(t, m.Matches("a.b"))
+		require.False(t, m.Matches("a.b_amp2"))
+		require.True(t, m.Matches("axb"), "the dot must be literal, not a wildcard")
+	})
+
+	t.Run("not-regexp is precise and covers amp variants", func(t *testing.T) {
+		m := extract(t, `x{job!~"foo|bar"}`, "job")
+		require.False(t, m.Matches("foo"))
+		require.False(t, m.Matches("bar"))
+		require.False(t, m.Matches("foo_amp5"))
+		require.False(t, m.Matches("bar_amp1"))
+		require.True(t, m.Matches("baz"))
+		require.True(t, m.Matches("baz_amp5"))
+		require.True(t, m.Matches("foobar"), "must not over-exclude values that merely share the prefix")
+	})
 }
