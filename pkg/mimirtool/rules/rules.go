@@ -29,17 +29,23 @@ type RuleNamespace struct {
 	Groups []rwrulefmt.RuleGroup `yaml:"groups"`
 }
 
-// LintExpressions runs the `expr` from a rule through the PromQL or LogQL parser and
+// LintExpressions runs the `expr` from a rule through the PromQL parser and
 // compares its output. If it differs from the parser, it uses the parser's instead.
+// PromQL expressions are formatted with the PromQL prettifier, which splits long
+// expressions across multiple lines, like the query formatter in the Prometheus UI.
 func (r RuleNamespace) LintExpressions(backend string, promqlParser parser.Parser, logger log.Logger) (int, int, error) {
-	var parseFn func(string) (fmt.Stringer, error)
+	var lintFn func(string) (string, error)
 	var queryLanguage string
 
 	switch backend {
 	case MimirBackend:
 		queryLanguage = "PromQL"
-		parseFn = func(s string) (fmt.Stringer, error) {
-			return promqlParser.ParseExpr(s)
+		lintFn = func(s string) (string, error) {
+			exp, err := promqlParser.ParseExpr(s)
+			if err != nil {
+				return "", err
+			}
+			return parser.Prettify(exp), nil
 		}
 	default:
 		return 0, 0, errInvalidBackend
@@ -51,17 +57,17 @@ func (r RuleNamespace) LintExpressions(backend string, promqlParser parser.Parse
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			level.Debug(logger).Log("msg", "linting expression", "language", queryLanguage, "rule", getRuleName(rule))
-			exp, err := parseFn(rule.Expr)
+			exp, err := lintFn(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
 
 			count++
-			if rule.Expr != exp.String() {
-				level.Debug(logger).Log("msg", "expression differs", "rule", getRuleName(rule), "currentExpr", rule.Expr, "afterExpr", exp.String())
+			if rule.Expr != exp {
+				level.Debug(logger).Log("msg", "expression differs", "rule", getRuleName(rule), "currentExpr", rule.Expr, "afterExpr", exp)
 
 				mod++
-				r.Groups[i].Rules[j].Expr = exp.String()
+				r.Groups[i].Rules[j].Expr = exp
 			}
 		}
 	}
