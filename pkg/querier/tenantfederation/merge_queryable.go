@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
@@ -20,10 +21,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -77,6 +80,7 @@ type MergeQuerierUpstream interface {
 	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	SearchLabelNames(ctx context.Context, id string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
 	SearchLabelValues(ctx context.Context, id string, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	FetchMetricMetadata(ctx context.Context, id string, names []string) (map[string]metadata.Metadata, error)
 	Close() error
 }
 
@@ -115,6 +119,16 @@ func (q *tenantQuerier) SearchLabelValues(ctx context.Context, id string, name s
 		return storage.ErrSearchResultSet(errors.Errorf("upstream %T does not support search", q.upstream))
 	}
 	return s.SearchLabelValues(user.InjectOrgID(ctx, id), name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata forwards the metadata fetch to the upstream with the
+// per-tenant org ID injected.
+func (q *tenantQuerier) FetchMetricMetadata(ctx context.Context, id string, names []string) (map[string]metadata.Metadata, error) {
+	f, ok := q.upstream.(querierapi.MetricMetadataFetcher)
+	if !ok {
+		return nil, errors.Errorf("upstream %T does not support metric metadata fetch", q.upstream)
+	}
+	return f.FetchMetricMetadata(user.InjectOrgID(ctx, id), names)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -416,6 +430,46 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 		return storage.ErrSearchResultSet(err)
 	}
 	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// FetchMetricMetadata fetches metric metadata across all involved federation
+// IDs and unions the per-tenant results by metric name. When a name exists in
+// several tenants, the first tenant wins, so the union is deterministic:
+// resolver.TenantIDs returns the IDs sorted (as the sibling search methods also
+// rely on). Per-tenant fetch errors are best-effort: they are logged and that
+// tenant is skipped, since metadata enrichment is optional.
+func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 1 {
+		return m.upstream.FetchMetricMetadata(ctx, ids[0], names)
+	}
+
+	perTenant := make([]map[string]metadata.Metadata, len(ids))
+	errs := make([]error, len(ids))
+	run := func(_ context.Context, idx int) error {
+		perTenant[idx], errs[idx] = m.upstream.FetchMetricMetadata(ctx, ids[idx], names)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(ids), m.maxConcurrency, run); err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]metadata.Metadata)
+	for i, id := range ids {
+		if errs[i] != nil {
+			level.Warn(m.logger).Log("msg", "failed to fetch metric metadata for a tenant during federated search enrichment", "tenant", id, "err", errs[i])
+			continue
+		}
+		for name, md := range perTenant[i] {
+			if _, ok := out[name]; !ok {
+				out[name] = md
+			}
+		}
+	}
+	return out, nil
 }
 
 // searchSyntheticIDs builds a SearchResultSet whose values are the matched

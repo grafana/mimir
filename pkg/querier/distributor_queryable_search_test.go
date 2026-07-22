@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,10 +12,14 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
@@ -136,4 +141,43 @@ func newTestDistributorQuerier(_ *testing.T, dist *mockDistributor, cfg distribu
 		maxt:        maxt,
 		cfgProvider: cfg,
 	}
+}
+
+func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
+	nowMs := time.Now().UnixMilli()
+
+	t.Run("joins by metric family, first record wins, and sends the expected request", func(t *testing.T) {
+		var gotReq *client.MetricsMetadataRequest
+		dist := &mockDistributor{}
+		dist.On("MetricsMetadata", mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) { gotReq = args.Get(1).(*client.MetricsMetadataRequest) }).
+			Return([]scrape.MetricMetadata{
+				{MetricFamily: "a", Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
+				{MetricFamily: "a", Type: model.MetricTypeGauge, Help: "second a"}, // duplicate family: must be ignored
+				{MetricFamily: "b", Type: model.MetricTypeGauge, Help: "help b"},
+			}, nil)
+		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
+
+		got, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a", "b"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]metadata.Metadata{
+			"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
+			"b": {Type: model.MetricTypeGauge, Help: "help b"},
+		}, got)
+
+		require.NotNil(t, gotReq)
+		assert.Equal(t, []string{"a", "b"}, gotReq.MetricNames)
+		assert.Equal(t, int32(2), gotReq.Limit, "Limit bounds the response to the number of requested names")
+		assert.Equal(t, int32(1), gotReq.LimitPerMetric, "LimitPerMetric=1 keeps the response small")
+		assert.Empty(t, gotReq.Metric, "the single-name Metric field must not be used") //nolint:staticcheck // Asserting the deprecated field stays unset.
+	})
+
+	t.Run("propagates the fetch error", func(t *testing.T) {
+		dist := &mockDistributor{}
+		dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata(nil), errors.New("boom"))
+		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
+
+		_, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a"})
+		require.EqualError(t, err, "boom")
+	})
 }

@@ -7,15 +7,71 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// The production wrappers around multiQuerier must forward the fetch, else
+// enrichment silently regresses to skipped.
+var (
+	_ querierapi.MetricMetadataFetcher = (*memoryTrackingQuerier)(nil)
+	_ querierapi.MetricMetadataFetcher = lazyquery.LazyQuerier{}
+)
+
+// findMetadataFetcher returns the first querier that can fetch metric metadata,
+// or nil if none can (e.g. ingesters not queried for this time range).
+func findMetadataFetcher(queriers []storage.Querier) querierapi.MetricMetadataFetcher {
+	for _, q := range queriers {
+		if f, ok := q.(querierapi.MetricMetadataFetcher); ok {
+			return f
+		}
+	}
+	return nil
+}
+
+// FetchMetricMetadata delegates to the per-source querier that can supply
+// metadata. It returns nil when no such source is available.
+func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	// Metadata lives in the ingesters, keyed by metric name and independent of
+	// the query time range, so fetch it from the distributor querier directly
+	// rather than via getQueriers. getQueriers gates the ingester leaf on the
+	// search time range (so an older-than-query-ingesters-within search would
+	// enrich nothing) and also opens and counts the store-gateway, which holds no
+	// metadata.
+	if mq.distributor == nil {
+		return nil, nil
+	}
+
+	// Reuse the distributor querier the in-flight search already opened, if any.
+	mq.queriersMtx.Lock()
+	fetcher := findMetadataFetcher(mq.queriers)
+	mq.queriersMtx.Unlock()
+
+	if fetcher == nil {
+		q, err := mq.distributor.Querier(mq.minT, mq.maxT)
+		if err != nil {
+			return nil, err
+		}
+		mq.addQueriersToCleanup([]storage.Querier{q})
+		var ok bool
+		if fetcher, ok = q.(querierapi.MetricMetadataFetcher); !ok {
+			return nil, nil
+		}
+	}
+
+	return fetcher.FetchMetricMetadata(ctx, names)
+}
 
 // mimirSearcher is the cross-source Searcher interface used at the querier
 // fan-out layer. It differs from Prometheus's storage.Searcher
@@ -132,3 +188,98 @@ func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations,
 	}
 	return sets
 }
+
+// metadataEnrichingSearchResultSet wraps a metric-name SearchResultSet and
+// inlines metric metadata (Type/Help/Unit) on each result. It buffers one
+// response batch worth of results, fetches their metadata in one batched call,
+// sets it, then streams the enriched batch out — so metadata is fetched exactly
+// one response batch at a time, preserving the streaming contract.
+//
+// Metadata is best-effort: a fetch error does not fail the search, it just
+// leaves that batch un-enriched (metadata is optional per result), so no
+// warning is surfaced.
+type metadataEnrichingSearchResultSet struct {
+	ctx       context.Context
+	inner     storage.SearchResultSet
+	fetch     func(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
+	batchSize int
+	logger    log.Logger
+
+	buf            []storage.SearchResult
+	bufNextReadIdx int
+	innerDone      bool
+	warnedFetchErr bool
+}
+
+func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int, logger log.Logger) *metadataEnrichingSearchResultSet {
+	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize, logger: logger}
+}
+
+func (s *metadataEnrichingSearchResultSet) Next() bool {
+	// Advance reading from the already-enriched result (if available).
+	if s.bufNextReadIdx+1 < len(s.buf) {
+		s.bufNextReadIdx++
+		return true
+	}
+
+	if s.innerDone {
+		return false
+	}
+
+	// Read the next batch of results, and then enrich it.
+	s.buf = s.buf[:0]
+	s.bufNextReadIdx = 0
+	for len(s.buf) < s.batchSize {
+		if !s.inner.Next() {
+			s.innerDone = true
+			break
+		}
+		s.buf = append(s.buf, s.inner.At())
+	}
+	if len(s.buf) == 0 {
+		return false
+	}
+	s.enrich()
+
+	return true
+}
+
+func (s *metadataEnrichingSearchResultSet) enrich() {
+	names := make([]string, len(s.buf))
+	for i := range s.buf {
+		names[i] = s.buf[i].Value
+	}
+
+	md, err := s.fetch(s.ctx, names)
+	if err != nil {
+		// Best-effort: leave the batch un-enriched on a fetch error. Metadata is
+		// optional per result, so we don't fail the search or warn the client,
+		// but log it once per request (fetch runs per batch) for observability.
+		if !s.warnedFetchErr {
+			s.warnedFetchErr = true
+			level.Warn(spanlogger.FromContext(s.ctx, s.logger)).Log("msg", "failed to fetch metric metadata for search results enrichment", "err", err)
+		}
+		return
+	}
+
+	for i := range s.buf {
+		if m, ok := md[s.buf[i].Value]; ok {
+			mm := m
+			s.buf[i].Metadata = &mm
+		}
+	}
+}
+
+func (s *metadataEnrichingSearchResultSet) At() storage.SearchResult {
+	if s.bufNextReadIdx < len(s.buf) {
+		return s.buf[s.bufNextReadIdx]
+	}
+	return storage.SearchResult{}
+}
+
+func (s *metadataEnrichingSearchResultSet) Warnings() annotations.Annotations {
+	return s.inner.Warnings()
+}
+
+func (s *metadataEnrichingSearchResultSet) Err() error   { return s.inner.Err() }
+func (s *metadataEnrichingSearchResultSet) Close() error { return s.inner.Close() }

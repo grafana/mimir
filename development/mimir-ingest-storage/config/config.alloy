@@ -145,8 +145,11 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
         scrape_interval = "5s"
         scrape_timeout  = "5s"
 
-        enable_protobuf_negotiation = true
+        scrape_native_histograms  = true
         scrape_classic_histograms = true
+
+        // Scrape and forward metric metadata downstream.
+        honor_metadata = true
 }
 
 prometheus.remote_write "metrics_local" {
@@ -155,8 +158,9 @@ prometheus.remote_write "metrics_local" {
                 url                    = "http://distributor-1:8080/api/v1/push"
                 send_native_histograms = true
 
-                queue_config { }
+                // Send metrics using remote write 2.0, which carries metric metadata inline.
+                protobuf_message = "io.prometheus.write.v2.Request"
 
-                metadata_config { }
+                queue_config { }
         }
 }

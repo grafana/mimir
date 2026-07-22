@@ -17,11 +17,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
@@ -127,8 +129,7 @@ type searchLabelValueRecordWithScore struct {
 }
 
 // searchMetricNameRecord carries optional Type/Help/Unit fields for the
-// metric-names endpoint. They are not yet populated by Mimir but the wire
-// shape is kept compatible with upstream.
+// metric-names endpoint.
 type searchMetricNameRecord struct {
 	Name string `json:"name"`
 	Type string `json:"type,omitempty"`
@@ -184,6 +185,9 @@ type searchRequest struct {
 	endMs        int64
 	batchSize    int
 	includeScore bool
+	// includeMetadata specifies whether the response should include per-metric
+	// metadata. Always parsed, but only the metric-names handler acts on it.
+	includeMetadata bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
 }
@@ -287,11 +291,6 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
-	if err != nil {
-		return nil, err
-	}
-
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
 	// hour before now, end defaults to now. Keeps the default window narrow
 	// enough that searches over an unspecified range stay cheap.
@@ -333,10 +332,12 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
-	// This is poked in after the params validation. Noting that this will be
-	// ignored for non-metric name searches. It is also only actioned on
-	// search requests sent to ingesters.
-	params.IncludeMetadata = includeMetadata
+	// include_metadata is always parsed (so a malformed value is a 400 on every
+	// endpoint); only the metric-names handler acts on it.
+	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+	if err != nil {
+		return nil, err
+	}
 
 	// hintsLimit asks downstream for one extra result so the handler can
 	// determine if there is more data available past the given limit.
@@ -347,15 +348,16 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	}
 
 	return &searchRequest{
-		params:       params,
-		matchers:     matchers,
-		hints:        &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
-		limit:        limit,
-		startMs:      startMs,
-		endMs:        endMs,
-		batchSize:    batchSize,
-		includeScore: includeScore,
-		labelName:    labelName,
+		params:          params,
+		matchers:        matchers,
+		hints:           &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
+		limit:           limit,
+		startMs:         startMs,
+		endMs:           endMs,
+		batchSize:       batchSize,
+		includeScore:    includeScore,
+		includeMetadata: includeMetadata,
+		labelName:       labelName,
 	}, nil
 }
 
@@ -511,12 +513,13 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 }
 
 // SearchMetricNamesHandler returns the handler for /api/v1/search/metric_names.
-func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
+func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
 			return
 		}
+
 		req, err := parseSearchRequest(r, false)
 		if err != nil {
 			writeSearchBadRequest(w, err)
@@ -533,7 +536,28 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
+
+		// Metric metadata (include_metadata) is enriched here, above every merge,
+		// so a single batched fetch covers the fully-deduped result.
+		//
+		// This handler stays tenant federation agnostic, but if the queryable is
+		// tenant federation aware then the metadata will be fetched across tenants.
+		//
+		// Metadata enrichment is best-effort: a missing fetcher or a fetch error
+		// just leaves results un-enriched.
+		if req.includeMetadata {
+			if fetcher, ok := querier.(querierapi.MetricMetadataFetcher); ok {
+				// Floor the fetch batch so a batch_size=1 (or, generally speaking a
+				// small batch_size requested via the API) can't turn into one all-ingester
+				// metadata fan-out per single/few results.
+				fetchBatchSize := max(req.batchSize, searchDefaultBatchSize)
+				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetcher.FetchMetricMetadata, fetchBatchSize, logger)
+			}
+		}
+
+		// Ensure the result set gets closed (cascading when result sets are wrapped).
 		defer rs.Close()
+
 		if req.includeScore {
 			env := getSearchEnvelope[searchMetricNameRecordWithScore](req, &searchMetricNameWithScorePool)
 			defer putSearchEnvelope(env, &searchMetricNameWithScorePool, req)
@@ -610,9 +634,9 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 }
 
 // getSearchEnvelope returns the per-batch envelope for the request. Uses
-// the pool only when req.batchSize matches the pool's pre-allocated
+// the pool only when the batch size matches the pool's pre-allocated
 // capacity; otherwise allocates a fresh envelope so an outsized user
-// batchSize does not grow the pool's backing slices indefinitely.
+// batch size does not grow the pool's backing slices indefinitely.
 func getSearchEnvelope[T any](req *searchRequest, pool *sync.Pool) *searchBatchEnvelope[T] {
 	if req.batchSize == searchDefaultBatchSize {
 		return pool.Get().(*searchBatchEnvelope[T])
@@ -620,7 +644,7 @@ func getSearchEnvelope[T any](req *searchRequest, pool *sync.Pool) *searchBatchE
 	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.batchSize)}
 }
 
-// putSearchEnvelope returns env to pool when req.batchSize matches the
+// putSearchEnvelope returns env to pool when the batch size matches the
 // default; for non-default sizes the envelope is dropped on the floor
 // (matches getSearchEnvelope's allocation rule).
 func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req *searchRequest) {
