@@ -827,6 +827,9 @@ func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorr
 		"step":   {},
 		"time":   {},
 		"vector": {},
+		// start_timestamp is an experimental upstream function that MQE does not implement yet,
+		// so we cannot run a sharding correctness test case for it.
+		"start_timestamp": {},
 	}
 	for _, tc := range testsToIgnore {
 		fnToIgnore[tc.fn] = struct{}{}

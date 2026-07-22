@@ -82,6 +82,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"left_vector + fill_right(0) right_vector": "'fill' modifier",
 		"left_vector + fill(0) right_vector":       "'fill' modifier",
 		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
+		"start_timestamp(vector(0))":               "'start_timestamp' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {

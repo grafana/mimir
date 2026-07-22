@@ -576,7 +576,8 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),
@@ -1423,7 +1424,8 @@ func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	from, through, step := time.Unix(0, 0), end.Time(), q.step
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -1544,7 +1546,8 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),
