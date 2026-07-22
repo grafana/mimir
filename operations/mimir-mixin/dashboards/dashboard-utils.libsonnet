@@ -2410,19 +2410,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // recording rules.
   multiZoneLatencyPanel(metric, jobNameFormats, routeRegex)::
     local zones = $._config.multi_zone_write_path_zones;
-    local zoneTargets(zone) = [
-      target {
-        legendFormat: '%s zone-%s' % [target.legendFormat, zone],
-        refId: 'zone_%s_%s' % [zone, target.refId],
-      }
-      // The per-zone average is not shown to limit the number of series on the panel.
-      for target in $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zone, routeRegex)).targets
-      if target.legendFormat != 'Average'
-    ];
+    // The per-zone average is not shown to limit the number of series on the panel.
+    local shownPercentiles = ['99th percentile', '50th percentile'];
+    local zoneTargets(zone) =
+      $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zone, routeRegex)).targets;
     $.timeseriesPanel('Latency per zone') +
     $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zones[0], routeRegex)) +
     {
-      targets: std.flatMap(zoneTargets, zones),
+      // Targets are ordered percentile-first, so that the same percentile from different zones is
+      // shown next to each other.
+      targets: [
+        target {
+          legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+          refId: 'zone_%s_%s' % [zone, target.refId],
+        }
+        for percentile in shownPercentiles
+        for zone in zones
+        for target in zoneTargets(zone)
+        if target.legendFormat == percentile
+      ],
     } +
     $.aliasColors($.multiZoneSeriesColors({ '99th percentile': 'blue', '50th percentile': 'green' })),
 
