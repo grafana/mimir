@@ -2598,7 +2598,7 @@
               "required": false,
               "desc": "Enable subset selector elimination when evaluating queries.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-subset-selector-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
