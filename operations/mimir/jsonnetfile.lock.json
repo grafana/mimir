@@ -8,18 +8,8 @@
           "subdir": "consul"
         }
       },
-      "version": "c19a92e586a6752f11745b47f309b13f02ef7147",
-      "sum": "qlVBnIShhHEPglAl1xYIAmOP/W8LD0wQmHCT0m9sTLU="
-    },
-    {
-      "source": {
-        "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs.git",
-          "subdir": "etcd-operator"
-        }
-      },
-      "version": "815b0364886cc7bdf6bde2cdcd424bb8cef842b8",
-      "sum": "dnKsZ5FkKBtCycNVVSYa1AMNjCLofO4VGFrmzoz4344="
+      "version": "3b8056670048416f5fb660dc039e473eb20a40b2",
+      "sum": "Po3c1Ic96ngrJCtOazic/7OsLkoILOKZWXWyZWl+od8="
     },
     {
       "source": {
@@ -28,8 +18,8 @@
           "subdir": "ksonnet-util"
         }
       },
-      "version": "8fa7669cc7b1b1822eb0220f2eda9c6aaa5c5119",
-      "sum": "/l/RofjusGrnNpJMD0ST+jDgtARyjvBP5vC7kEjPoQI="
+      "version": "3b8056670048416f5fb660dc039e473eb20a40b2",
+      "sum": "0y3AFX9LQSpfWTxWKSwoLgbt0Wc9nnCwhMH2szKzHv0="
     },
     {
       "source": {
@@ -38,7 +28,7 @@
           "subdir": "memcached"
         }
       },
-      "version": "dfc90cc58ffd46be49aeafe57014ef55ea4e3cd8",
+      "version": "3b8056670048416f5fb660dc039e473eb20a40b2",
       "sum": "zNTCDRaCqJUHjQSQRsxGR3jLrMP9tU7YNQb13dbm1bU="
     },
     {
