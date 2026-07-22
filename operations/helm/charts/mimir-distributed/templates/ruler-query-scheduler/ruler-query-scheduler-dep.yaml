@@ -45,6 +45,10 @@ spec:
         - name: ruler-query-scheduler
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-scheduler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ruler_query_scheduler.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=query-scheduler"
             - "-config.expand-env=true"

@@ -143,6 +143,10 @@ spec:
         - name: alertmanager
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "alertmanager") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.alertmanager.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=alertmanager"
             - "-config.expand-env=true"

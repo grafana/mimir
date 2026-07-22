@@ -138,6 +138,10 @@ spec:
         - name: ingester
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ingester") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ingester.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=ingester"
             - "-config.expand-env=true"

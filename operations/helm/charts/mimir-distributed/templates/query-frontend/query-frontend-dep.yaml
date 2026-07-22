@@ -51,6 +51,10 @@ spec:
         - name: query-frontend
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "query-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.query_frontend.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=query-frontend"
             - "-config.expand-env=true"

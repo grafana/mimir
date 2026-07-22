@@ -48,6 +48,10 @@ spec:
         - name: ruler
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ruler.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=ruler"
             - "-config.expand-env=true"
