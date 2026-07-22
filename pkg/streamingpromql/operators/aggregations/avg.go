@@ -357,6 +357,9 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 }
 
 func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	// Remove sentinel histograms from slice to ensure it's not mutated when the slice is reused.
+	removeSentinelValue(g.histograms)
+
 	types.Float64SlicePool.Put(&g.floats, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.floatMeans, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.floatCompensatingMeans, memoryConsumptionTracker)
