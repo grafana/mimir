@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -41,27 +42,29 @@ type amplifiedRequest struct {
 }
 
 type ProxyEndpoint struct {
-	backend                ProxyBackend
-	metrics                *ProxyMetrics
-	logger                 log.Logger
-	amplificationFactor    float64
-	rewriteOpts            rewriteOptions
-	ampAllReplicasFraction float64
-	asyncDispatcher        *AsyncBackendDispatcher
+	backend                   ProxyBackend
+	metrics                   *ProxyMetrics
+	logger                    log.Logger
+	amplificationFactor       float64
+	rewriteOpts               rewriteOptions
+	ampAllReplicasFraction    float64
+	strongConsistencyFraction float64
+	asyncDispatcher           *AsyncBackendDispatcher
 
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, ampAllReplicasFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, ampAllReplicasFraction, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
-		backend:                backend,
-		route:                  route,
-		metrics:                metrics,
-		logger:                 logger,
-		amplificationFactor:    amplificationFactor,
-		rewriteOpts:            rewriteOpts,
-		ampAllReplicasFraction: ampAllReplicasFraction,
-		asyncDispatcher:        asyncDispatcher,
+		backend:                   backend,
+		route:                     route,
+		metrics:                   metrics,
+		logger:                    logger,
+		amplificationFactor:       amplificationFactor,
+		rewriteOpts:               rewriteOpts,
+		ampAllReplicasFraction:    ampAllReplicasFraction,
+		strongConsistencyFraction: strongConsistencyFraction,
+		asyncDispatcher:           asyncDispatcher,
 	}
 }
 
@@ -284,6 +287,14 @@ func (p *ProxyEndpoint) buildCopy(ctx context.Context, src amplifiedRequestSourc
 		clone.ContentLength = int64(len(cloneBody))
 		clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
 		clone.Header.Set("Content-Type", formContentType)
+	}
+
+	// Independently per copy, request strong read consistency on a sampled fraction of instant-query
+	// copies. This mirrors the ruler (which runs instant queries) and only affects copies, never the
+	// original client request.
+	if p.route.Instant && p.strongConsistencyFraction > 0 && rand.Float64() < p.strongConsistencyFraction {
+		clone.Header.Set(api.ReadConsistencyHeader, api.ReadConsistencyStrong)
+		p.metrics.strongConsistencyCopiesTotal.WithLabelValues(p.route.RouteName).Inc()
 	}
 
 	return amplifiedRequest{req: clone, body: cloneBody}, true

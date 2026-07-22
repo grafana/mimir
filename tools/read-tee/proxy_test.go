@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func mustParseURL(t *testing.T, raw string) *url.URL {
@@ -116,6 +118,16 @@ func TestNewProxy_Validation(t *testing.T) {
 			},
 			expectedErr: "backend.amplify-all-replicas-fraction must be between 0 and 1",
 		},
+		{
+			name: "strong-consistency fraction out of range",
+			cfg: ProxyConfig{
+				BackendEndpoint:                  "http://backend1:8080",
+				AmplificationFactor:              1.0,
+				AsyncMaxInFlightPerBackend:       1000,
+				StrongConsistencyInstantFraction: -0.1,
+			},
+			expectedErr: "backend.strong-consistency-instant-fraction must be between 0 and 1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,7 +189,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, rewriteOptions{}, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", `/api/v1/query?query=up`, nil)
 			rec := httptest.NewRecorder()
@@ -246,7 +258,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, rewriteOptions{}, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -313,7 +325,7 @@ func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 	// Factor 3 would normally send 2 per-replica copies; with fraction 1.0 we expect a single copy.
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, rewriteOptions{}, 1.0, asyncDispatcher)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, rewriteOptions{}, 1.0, 0.0, asyncDispatcher)
 
 	req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 	rec := httptest.NewRecorder()
@@ -332,4 +344,89 @@ func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 	require.Contains(t, got, originalQuery)
 	require.Contains(t, got, `up{job=~"api(?:_amp[0-9]+)?"}`)
 	require.Equal(t, 1.0, testutil.ToFloat64(metrics.amplifyAllReplicasTotal.WithLabelValues("api_v1_query")))
+}
+
+// TestProxyEndpoint_StrongConsistency verifies that, with strong-consistency-instant-fraction=1 on
+// an instant-query route, every amplified copy carries X-Read-Consistency: strong while the
+// original does not, and that non-instant routes never get the header.
+func TestProxyEndpoint_StrongConsistency(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	const originalQuery = `up{job="api"}`
+
+	tests := []struct {
+		name           string
+		route          Route
+		expectOnCopies bool
+	}{
+		{
+			name:           "instant route gets strong consistency on copies",
+			route:          Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}, Instant: true},
+			expectOnCopies: true,
+		},
+		{
+			name:           "non-instant route never gets strong consistency",
+			route:          Route{Path: "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET"}, Instant: false},
+			expectOnCopies: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
+
+			type recorded struct{ query, consistency string }
+			var mu sync.Mutex
+			var reqs []recorded
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				reqs = append(reqs, recorded{r.URL.Query().Get("query"), r.Header.Get(api.ReadConsistencyHeader)})
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
+
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+
+			// factor 3 -> 2 copies; strong-consistency-instant-fraction 1.0 -> every copy sampled.
+			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, rewriteOptions{}, 0.0, 1.0, asyncDispatcher)
+
+			req := httptest.NewRequest("GET", tt.route.Path+"?query="+url.QueryEscape(originalQuery), nil)
+			rec := httptest.NewRecorder()
+			endpoint.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			asyncDispatcher.Stop()
+			asyncDispatcher.Await()
+
+			mu.Lock()
+			got := append([]recorded(nil), reqs...)
+			mu.Unlock()
+
+			require.Len(t, got, 3)
+			var copiesWithHeader int
+			for _, r := range got {
+				if r.query == originalQuery {
+					// The original must never carry the header.
+					require.Empty(t, r.consistency, "original request must not have strong consistency")
+					continue
+				}
+				if r.consistency == api.ReadConsistencyStrong {
+					copiesWithHeader++
+				}
+			}
+
+			metricVal := testutil.ToFloat64(metrics.strongConsistencyCopiesTotal.WithLabelValues(tt.route.RouteName))
+			if tt.expectOnCopies {
+				require.Equal(t, 2, copiesWithHeader)
+				require.Equal(t, 2.0, metricVal)
+			} else {
+				require.Equal(t, 0, copiesWithHeader)
+				require.Equal(t, 0.0, metricVal)
+			}
+		})
+	}
 }

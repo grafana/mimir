@@ -18,12 +18,13 @@ const (
 )
 
 type ProxyMetrics struct {
-	requestDuration         *prometheus.HistogramVec
-	responsesTotal          *prometheus.CounterVec
-	errorsTotal             *prometheus.CounterVec
-	droppedRequestsTotal    *prometheus.CounterVec
-	rewriteErrorsTotal      *prometheus.CounterVec
-	amplifyAllReplicasTotal *prometheus.CounterVec
+	requestDuration              *prometheus.HistogramVec
+	responsesTotal               *prometheus.CounterVec
+	errorsTotal                  *prometheus.CounterVec
+	droppedRequestsTotal         *prometheus.CounterVec
+	rewriteErrorsTotal           *prometheus.CounterVec
+	amplifyAllReplicasTotal      *prometheus.CounterVec
+	strongConsistencyCopiesTotal *prometheus.CounterVec
 }
 
 func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
@@ -58,6 +59,11 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 			Namespace: readTeeMetricsNamespace,
 			Name:      "amplify_all_replicas_total",
 			Help:      "Total number of incoming reads amplified with a single copy matching the base series plus all replicas (amp.*-mode).",
+		}, []string{"route"}),
+		strongConsistencyCopiesTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+			Namespace: readTeeMetricsNamespace,
+			Name:      "strong_consistency_copies_total",
+			Help:      "Total number of amplified copies sent with the X-Read-Consistency: strong header.",
 		}, []string{"route"}),
 	}
 

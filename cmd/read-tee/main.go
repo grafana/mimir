@@ -18,7 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/tools/read-tee"
+	readtee "github.com/grafana/mimir/tools/read-tee"
 )
 
 type Config struct {
@@ -113,13 +113,14 @@ func mimirReadRoutes() []readtee.Route {
 	type spec struct {
 		path      string
 		routeName string
+		instant   bool
 	}
 	specs := []spec{
-		{"/api/v1/query", "api_v1_query"},
-		{"/api/v1/query_range", "api_v1_query_range"},
-		{"/api/v1/series", "api_v1_series"},
-		{"/api/v1/labels", "api_v1_labels"},
-		{"/api/v1/label/{name}/values", "api_v1_label_values"},
+		{"/api/v1/query", "api_v1_query", true},
+		{"/api/v1/query_range", "api_v1_query_range", false},
+		{"/api/v1/series", "api_v1_series", false},
+		{"/api/v1/labels", "api_v1_labels", false},
+		{"/api/v1/label/{name}/values", "api_v1_label_values", false},
 	}
 
 	var routes []readtee.Route
@@ -129,12 +130,14 @@ func mimirReadRoutes() []readtee.Route {
 			Path:      s.path,
 			RouteName: s.routeName,
 			Methods:   methods,
+			Instant:   s.instant,
 		})
 		// /prometheus-prefixed form (the path the gateway forwards in our setup).
 		routes = append(routes, readtee.Route{
 			Path:      "/prometheus" + s.path,
 			RouteName: "prometheus_" + s.routeName,
 			Methods:   methods,
+			Instant:   s.instant,
 		})
 	}
 	return routes
