@@ -227,12 +227,9 @@ func TestRangeVectorSelectors(t *testing.T) {
 	delayedLimits.EnableDelayedNameRemoval = true
 	delayedOpts := NewTestEngineOpts()
 	delayedOpts.Limits = delayedLimits
+	delayedOpts.EnableDelayedNameRemovalPrometheusEngine = true
 
-	// MQE reads delayed name removal from its limits provider, not from CommonOpts. Only the
-	// Prometheus engine reads it from CommonOpts, so set it on a separate copy for that engine.
-	delayedPrometheusCommonOpts := delayedOpts.CommonOpts
-	delayedPrometheusCommonOpts.EnableDelayedNameRemoval = true
-	delayedPrometheusEngine := promql.NewEngine(delayedPrometheusCommonOpts)
+	delayedPrometheusEngine := promql.NewEngine(delayedOpts.PrometheusEngineOpts())
 	delayedPlanner, err := NewQueryPlanner(delayedOpts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	delayedMimirEngine, err := NewEngine(delayedOpts, stats.NewQueryMetrics(nil), delayedPlanner)
@@ -2432,16 +2429,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 		limits := NewStaticQueryLimitsProvider()
 		limits.EnableDelayedNameRemoval = delayedNameRemovalEnabled
 		opts.Limits = limits
+		opts.EnableDelayedNameRemovalPrometheusEngine = delayedNameRemovalEnabled
 
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
-		// MQE gets delayed name removal from its limits provider; the Prometheus engine gets it from
-		// CommonOpts, so set it on a separate copy for that engine.
-		prometheusCommonOpts := opts.CommonOpts
-		prometheusCommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
-		prometheusEngine := promql.NewEngine(prometheusCommonOpts)
+		prometheusEngine := promql.NewEngine(opts.PrometheusEngineOpts())
 
 		engineSets = append(engineSets, struct {
 			mimirEngine               promql.QueryEngine

@@ -970,7 +970,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(engine.NewPrometheusEngineOptions(t.Cfg.Querier.EngineConfig, opts)))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
 		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(opts.CommonOpts.Reg)
 	case querier.MimirEngine:
 		var err error
@@ -984,7 +984,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(engine.NewPrometheusEngineOptions(t.Cfg.Querier.EngineConfig, opts))), opts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts())), opts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
