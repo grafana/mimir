@@ -1230,6 +1230,11 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	for tName, tc := range tcs {
 		t.Run(tName, func(t *testing.T) {
 			if tc.queryResultPayloadFormat == "" {
@@ -1368,6 +1373,11 @@ func TestRulerRemoteEvaluationErrorClassification(t *testing.T) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	const user = "user"
 	const namespace = "test"
@@ -1562,6 +1572,11 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 	// Wait until the distributor is ready.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// Wait until partitions are ACTIVE in the ring.
 	for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
