@@ -163,6 +163,12 @@
 
 ### Query-tee
 
+## 3.1.4
+
+### Grafana Mimir
+
+* [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
+
 ## 3.1.3
 
 ### Grafana Mimir
