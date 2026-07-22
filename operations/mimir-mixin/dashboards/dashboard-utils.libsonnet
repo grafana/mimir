@@ -2318,21 +2318,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.jobSelector($.multiZoneJobNames(jobNameFormats, zone)) +
     (if routeRegex == null then [] else [utils.selector.re('route', routeRegex)]),
 
-  // Returns a matcher which excludes all per-zone jobs, or an empty string when the per-zone
-  // panels are disabled. It's appended to the selector of the aggregate series of panels which
-  // also show per-zone series: the aggregate job regexes (e.g. 'distributor.*') match the
-  // per-zone deployments too, so without it the same traffic would be plotted twice on those
-  // panels. On deployments without per-zone components the exclusion matches no job, so the
-  // aggregate series are unaffected.
-  multiZoneJobsExclusionMatcher()::
+  // Returns a matcher which excludes a component's per-zone jobs (the given jobNameFormats
+  // expanded with every configured zone), or an empty string when the per-zone panels are
+  // disabled. It's appended to the selector of the aggregate series of panels which also show
+  // per-zone series: the aggregate job regexes (e.g. 'distributor.*') match the per-zone
+  // deployments too, so without it the same traffic would be plotted twice on those panels.
+  // On deployments without per-zone components the exclusion matches no job, so the aggregate
+  // series are unaffected.
+  multiZoneJobsExclusionMatcher(jobNameFormats)::
     if !$._config.show_multi_zone_write_path_panels
     then ''
-    else ', %s!~".*-zone-.*"' % $._config.per_job_label,
+    else
+      // Negate the same job regex which jobMatcher() would use to match the per-zone
+      // deployments, so that exactly the jobs matched by the per-zone series are excluded.
+      local zoneJobNames = std.flatMap(
+        function(zone) $.multiZoneJobNames(jobNameFormats, zone),
+        $._config.multi_zone_write_path_zones
+      );
+      ', %s!~"%s(%s)"' % [$._config.per_job_label, $._config.job_prefix, formatJobForQuery(zoneJobNames)],
 
   // Appends the per-zone jobs exclusion to the given selector. No-op when the per-zone panels
   // are disabled.
-  withoutMultiZoneJobs(selector)::
-    selector + $.multiZoneJobsExclusionMatcher(),
+  withoutMultiZoneJobs(selector, jobNameFormats)::
+    selector + $.multiZoneJobsExclusionMatcher(jobNameFormats),
 
   // Per-zone series are shown with the same color family of the matching aggregate series, with
   // a different shade per zone. Up to 3 zones get a distinct shade; any additional zone reuses
