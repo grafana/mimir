@@ -149,14 +149,12 @@ func NewOneToOneVectorVectorBinaryOperation(
 	hints *Hints,
 	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
+	// The one-to-one operator never swaps operands, so the fill values map directly onto
+	// computeResult's left and right arguments.
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange.StepCount, vectorMatching.FillValues.LHS, vectorMatching.FillValues.RHS)
 	if err != nil {
 		return nil, err
 	}
-
-	// The one-to-one operator never swaps operands, so the fill values map directly onto
-	// computeResult's left and right arguments.
-	e.setFillValues(vectorMatching.FillValues.LHS, vectorMatching.FillValues.RHS)
 
 	b := &OneToOneVectorVectorBinaryOperation{
 		Left:                     left,

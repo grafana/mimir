@@ -258,12 +258,9 @@ type vectorVectorBinaryOperationEvaluator struct {
 	// sample at a timestep (fill_left/fill and fill_right/fill respectively). nil disables filling.
 	fillLeft  *float64
 	fillRight *float64
-}
 
-// setFillValues sets the fill values used by computeResult. A nil value disables filling for that side.
-func (e *vectorVectorBinaryOperationEvaluator) setFillValues(fillLeft, fillRight *float64) {
-	e.fillLeft = fillLeft
-	e.fillRight = fillRight
+	// stepCount is the number of steps in the query time range; an output series produces at most one point per step.
+	stepCount int
 }
 
 func newVectorVectorBinaryOperationEvaluator(
@@ -271,12 +268,18 @@ func newVectorVectorBinaryOperationEvaluator(
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
+	stepCount int,
+	fillLeft *float64,
+	fillRight *float64,
 ) (*vectorVectorBinaryOperationEvaluator, error) {
 	e := &vectorVectorBinaryOperationEvaluator{
 		op:                       op,
 		opFunc:                   nil,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
+		stepCount:                stepCount,
+		fillLeft:                 fillLeft,
+		fillRight:                fillRight,
 	}
 
 	if returnBool {
@@ -312,7 +315,8 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	// maxPoints is an upper bound on the number of output points, used to size a newly allocated
 	// output slice. Without fill, output only occurs where both sides have a sample, so the smaller
 	// side bounds it. A fill lets every sample on the other side produce output, so a set fill side
-	// is bounded by the opposite side's point count, and both fills by their sum.
+	// is bounded by the opposite side's point count, and both fills by their sum. The result is also capped by the
+	// number of steps in the query time range.
 	maxPoints := min(leftPoints, rightPoints)
 	switch {
 	case e.fillLeft != nil && e.fillRight != nil:
@@ -322,6 +326,10 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	case e.fillLeft != nil:
 		maxPoints = rightPoints
 	}
+
+	// An output series produces at most one point per step, so the number of steps in the query
+	// time range is also an upper bound on the number of output points.
+	maxPoints = min(maxPoints, e.stepCount)
 
 	// We cannot re-use any slices when the series contain a mix of floats and histograms.
 	// Consider the following, where f is a float at a particular step, and h is a histogram.

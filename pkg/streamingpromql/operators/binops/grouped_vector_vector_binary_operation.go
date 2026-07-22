@@ -156,7 +156,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange.StepCount, nil, nil)
 	if err != nil {
 		return nil, err
 	}
