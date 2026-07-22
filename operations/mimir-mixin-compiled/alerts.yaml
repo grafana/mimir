@@ -20,9 +20,9 @@ groups:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
-              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m]))
+              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[4m]))
               /
-              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
+              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[4m]))
             ) * 100 > 1
           for: 15m
           labels:
@@ -38,9 +38,9 @@ groups:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
-              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m])))
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[4m])))
               /
-              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{route!~"ready|debug_pprof"}[1m])))
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{route!~"ready|debug_pprof"}[4m])))
             ) * 100 > 1
           for: 15m
           labels:
@@ -84,7 +84,7 @@ groups:
                 # Don't include config hashes that are still being rolled out.
                 # Kubernetes configmap propagation can be slow,
                 # and in large cells we may deploy a new configmap when the previous one isn't still propagated everywhere.
-                (changes((count by (cluster, namespace, sha256) (cortex_runtime_config_hash))[10m:30s]) > 0)
+                (changes((count by (cluster, namespace, sha256) (cortex_runtime_config_hash))[10m:1m]) > 0)
                 # Don't include configs that didn't exist one minute ago.
                 # changes() == 0 for metrics appearing for the first time,
                 # but this is still a "we're rolling out a new config" scenario.
@@ -123,9 +123,9 @@ groups:
               min_over_time(
                 delta(
                   sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length)
-                  [1m:5s]
+                  [4m:5s]
                 )
-                [1m:5s]
+                [4m:5s]
               ) >= 0
             )
           for: 7m
@@ -139,11 +139,11 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[1m])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[4m])
               )
               /
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_cache_operations_total{operation!~"add|delete"}[1m])
+                rate(thanos_cache_operations_total{operation!~"add|delete"}[4m])
               ) > 10
             ) * 100 > 5
           for: 5m
@@ -173,9 +173,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkvstorefailure
           expr: |
             (
-              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
+              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[4m]))
               /
-              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{}[1m]))
+              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{}[4m]))
             )
             # We want to get alerted only in case there's a constant failure.
             == 1
@@ -190,9 +190,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkvstorefailure
           expr: |
             (
-              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{status_code!~"2.+"}[1m])))
+              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{status_code!~"2.+"}[4m])))
               /
-              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{}[1m])))
+              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{}[4m])))
             )
             # We want to get alerted only in case there's a constant failure.
             == 1
@@ -277,9 +277,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
             (
-                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m]))
+                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[4m]))
                 /
-                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operations_total{component="store-gateway"}[1m]))
+                sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operations_total{component="store-gateway"}[4m]))
             ) >= 0.01
           for: 5m
           labels:
@@ -653,9 +653,9 @@ groups:
           expr: |
             100 * (
             # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[4m]))
               /
-            sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[4m]))
             ) > 1
           for: 5m
           labels:
@@ -668,9 +668,9 @@ groups:
           expr: |
             100 * (
             # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-            sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[4m]))
               /
-            sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[4m]))
             ) > 1
           for: 5m
           labels:
@@ -682,9 +682,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulersmissedevaluations
           expr: |
             100 * (
-            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_missed_total[4m]))
               /
-            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            sum by (cluster, namespace) (rate(cortex_prometheus_rule_group_iterations_total[4m]))
             ) > 1
           for: 5m
           labels:
@@ -696,9 +696,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulermissedevaluations
           expr: |
             100 * (
-            sum by (cluster, namespace, pod) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_prometheus_rule_group_iterations_missed_total[4m]))
               /
-            sum by (cluster, namespace, pod) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            sum by (cluster, namespace, pod) (rate(cortex_prometheus_rule_group_iterations_total[4m]))
             ) > 5
           for: 5m
           labels:
@@ -709,7 +709,7 @@ groups:
                 Mimir Rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are experiencing errors when checking the ring for rule group ownership.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerfailedringcheck
           expr: |
-            sum by (cluster, namespace, job) (rate(cortex_ruler_ring_check_errors_total[1m]))
+            sum by (cluster, namespace, job) (rate(cortex_ruler_ring_check_errors_total[4m]))
                > 0
           for: 5m
           labels:
@@ -841,7 +841,7 @@ groups:
             message: Mimir memberlist in {{ $labels.cluster }}/{{ $labels.namespace }} has automatically temporarily disabled zone-aware routing because it detected missing memberlist bridges.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemberlistzoneawareroutingautofailover
           expr: |
-            sum by (cluster, namespace) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[1m])) > 0
+            sum by (cluster, namespace) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[4m])) > 0
           for: 10m
           labels:
             severity: warning
@@ -893,7 +893,7 @@ groups:
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.pod }} is unable to check tenants ownership via the ring.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerringcheckfailing
           expr: |
-            rate(cortex_alertmanager_ring_check_errors_total[2m]) > 0
+            rate(cortex_alertmanager_ring_check_errors_total[4m]) > 0
           for: 10m
           labels:
             severity: critical
@@ -903,7 +903,7 @@ groups:
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.pod }} is failing to merge partial state changes received from a replica.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerstatemergefailing
           expr: |
-            rate(cortex_alertmanager_partial_state_merges_failed_total[2m]) > 0
+            rate(cortex_alertmanager_partial_state_merges_failed_total[4m]) > 0
           for: 10m
           labels:
             severity: critical
@@ -913,7 +913,7 @@ groups:
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.pod }} is failing to replicating partial state to its replicas.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerreplicationfailing
           expr: |
-            rate(cortex_alertmanager_state_replication_failed_total[2m]) > 0
+            rate(cortex_alertmanager_state_replication_failed_total[4m]) > 0
           for: 10m
           labels:
             severity: critical
@@ -933,7 +933,7 @@ groups:
                 Mimir Alertmanager {{ $labels.job }}/{{ $labels.pod }} was unable to obtain some initial state when starting up.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiralertmanagerinitialsyncfailed
           expr: |
-            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
+            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[4m]) > 0
           labels:
             severity: warning
         - alert: MimirAlertmanagerAllocatingTooMuchMemory
@@ -985,13 +985,13 @@ groups:
             (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
             and
             # Only if the ingester has ingested samples over the last 4h.
-            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
+            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate4m[4h])) > 0)
             and
             # Only if the ingester was ingesting samples 4h ago. This protects against the case where the ingester replica
             # had ingested samples in the past, then no traffic was received for a long period and then it starts
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
-            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[1h] offset 4h)) > 0)
+            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate4m[1h] offset 4h)) > 0)
             # And only if blocks aren't shipped by the block-builder.
             unless on (cluster, namespace)
             (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
@@ -1005,7 +1005,7 @@ groups:
           expr: |
             (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
-            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
+            (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate4m[4h])) > 0)
             # Only if blocks aren't shipped by the block-builder.
             unless on (cluster, namespace)
             (max by (cluster, namespace) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
@@ -1098,7 +1098,7 @@ groups:
             message: Mimir Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to write to TSDB WAL.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalwritesfailed
           expr: |
-            rate(cortex_ingester_tsdb_wal_writes_failed_total[1m]) > 0
+            rate(cortex_ingester_tsdb_wal_writes_failed_total[4m]) > 0
           for: 3m
           labels:
             severity: critical
@@ -1399,7 +1399,7 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to read records from Kafka.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkareadfailed
           expr: |
-            sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+            sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[4m]))
             > 0
           for: 5m
           labels:
@@ -1409,7 +1409,7 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to read records from Kafka.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkareadfailed
           expr: |
-            sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+            sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[4m]))
             > 0
           for: 30m
           labels:
@@ -1432,9 +1432,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkadelaygrowing
           expr: |
             deriv((
-                sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
+                sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[4m]))
                 /
-                sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="starting"}[1m]))
+                sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="starting"}[4m]))
             )[5m:1m]) > 0
           for: 5m
           labels:
@@ -1446,9 +1446,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkadelaygrowing
           expr: |
             deriv((
-                sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[4m])))
                 /
-                sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[4m])))
             )[5m:1m]) > 0
           for: 5m
           labels:
@@ -1460,9 +1460,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
           expr: |
             (
-              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[4m]))
               /
-              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[4m]))
             ) > (2 * 60)
           for: 3m
           labels:
@@ -1475,9 +1475,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
           expr: |
             (
-              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[4m])))
               /
-              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[4m])))
             ) > (2 * 60)
           for: 3m
           labels:
@@ -1490,9 +1490,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
           expr: |
             (
-              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[4m]))
               /
-              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[4m]))
             ) > 30
           for: 15m
           labels:
@@ -1505,9 +1505,9 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
           expr: |
             (
-              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[4m])))
               /
-              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[4m])))
             ) > 30
           for: 15m
           labels:
@@ -1522,15 +1522,15 @@ groups:
             (
               sum by (cluster, namespace, pod) (
                   # This is the old metric name. We're keeping support for backward compatibility.
-                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[4m])
                 or
-                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[4m])
               ) > 0
             )
 
             # Tolerate failures during the forced TSDB head compaction, because samples older than the
             # new "head min time" will fail to be appended while the forced compaction is running.
-            unless (max by (cluster, namespace, pod) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
+            unless (max by (cluster, namespace, pod) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[4m])) > 0)
           for: 5m
           labels:
             severity: critical
@@ -1565,7 +1565,7 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to enforce strong-consistency on read-path.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyenforcementfailed
           expr: |
-            sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
+            sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_strong_consistency_failures_total[4m])) > 0
           for: 5m
           labels:
             severity: warning
@@ -1574,9 +1574,9 @@ groups:
             message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving an unexpected high number of strongly consistent requests without an offset specified.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyoffsetmissing
           expr: |
-            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[4m]))
             /
-            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[1m]))
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[4m]))
             * 100 > 5
           for: 5m
           labels:
@@ -1588,13 +1588,13 @@ groups:
           expr: |
             max by(cluster, namespace, pod) (
                 # New metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[4m])
                 or
                 # Old metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[4m])
             )
             /
-            min by(cluster, namespace, pod) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
+            min by(cluster, namespace, pod) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[4m]))
             * 100 > 50
           for: 5m
           labels:
@@ -1613,7 +1613,7 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
           expr: |
-            sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
+            sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])) > 0
           labels:
             severity: critical
         - alert: MimirBlockBuilderHasNotShippedBlocks

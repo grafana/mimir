@@ -10,23 +10,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   prometheusRules+:: {
     groups+: [
       {
-        // Use a 5m rate window so these rules still produce data when metamonitoring
-        // scrapes at the common 1m default (e.g. Grafana Alloy). rate() needs at least
-        // two samples in range; with scrape_interval=1m a 1m window is often empty.
-        // See https://github.com/grafana/mimir/issues/12782
         name: 'mimir_api_1',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('5m'), record_native=true),
+          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
       },
       {
         name: 'mimir_api_2',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $.rateInterval('5m'), record_native=true),
+          utils.histogramRules('cortex_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $.rateInterval('1m'), record_native=true),
       },
       {
         name: 'mimir_api_3',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', $._config.job_labels + ['route'], $.rateInterval('5m'), record_native=true),
+          utils.histogramRules('cortex_request_duration_seconds', $._config.job_labels + ['route'], $.rateInterval('1m'), record_native=true),
       },
       {
         name: 'mimir_querier_api',
