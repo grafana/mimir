@@ -288,6 +288,8 @@ func RequireEqualFPoints(t *testing.T, expected, actual []promql.FPoint) {
 		return
 	}
 
+	require.Len(t, actual, len(expected))
+
 	for i, expectedPoint := range expected {
 		actualPoint := actual[i]
 		require.Equal(t, expectedPoint.T, actualPoint.T)
@@ -300,6 +302,8 @@ func RequireEqualHPoints(t *testing.T, expected, actual []promql.HPoint) {
 		require.Nil(t, actual, "expected nil result")
 		return
 	}
+
+	require.Len(t, actual, len(expected))
 
 	for i, expectedPoint := range expected {
 		actualPoint := actual[i]
