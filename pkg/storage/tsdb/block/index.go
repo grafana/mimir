@@ -674,7 +674,7 @@ func updateStats(stats *tsdb.BlockStats, series uint64, chks []chunks.Meta) {
 		numSamples := uint64(chk.Chunk.NumSamples())
 		stats.NumSamples += numSamples
 		switch chk.Chunk.Encoding() {
-		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram, chunkenc.EncHistogramST, chunkenc.EncFloatHistogramST:
 			stats.NumHistogramSamples += numSamples
 		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			stats.NumFloatSamples += numSamples
