@@ -607,7 +607,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
 		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
-		SkipRunMetrics:                c.schedulerCleanupEnabled(),
+		SchedulerCleanupEnabled:       c.schedulerCleanupEnabled(),
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	if !c.schedulerCleanupEnabled() {

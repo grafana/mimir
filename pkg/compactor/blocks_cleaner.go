@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -52,7 +53,7 @@ type BlocksCleanerConfig struct {
 	UpdateBlocksConcurrency       int
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 	EstimateCompactionJobs        bool
-	SkipRunMetrics                bool // Set when the cleaner is used per-job rather than as the periodic service.
+	SchedulerCleanupEnabled       bool // Set when cleanup is coordinated by the scheduler rather than run as the periodic service.
 }
 
 type BlocksCleaner struct {
@@ -80,19 +81,16 @@ type BlocksCleaner struct {
 	blocksFailedTotal                   prometheus.Counter
 	blocksMarkedForDeletion             prometheus.Counter
 	partialBlocksMarkedForDeletion      prometheus.Counter
-	tenantBlocks                        *prometheus.GaugeVec
-	tenantMarkedBlocks                  *prometheus.GaugeVec
-	tenantPartialBlocks                 *prometheus.GaugeVec
-	tenantBucketIndexLastUpdate         *prometheus.GaugeVec
+	tenantCleanupMetrics                TenantCleanupMetrics
 	bucketIndexCompactionJobs           *prometheus.GaugeVec
 	bucketIndexCompactionPlanningErrors prometheus.Counter
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
-	// Metrics for the periodic cleanup service are only registered when the cleaner runs it.
-	runMetricsReg := reg
-	if cfg.SkipRunMetrics {
-		runMetricsReg = nil
+	// In scheduler mode the run-level and per-tenant bucket state metrics are exported by the scheduler instead of the cleaner.
+	standaloneReg := reg
+	if cfg.SchedulerCleanupEnabled {
+		standaloneReg = nil
 	}
 
 	c := &BlocksCleaner{
@@ -103,19 +101,19 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
 		supportsUpdatedAtIter: slices.Contains(bucketClient.SupportedIterOptions(), objstore.UpdatedAt),
-		runsStarted: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
+		runsStarted: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
 			Help: "Total number of blocks cleanup runs started.",
 		}),
-		runsCompleted: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
+		runsCompleted: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_completed_total",
 			Help: "Total number of blocks cleanup runs successfully completed.",
 		}),
-		runsFailed: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
+		runsFailed: promauto.With(standaloneReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_failed_total",
 			Help: "Total number of blocks cleanup runs failed.",
 		}),
-		runsLastSuccess: promauto.With(runMetricsReg).NewGauge(prometheus.GaugeOpts{
+		runsLastSuccess: promauto.With(standaloneReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds",
 			Help: "Unix timestamp of the last successful blocks cleanup run.",
 		}),
@@ -138,25 +136,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 			ConstLabels: prometheus.Labels{"reason": "partial"},
 		}),
 
-		// The following metrics don't have the "cortex_compactor" prefix because not strictly related to
-		// the compactor. They're just tracked by the compactor because it's the most logical place where these
-		// metrics can be tracked.
-		tenantBlocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_bucket_blocks_count",
-			Help: "Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.",
-		}, []string{"user"}),
-		tenantMarkedBlocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_bucket_blocks_marked_for_deletion_count",
-			Help: "Total number of blocks marked for deletion in the bucket.",
-		}, []string{"user"}),
-		tenantPartialBlocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_bucket_blocks_partials_count",
-			Help: "Total number of partial blocks.",
-		}, []string{"user"}),
-		tenantBucketIndexLastUpdate: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_bucket_index_last_successful_update_timestamp_seconds",
-			Help: "Timestamp of the last successful update of a tenant's bucket index.",
-		}, []string{"user"}),
+		tenantCleanupMetrics: NewTenantCleanupMetrics(standaloneReg),
 	}
 
 	if cfg.EstimateCompactionJobs {
@@ -243,7 +223,7 @@ func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users [
 			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
 			return
 		}
-		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+		c.tenantCleanupMetrics.bucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 	}
 }
 
@@ -287,10 +267,7 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, err
 	// be exported by the new shard.
 	for _, userID := range c.lastOwnedUsers {
 		if !isActive[userID] && !isDeleted[userID] {
-			c.tenantBlocks.DeleteLabelValues(userID)
-			c.tenantMarkedBlocks.DeleteLabelValues(userID)
-			c.tenantPartialBlocks.DeleteLabelValues(userID)
-			c.tenantBucketIndexLastUpdate.DeleteLabelValues(userID)
+			c.tenantCleanupMetrics.Delete(userID)
 			if c.cfg.EstimateCompactionJobs {
 				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
 				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
@@ -320,7 +297,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 			return nil
 		}
 
-		if err := c.cleanUser(ctx, userID, userLogger); err != nil {
+		if _, err := c.cleanUser(ctx, userID, userLogger); err != nil {
 			return fmt.Errorf("failed to delete blocks for user %s: %w", userID, err)
 		}
 
@@ -365,7 +342,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
 		return err
 	}
-	c.tenantBucketIndexLastUpdate.DeleteLabelValues(userID)
+	c.tenantCleanupMetrics.bucketIndexLastUpdate.DeleteLabelValues(userID)
 
 	var deletedBlocks, failed int
 	err := userBucket.Iter(ctx, "", func(name string) error {
@@ -399,17 +376,15 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		// The number of blocks left in the storage is equal to the number of blocks we failed
 		// to delete. We also consider them all marked for deletion given the next run will try
 		// to delete them again.
-		c.tenantBlocks.WithLabelValues(userID).Set(float64(failed))
-		c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(failed))
-		c.tenantPartialBlocks.WithLabelValues(userID).Set(0)
+		c.tenantCleanupMetrics.blocks.WithLabelValues(userID).Set(float64(failed))
+		c.tenantCleanupMetrics.markedBlocks.WithLabelValues(userID).Set(float64(failed))
+		c.tenantCleanupMetrics.partialBlocks.WithLabelValues(userID).Set(0)
 
 		return fmt.Errorf("failed to delete %d blocks", failed)
 	}
 
 	// Given all blocks have been deleted, we can also remove the metrics.
-	c.tenantBlocks.DeleteLabelValues(userID)
-	c.tenantMarkedBlocks.DeleteLabelValues(userID)
-	c.tenantPartialBlocks.DeleteLabelValues(userID)
+	c.tenantCleanupMetrics.Delete(userID)
 	if c.cfg.EstimateCompactionJobs {
 		c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
 		c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
@@ -466,7 +441,58 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
-func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
+// TenantCleanupMetrics holds the per-tenant bucket state gauges produced by block cleanup. In scheduler
+// mode cleanup jobs report the values and the scheduler exports these, keeping cardinality to one series
+// per tenant regardless of which compactor ran the job. The metric names have no "cortex_compactor"
+// prefix because they describe the bucket, not the compactor.
+type TenantCleanupMetrics struct {
+	blocks                *prometheus.GaugeVec
+	markedBlocks          *prometheus.GaugeVec
+	partialBlocks         *prometheus.GaugeVec
+	bucketIndexLastUpdate *prometheus.GaugeVec
+}
+
+func NewTenantCleanupMetrics(reg prometheus.Registerer) TenantCleanupMetrics {
+	return TenantCleanupMetrics{
+		blocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_bucket_blocks_count",
+			Help: "Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.",
+		}, []string{"user"}),
+		markedBlocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_bucket_blocks_marked_for_deletion_count",
+			Help: "Total number of blocks marked for deletion in the bucket.",
+		}, []string{"user"}),
+		partialBlocks: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_bucket_blocks_partials_count",
+			Help: "Total number of partial blocks.",
+		}, []string{"user"}),
+		bucketIndexLastUpdate: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_bucket_index_last_successful_update_timestamp_seconds",
+			Help: "Timestamp of the last successful update of a tenant's bucket index.",
+		}, []string{"user"}),
+	}
+}
+
+// Set exports the given tenant's bucket state.
+func (m TenantCleanupMetrics) Set(userID string, blocksCount, markedBlocksCount, partialBlocksCount, bucketIndexLastUpdate int64) {
+	m.blocks.WithLabelValues(userID).Set(float64(blocksCount))
+	m.markedBlocks.WithLabelValues(userID).Set(float64(markedBlocksCount))
+	m.partialBlocks.WithLabelValues(userID).Set(float64(partialBlocksCount))
+	m.bucketIndexLastUpdate.WithLabelValues(userID).Set(float64(bucketIndexLastUpdate))
+}
+
+// Delete removes all series for the given tenant.
+func (m TenantCleanupMetrics) Delete(userID string) {
+	m.blocks.DeleteLabelValues(userID)
+	m.markedBlocks.DeleteLabelValues(userID)
+	m.partialBlocks.DeleteLabelValues(userID)
+	m.bucketIndexLastUpdate.DeleteLabelValues(userID)
+}
+
+// cleanUser runs cleanup for a single tenant and returns the resulting statistics. In periodic mode
+// the caller discards the return value and the gauges set below are what gets scraped; in scheduler
+// mode those gauges are unregistered (no-op) and the returned statistics are reported to the scheduler.
+func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (stats *compactorschedulerpb.CleanupJobStats, returnErr error) {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
 
@@ -484,7 +510,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
 	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
-		return err
+		return nil, err
 	}
 
 	level.Info(userLogger).Log("msg", "fetched existing bucket index")
@@ -504,7 +530,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
@@ -528,18 +554,21 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	// Otherwise upload the updated index to the storage.
 	if len(idx.Blocks) == 0 {
 		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
-	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
-	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
-	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+	stats = &compactorschedulerpb.CleanupJobStats{
+		BlocksCount:           int64(len(idx.Blocks)),
+		MarkedBlocksCount:     int64(len(idx.BlockDeletionMarks)),
+		PartialBlocksCount:    int64(len(partials)),
+		BucketIndexLastUpdate: idx.UpdatedAt,
+	}
+	c.tenantCleanupMetrics.Set(userID, stats.BlocksCount, stats.MarkedBlocksCount, stats.PartialBlocksCount, stats.BucketIndexLastUpdate)
 
 	if c.cfg.EstimateCompactionJobs {
 		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
@@ -559,7 +588,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}
 
-	return nil
+	return stats, nil
 }
 
 func computeSplitAndMergeJobs(jobs []*Job) (splitJobs int, mergeJobs int) {

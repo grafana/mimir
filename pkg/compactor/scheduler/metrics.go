@@ -5,6 +5,8 @@ package scheduler
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/compactor"
 )
 
 const (
@@ -25,6 +27,9 @@ type schedulerMetrics struct {
 	activeJobsByUser     *prometheus.GaugeVec
 	jobsCompleted        *prometheus.CounterVec
 	repeatedJobFailures  prometheus.Counter
+
+	// Per-tenant bucket state reported by cleanup jobs.
+	tenantCleanupMetrics compactor.TenantCleanupMetrics
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
@@ -61,6 +66,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Name: "cortex_compactor_scheduler_repeated_job_failures_total",
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}),
+		tenantCleanupMetrics: compactor.NewTenantCleanupMetrics(reg),
 	}
 	// Pre-initialize job type labels so we get zeros instead of no data.
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
@@ -93,6 +99,7 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 			clear: func() {
 				s.pendingJobsByUser.DeleteLabelValues(tenant)
 				s.activeJobsByUser.DeleteLabelValues(tenant)
+				s.tenantCleanupMetrics.Delete(tenant)
 			},
 		},
 		repeatedJobFailures: s.repeatedJobFailures,
