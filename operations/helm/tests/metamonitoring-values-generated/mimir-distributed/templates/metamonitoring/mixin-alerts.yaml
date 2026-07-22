@@ -5,8 +5,10 @@ kind: PrometheusRule
 metadata:
   name: metamonitoring-values-mimir-alerts
   labels:
+    helm.sh/chart: mimir-distributed-6.2.0-weekly.402
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/version: "r402-f09b358c"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:
@@ -125,7 +127,7 @@ spec:
             expr: |
               # There are some queries in the queue.
               (sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length) > 0)
-
+  
               # And the queue size doesn't decrease.
               # We use a hardcoded 5s subquery step rather than a dynamic step interval. Prometheus aligns subquery
               # evaluation times to the Unix epoch modulo the step, so a larger step can miss brief decreases in
@@ -387,7 +389,7 @@ spec:
               # query-frontends with container labels like "ruler-query-frontend".
               # We support having the querier/query-frontend part as both a prefix and a suffix to support situations where the
               # query path name appears at the beginning (eg. "ruler-querier") or at the end (eg. "querier-mqe-test").
-
+  
               min by (cluster, namespace, query_path) (
                 label_replace(
                   cortex_querier_maximum_supported_query_plan_version,
@@ -796,7 +798,7 @@ spec:
                 )
                 * 100 > 10
               )
-
+  
               # Filter by Mimir only.
               and (count by(cluster, namespace) (cortex_build_info) > 0)
             for: 15m
@@ -818,7 +820,7 @@ spec:
                 )
                 * 100 > 50
               )
-
+  
               # Filter by Mimir only.
               and (count by(cluster, namespace) (cortex_build_info) > 0)
             for: 5m
@@ -867,7 +869,7 @@ spec:
             expr: |
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
               max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 5000)
-
+  
               # Further filter on namespaces actually running Mimir.
               and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
             for: 15m
@@ -881,7 +883,7 @@ spec:
             expr: |
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
               max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 8000)
-
+  
               # Further filter on namespaces actually running Mimir.
               and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
             for: 15m
@@ -1338,7 +1340,7 @@ spec:
                   sum by (cluster, namespace, pod) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[5m]))
                 )
               ) * 100) > 10
-
+  
               # Alert only for namespaces with Mimir clusters.
               and (count by (cluster, namespace) (mimir_build_info) > 0)
             for: 10m
@@ -1539,7 +1541,7 @@ spec:
                   rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[4m])
                 ) > 0
               )
-
+  
               # Tolerate failures during the forced TSDB head compaction, because samples older than the
               # new "head min time" will fail to be appended while the forced compaction is running.
               unless (max by (cluster, namespace, pod) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[4m])) > 0)
