@@ -46,6 +46,7 @@ type DefaultMultiTenantManager struct {
 
 	// Struct for holding per-user Prometheus rules Managers.
 	userManagerMtx sync.RWMutex
+	userManagersWg sync.WaitGroup
 	userManagers   map[string]RulesManager
 
 	// Prometheus rules managers metrics.
@@ -155,7 +156,7 @@ func (r *DefaultMultiTenantManager) Start() {
 	}
 
 	for _, mngr := range r.userManagers {
-		go mngr.Run()
+		r.userManagersWg.Go(mngr.Run)
 	}
 	// set rulerIsRunning to true once user managers are started.
 	r.rulerIsRunning.Store(true)
@@ -258,7 +259,7 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(user string) (RulesManage
 	// Hence run it as another goroutine.
 	// We only start the rule manager if the ruler is in running state.
 	if r.rulerIsRunning.Load() {
-		go manager.Run()
+		r.userManagersWg.Go(manager.Run)
 	}
 
 	r.userManagers[user] = manager
@@ -382,27 +383,24 @@ func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 
 func (r *DefaultMultiTenantManager) Stop() {
 	level.Info(r.logger).Log("msg", "stopping user managers")
-	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
 	for userID, manager := range r.userManagers {
 		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", userID)
-		wg.Add(1)
 		go func(manager RulesManager, user string) {
 			manager.Stop()
-			wg.Done()
 			level.Debug(r.logger).Log("msg", "user manager shut down", "user", user)
 		}(manager, userID)
 		delete(r.userManagers, userID)
 	}
-	wg.Wait()
 	r.userManagerMtx.Unlock()
+	r.userManagersWg.Wait()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
 
 	// Stop notifiers after all rule evaluations have finished, so that we have
 	// a chance to send any notifications generated while shutting down.
 	// rulerNotifier.stop() may take some time to complete if notifications need to be drained from the queue.
 	level.Info(r.logger).Log("msg", "stopping user notifiers")
-	wg = sync.WaitGroup{}
+	wg := sync.WaitGroup{}
 	r.notifiersMtx.Lock()
 	for _, n := range r.notifiers {
 		wg.Add(1)
