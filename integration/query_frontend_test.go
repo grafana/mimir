@@ -917,8 +917,9 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 		queryFrontendTestConfig{
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// The query result payload is 202 bytes, so it will be too large for the configured limit.
-					"-querier.frontend-client.grpc-max-send-msg-size": "100",
+					// The first query result payload is 136 bytes, so it will be too large for the configured limit.
+					// We can't set this to less than 112 bytes because otherwise it's even too small for the subsequent attempt to send the "message too small" error message.
+					"-querier.frontend-client.grpc-max-send-msg-size": "120",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -1037,7 +1038,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
+	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-really-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
