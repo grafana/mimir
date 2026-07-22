@@ -2731,7 +2731,9 @@ chunks-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the chunks-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # If undefined or set to null (the default):
+  # - Safe memory requests and limits will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory))
+  # - CPU requests: 500m.
   resources: null
 
   # -- Service annotations and labels
@@ -2839,7 +2841,9 @@ index-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the index-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # If undefined or set to null (the default):
+  # - Safe memory requests and limits will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory))
+  # - CPU requests: 500m.
   resources: null
 
   # -- Service annotations and labels
@@ -2947,7 +2951,9 @@ metadata-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the metadata-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # If undefined or set to null (the default):
+  # - Safe memory requests and limits will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory))
+  # - CPU requests: 500m.
   resources: null
 
   # -- Service annotations and labels
@@ -3055,7 +3061,9 @@ results-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the results-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # If undefined or set to null (the default):
+  # - Safe memory requests and limits will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory))
+  # - CPU requests: 500m.
   resources: null
 
   # -- Service annotations and labels
