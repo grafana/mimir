@@ -392,8 +392,8 @@ func (r *DefaultMultiTenantManager) Stop() {
 		}(manager, userID)
 		delete(r.userManagers, userID)
 	}
-	r.userManagerMtx.Unlock()
 	r.userManagersWg.Wait()
+	r.userManagerMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
 
 	// Stop notifiers after all rule evaluations have finished, so that we have
