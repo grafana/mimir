@@ -2718,8 +2718,31 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
 
 		require.NoError(t, err)
-		assert.NotEqual(t, kafkaOffsetStart, startOffset)
-		assert.Equal(t, startOffset-1, lastConsumedOffset)
+		assert.Equal(t, int64(0), startOffset)
+		assert.Equal(t, int64(-1), lastConsumedOffset)
+	})
+
+	t.Run("keeps partition end when all records predate the retention period", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(3*time.Hour))
+		const recordCount = 5
+		for i := 0; i < recordCount; i++ {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)), time.Now().Add(-2*time.Hour))
+		}
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(recordCount), startOffset)
+		assert.Equal(t, int64(recordCount-1), lastConsumedOffset)
 	})
 
 	// interceptListOffsetsByTimestamp intercepts timestamp-based ListOffsets lookups (Timestamp > 0)
@@ -2747,9 +2770,8 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		})
 	}
 
-	// When the timestamp lookup matches no record it resolves to the partition end offset, which can
-	// sit ahead of records still available in the partition. The start offset must be clamped to the
-	// partition start so those records are not skipped.
+	// When the timestamp lookup matches no record despite a recent tail, the response is inconsistent.
+	// A repeated miss must be clamped to the partition start so those records are not skipped.
 	t.Run("clamps to partition start when timestamp lookup matches no record and resolves ahead of available records", func(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
@@ -2779,6 +2801,101 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		// skip every available record. It must instead start at the partition start (0).
 		assert.Equal(t, int64(0), startOffset)
 		assert.Equal(t, int64(-1), lastConsumedOffset)
+	})
+
+	t.Run("uses a recovered offset when retrying an inconsistent timestamp lookup", func(t *testing.T) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		consumer := &c
+
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		const recordCount = 5
+		for i := 0; i < recordCount; i++ {
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Fail only the first timestamp lookup. Start and end lookups, as well as the retry, are
+		// answered from the real partition state.
+		timestampLookups := atomic.NewInt32(0)
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			if len(req.Topics) == 0 || len(req.Topics[0].Partitions) == 0 || req.Topics[0].Partitions[0].Timestamp <= 0 || timestampLookups.Inc() > 1 {
+				return nil, nil, false
+			}
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{{
+				Topic: topicName,
+				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
+					Partition: partitionID,
+					Offset:    -1,
+					Timestamp: -1,
+				}},
+			}}
+			return res, nil, true
+		})
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), startOffset)
+		assert.Equal(t, int64(-1), lastConsumedOffset)
+		assert.Equal(t, int32(2), timestampLookups.Load())
+	})
+
+	t.Run("tail probe returns an error when its context is canceled", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+		canceledCtx, cancel := context.WithCancelCause(t.Context())
+		cancel(errors.New("test canceled"))
+
+		_, err := reader.fetchRecordTimestampAtOffset(canceledCtx, 0)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("tail probe returns fetch errors", func(t *testing.T) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			req := kreq.(*kmsg.FetchRequest)
+			return &kmsg.FetchResponse{
+				Version: req.Version,
+				Topics: []kmsg.FetchResponseTopic{{
+					Topic:   req.Topics[0].Topic,
+					TopicID: req.Topics[0].TopicID,
+					Partitions: []kmsg.FetchResponseTopicPartition{{
+						Partition:            req.Topics[0].Partitions[0].Partition,
+						ErrorCode:            kerr.TopicAuthorizationFailed.Code,
+						PreferredReadReplica: -1,
+					}},
+				}},
+			}, nil, true
+		})
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, &c,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		_, err := reader.fetchRecordTimestampAtOffset(t.Context(), 0)
+		require.ErrorIs(t, err, kerr.TopicAuthorizationFailed)
 	})
 
 	// When the timestamp lookup matches a real record, the resolved offset correctly honors the max
