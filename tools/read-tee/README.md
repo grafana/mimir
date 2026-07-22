@@ -74,6 +74,10 @@ Two things to know:
 
 Per-replica copies each read one replica's worth of series, which can make individual copies lighter than heavy production queries. `-backend.amplify-all-replicas-fraction` (0.0–1.0, default 0) samples that fraction of incoming reads and, for each one, sends a **single** copy whose matchers target the base series plus every replica at once instead of the `N-1` per-replica copies: every matcher matches the value optionally followed by any `_amp{N}` (`l="v"` → `l=~"v(?:_amp[0-9]+)?"`, `l=~"re"` → `l=~"(?:re)(?:_amp[0-9]+)?"`, and negatives likewise). This raises samples-per-query to resemble heavier production queries. These copies are counted in `cortex_readtee_amplify_all_replicas_total`. Requires `amplification-factor > 1`.
 
+### Strong read consistency
+
+By default amplified copies inherit the caller's read consistency (usually eventual). `-backend.strong-consistency-instant-fraction` (0.0–1.0, default 0) samples, **independently per copy**, that fraction of copies of **instant queries** (`/api/v1/query`) and sends them with the `X-Read-Consistency: strong` header. This exercises the strong-consistency read path, mirroring the ruler (which runs instant queries). Only copies are affected — the original client request is never altered. Range/series/label endpoints are never given the header. Counted in `cortex_readtee_strong_consistency_copies_total`.
+
 ## Architecture
 
 ### Request Flow
@@ -97,6 +101,7 @@ Copies flow through the full read path (query-frontend → querier → ingesters
 -backend.amplification-factor Factor N (default 1 = passthrough). Integer part = original + (N-1) copies.
 -backend.negative-matchers-exclude-all-amp-values  Default true. Negative matchers (!=, !~) exclude the value in all forms (base + every _amp{N}); != becomes a regex-quoted !~. Set false to suffix negative matchers with _amp{k} like positive matchers.
 -backend.amplify-all-replicas-fraction  Fraction (0.0-1.0, default 0) of reads sent as a single heavy copy matching base + all replicas instead of N-1 per-replica copies. Requires amplification-factor > 1.
+-backend.strong-consistency-instant-fraction  Fraction (0.0-1.0, default 0) of instant-query copies sent with X-Read-Consistency: strong (per-copy, copies only). Mirrors the ruler.
 -backend.async-max-in-flight  Max concurrent in-flight amplified copies; excess dropped and counted.
 -backend.read-timeout         Timeout reading the backend response; set >= the query path's querier.timeout.
 -backend.skip-tls-verify      Skip TLS verification on the backend.
