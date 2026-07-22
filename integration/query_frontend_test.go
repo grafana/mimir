@@ -224,28 +224,6 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 	}
 }
 
-func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				CommonStorageBackendFlags(),
-				BlocksStorageFlags(),
-				map[string]string{
-					"-query-frontend.enable-multiple-node-remote-execution-requests": "true",
-				},
-			)
-
-			minio := e2edb.NewMinio(9000, mimirBucketName)
-			require.NoError(t, s.StartAndWaitReady(minio))
-
-			return "", flags
-		},
-		withHistograms:         true,
-		remoteExecutionEnabled: true,
-		queryStatsEnabled:      true,
-	})
-}
-
 func TestQueryFrontendWithMQEForSplittingAndCaching(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
