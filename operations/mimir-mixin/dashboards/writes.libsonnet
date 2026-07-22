@@ -142,7 +142,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.withoutMultiZoneJobs($.queries.gateway.writeRequestsPerSecondSelector)) +
-        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_http_routes_regex)
+        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -150,7 +150,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_http_routes_regex)
+        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -163,7 +163,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.withoutMultiZoneJobs($.queries.gateway.promWriteRequestsPerSecondSelector)) +
-        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_prom_http_routes_regex)
+        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_prom_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -171,7 +171,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_prom_http_routes_regex)
+        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_prom_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -184,7 +184,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.withoutMultiZoneJobs($.queries.gateway.otlpWriteRequestsPerSecondSelector)) +
-        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_otlp_http_routes_regex)
+        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_otlp_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -192,7 +192,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_otlp_http_routes_regex)
+        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_otlp_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -205,7 +205,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.withoutMultiZoneJobs($.queries.gateway.influxWriteRequestsPerSecondSelector)) +
-        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_influx_http_routes_regex)
+        $.multiZoneQpsPanelMixin($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_influx_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -213,7 +213,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_write_path_gateway_job_name_formats, $.queries.write_influx_http_routes_regex)
+        $.multiZoneLatencyPanel($.queries.gateway.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.gateway, $.queries.write_influx_http_routes_regex)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -242,7 +242,7 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.qpsPanelNativeHistogram($.queries.distributor.requestsPerSecondMetric, $.withoutMultiZoneJobs($.queries.distributor.writeRequestsPerSecondSelector)) +
-        $.multiZoneQpsPanelMixin($.queries.distributor.requestsPerSecondMetric, $._config.multi_zone_write_path_distributor_job_name_formats, $.queries.distributor.writeRequestsPerSecondRouteRegex) +
+        $.multiZoneQpsPanelMixin($.queries.distributor.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.distributor, $.queries.distributor.writeRequestsPerSecondRouteRegex) +
         if $._config.show_rejected_requests_on_writes_dashboard then
           {
             targets: [
@@ -258,7 +258,7 @@ local filename = 'mimir-writes.json';
               if !$._config.show_multi_zone_write_path_panels then [] else [
                 {
                   legendLink: null,
-                  expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($.multiZoneJobNames($._config.multi_zone_write_path_distributor_job_name_formats, zone))],
+                  expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($.multiZoneJobNames($._config.multi_zone_job_name_formats.distributor, zone))],
                   format: 'time_series',
                   intervalFactor: 2,
                   legendFormat: 'rejected zone-%s' % zone,
@@ -278,7 +278,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneLatencyPanel($.queries.distributor.requestsPerSecondMetric, $._config.multi_zone_write_path_distributor_job_name_formats, $.queries.distributor.writeRequestsPerSecondRouteRegex)
+        $.multiZoneLatencyPanel($.queries.distributor.requestsPerSecondMetric, $._config.multi_zone_job_name_formats.distributor, $.queries.distributor.writeRequestsPerSecondRouteRegex)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -290,14 +290,14 @@ local filename = 'mimir-writes.json';
       $.row('Distributor (ingest storage)')
       .addPanel(
         $.ingestStorageKafkaProducedRecordsRatePanel($.withoutMultiZoneJobs($.jobMatcher($._config.job_names.distributor))) +
-        $.multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin($._config.multi_zone_write_path_distributor_job_name_formats)
+        $.multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin($._config.multi_zone_job_name_formats.distributor)
       )
       .addPanel(
         $.ingestStorageKafkaProducedRecordsLatencyPanel('distributor')
       )
       .addPanelIf(
         $._config.show_multi_zone_write_path_panels,
-        $.multiZoneIngestStorageKafkaProducedRecordsLatencyPanel($._config.multi_zone_write_path_distributor_job_name_formats)
+        $.multiZoneIngestStorageKafkaProducedRecordsLatencyPanel($._config.multi_zone_job_name_formats.distributor)
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))

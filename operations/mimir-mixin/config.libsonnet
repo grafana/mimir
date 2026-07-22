@@ -126,6 +126,15 @@
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
+    // Unlike the job_names above, these are format strings, expanded with the zone suffix (e.g.
+    // 'distributor-zone-%(zone)s.*' becomes 'distributor-zone-a.*') to match one zone's deployments
+    // of a component. Used to build the per-zone panels, e.g. when
+    // show_multi_zone_write_path_panels is enabled.
+    multi_zone_job_name_formats: {
+      distributor: ['distributor-zone-%(zone)s.*'],
+      gateway: ['gateway-zone-%(zone)s', 'cortex-gw.*-zone-%(zone)s'],
+    },
+
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
@@ -806,11 +815,6 @@
     // The zone suffixes of multi-zone write path deployments. Used to build the per-zone panels when
     // show_multi_zone_write_path_panels is enabled.
     multi_zone_write_path_zones: ['a', 'b', 'c'],
-
-    // The job name format strings (expanded with the zone suffix) matching the per-zone write path
-    // deployments. Used to build the per-zone panels when show_multi_zone_write_path_panels is enabled.
-    multi_zone_write_path_distributor_job_name_formats: ['distributor-zone-%(zone)s.*'],
-    multi_zone_write_path_gateway_job_name_formats: ['gateway-zone-%(zone)s', 'cortex-gw.*-zone-%(zone)s'],
 
     // External Grafana URL prefix for dashboard links in alerts.
     // This is used to generate absolute URLs in alert annotations that link to dashboards.
