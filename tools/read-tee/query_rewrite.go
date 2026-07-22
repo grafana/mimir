@@ -30,6 +30,10 @@ type rewriteOptions struct {
 	// only the _amp{replica} form. When false, negative matchers are suffixed _amp{replica} like
 	// positive matchers (the original behaviour).
 	excludeAmplifiedNegative bool
+	// matchAllReplicas rewrites every matcher (positive and negative) to match/exclude the value
+	// across the base series and all _amp{N} variants at once, ignoring the replica index. Used for
+	// the amp.*-mode heavy copy that targets all replicas in a single query.
+	matchAllReplicas bool
 }
 
 // ampSuffix returns the label-value suffix for amplification replica k. It must match exactly the
@@ -120,11 +124,22 @@ func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*
 		var newValue string
 		switch mm.Type {
 		case labels.MatchEqual:
-			newValue = mm.Value + suffix
+			if opts.matchAllReplicas {
+				// Match the value across the base series and all _amp{N} variants. = can only match
+				// one string, so switch to =~ and regex-quote the (literal) value.
+				newType = labels.MatchRegexp
+				newValue = regexp.QuoteMeta(mm.Value) + ampVariantsSuffix
+			} else {
+				newValue = mm.Value + suffix
+			}
 		case labels.MatchRegexp:
-			newValue = "(?:" + mm.Value + ")" + suffix
+			if opts.matchAllReplicas {
+				newValue = "(?:" + mm.Value + ")" + ampVariantsSuffix
+			} else {
+				newValue = "(?:" + mm.Value + ")" + suffix
+			}
 		case labels.MatchNotEqual:
-			if opts.excludeAmplifiedNegative {
+			if opts.matchAllReplicas || opts.excludeAmplifiedNegative {
 				// Exclude the literal value and all its _amp{N} variants. != can only exclude one
 				// string, so switch to !~ and regex-quote the (literal) value.
 				newType = labels.MatchNotRegexp
@@ -133,7 +148,7 @@ func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*
 				newValue = mm.Value + suffix
 			}
 		case labels.MatchNotRegexp:
-			if opts.excludeAmplifiedNegative {
+			if opts.matchAllReplicas || opts.excludeAmplifiedNegative {
 				newValue = "(?:" + mm.Value + ")" + ampVariantsSuffix
 			} else {
 				newValue = "(?:" + mm.Value + ")" + suffix

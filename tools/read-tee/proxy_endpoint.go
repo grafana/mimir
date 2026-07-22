@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -40,25 +41,27 @@ type amplifiedRequest struct {
 }
 
 type ProxyEndpoint struct {
-	backend             ProxyBackend
-	metrics             *ProxyMetrics
-	logger              log.Logger
-	amplificationFactor float64
-	rewriteOpts         rewriteOptions
-	asyncDispatcher     *AsyncBackendDispatcher
+	backend                ProxyBackend
+	metrics                *ProxyMetrics
+	logger                 log.Logger
+	amplificationFactor    float64
+	rewriteOpts            rewriteOptions
+	ampAllReplicasFraction float64
+	asyncDispatcher        *AsyncBackendDispatcher
 
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, ampAllReplicasFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
-		backend:             backend,
-		route:               route,
-		metrics:             metrics,
-		logger:              logger,
-		amplificationFactor: amplificationFactor,
-		rewriteOpts:         rewriteOpts,
-		asyncDispatcher:     asyncDispatcher,
+		backend:                backend,
+		route:                  route,
+		metrics:                metrics,
+		logger:                 logger,
+		amplificationFactor:    amplificationFactor,
+		rewriteOpts:            rewriteOpts,
+		ampAllReplicasFraction: ampAllReplicasFraction,
+		asyncDispatcher:        asyncDispatcher,
 	}
 }
 
@@ -173,13 +176,22 @@ func (p *ProxyEndpoint) dispatchAmplifiedRequests(ctx context.Context, req *http
 	}
 }
 
-// prepareAmplifiedRequests builds the N-1 rewritten copies (amplified replicas _amp1.._amp{N-1})
-// of the original read request, where N is the (integer part of the) amplification factor. The
-// unsuffixed original the backend runs synchronously is the base, so amplified copies are 1-indexed
-// to match write-tee's amplified series (_amp1.._amp{N-1}). Each copy has its query and match[]
-// parameters suffixed _amp{k}, in the same location they came from (URL query for GET, form body
-// for POST form). Copies that fail to rewrite are skipped and counted. Returns nil when
-// amplification is disabled (factor <= 1).
+// amplifiedRequestSource holds the parsed original request together with its amplifiable params,
+// shared across all copies built from it.
+type amplifiedRequestSource struct {
+	orig          *http.Request
+	urlValues     url.Values
+	hasURLParams  bool
+	formValues    url.Values
+	hasFormParams bool
+}
+
+// prepareAmplifiedRequests builds the rewritten copies of the original read request. Normally it
+// builds N-1 per-replica copies (amplified replicas _amp1.._amp{N-1}, where N is the integer part
+// of the amplification factor), each with its query and match[] parameters suffixed _amp{k}. For a
+// sampled fraction of queries (amplify-all-replicas-fraction) it instead builds a single heavy copy
+// whose matchers target the base series plus every replica at once. Copies that fail to rewrite are
+// skipped and counted. Returns nil when amplification is disabled (factor <= 1).
 func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) []amplifiedRequest {
 	// Integer factors only for v1; the fractional part is ignored.
 	n := int(p.amplificationFactor)
@@ -203,48 +215,37 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 		}
 	}
 
+	src := amplifiedRequestSource{
+		orig:          orig,
+		urlValues:     urlValues,
+		hasURLParams:  hasURLParams,
+		formValues:    formValues,
+		hasFormParams: hasFormParams,
+	}
+
+	// amp.*-mode: for a sampled fraction of queries, send a single heavy copy whose matchers target
+	// the base series plus every amplified replica at once, instead of N-1 per-replica copies. This
+	// raises samples-per-query to resemble heavier production queries.
+	if p.ampAllReplicasFraction > 0 && rand.Float64() < p.ampAllReplicasFraction {
+		opts := p.rewriteOpts
+		opts.matchAllReplicas = true
+		// The replica index is irrelevant when matching all replicas.
+		a, ok := p.buildCopy(ctx, src, 1, opts, logger)
+		logger.SetSpanAndLogTag("amplify_all_replicas", "true")
+		if !ok {
+			return nil
+		}
+		p.metrics.amplifyAllReplicasTotal.WithLabelValues(p.route.RouteName).Inc()
+		return []amplifiedRequest{a}
+	}
+
 	result := make([]amplifiedRequest, 0, n-1)
-
 	for k := 1; k <= n-1; k++ {
-		clone := orig.Clone(ctx)
-		// RequestURI is only valid on server-received requests; must be cleared before reuse.
-		clone.RequestURI = ""
-
-		rewriteFailed := false
-
-		// Rewrite URL query params in place (if present).
-		if hasURLParams {
-			rewritten, err := rewriteParams(urlValues, k, p.rewriteOpts)
-			if err != nil {
-				rewriteFailed = true
-			} else {
-				clone.URL.RawQuery = rewritten.Encode()
-			}
-		}
-
-		// Rewrite POST form body params in place (if present).
-		var cloneBody []byte
-		if !rewriteFailed && hasFormParams {
-			rewritten, err := rewriteParams(formValues, k, p.rewriteOpts)
-			if err != nil {
-				rewriteFailed = true
-			} else {
-				encoded := rewritten.Encode()
-				cloneBody = []byte(encoded)
-				clone.Body = io.NopCloser(bytes.NewReader(cloneBody))
-				clone.ContentLength = int64(len(cloneBody))
-				clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
-				clone.Header.Set("Content-Type", formContentType)
-			}
-		}
-
-		if rewriteFailed {
-			p.metrics.rewriteErrorsTotal.WithLabelValues(p.route.RouteName).Inc()
-			level.Warn(logger).Log("msg", "Failed to rewrite query for amplified copy; skipping copy", "replica", k, "route", p.route.RouteName)
+		a, ok := p.buildCopy(ctx, src, k, p.rewriteOpts, logger)
+		if !ok {
 			continue
 		}
-
-		result = append(result, amplifiedRequest{req: clone, body: cloneBody})
+		result = append(result, a)
 	}
 
 	logger.SetSpanAndLogTag("amplified", "true")
@@ -252,6 +253,46 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 	logger.SetSpanAndLogTag("num_amplified_copies", len(result))
 
 	return result
+}
+
+// buildCopy clones the original request and rewrites its query/match[] params for the given replica
+// using opts. It returns false (and counts a rewrite error) if any param fails to rewrite.
+func (p *ProxyEndpoint) buildCopy(ctx context.Context, src amplifiedRequestSource, replica int, opts rewriteOptions, logger *spanlogger.SpanLogger) (amplifiedRequest, bool) {
+	clone := src.orig.Clone(ctx)
+	// RequestURI is only valid on server-received requests; must be cleared before reuse.
+	clone.RequestURI = ""
+
+	// Rewrite URL query params in place (if present).
+	if src.hasURLParams {
+		rewritten, err := rewriteParams(src.urlValues, replica, opts)
+		if err != nil {
+			return p.rewriteFailed(replica, logger)
+		}
+		clone.URL.RawQuery = rewritten.Encode()
+	}
+
+	// Rewrite POST form body params in place (if present).
+	var cloneBody []byte
+	if src.hasFormParams {
+		rewritten, err := rewriteParams(src.formValues, replica, opts)
+		if err != nil {
+			return p.rewriteFailed(replica, logger)
+		}
+		encoded := rewritten.Encode()
+		cloneBody = []byte(encoded)
+		clone.Body = io.NopCloser(bytes.NewReader(cloneBody))
+		clone.ContentLength = int64(len(cloneBody))
+		clone.Header.Set("Content-Length", strconv.Itoa(len(cloneBody)))
+		clone.Header.Set("Content-Type", formContentType)
+	}
+
+	return amplifiedRequest{req: clone, body: cloneBody}, true
+}
+
+func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger) (amplifiedRequest, bool) {
+	p.metrics.rewriteErrorsTotal.WithLabelValues(p.route.RouteName).Inc()
+	level.Warn(logger).Log("msg", "Failed to rewrite query for amplified copy; skipping copy", "replica", replica, "route", p.route.RouteName)
+	return amplifiedRequest{}, false
 }
 
 // rewriteParams returns a copy of values with the "query" and "match[]" parameters rewritten for
