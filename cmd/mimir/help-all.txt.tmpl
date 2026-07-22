@@ -2755,8 +2755,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.
   -query-frontend.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
-  -query-frontend.enable-multiple-node-remote-execution-requests
-    	[experimental] Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers. (default true)
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution

@@ -86,10 +86,6 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 		}
 	}
 
-	if cfg.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests && !cfg.QueryMiddleware.EnableRemoteExecution {
-		return fmt.Errorf("multiple node remote execution requests are only supported when remote execution is enabled (-%v=true)", querymiddleware.EnableRemoteExecutionFlag)
-	}
-
 	return nil
 }
 

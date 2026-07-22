@@ -1156,7 +1156,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(t.Cfg.Frontend.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests))
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 	}
 
 	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can

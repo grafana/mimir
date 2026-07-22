@@ -249,7 +249,7 @@ The following features are currently experimental:
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - Separate query sharding limit for cardinality API requests (active series and active native histogram metrics): `-query-frontend.cardinality-sharding-max-sharded-queries`
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
-  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
