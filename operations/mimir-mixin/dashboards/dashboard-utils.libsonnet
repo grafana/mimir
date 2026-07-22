@@ -2084,9 +2084,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  // On the Writes dashboard the given jobMatcher is wrapped with $.withoutMultiZoneJobs() to
-  // exclude per-zone jobs when the per-zone panels are enabled (see
-  // multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin).
   ingestStorageKafkaProducedRecordsRatePanel(jobMatcher)::
     $.timeseriesPanel('Kafka produced records / sec') +
     $.panelDescription(
@@ -2410,6 +2407,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // recording rules.
   multiZoneLatencyPanel(metric, jobNameFormats, routeRegex)::
     local zones = $._config.multi_zone_write_path_zones;
+    assert std.length(zones) > 0 : 'multiZoneLatencyPanel: multi_zone_write_path_zones must contain at least one zone when show_multi_zone_write_path_panels is enabled';
     // The per-zone average is not shown to limit the number of series on the panel.
     local shownPercentiles = ['99th percentile', '50th percentile'];
     local zoneTargets(zone) =
