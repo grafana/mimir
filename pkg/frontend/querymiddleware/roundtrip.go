@@ -65,21 +65,21 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval                    time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCache                              ResultsCacheConfig `yaml:"results_cache"`
-	CacheResults                              bool               `yaml:"cache_results"`
-	UseMQEForSplittingAndCachingResults       bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
-	CacheErrors                               bool               `yaml:"cache_errors"`
-	MaxRetries                                int                `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                         time.Duration      `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                            bool               `yaml:"parallelize_shardable_queries"`
-	EnableRemoteExecution                     bool               `yaml:"enable_remote_execution" category:"experimental"`
-	UseMQEForSharding                         bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
-	RewriteQueriesHistogram                   bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
-	RewriteQueriesPropagateMatchers           bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
-	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
-	ActiveSeriesFramedResponses               bool               `yaml:"active_series_framed_responses" category:"experimental"`
+	SplitQueriesByInterval              time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache                        ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults                        bool               `yaml:"cache_results"`
+	UseMQEForSplittingAndCachingResults bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
+	CacheErrors                         bool               `yaml:"cache_errors"`
+	MaxRetries                          int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                   time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                      bool               `yaml:"parallelize_shardable_queries"`
+	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
+	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
+	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
+	RewriteQueriesPropagateMatchers     bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
+	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
+	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
