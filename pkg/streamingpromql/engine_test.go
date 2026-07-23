@@ -5254,6 +5254,44 @@ func TestQueryClose(t *testing.T) {
 	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
+// TestInfoFunctionMemoryReleasedOnError ensures info() returns its pooled result metadata slice
+// when it errors partway through building output series (e.g. a conflicting label), so its
+// accounted memory is not stranded. The pedantic memory check in Query.Close only runs for
+// successful queries, so we assert the tracker balance directly here.
+func TestInfoFunctionMemoryReleasedOnError(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{instance="a", job="1"} 1 2 3
+			target_info{instance="a", job="1", x="from_target"} 1 1 1
+			build_info{instance="a", job="1", x="from_build"} 1 1 1
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	start := timestamp.Time(0)
+	end := start.Add(2 * time.Minute)
+	step := time.Minute
+
+	// Both info series share the identifying labels but assign a different value to 'x', so
+	// combining them for the inner series errors with a conflicting label.
+	q, err := engine.NewRangeQuery(context.Background(), storage, nil, `info(metric, {__name__=~".+_info"})`, start, end, step)
+	require.NoError(t, err)
+
+	res := q.Exec(context.Background())
+	require.ErrorContains(t, res.Err, "conflicting label")
+
+	q.Close()
+	mqeQuery, ok := q.(*Query)
+	require.True(t, ok)
+	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(),
+		"all pooled memory should be returned even when info() fails partway through")
+}
+
 func TestEagerLoadSelectors(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m

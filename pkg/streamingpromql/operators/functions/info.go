@@ -438,6 +438,17 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		return nil, err
 	}
 
+	// If we fail partway through (e.g. a conflicting label or duplicate labelset), return the
+	// pooled result slice so its accounted memory (slice capacity and appended labels) isn't
+	// stranded for the rest of the query. Put is nil-safe, so this is a no-op if
+	// AppendSeriesMetadataFromPool already returned the slice on its own error path.
+	success := false
+	defer func() {
+		if !success {
+			types.SeriesMetadataSlicePool.Put(&result, f.MemoryConsumptionTracker)
+		}
+	}()
+
 	labelSetsHashes := make(map[uint64]int) // hash -> input series index
 
 	// appendSeries adds one output series for inner series i, erroring if a different input
@@ -516,6 +527,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 	}
 
+	success = true
 	return result, nil
 }
 
