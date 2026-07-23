@@ -1707,6 +1707,12 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 			bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
+			// The filesystem bucket fails concurrent uploads of the same object, unlike real
+			// object storages where the last writer wins. Serialize uploads to restore the
+			// real-world behavior: both cleaners are expected to upload the bucket index
+			// concurrently at the end of their cleanup run.
+			bucketClient = &serializedUploadBucket{Bucket: bucketClient}
+
 			// Create two blocks and mark one of them for deletion at a time before the deletion delay.
 			block1 := createTSDBBlock(t, bucketClient, tenantID, 10, 20, 1, nil)
 			block2 := createTSDBBlock(t, bucketClient, tenantID, 20, 30, 1, nil)
@@ -1794,6 +1800,19 @@ func tsOffset(dt time.Time, hours int) int64 {
 
 func checkBlockDeletionMarker(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
 	checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
+}
+
+type serializedUploadBucket struct {
+	objstore.Bucket
+
+	uploadMx sync.Mutex
+}
+
+func (b *serializedUploadBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	b.uploadMx.Lock()
+	defer b.uploadMx.Unlock()
+
+	return b.Bucket.Upload(ctx, name, r, opts...)
 }
 
 type hookBucket struct {
