@@ -86,9 +86,9 @@
   block_builder_container::
     self.newBlockBuilderContainer('block-builder', $.block_builder_args, $.block_builder_env_map),
 
-  newBlockBuilderDeployment(name, container)::
+  newBlockBuilderDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, $._config.block_builder.replicas, [container]) +
-    $.newMimirNodeAffinityMatchers($.block_builder_node_affinity_matchers) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     deployment.spec.template.spec.withVolumes([
       {
         name: 'block-builder-data',
@@ -114,7 +114,7 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable('50%'),
 
   block_builder_deployment: if !$._config.block_builder.enabled then null else
-    self.newBlockBuilderDeployment('block-builder', $.block_builder_container),
+    self.newBlockBuilderDeployment('block-builder', $.block_builder_container, $.block_builder_node_affinity_matchers),
 }
 
 {
