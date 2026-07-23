@@ -1782,7 +1782,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
@@ -1910,7 +1910,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
@@ -2023,6 +2023,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-a.default.svc.cluster.local.:11211
@@ -2032,7 +2033,10 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2041,6 +2045,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2133,6 +2138,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-b.default.svc.cluster.local.:11211
@@ -2142,7 +2148,10 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2151,6 +2160,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2250,7 +2260,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2344,7 +2354,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2733,6 +2743,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-a.default.svc.cluster.local.:11211
@@ -2742,7 +2753,10 @@ spec:
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2848,6 +2862,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-b.default.svc.cluster.local.:11211
@@ -2857,7 +2872,10 @@ spec:
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2970,7 +2988,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -3064,7 +3082,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
