@@ -214,3 +214,44 @@ load 5m
 
 eval range from 0m to 0m step 5m info(metric, {env=~".+"})
   metric{instance="a", job="1", env="prod"} 1
+
+clear
+
+# The @/offset modifiers on the first argument are propagated to the info selector even when the
+# selector is nested inside another expression (a function, binary operation, or range vector):
+# they are taken from the first selector found anywhere in the first argument, mirroring
+# Prometheus's infoSelectHints. Non-nested @/offset propagation, step-invariance, and evaluation
+# far from the pinned timestamp are already covered by the upstream info.test cases, so only the
+# nested forms specific to how MQE plans the info function are exercised here.
+#
+# A churning target_info makes the result depend on which timestamp the info series is evaluated
+# at: version="v1" is only returned when the enrichment is pinned to t=0, version="v2" when it is
+# looked up at (or after) t=4m.
+load 1m
+  metric{instance="a", job="1"} 1 2 3 4 5
+  target_info{instance="a", job="1", version="v1"} 1 1 1 stale _
+  target_info{instance="a", job="1", version="v2"} _ _ _      _ 1
+
+# @ nested inside a function call. Because info() evaluates the info series as of the pinned
+# timestamp, the result is step invariant, so it can be asserted as an instant query at any
+# evaluation time, including far past the @ timestamp where a per-eval-time lookup would instead
+# return version="v2" (or nothing). (ceil() drops __name__.)
+eval instant at 4m info(ceil(metric @ 0))
+  {instance="a", job="1", version="v1"} 1
+
+eval instant at 1h info(ceil(metric @ 0))
+  {instance="a", job="1", version="v1"} 1
+
+# @ nested inside a vector-scalar operation. (The arithmetic drops __name__.)
+eval instant at 4m info(metric @ 0 * 1)
+  {instance="a", job="1", version="v1"} 1
+
+# @ nested inside a range vector selector within a function call.
+# count_over_time(metric[2m] @ 0) counts the single sample in the window (-2m, 0].
+eval instant at 4m info(count_over_time(metric[2m] @ 0))
+  {instance="a", job="1", version="v1"} 1
+
+# offset nested inside a function call: steps t=3m-5m look up metric at t=0-2m (values 1, 2, 3),
+# and target_info at those shifted times is version="v1". Shown as a range query to see the shift.
+eval range from 3m to 5m step 1m info(ceil(metric offset 3m))
+  {instance="a", job="1", version="v1"} 1 2 3
