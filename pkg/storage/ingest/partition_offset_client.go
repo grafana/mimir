@@ -35,7 +35,13 @@ type partitionOffsetClient struct {
 	partitionStartOffsetLatency       *prometheus.HistogramVec
 }
 
-func newPartitionOffsetClient(client *kgo.Client, reg prometheus.Registerer, logger log.Logger) *partitionOffsetClient {
+func newPartitionOffsetClient(client *kgo.Client, component string, reg prometheus.Registerer, logger log.Logger) *partitionOffsetClient {
+	// The metrics below have fixed names, so multiple offset clients sharing a registry
+	// (e.g. ingester's partition-reader + query-frontend's offsets reader in single-binary
+	// target=all) would collide and panic on duplicate registration. Disambiguate by
+	// component, mirroring the component label used for the Kafka client metrics. See
+	// grafana/mimir#13468.
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
 	return &partitionOffsetClient{
 		client: client,
 		admin:  kadm.NewClient(client),
