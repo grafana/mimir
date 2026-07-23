@@ -122,6 +122,7 @@
 * [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 * [BUGFIX] Query-frontend: Fix a goroutine leak when a querier's streaming response arrives just as the query is cancelled: the goroutine handling the response could stay blocked forever writing a response body that would never be read. #16151
+* [BUGFIX] Ingest storage: Fix a panic on startup ("duplicate metrics collector registration attempted") when ingest storage is enabled with the single-binary `-target=all`, caused by the ingester's partition reader and the query path's offsets reader both registering the fixed-name `cortex_ingest_storage_reader_last_produced_offset_*` and `cortex_ingest_storage_reader_partition_start_offset_*` metrics on the same registry. The partition offset client now disambiguates these metrics with a `component` label, mirroring the existing Kafka client metrics. #15744
 
 ### Mixin
 

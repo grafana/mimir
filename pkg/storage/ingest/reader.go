@@ -251,7 +251,7 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 
 	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.notifier, r.offsetFile, r.logger, r.reg)
 
-	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.reg, r.logger)
+	offsetsClient := newPartitionOffsetClient(r.client.Load(), "partition-reader", r.reg, r.logger)
 
 	// It's ok to have the start offset slightly outdated.
 	// We only need this offset accurate if we fall behind or if we start and the log gets truncated from beneath us.

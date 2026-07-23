@@ -37,7 +37,7 @@ func NewSingleClusterTopicOffsetsReader(cfg KafkaConfig, topic string, getPartit
 
 	r := &SingleClusterTopicOffsetsReader{
 		kafkaClient:        client,
-		offsetClient:       newPartitionOffsetClient(client, reg, logger),
+		offsetClient:       newPartitionOffsetClient(client, component, reg, logger),
 		subservicesWatcher: services.NewFailureWatcher(),
 		topic:              topic,
 		getPartitionIDs:    getPartitionIDs,

@@ -125,8 +125,8 @@ type singleClusterPartitionOffsetReader struct {
 	partitionID int32
 }
 
-func newSingleClusterPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *singleClusterPartitionOffsetReader {
-	offsetClient := newPartitionOffsetClient(client, reg, logger)
+func newSingleClusterPartitionOffsetReader(client *kgo.Client, topic string, component string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *singleClusterPartitionOffsetReader {
+	offsetClient := newPartitionOffsetClient(client, component, reg, logger)
 	return newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetClient, topic, partitionID, pollInterval, logger)
 }
 

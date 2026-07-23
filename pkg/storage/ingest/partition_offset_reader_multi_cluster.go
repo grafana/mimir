@@ -63,7 +63,7 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 		}
 
 		clients = append(clients, client)
-		offsetClients = append(offsetClients, newPartitionOffsetClient(client, clusterReg, clusterLogger))
+		offsetClients = append(offsetClients, newPartitionOffsetClient(client, component, clusterReg, clusterLogger))
 	}
 
 	r := &MultiClusterOffsetsReader{
