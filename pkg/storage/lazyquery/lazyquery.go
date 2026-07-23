@@ -122,12 +122,12 @@ func (l LazyQuerier) SearchLabelValues(ctx context.Context, name string, params 
 
 // FetchMetricMetadata passes through to the wrapped querier when it can fetch
 // metric metadata; otherwise surfaces a clear error.
-func (l LazyQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (l LazyQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	f, ok := l.next.(querierapi.MetricMetadataFetcher)
 	if !ok {
 		return nil, fmt.Errorf("wrapped querier %T does not support metric metadata fetch", l.next)
 	}
-	return f.FetchMetricMetadata(ctx, names)
+	return f.FetchMetricMetadata(ctx, names, matcherSets)
 }
 
 // Close implements Storage.Querier

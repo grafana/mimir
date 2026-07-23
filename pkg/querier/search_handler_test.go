@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -43,16 +44,18 @@ import (
 //
 // When metadata is non-nil the mock also satisfies querierapi.MetricMetadataFetcher, so
 // the metric-names handler can enrich results from it (mirroring the querier's
-// ingester metadata fan-out). metadataFetchCalls counts the fetches.
+// ingester metadata fan-out). fetchedNames and fetchedMatcherSets record the
+// names and selector sets passed on each fetch (one entry per call).
 type searchMockQuerier struct {
-	namesFn      func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	valuesFn     func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	metadata     map[string]metadata.Metadata
-	fetchedNames [][]string
-	lastName     string
-	lastParams   *streaminglabelvalues.Params
-	lastHints    *storage.SearchHints
-	lastMatchers []*labels.Matcher
+	namesFn            func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	valuesFn           func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	metadata           map[string]metadata.Metadata
+	fetchedNames       [][]string
+	fetchedMatcherSets [][][]*labels.Matcher
+	lastName           string
+	lastParams         *streaminglabelvalues.Params
+	lastHints          *storage.SearchHints
+	lastMatchers       []*labels.Matcher
 }
 
 func (s *searchMockQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
@@ -90,8 +93,9 @@ func (s *searchMockQuerier) SearchLabelValues(_ context.Context, name string, pa
 // FetchMetricMetadata is only present (as far as the querierapi.MetricMetadataFetcher
 // type-assert is concerned) to let the handler enrich; it returns metadata for
 // the requested names found in the configured map.
-func (s *searchMockQuerier) FetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (s *searchMockQuerier) FetchMetricMetadata(_ context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	s.fetchedNames = append(s.fetchedNames, append([]string(nil), names...))
+	s.fetchedMatcherSets = append(s.fetchedMatcherSets, matcherSets)
 	out := make(map[string]metadata.Metadata, len(names))
 	for _, n := range names {
 		if md, ok := s.metadata[n]; ok {
@@ -1107,6 +1111,34 @@ func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
 	assert.Equal(t, "cpu_usage_seconds", second["name"])
 	assert.Equal(t, "gauge", second["type"])
 	assert.Equal(t, "seconds", second["unit"])
+}
+
+func TestSearchMetricNamesHandler_MetadataFetchScopedByMatchers(t *testing.T) {
+	// The handler must thread the request's selector into the metadata fetch, so
+	// a tenant-federation-aware fetcher can scope metadata to the same tenants
+	// each selector's search touched (via a __tenant_id__ matcher).
+	mq := &searchMockQuerier{
+		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 1.0)}, nil)
+		},
+		metadata: map[string]metadata.Metadata{
+			"http_requests_total": {Type: model.MetricTypeCounter},
+		},
+	}
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
+
+	target := "/api/v1/search/metric_names?include_metadata=true&" + url.Values{"match[]": {`{job="api"}`}}.Encode()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	require.NotEmpty(t, mq.fetchedMatcherSets, "the handler must fetch metadata")
+	require.Len(t, mq.fetchedMatcherSets[0], 1, "the request's one selector set must be forwarded to the metadata fetch")
+	require.Len(t, mq.fetchedMatcherSets[0][0], 1, "the selector's single matcher must be forwarded")
+	got := mq.fetchedMatcherSets[0][0][0]
+	assert.Equal(t, labels.MatchEqual, got.Type)
+	assert.Equal(t, "job", got.Name)
+	assert.Equal(t, "api", got.Value)
 }
 
 func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T) {

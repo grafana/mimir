@@ -81,7 +81,12 @@ func (q *distributorQuerier) SearchLabelValues(
 // FetchMetricMetadata fetches metric metadata for the given metric names from
 // the ingesters. When a metric has more than one metadata record, the first one
 // seen wins.
-func (q *distributorQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+//
+// matcherSets are ignored: the ingester metadata store (MetricsMetadataRequest)
+// is keyed by metric name and cannot filter by label matchers. Tenant scoping,
+// when federation is involved, is applied above this leaf by the tenant
+// federation merge querier selecting which tenants to fetch from.
+func (q *distributorQuerier) FetchMetricMetadata(ctx context.Context, names []string, _ [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	resp, err := q.distributor.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
 		MetricNames: names,
 		// Bound the response to the number of requested names. With

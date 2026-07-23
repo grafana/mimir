@@ -128,7 +128,9 @@ func (q *tenantQuerier) FetchMetricMetadata(ctx context.Context, id string, name
 	if !ok {
 		return nil, errors.Errorf("upstream %T does not support metric metadata fetch", q.upstream)
 	}
-	return f.FetchMetricMetadata(user.InjectOrgID(ctx, id), names)
+	// The tenant is already selected (its org ID is injected below), so no
+	// selector sets are forwarded — scoping happened in the caller.
+	return f.FetchMetricMetadata(user.InjectOrgID(ctx, id), names, nil)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -432,33 +434,52 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 	return storage.MergeSearchResultSets(sets, hints)
 }
 
-// FetchMetricMetadata fetches metric metadata across all involved federation
-// IDs and unions the per-tenant results by metric name. When a name exists in
-// several tenants, the first tenant wins, so the union is deterministic:
-// resolver.TenantIDs returns the IDs sorted (as the sibling search methods also
-// rely on). Per-tenant fetch errors are best-effort: they are logged and that
-// tenant is skipped, since metadata enrichment is optional.
-func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+// FetchMetricMetadata fetches metric metadata across the federation IDs the
+// request's selectors scope to and unions the per-tenant results by metric
+// name. When a name exists in several tenants, the first tenant wins, so the
+// union is deterministic: jobs is sorted below. Per-tenant fetch errors are
+// best-effort: they are logged and that tenant is skipped, since metadata
+// enrichment is optional.
+//
+// Only the tenant dimension of the selectors is honoured. metadataTenantJobs
+// unions the __tenant_id__ scope of each OR-ed selector set, so metadata is
+// fetched from exactly the tenants the search touched (e.g. a search scoped to
+// t2 OR t3 never enriches from an excluded tenant). A selector without a
+// tenant matcher matches every tenant, so it widens the fetch to all of them.
+//
+// Any other matcher (e.g. env="dev") cannot filter metadata: the ingester
+// stores it keyed by (tenant, metric name) with no series labels attached (see
+// userMetricsMetadata), so it has no way to tell the env="dev" gauge "foo" from
+// the env="prod" counter "foo" — both are just records under "foo". When a name
+// carries several such records the fetch is best-effort and returns an
+// arbitrary one. This is a property of the metadata store, not federation: the
+// same limitation applies to a single tenant.
+func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(ids) == 1 {
-		return m.upstream.FetchMetricMetadata(ctx, ids[0], names)
+
+	// metadataTenantJobs builds jobs from a map, so sort to keep the "first
+	// tenant by sorted ID wins" tie-break deterministic.
+	jobs := metadataTenantJobs(m.idLabelName, ids, matcherSets)
+	slices.Sort(jobs)
+	if len(jobs) == 1 {
+		return m.upstream.FetchMetricMetadata(ctx, jobs[0], names)
 	}
 
-	perTenant := make([]map[string]metadata.Metadata, len(ids))
-	errs := make([]error, len(ids))
+	perTenant := make([]map[string]metadata.Metadata, len(jobs))
+	errs := make([]error, len(jobs))
 	run := func(_ context.Context, idx int) error {
-		perTenant[idx], errs[idx] = m.upstream.FetchMetricMetadata(ctx, ids[idx], names)
+		perTenant[idx], errs[idx] = m.upstream.FetchMetricMetadata(ctx, jobs[idx], names)
 		return nil
 	}
-	if err := concurrency.ForEachJob(ctx, len(ids), m.maxConcurrency, run); err != nil {
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
 		return nil, err
 	}
 
 	out := make(map[string]metadata.Metadata)
-	for i, id := range ids {
+	for i, id := range jobs {
 		if errs[i] != nil {
 			level.Warn(m.logger).Log("msg", "failed to fetch metric metadata for a tenant during federated search enrichment", "tenant", id, "err", errs[i])
 			continue
@@ -738,15 +759,7 @@ func (a *addLabelsSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
 // FilterValuesByMatchers which prunes the survivor set per matcher and
 // returns the unrelated matchers under the original label name.
 func tenantJobsForSearch(idLabelName string, ids []string, matchers []*labels.Matcher) (jobs []string, filteredMatchers []*labels.Matcher) {
-	retainedName := retainExistingPrefix + idLabelName
-	hasIDMatcher := false
-	for _, m := range matchers {
-		if m.Name == idLabelName || m.Name == retainedName {
-			hasIDMatcher = true
-			break
-		}
-	}
-	if !hasIDMatcher {
+	if !hasIDMatcher(idLabelName, matchers) {
 		return ids, matchers
 	}
 
@@ -756,4 +769,47 @@ func tenantJobsForSearch(idLabelName string, ids []string, matchers []*labels.Ma
 		jobs = append(jobs, id)
 	}
 	return jobs, fm
+}
+
+// hasIDMatcher reports whether any matcher targets the federation id label
+// (or its retain-prefix alias), i.e. whether the selector scopes the tenant
+// set. A selector without one matches every tenant.
+func hasIDMatcher(idLabelName string, matchers []*labels.Matcher) bool {
+	retainedName := retainExistingPrefix + idLabelName
+	for _, m := range matchers {
+		if m.Name == idLabelName || m.Name == retainedName {
+			return true
+		}
+	}
+	return false
+}
+
+// metadataTenantJobs returns the tenants a federated metadata fetch must cover:
+// the union, across the OR-ed selector sets, of the tenants each set scopes to.
+// A set without an id-label matcher matches every tenant, so if any set is
+// unscoped — or there are no sets at all — the result is all ids. Otherwise it
+// is the deduped union of each set's id-label-selected tenants, so a search
+// scoped to (t2 OR t3) enriches from exactly t2 and t3, never an excluded
+// tenant. The result is unsorted; callers that rely on the first-tenant-wins
+// tie-break must sort it.
+func metadataTenantJobs(idLabelName string, ids []string, matcherSets [][]*labels.Matcher) []string {
+	if len(matcherSets) == 0 {
+		return ids
+	}
+	seen := make(map[string]struct{}, len(ids))
+	jobs := make([]string, 0, len(ids))
+	for _, set := range matcherSets {
+		if !hasIDMatcher(idLabelName, set) {
+			// This selector can match any tenant, so the union is every tenant.
+			return ids
+		}
+		matchedIDs, _ := FilterValuesByMatchers(idLabelName, ids, set...)
+		for id := range matchedIDs {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				jobs = append(jobs, id)
+			}
+		}
+	}
+	return jobs
 }
