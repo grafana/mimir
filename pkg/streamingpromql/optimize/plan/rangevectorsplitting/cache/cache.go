@@ -53,7 +53,7 @@ func newCacheMetrics(reg prometheus.Registerer) *cacheMetrics {
 }
 
 func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
-	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
+	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, err
 	} else if client == nil {
