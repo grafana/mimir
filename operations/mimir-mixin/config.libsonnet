@@ -128,16 +128,21 @@
       backend: ['ruler|ruler-zone-.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
-    },
+    } + (
+      // When compartments are enabled, override the job names of the
+      // compartmentalized components so that dashboards select only
+      // the jobs belonging to the currently selected read compartment.
+      if $._config.compartments_enabled then $._config.compartmentalized_job_names else {}
+    ),
 
-    // List of job names that are replicated in different compartments.
-    compartmentalizedJobs: [
-      $._config.job_names.ingester,
-      $._config.job_names.block_builder,
-      $._config.job_names.compactor,
-      $._config.job_names.compactor_scheduler,
-      $._config.job_names.store_gateway,
-    ],
+    // These are overrides for the job names for matching a specific compartment.
+    compartmentalized_job_names: {
+      ingester: ['ingester.*$read_compartment', 'cortex', 'mimir'],
+      block_builder: ['block-builder.*$read_compartment'],
+      compactor: ['compactor.*$read_compartment', 'cortex', 'mimir'],
+      compactor_scheduler: ['compactor-scheduler.*$read_compartment'],
+      store_gateway: ['store-gateway.*$read_compartment', 'cortex', 'mimir'],
+    },
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {

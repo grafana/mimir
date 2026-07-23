@@ -220,15 +220,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     else std.join(', ', std.prune([
       '%s=~"$cluster"' % [$._config.per_cluster_label],
       '%s=~"%s(%s)"' % [$._config.per_job_label, $._config.job_prefix, formatJobForQuery(job)],
-      compartmentalizedJobMatcher(job),
     ])),
-
-  local compartmentalizedJobMatcher(job) =
-    // Add the read_compartment filter only for jobs that are known to be
-    // compartmentalized (defined in $._config.compartmentalizedJobs).
-    if $._config.compartments_enabled && std.contains($._config.compartmentalizedJobs, job)
-    then '%s=~".*$read_compartment($|-.*)"' % [$._config.per_job_label]
-    else null,
 
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)
@@ -246,15 +238,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     else std.prune([
       utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'),
       utils.selector.re($._config.per_job_label, '%s(%s)' % [$._config.job_prefix, formatJobForQuery(job)]),
-      compartmentalizedJobSelector(job),
     ]),
-
-  local compartmentalizedJobSelector(job) =
-    // Add the read_compartment filter only for jobs that are known to be
-    // compartmentalized (defined in $._config.compartmentalizedJobs).
-    if $._config.compartments_enabled && std.contains($._config.compartmentalizedJobs, job)
-    then utils.selector.re($._config.per_job_label, '.*$read_compartment($|-.*)')
-    else null,
 
   recordingRulePrefix(selectors)::
     std.join('_', [matcher.label for matcher in selectors]),
