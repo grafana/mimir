@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -518,6 +517,46 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	}, trackingStorage.ranges)
 }
 
+// TestQuerySplitting_DuplicateAboveSplitFunctionCall verifies that a shared, split range vector function has its
+// Duplicate injected above the SplitFunctionCall.
+func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	buildPlan := func(t *testing.T, expr string) *planning.QueryPlan {
+		t.Helper()
+		p, err := planner.NewQueryPlan(context.Background(), expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
+			streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+		require.NoError(t, err)
+		return p
+	}
+
+	t.Run("subset selector elimination", func(t *testing.T) {
+		p := buildPlan(t, `rate(foo{a="1"}[3h]) / rate(foo[3h])`)
+		require.Equal(t, testutils.TrimIndent(`
+			- BinaryExpression: LHS / RHS, hints exclude ()
+				- LHS: DuplicateFilter: {a="1"}, subset index: 0
+					- ref#1 Duplicate
+						- SplitFunctionCall
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[3h0m0s], subsets: {a="1"}
+				- RHS: ref#1 Duplicate ...
+		`), p.String())
+	})
+
+	t.Run("identical subexpression", func(t *testing.T) {
+		p := buildPlan(t, `rate(foo[3h]) + rate(foo[3h])`)
+		require.Equal(t, testutils.TrimIndent(`
+			- BinaryExpression: LHS + RHS, hints exclude ()
+				- LHS: ref#1 Duplicate
+					- SplitFunctionCall
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[3h0m0s]
+				- RHS: ref#1 Duplicate ...
+		`), p.String())
+	})
+}
+
 func TestQuerySplitting_WithSSE(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(4 * time.Hour)
@@ -547,8 +586,10 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	verifyEvaluationStats(t, stats, 24, 24)
 
 	// With a 4h range at ts=4h and 2h split interval, the single cacheable block is (2h-1ms, 4h-1ms].
-	// After SSE: histogram_fraction's inner is DuplicateFilter -> Duplicate -> broad MatrixSelector;
-	// histogram_count's inner is Duplicate -> broad MatrixSelector.
+	// After SSE, both branches share a single SplitFunctionCall through a Duplicate node:
+	// histogram_fraction's inner is DuplicateFilter -> Duplicate -> SplitFunctionCall -> last_over_time -> broad MatrixSelector;
+	// histogram_count's inner is Duplicate consumer of the same SplitFunctionCall.
+	// The shared split node's inner is the broad MatrixSelector, so there is a single cache entry.
 	broadSelector := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 		Matchers: []*core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
@@ -560,44 +601,22 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 			{Matchers: []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}}},
 		},
 	}}
-	fractionSplit := &commonsubexpressionelimination.DuplicateFilter{
-		DuplicateFilterDetails: &commonsubexpressionelimination.DuplicateFilterDetails{
-			Filters:     []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
-			SubsetIndex: 0,
-		},
-		Inner: &commonsubexpressionelimination.Duplicate{
-			DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
-			Inner:            broadSelector,
-		},
-	}
-	countSplit := &commonsubexpressionelimination.Duplicate{
-		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
-		Inner:            broadSelector,
-	}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 
-	require.Len(t, backend.Entries, 2)
+	require.Len(t, backend.Entries, 1)
 
 	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
 	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
-	// Both keys must contain the full histogram (skip=false fetches buckets).
-	countKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	// The key must contain the full histogram (skip=false fetches buckets).
+	sharedKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, broadSelector, params), 2*hourInMs-1, 4*hourInMs-1)
 	require.NoError(t, err)
-	var countEntry cache.CachedSeries
-	require.NoError(t, countEntry.Unmarshal(backend.Entries[countKey].Value))
-	var countList rangevectorsplitting.FirstLastOverTimeIntermediateList
-	require.NoError(t, countList.Unmarshal(countEntry.Results))
-	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, countList.Results)
-
-	fractionKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
-	require.NoError(t, err)
-	var fractionEntry cache.CachedSeries
-	require.NoError(t, fractionEntry.Unmarshal(backend.Entries[fractionKey].Value))
-	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
-	require.NoError(t, fractionList.Unmarshal(fractionEntry.Results))
-	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, fractionList.Results)
+	var sharedEntry cache.CachedSeries
+	require.NoError(t, sharedEntry.Unmarshal(backend.Entries[sharedKey].Value))
+	var sharedList rangevectorsplitting.FirstLastOverTimeIntermediateList
+	require.NoError(t, sharedList.Unmarshal(sharedEntry.Results))
+	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, sharedList.Results)
 }
 
 func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
@@ -676,6 +695,8 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 
 	// With SSE: the narrow MatrixSelector is rewritten into DuplicateFilter -> Duplicate -> broad MatrixSelector,
 	// and the broad MatrixSelector picks up the narrow side's region="us" as a subset.
+	// Because Duplicate is injected above the shared SplitFunctionCall, both branches share a single split node whose inner is the broad
+	// MatrixSelector, so there is one cache entry keyed by that broad (subset-aware) selector.
 	withSSE := defaultSplittingOpts()
 	withSSE.EnableSubsetSelectorElimination = true
 	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
@@ -694,30 +715,12 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 			{Matchers: []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}}},
 		},
 	}}
-	narrowSSE := &commonsubexpressionelimination.DuplicateFilter{
-		DuplicateFilterDetails: &commonsubexpressionelimination.DuplicateFilterDetails{
-			Filters:     []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
-			SubsetIndex: 0,
-		},
-		Inner: &commonsubexpressionelimination.Duplicate{
-			DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
-			Inner:            broadSSE,
-		},
-	}
-	broadSplitSSE := &commonsubexpressionelimination.Duplicate{
-		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
-		Inner:            broadSSE,
-	}
 
 	cacheKeyGenerator = createEmptyPrefixCacheKeyGenerator()
-	narrowKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
+	sharedKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSSE, params), blockStart, blockEnd)
 	require.NoError(t, err)
-	broadKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
-	require.NoError(t, err)
-	require.Contains(t, backendSSE.Entries, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
-	require.Contains(t, backendSSE.Entries, broadKeySSE, "expected subset-aware cache key for broad selector when SSE is on")
-	require.NotContains(t, backendNoSSE.Entries, narrowKeySSE, "narrow SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
-	require.NotContains(t, backendNoSSE.Entries, broadKeySSE, "broad SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
+	require.Contains(t, backendSSE.Entries, sharedKeySSE, "expected subset-aware cache key for the shared split node when SSE is on")
+	require.NotContains(t, backendNoSSE.Entries, sharedKeySSE, "SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
 }
 
 func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {

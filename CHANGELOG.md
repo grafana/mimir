@@ -58,6 +58,7 @@
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
+* [ENHANCEMENT] MQE: Allow common subexpression elimination to deduplicate range vector splitting nodes when subset selector elimination has merged the selectors. #16199
 * [ENHANCEMENT] MQE: Reduce the number of requests to the intermediate result cache of range vector splitting by using the batch API. #16024
 * [ENHANCEMENT] Querier: track physical and equivalent samples read for remote read requests in query statistics, mirroring the statistics emitted for instant and range queries. #15694
 * [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
