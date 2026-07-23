@@ -1043,6 +1043,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/schedulerpb.BlockBuilderScheduler/AssignJob",
+			"/schedulerpb.BlockBuilderScheduler/UpdateJob",
 			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 		})
