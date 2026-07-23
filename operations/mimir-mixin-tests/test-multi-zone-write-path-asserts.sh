@@ -23,7 +23,7 @@ ZONES="a b c"
 # The matchers excluding the per-zone jobs from the aggregate series, built from the default
 # multi_zone_job_name_formats and multi_zone_write_path_zones.
 DISTRIBUTOR_EXCLUSION='job!~"($namespace)/((distributor-zone-a.*|distributor-zone-b.*|distributor-zone-c.*))"'
-GATEWAY_EXCLUSION='job!~"($namespace)/((gateway-zone-a|cortex-gw.*-zone-a|gateway-zone-b|cortex-gw.*-zone-b|gateway-zone-c|cortex-gw.*-zone-c))"'
+GATEWAY_EXCLUSION='job!~"($namespace)/((cortex-gw.*-zone-a|cortex-gw.*-zone-b|cortex-gw.*-zone-c))"'
 
 echo "Checking ${WRITES_DASHBOARD}"
 

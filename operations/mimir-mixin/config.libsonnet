@@ -130,9 +130,11 @@
     // 'distributor-zone-%(zone)s.*' becomes 'distributor-zone-a.*') to match one zone's deployments
     // of a component. Used to build the per-zone panels, e.g. when
     // show_multi_zone_write_path_panels is enabled.
+    // The expanded job names must also be matched by the component's job_names regexes above,
+    // otherwise the per-zone deployments would be missing from the aggregate panels.
     multi_zone_job_name_formats: {
       distributor: ['distributor-zone-%(zone)s.*'],
-      gateway: ['gateway-zone-%(zone)s', 'cortex-gw.*-zone-%(zone)s'],
+      gateway: ['cortex-gw.*-zone-%(zone)s'],
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
