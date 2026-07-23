@@ -103,7 +103,7 @@ type RangeVectorOperator interface {
 	// steps are available.
 	//
 	// Returned views of FPoints or HPoints are only valid until the next call to NextSeries or
-	// NextStepSamples. The views must be cloned to in order to use them beyond the next call.
+	// NextStepSamples. The views must be cloned in order to use them beyond the next call.
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
 }
 

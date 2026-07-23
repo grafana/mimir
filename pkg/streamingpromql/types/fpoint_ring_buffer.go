@@ -426,8 +426,9 @@ type FPointRingBufferView struct {
 }
 
 // IsDirty returns true if this view is associated with a buffer and the buffer
-// has been modified since the view was created. When this is the case, the view
-// must be recreated before being used by callers.
+// has been modified in a way that invalidates the view. Not all changes to the
+// buffer invalidate the view. When it is the case that the view has been
+// invalidated, the view must be recreated before being used by callers.
 func (v *FPointRingBufferView) IsDirty() bool {
 	if v.buffer == nil {
 		return false
