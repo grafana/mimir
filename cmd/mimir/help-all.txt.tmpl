@@ -2929,6 +2929,10 @@ Usage of ./cmd/mimir/mimir:
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
+  -query-frontend.subquery-spin-off-simple-subqueries
+    	[experimental] Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.
+  -query-frontend.subquery-spin-off-with-excess-downstream-queries
+    	[experimental] Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results

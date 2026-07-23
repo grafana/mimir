@@ -8979,6 +8979,28 @@
         },
         {
           "kind": "field",
+          "name": "subquery_spin_off_simple_subqueries",
+          "required": false,
+          "desc": "Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-simple-subqueries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "subquery_spin_off_with_excess_downstream_queries",
+          "required": false,
+          "desc": "Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-with-excess-downstream-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "extra_propagated_headers",
           "required": false,
           "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",

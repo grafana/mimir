@@ -19,6 +19,7 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 		name                      string
 		in                        string
 		out                       string
+		spinOffSimpleSubqueries   bool
 		expectedSubqueries        int
 		expectedDownstreamQueries int
 	}{
@@ -267,12 +268,26 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedSubqueries:        0,
 			expectedDownstreamQueries: 1,
 		},
+		{
+			name:                      "with simple subquery spin off enabled, spins off a single-selector subquery",
+			in:                        `avg_over_time(foo[3d:1m])`,
+			out:                       `avg_over_time(__subquery_spinoff__{__query__="foo",__range__="72h0m0s",__step__="1m0s"}[3d])`,
+			spinOffSimpleSubqueries:   true,
+			expectedSubqueries:        1,
+			expectedDownstreamQueries: 0,
+		},
+		{
+			name:                      "with simple subquery spin off enabled, spins off a single-selector subquery within an aggregation",
+			in:                        `sum(avg_over_time((foo > 1)[3d:1m]) * avg_over_time(foo[3d]))`,
+			out:                       `sum(avg_over_time(__subquery_spinoff__{__query__="(foo > 1)",__range__="72h0m0s",__step__="1m0s"}[3d]) * __downstream_query__{__query__="avg_over_time(foo[3d])"})`,
+			spinOffSimpleSubqueries:   true,
+			expectedSubqueries:        1,
+			expectedDownstreamQueries: 1,
+		},
 	} {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
-			mapper := NewSubquerySpinOffMapper(NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats)
+			mapper := NewSubquerySpinOffMapper(NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats, tt.spinOffSimpleSubqueries)
 			ctx := context.Background()
 			parser := promqlext.NewPromQLParser()
 			expr, err := parser.ParseExpr(tt.in)

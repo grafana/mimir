@@ -15,6 +15,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+type Options struct {
+	SpinOffSimpleSubqueries            bool `yaml:"subquery_spin_off_simple_subqueries" category:"experimental"`
+	SpinOffWithExcessDownstreamQueries bool `yaml:"subquery_spin_off_with_excess_downstream_queries" category:"experimental"`
+}
+
 // Map rewrites expr to spin off its subqueries and decides whether doing so is worthwhile, recording the
 // outcome in metrics and (on success) in the query stats found in ctx.
 //
@@ -24,11 +29,11 @@ import (
 // It returns (nil, false) when the caller should fall back to executing the original query through the
 // regular downstream path, which happens when mapping failed, the query had no subqueries to spin off, or
 // spinning off was not deemed worthwhile. The original expression is not modified in this case.
-func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOffWrapper, metrics Metrics, defaultStepFunc func(rangeMillis int64) int64, timeout time.Duration, logger *spanlogger.SpanLogger) (parser.Expr, bool) {
+func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOffWrapper, metrics Metrics, defaultStepFunc func(rangeMillis int64) int64, timeout time.Duration, logger *spanlogger.SpanLogger, opts Options) (parser.Expr, bool) {
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
 	mapperCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	mapper := astmapper.NewSubquerySpinOffMapper(wrapper, defaultStepFunc, logger, mapperStats)
+	mapper := astmapper.NewSubquerySpinOffMapper(wrapper, defaultStepFunc, logger, mapperStats, opts.SpinOffSimpleSubqueries)
 
 	spinOffQuery, err := mapper.Map(mapperCtx, expr)
 	if err != nil {
@@ -48,7 +53,7 @@ func Map(ctx context.Context, expr parser.Expr, wrapper astmapper.SubquerySpinOf
 		return nil, false
 	}
 
-	if mapperStats.DownstreamQueries() > mapperStats.SpunOffSubqueries() {
+	if !opts.SpinOffWithExcessDownstreamQueries && mapperStats.DownstreamQueries() > mapperStats.SpunOffSubqueries() {
 		// the query has more downstream queries than subqueries, so continue downstream
 		// It's probably more efficient to just execute the query as is
 		logger.DebugLog("msg", "input query resulted in more downstream queries than subqueries, falling back to try executing without spinning off subqueries")

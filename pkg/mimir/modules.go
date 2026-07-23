@@ -1162,7 +1162,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
 	// be sharded independently.
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, opts.CommonOpts.Reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {

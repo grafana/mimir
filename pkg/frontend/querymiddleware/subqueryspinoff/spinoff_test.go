@@ -25,8 +25,9 @@ func TestMap(t *testing.T) {
 	const mapperTimeout = 10 * time.Second
 
 	for _, tt := range []struct {
-		name string
-		in   string
+		name                               string
+		in                                 string
+		spinOffWithExcessDownstreamQueries bool
 		// cancelContext cancels the context before Map runs, to exercise the mapping-failure path.
 		cancelContext bool
 
@@ -131,6 +132,14 @@ func TestMap(t *testing.T) {
 			expectedSkipReason: SkippedReasonDownstreamQueries,
 		},
 		{
+			name:                               "more downstream queries than spun-off subqueries, and spinning off in this scenario is enabled",
+			in:                                 `avg_over_time((foo * bar)[3d:1m]) * avg_over_time(foo[3d]) * avg_over_time(baz[3d])`,
+			spinOffWithExcessDownstreamQueries: true,
+			expectedOK:                         true,
+			expectedOut:                        `avg_over_time(__subquery_spinoff__{__query__="(foo * bar)",__range__="72h0m0s",__step__="1m0s"}[3d]) * __downstream_query__{__query__="avg_over_time(foo[3d])"} * __downstream_query__{__query__="avg_over_time(baz[3d])"}`,
+			expectedSpunOff:                    1,
+		},
+		{
 			name:               "mapping cancelled",
 			in:                 `avg_over_time((foo * bar)[3d:1m])`,
 			cancelContext:      true,
@@ -157,7 +166,7 @@ func TestMap(t *testing.T) {
 			// Capture the original expression so we can assert it is not modified when Map returns false.
 			originalExpr := expr.String()
 
-			out, ok := Map(ctx, expr, wrapper, metrics, testDefaultStepFunc, mapperTimeout, logger)
+			out, ok := Map(ctx, expr, wrapper, metrics, testDefaultStepFunc, mapperTimeout, logger, Options{SpinOffWithExcessDownstreamQueries: tt.spinOffWithExcessDownstreamQueries})
 
 			require.Equal(t, tt.expectedOK, ok)
 
