@@ -17,6 +17,107 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+func TestAppendSeriesMetadataFromPool(t *testing.T) {
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	meta := func(name string) SeriesMetadata {
+		return SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, name)}
+	}
+
+	base, err := SeriesMetadataSlicePool.Get(4, tracker)
+	require.NoError(t, err)
+	require.Empty(t, base)
+	baseCap := cap(base)
+	require.GreaterOrEqual(t, baseCap, 4)
+
+	// Appends that fit within the existing capacity reuse the same backing array.
+	base, err = AppendSeriesMetadataFromPool(tracker, base, meta("a"), meta("b"))
+	require.NoError(t, err)
+	require.Equal(t, []SeriesMetadata{meta("a"), meta("b")}, base)
+	require.Equal(t, baseCap, cap(base), "appending within capacity must not reallocate")
+
+	// Appending past the capacity grows the slice from the pool.
+	grown, err := AppendSeriesMetadataFromPool(tracker, base, meta("c"), meta("d"), meta("e"), meta("f"), meta("g"))
+	require.NoError(t, err)
+	require.Equal(t, []SeriesMetadata{meta("a"), meta("b"), meta("c"), meta("d"), meta("e"), meta("f"), meta("g")}, grown)
+	require.Greater(t, cap(grown), baseCap, "appending past capacity must grow the slice")
+
+	// Returning the slice to the pool releases both the slice capacity and the accounted label
+	// memory (via the pool's put hook), so consumption returns to zero.
+	SeriesMetadataSlicePool.Put(&grown, tracker)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestAppendSeriesMetadataFromPool_MemoryLimitReturnsSliceToPool(t *testing.T) {
+	ctx := context.Background()
+
+	// Learn the exact memory a base slice of this size consumes, so we can build a tracker whose
+	// limit is fully consumed by the base slice and thus rejects any subsequent label accounting.
+	warmUp := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	sizeHint := 2
+	tmp, err := SeriesMetadataSlicePool.Get(sizeHint, warmUp)
+	require.NoError(t, err)
+	baseBytes := warmUp.CurrentEstimatedMemoryConsumptionBytes()
+	SeriesMetadataSlicePool.Put(&tmp, warmUp)
+
+	_, metric := createRejectedMetric()
+	tracker := limiter.NewMemoryConsumptionTracker(ctx, baseBytes, metric, "")
+
+	base, err := SeriesMetadataSlicePool.Get(sizeHint, tracker)
+	require.NoError(t, err)
+	require.Equal(t, baseBytes, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	// The label accounting can't fit under the limit, so the append fails and base is returned to
+	// the pool rather than being stranded.
+	result, err := AppendSeriesMetadataFromPool(tracker, base, SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "a")})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+// TestAppendSeriesMetadataFromPool_SliceGrowthFailureReleasesLabels covers the case where the new
+// item's label accounting fits under the limit but the subsequent slice growth does not: the
+// item's labels must not be left accounted once the append fails.
+func TestAppendSeriesMetadataFromPool_SliceGrowthFailureReleasesLabels(t *testing.T) {
+	ctx := context.Background()
+
+	newItem := SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "new")}
+	fillItem := SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "fill")}
+
+	// Learn, on an unlimited tracker, the consumption of a base slice filled to its capacity (so
+	// the next append must grow), so we can set a limit that admits the new item's labels but not
+	// the grown slice.
+	warmUp := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	base, err := SeriesMetadataSlicePool.Get(1, warmUp)
+	require.NoError(t, err)
+	fillItems := make([]SeriesMetadata, cap(base))
+	for i := range fillItems {
+		fillItems[i] = fillItem
+	}
+	base, err = AppendSeriesMetadataFromPool(warmUp, base, fillItems...)
+	require.NoError(t, err)
+	require.Equal(t, len(base), cap(base), "base must be full so the next append triggers a growth")
+	fullBytes := warmUp.CurrentEstimatedMemoryConsumptionBytes()
+
+	// Limit leaves exactly enough headroom for the new item's labels, but not for growing the
+	// slice, so AppendToSlice's Get fails after the labels have already been accounted.
+	_, metric := createRejectedMetric()
+	limit := fullBytes + newItem.Labels.ByteSize()
+	tracker := limiter.NewMemoryConsumptionTracker(ctx, limit, metric, "")
+
+	base, err = SeriesMetadataSlicePool.Get(1, tracker)
+	require.NoError(t, err)
+	base, err = AppendSeriesMetadataFromPool(tracker, base, fillItems...)
+	require.NoError(t, err)
+	require.Equal(t, fullBytes, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	result, err := AppendSeriesMetadataFromPool(tracker, base, newItem)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes(),
+		"the new item's labels and the base slice must both be released when growth fails")
+}
+
 func TestInstantVectorSeriesData_Clone(t *testing.T) {
 	original := InstantVectorSeriesData{
 		Floats: []promql.FPoint{
