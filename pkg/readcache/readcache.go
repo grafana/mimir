@@ -427,11 +427,14 @@ func (r *Readcache) starting(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("parsing -readcache.owned-partitions: %w", err)
 	}
+	wanted := make(map[int32]struct{}, len(pids))
 	for _, pid := range pids {
+		wanted[pid] = struct{}{}
 		if err := r.addPartition(ctx, pid); err != nil {
 			return fmt.Errorf("starting partition %d: %w", pid, err)
 		}
 	}
+	r.removeUnownedFrozenPartitionOffsets(wanted)
 	r.startupReconcileDone.Store(true)
 
 	level.Info(r.logger).Log(
@@ -553,7 +556,7 @@ func (r *Readcache) stopping(_ error) error {
 	for _, entry := range parts {
 		entry := entry
 		g.Go(func() error {
-			if err := r.stopPartition(entry.partitionID, entry.state); err != nil {
+			if err := r.freezePartitionForShutdown(entry.partitionID, entry.state); err != nil {
 				firstErrMu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -1028,6 +1031,7 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	// after this call is a fresh acquisition. Set via defer so the
 	// addPartition calls issued below still observe the pre-reconcile
 	// state on the first invocation.
+	firstReconcile := !r.startupReconcileDone.Load()
 	defer r.startupReconcileDone.Store(true)
 
 	wanted := map[int32]struct{}{}
@@ -1101,6 +1105,9 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 			}
 			continue
 		}
+	}
+	if firstReconcile {
+		r.removeUnownedFrozenPartitionOffsets(wanted)
 	}
 	if len(toAdd) > 0 || len(toRemove) > 0 {
 		// owned reports len(r.partitions) after the add/remove fan-out

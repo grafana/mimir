@@ -31,6 +31,21 @@ func TestPartitionEpochDir(t *testing.T) {
 		partitionEpochDir("/data", "tenant-1", 3, 1))
 	assert.Equal(t, filepath.Join("/data", "tenant-1", "partition-3-epoch-2"),
 		partitionEpochDir("/data", "tenant-1", 3, 2))
+
+	partitionID, epoch, ok := parsePartitionEpochDirName("partition-3")
+	require.True(t, ok)
+	assert.Equal(t, int32(3), partitionID)
+	assert.Zero(t, epoch)
+
+	partitionID, epoch, ok = parsePartitionEpochDirName("partition-3-epoch-2")
+	require.True(t, ok)
+	assert.Equal(t, int32(3), partitionID)
+	assert.Equal(t, 2, epoch)
+
+	for _, invalid := range []string{"partition", "partition-x", "partition-3-epoch-0", "partition-3-epoch-x", "other-3"} {
+		_, _, ok := parsePartitionEpochDirName(invalid)
+		assert.False(t, ok, invalid)
+	}
 }
 
 // TestReadcache_FreezeKeepsSliceQueryableThenReaps is the storage-side
@@ -261,25 +276,37 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		assert.Empty(t, r.frozen)
 	})
 
-	t.Run("unmarked live dir is left alone", func(t *testing.T) {
+	t.Run("unmarked live dir is restored as frozen", func(t *testing.T) {
 		cfg := newTestConfig(t, false, 0)
 		cfg.LocalBlockRetention = time.Hour
 		limits := validation.NewOverrides(validation.Limits{}, nil)
 
-		// A live TSDB dir (no marker): the pod crashed while owning
-		// the partition. The restore must not touch it — re-acquiring
-		// the partition reopens it.
+		// A live TSDB dir without a marker can be left by an older
+		// binary or an abrupt crash. It must remain queryable even if
+		// the first post-restart assignment moves the partition away.
 		db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
 			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
 		require.NoError(t, err)
+		sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
+		app := db.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
 		require.NoError(t, db.Close())
 
 		r := newFrozenTestReadcache(cfg, limits)
-		r.restoreFrozenEpochsOnStartup(time.Now().Add(1000 * time.Hour))
+		r.restoreFrozenEpochsOnStartup(time.Now())
 
-		require.DirExists(t, db.dir, "a dir without a freeze marker must never be touched by the restore")
-		assert.Empty(t, r.frozen)
-		assert.Zero(t, r.epochSeq[pid])
+		require.Len(t, r.frozen[pid], 1)
+		assert.Equal(t, 1, r.epochSeq[pid])
+		require.FileExists(t, filepath.Join(db.dir, frozenMarkerFilename))
+
+		dbs, err := r.listTSDBsForTenant(tenantID, &client.QueryAttributionHint{PartitionId: pid})
+		require.NoError(t, err)
+		require.Len(t, dbs, 1)
+		minT, maxT := dbs[0].sampleBounds()
+		assert.Equal(t, sampleTS, minT)
+		assert.Equal(t, sampleTS, maxT)
 	})
 
 	t.Run("multiple tenants of one epoch are grouped back together", func(t *testing.T) {
@@ -323,4 +350,22 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		// Cleanup: close the restored DBs.
 		r.reapFrozenEpochs(time.Now().Add(cfg.LocalBlockRetention + frozenEpochReapGrace + 10*time.Minute))
 	})
+}
+
+func TestReadcache_RemoveUnownedFrozenPartitionOffsets(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	require.NoError(t, os.MkdirAll(cfg.DataDir, 0o755))
+
+	r := newFrozenTestReadcache(cfg, validation.NewOverrides(validation.Limits{}, nil))
+	r.frozen[3] = []*frozenEpoch{{partitionID: 3}}
+	r.frozen[4] = []*frozenEpoch{{partitionID: 4}}
+
+	for _, partitionID := range []int32{3, 4} {
+		require.NoError(t, os.WriteFile(r.partitionOffsetFilePath(partitionID), []byte("{}"), 0o644))
+	}
+
+	r.removeUnownedFrozenPartitionOffsets(map[int32]struct{}{3: {}})
+
+	require.FileExists(t, r.partitionOffsetFilePath(3))
+	require.NoFileExists(t, r.partitionOffsetFilePath(4))
 }

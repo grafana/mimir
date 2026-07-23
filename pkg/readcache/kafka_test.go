@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -131,6 +132,7 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 
 	writer := makeKafkaWriter(t, kafkaCfg, prometheus.NewPedanticRegistry())
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+	baseTimestamp := time.Now().UnixMilli()
 
 	writeSample := func(name string, ts int64) {
 		req := &mimirpb.WriteRequest{
@@ -153,7 +155,7 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc1))
 
-	writeSample("series_before_restart", 1000)
+	writeSample("series_before_restart", baseTimestamp)
 	require.Eventually(t, func() bool {
 		db, err := rc1.getOrOpenTSDB(tenantID, 0)
 		return err == nil && db != nil && db.Head().NumSeries() == 1
@@ -162,9 +164,11 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, rc1))
 	require.FileExists(t, filepath.Join(cfg.DataDir, "partition-0.offset.json"),
 		"offset file must survive a process stop so the next incarnation can resume")
+	require.FileExists(t, filepath.Join(cfg.DataDir, tenantID, "partition-0", frozenMarkerFilename),
+		"process stop must persist the old live epoch for historical routing after restart")
 
 	// Produce while the readcache is down: this is the eviction window.
-	writeSample("series_during_downtime", 2000)
+	writeSample("series_during_downtime", baseTimestamp+1)
 
 	// Second incarnation on the same DataDir: must resume from the
 	// stored offset and consume the downtime record. With the old
@@ -175,13 +179,17 @@ func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc2) }()
 
 	require.Eventually(t, func() bool {
-		db, err := rc2.getOrOpenTSDB(tenantID, 0)
-		if err != nil || db == nil {
+		dbs, err := rc2.listTSDBsForTenant(tenantID, &client.QueryAttributionHint{PartitionId: 0})
+		if err != nil || len(dbs) != 2 {
 			return false
 		}
-		// WAL replay restores series_before_restart; the resumed reader
-		// must add series_during_downtime on top.
-		return db.Head().NumSeries() == 2
+		var series uint64
+		for _, db := range dbs {
+			series += db.Head().NumSeries()
+		}
+		// The frozen epoch contains series_before_restart; the resumed
+		// live epoch must add series_during_downtime after it.
+		return series == 2
 	}, 20*time.Second, 100*time.Millisecond, "second incarnation must consume the record produced during downtime")
 }
 
