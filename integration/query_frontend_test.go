@@ -291,13 +291,15 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.max-partial-query-length":                 "30d",
-		"-query-frontend.cache-results":                     "true",
-		"-query-frontend.results-cache.backend":             "memcached",
-		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
-		"-query-frontend.subquery-spin-off-enabled":         "true",
-		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
+		"-querier.max-partial-query-length":                   "30d",
+		"-query-frontend.cache-results":                       "true",
+		"-query-frontend.results-cache.backend":               "memcached",
+		"-query-frontend.results-cache.memcached.addresses":   "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                 strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.parallelize-shardable-queries":       "false",
+		"-query-frontend.subquery-spin-off-enabled":           "true",
+		"-query-frontend.enable-remote-execution":             strconv.FormatBool(cfg.remoteExecutionEnabled),
+		"-query-frontend.use-mimir-query-engine-for-sharding": strconv.FormatBool(cfg.remoteExecutionEnabled), // If remote execution isn't enabled, we can't run sharding inside MQE either.
 	})
 
 	if cfg.useMQEForSplittingAndCaching {
@@ -1082,9 +1084,10 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 	}{
 		"Prometheus' engine": {
 			flags: map[string]string{
-				"-querier.query-engine":                   "prometheus",
-				"-query-frontend.query-engine":            "prometheus",
-				"-query-frontend.enable-remote-execution": "false",
+				"-querier.query-engine":                               "prometheus",
+				"-query-frontend.query-engine":                        "prometheus",
+				"-query-frontend.enable-remote-execution":             "false",
+				"-query-frontend.use-mimir-query-engine-for-sharding": "false",
 			},
 		},
 		"MQE with remote execution and sharding disabled": {
