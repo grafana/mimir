@@ -1221,6 +1221,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
+	middlewares = append(middlewares, d.prePushMergeMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)             // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
 	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware) // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
@@ -1324,6 +1325,135 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 
 		if len(removeTsIndexes) > 0 {
 			for _, removeTsIndex := range removeTsIndexes {
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
+			}
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
+
+		return next(ctx, pushReq)
+	})
+}
+
+// prePushMergeSeenEntry tracks, for one label-set hash, the indexes of the
+// already-kept timeseries with that hash. more is nil on the happy path and
+// grows only on a hash collision between distinct (label set, created timestamp)
+// pairs.
+type prePushMergeSeenEntry struct {
+	index int
+	more  []int
+}
+
+// prePushMergeSeenPool reuses the per-request lookup map across pushes to keep
+// prePushMergeMiddleware allocation-free on the no-duplicate happy path.
+var prePushMergeSeenPool = sync.Pool{
+	New: func() any { return make(map[uint64]prePushMergeSeenEntry) },
+}
+
+// prePushMergeMiddleware merges timeseries objects that share the same label set
+// and created timestamp within a single write request. Without this, the
+// within-timeseries dedup in validateSamples only catches duplicates inside one
+// object: if the same sample appears in two different timeseries objects with the
+// same labels, both copies pass through to the ingesters, where the duplicate is
+// silently dropped without incrementing cortex_discarded_samples_total (issue
+// #15550).
+//
+// The created timestamp is part of the merge identity because it drives
+// per-object created-timestamp zero-sample ingestion at the ingester: OTLP
+// created-timestamp handling emits one object per distinct created timestamp for
+// a label set, and each must reach the ingester separately to inject its own
+// zero sample. After this middleware, each (label set, created timestamp) pair
+// appears in at most one timeseries object, and the existing within-timeseries
+// dedup then handles any timestamp collisions that result from the merge.
+func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return err
+		}
+
+		if len(req.Timeseries) <= 1 {
+			return next(ctx, pushReq)
+		}
+
+		// seen maps a label-set hash to the indexes of the already-kept timeseries
+		// with that hash. Almost always a hash maps to a single index, so the happy
+		// path stores just that index and allocates nothing extra. When several kept
+		// series share a hash (a rare hash collision between different label sets, or
+		// the same label set carried with different created timestamps), the extra
+		// indexes are tracked in more (allocated only then), so every distinct
+		// (label set, created timestamp) is still deduplicated independently.
+		//
+		// The map is pooled and reused across requests because this runs on the
+		// distributor's hottest path: a fresh map per push would allocate one bucket
+		// (and its overflow buckets) for every series even when nothing is merged.
+		seen := prePushMergeSeenPool.Get().(map[uint64]prePushMergeSeenEntry)
+		clear(seen)
+		defer prePushMergeSeenPool.Put(seen)
+		var removeTsIndexes []int
+
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+			hash := mimirpb.NonStableHash(ts.Labels)
+
+			e, exists := seen[hash]
+			if !exists {
+				seen[hash] = prePushMergeSeenEntry{index: tsIdx}
+				continue
+			}
+
+			// A later timeseries merges into a kept one only when both its label set
+			// and its created timestamp match, since the created timestamp is part of
+			// the series' ingestion identity. Check the first index and then any
+			// collision overflow.
+			sameSeries := func(keptIdx int) bool {
+				return req.Timeseries[keptIdx].CreatedTimestamp == ts.CreatedTimestamp &&
+					slices.Equal(req.Timeseries[keptIdx].Labels, ts.Labels)
+			}
+			firstIdx := -1
+			if sameSeries(e.index) {
+				firstIdx = e.index
+			} else {
+				for _, candidate := range e.more {
+					if sameSeries(candidate) {
+						firstIdx = candidate
+						break
+					}
+				}
+			}
+			if firstIdx < 0 {
+				// No kept series shares this label set and created timestamp (a hash
+				// collision with a different label set, or the same label set carried
+				// with a different created timestamp): track this index too so its own
+				// later duplicates still merge.
+				e.more = append(e.more, tsIdx)
+				seen[hash] = e
+				continue
+			}
+
+			// Merge samples, histograms and exemplars from the later timeseries into
+			// the first. The created timestamp is identical by construction, so it
+			// needs no reconciliation.
+			req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
+			req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
+			req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
+			// Invalidate the marshal cache after merging — without this,
+			// Size()/Marshal() return stale pre-merge bytes and drop the
+			// merged histograms/exemplars.
+			req.Timeseries[firstIdx].SamplesUpdated()
+
+			removeTsIndexes = append(removeTsIndexes, tsIdx)
+		}
+
+		if len(removeTsIndexes) > 0 {
+			for _, removeTsIndex := range removeTsIndexes {
+				// Nil out slices that were shallow-copied into the surviving
+				// timeseries BEFORE returning the source to the pool. Without
+				// this, the pool can reuse the source's backing arrays while
+				// the surviving timeseries still references them, corrupting
+				// histogram/exemplar data under concurrent pool reuse.
+				req.Timeseries[removeTsIndex].Samples = nil
+				req.Timeseries[removeTsIndex].Histograms = nil
+				req.Timeseries[removeTsIndex].Exemplars = nil
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)

@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -122,6 +123,47 @@ func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 		buf = append(buf, ls[i].Value...)
 	}
 	return string(buf)
+}
+
+// nonStableHashFastPathCap is the capacity of NonStableHash's stack-allocated
+// scratch buffer. Label sets whose serialization reaches this size stream the
+// hash instead, so the buffer is never grown to hold a very large entry.
+const nonStableHashFastPathCap = 1024
+
+// NonStableHash returns a hash of the label set. Like labels.Labels.Hash, the
+// returned value is NOT stable: it may differ across Mimir versions, builds
+// (e.g. -tags stringlabels) and architectures, so it must only be used to group
+// label sets within a single process — for example, to deduplicate timeseries
+// within one write request. Use labels.StableHash when a persistent or
+// cross-process hash is required.
+//
+// It hashes the LabelAdapters directly, without first converting them to a
+// labels.Labels, avoiding an allocation on hot write-path callers. The hashing
+// scheme mirrors labels.Labels.Hash (xxhash over name/value pairs separated by
+// 0xff).
+func NonStableHash(ls []LabelAdapter) uint64 {
+	// Use xxhash.Sum64(b) for the fast path as it's faster.
+	b := make([]byte, 0, nonStableHashFastPathCap)
+	for i, v := range ls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range ls[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.WriteString("\xff")
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.WriteString("\xff")
+			}
+			return h.Sum64()
+		}
+
+		b = append(b, v.Name...)
+		b = append(b, '\xff')
+		b = append(b, v.Value...)
+		b = append(b, '\xff')
+	}
+	return xxhash.Sum64(b)
 }
 
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving
