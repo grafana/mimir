@@ -57,12 +57,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-query-frontend.cache-results":                     "true",
-		"-query-frontend.results-cache.backend":             "memcached",
-		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
-		"-tenant-federation.enabled":                        "true",
-		"-ingester.max-global-exemplars-per-user":           "10000",
+		"-query-frontend.cache-results":                       "true",
+		"-query-frontend.results-cache.backend":               "memcached",
+		"-query-frontend.results-cache.memcached.addresses":   "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.enable-remote-execution":             strconv.FormatBool(cfg.remoteExecutionEnabled),
+		"-query-frontend.use-mimir-query-engine-for-sharding": strconv.FormatBool(cfg.remoteExecutionEnabled), // If remote execution isn't enabled, we can't run sharding inside MQE either.
+		"-tenant-federation.enabled":                          "true",
+		"-ingester.max-global-exemplars-per-user":             "10000",
 	})
 
 	// Start the query-scheduler.

@@ -116,7 +116,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, cacheResultsFlag, false, "Cache query results.")
 	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -%v=true, -%v=true or -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag, validation.SubquerySpinOffEnabledFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
-	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, false, "True to enable query sharding.")
+	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, true, "True to enable query sharding.")
 	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, true, fmt.Sprintf("Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -%s=true", ShardedQueriesFlag))
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")

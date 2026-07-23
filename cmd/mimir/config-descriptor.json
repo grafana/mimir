@@ -8896,7 +8896,7 @@
           "required": false,
           "desc": "True to enable query sharding.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.parallelize-shardable-queries",
           "fieldType": "boolean"
         },
