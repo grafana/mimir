@@ -2840,7 +2840,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.not-running-timeout duration
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
-    	True to enable query sharding.
+    	True to enable query sharding. (default true)
   -query-frontend.prom2-range-compat
     	[experimental] Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics
   -query-frontend.query-engine string

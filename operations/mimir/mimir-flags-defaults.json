@@ -601,6 +601,7 @@
   "query-frontend.results-cache.compression": "",
   "query-frontend.max-retries-per-request": 5,
   "query-frontend.not-running-timeout": 2000000000,
+  "query-frontend.parallelize-shardable-queries": true,
   "query-frontend.enable-remote-execution": true,
   "query-frontend.use-mimir-query-engine-for-sharding": true,
   "query-frontend.query-sharding-target-series-per-shard": 0,

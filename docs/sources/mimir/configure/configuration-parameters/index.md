@@ -2386,7 +2386,7 @@ results_cache:
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
-[parallelize_shardable_queries: <boolean> | default = false]
+[parallelize_shardable_queries: <boolean> | default = true]
 
 # (experimental) If set to true and the Mimir query engine is in use, use remote
 # execution to evaluate queries in queriers.
