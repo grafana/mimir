@@ -214,3 +214,24 @@ load 5m
 
 eval range from 0m to 0m step 5m info(metric, {env=~".+"})
   metric{instance="a", job="1", env="prod"} 1
+
+clear
+
+# Verify that @ and offset modifiers on the first argument are propagated to the info selector.
+# Uses a churning target_info so the enrichment result differs depending on when target_info is evaluated.
+load 1m
+  metric{instance="a", job="1"} 1 2 3 4 5
+  target_info{instance="a", job="1", version="v1"} 1 1 1 stale _
+  target_info{instance="a", job="1", version="v2"} _ _ _      _ 1
+
+# @ modifier on first argument must be propagated to the info selector.
+# Both metric and target_info are evaluated at Unix timestamp 0 (t=0m).
+# target_info at t=0 is version="v1", so all steps must be enriched with version="v1".
+eval range from 0m to 4m step 1m info(metric @ 0)
+  metric{instance="a", job="1", version="v1"} 1 1 1 1 1
+
+# offset modifier on first argument must be propagated to the info selector.
+# Both metric and target_info are shifted back by 3m.
+# Steps t=3m–5m look up t=0–2m respectively, where target_info is version="v1".
+eval range from 3m to 5m step 1m info(metric offset 3m)
+  metric{instance="a", job="1", version="v1"} 1 2 3
