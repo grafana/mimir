@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
@@ -1195,6 +1196,9 @@ func startMemberlistKV(t *testing.T) (*memberlist.KV, *memberlist.Client) {
 
 	client, err := memberlist.NewClient(mkv, ring.GetPartitionRingCodec())
 	require.NoError(t, err)
+
+	// Wrap the client with the "collectors/" prefix to match the key used by ingesters.
+	client = kv.PrefixClient(client, "collectors/")
 
 	return mkv, client
 }
