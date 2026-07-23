@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -81,6 +82,8 @@ type Config struct {
 	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
 	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
 
+	SubquerySpinOff subqueryspinoff.Options `yaml:",inline"`
+
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
@@ -121,6 +124,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.IntVar(&cfg.ActiveSeriesMaxShardConcurrency, "query-frontend.active-series-max-shard-concurrency", 0, "Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.")
 	f.BoolVar(&cfg.ActiveSeriesFramedResponses, "query-frontend.active-series-framed-responses", false, "Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.")
+	f.BoolVar(&cfg.SubquerySpinOff.SpinOffSimpleSubqueries, "query-frontend.subquery-spin-off-simple-subqueries", false, fmt.Sprintf("Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
+	f.BoolVar(&cfg.SubquerySpinOff.SpinOffWithExcessDownstreamQueries, "query-frontend.subquery-spin-off-with-excess-downstream-queries", false, fmt.Sprintf("Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
@@ -545,7 +550,7 @@ func newQueryMiddlewares(
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
 			newInstrumentMiddleware("spin_off_subqueries", metrics),
-			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn),
+			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn, cfg.SubquerySpinOff),
 		)
 	}
 

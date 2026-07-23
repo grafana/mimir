@@ -28,6 +28,7 @@ type spinOffSubqueriesMiddleware struct {
 	engine          promql.QueryEngine
 	defaultStepFunc func(int64) int64
 	wrapper         astmapper.SubquerySpinOffWrapper
+	opts            subqueryspinoff.Options
 
 	metrics subqueryspinoff.Metrics
 }
@@ -39,6 +40,7 @@ func newSpinOffSubqueriesMiddleware(
 	registerer prometheus.Registerer,
 	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,
+	opts subqueryspinoff.Options,
 ) MetricsQueryMiddleware {
 	metrics := subqueryspinoff.NewMetrics(registerer)
 	wrapper := astmapper.NewSelectorSubquerySpinOffWrapper()
@@ -57,6 +59,7 @@ func newSpinOffSubqueriesMiddleware(
 			metrics:         metrics,
 			wrapper:         wrapper,
 			defaultStepFunc: defaultStepFunc,
+			opts:            opts,
 		}
 	})
 }
@@ -90,7 +93,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	spinOffQuery, ok := subqueryspinoff.Map(ctx, expr, s.wrapper, s.metrics, s.defaultStepFunc, shardingTimeout, spanLog)
+	spinOffQuery, ok := subqueryspinoff.Map(ctx, expr, s.wrapper, s.metrics, s.defaultStepFunc, shardingTimeout, spanLog, s.opts)
 	if !ok {
 		// Spinning off subqueries was not possible or not worthwhile, so fall back to executing the query downstream.
 		return s.next.Do(ctx, req)

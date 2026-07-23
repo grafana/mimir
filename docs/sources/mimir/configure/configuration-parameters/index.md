@@ -2432,6 +2432,19 @@ results_cache:
 # CLI flag: -query-frontend.active-series-framed-responses
 [active_series_framed_responses: <boolean> | default = false]
 
+# (experimental) Set to true to spin off subqueries whose inner expression is
+# considered simple. Has no effect unless subquery spin-off is enabled with
+# -query-frontend.subquery-spin-off-enabled=true.
+# CLI flag: -query-frontend.subquery-spin-off-simple-subqueries
+[subquery_spin_off_simple_subqueries: <boolean> | default = false]
+
+# (experimental) Set to true to spin off subqueries even when the rewritten
+# query contains more downstream queries than spun-off subqueries. Has no effect
+# unless subquery spin-off is enabled with
+# -query-frontend.subquery-spin-off-enabled=true.
+# CLI flag: -query-frontend.subquery-spin-off-with-excess-downstream-queries
+[subquery_spin_off_with_excess_downstream_queries: <boolean> | default = false]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.

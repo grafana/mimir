@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
@@ -156,7 +157,7 @@ func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool) (*streamingp
 	require.NoError(t, err)
 
 	if enableSpinOff {
-		planner.RegisterASTOptimizationPass(NewOptimizationPass(spinOffEnabledLimits{}, opts.CommonOpts.NoStepSubqueryIntervalFn, reg, log.NewNopLogger()))
+		planner.RegisterASTOptimizationPass(NewOptimizationPass(spinOffEnabledLimits{}, opts.CommonOpts.NoStepSubqueryIntervalFn, frontendspinoff.Options{}, reg, log.NewNopLogger()))
 	}
 
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
