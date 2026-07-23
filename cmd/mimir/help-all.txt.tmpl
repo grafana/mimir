@@ -219,6 +219,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -alertmanager.alertmanager-client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -alertmanager.alertmanager-client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
@@ -1299,6 +1303,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -compactor.scheduler-client.grpc-client-config.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -compactor.scheduler-client.grpc-client-config.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -compactor.scheduler-client.grpc-client-config.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -compactor.scheduler-client.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -compactor.scheduler-client.grpc-client-config.tls-cert-path string
@@ -1849,6 +1857,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ingester.client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -ingester.client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -2431,6 +2443,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.frontend-client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -querier.frontend-client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -querier.frontend-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
@@ -2663,6 +2679,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.scheduler-client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.scheduler-client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -querier.scheduler-client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -querier.scheduler-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.scheduler-client.tls-cert-path string
@@ -2713,6 +2733,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.store-gateway-client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.store-gateway-client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -querier.store-gateway-client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -2795,6 +2819,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-frontend.grpc-client-config.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-frontend.grpc-client-config.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -query-frontend.grpc-client-config.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
@@ -2967,6 +2995,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-scheduler.grpc-client-config.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-scheduler.grpc-client-config.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -query-scheduler.grpc-client-config.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -query-scheduler.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
@@ -3359,6 +3391,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.client.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -ruler.client.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -ruler.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
@@ -3409,6 +3445,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.distributor.grpc-client-config.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.distributor.grpc-client-config.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -ruler.distributor.grpc-client-config.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -ruler.distributor.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.distributor.grpc-client-config.tls-cert-path string
@@ -3507,6 +3547,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.query-frontend.grpc-client-config.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.query-frontend.grpc-client-config.keepalive-time duration
+    	After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout. (default 20s)
+  -ruler.query-frontend.grpc-client-config.keepalive-timeout duration
+    	After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed. (default 10s)
   -ruler.query-frontend.grpc-client-config.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string

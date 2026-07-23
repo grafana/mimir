@@ -1,9 +1,9 @@
 ---
 aliases:
-  - ../operators-guide/configure/reference-configuration-parameters/
-  - ../operators-guide/configuring/reference-configuration-parameters/
-  - ../reference-configuration-parameters/
-  - ../references/configuration-parameters/
+- ../operators-guide/configure/reference-configuration-parameters/
+- ../operators-guide/configuring/reference-configuration-parameters/
+- ../reference-configuration-parameters/
+- ../references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -1925,7 +1925,7 @@ store_gateway_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -1940,7 +1940,7 @@ store_gateway_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -1976,6 +1976,19 @@ store_gateway_client:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -querier.store-gateway-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.store-gateway-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.store-gateway-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -2700,7 +2713,7 @@ ruler_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2715,7 +2728,7 @@ ruler_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2751,6 +2764,19 @@ ruler_client:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -ruler.client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -ruler.client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -ruler.client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -2825,7 +2851,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2840,7 +2866,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3372,7 +3398,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3387,7 +3413,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3423,6 +3449,19 @@ alertmanager_client:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -3633,7 +3672,7 @@ backoff_config:
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -3648,7 +3687,7 @@ backoff_config:
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3684,6 +3723,18 @@ backoff_config:
 # if ConnectTimeout > 0.
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
+
+# (advanced) After a duration of this time if the client doesn't see any
+# activity it pings the server to see if the transport is still alive. This also
+# determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.
+# CLI flag: -<prefix>.keepalive-time
+[keepalive_time: <duration> | default = 20s]
+
+# (advanced) After having pinged for keepalive check, the client waits for a
+# duration of this time and if no activity is seen even after that the
+# connection is closed.
+# CLI flag: -<prefix>.keepalive-timeout
+[keepalive_timeout: <duration> | default = 10s]
 
 cluster_validation:
   # (experimental) Primary cluster validation label.
@@ -3797,7 +3848,7 @@ grpc_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3812,7 +3863,7 @@ grpc_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3848,6 +3899,19 @@ grpc_client_config:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -querier.frontend-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.frontend-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.frontend-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -3929,7 +3993,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -3944,7 +4008,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4259,7 +4323,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4274,7 +4338,7 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -5106,7 +5170,7 @@ ruler_alertmanager_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5121,7 +5185,7 @@ ruler_alertmanager_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -5664,7 +5728,7 @@ kafka:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  #
+  # 
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5679,7 +5743,7 @@ kafka:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
+  # 
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -7116,7 +7180,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-#
+# 
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -7131,7 +7195,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#
+# 
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA

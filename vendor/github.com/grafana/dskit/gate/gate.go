@@ -12,6 +12,8 @@ import (
 
 var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
 
+var ErrGateTimeout = errors.New("timeout waiting for concurrency gate")
+
 // Gate controls the maximum number of concurrently running and waiting queries.
 //
 // Example of use:
@@ -113,6 +115,45 @@ func (g *instrumentedGate) Start(ctx context.Context) error {
 func (g *instrumentedGate) Done() {
 	g.inflight.Dec()
 	g.gate.Done()
+}
+
+// timeoutGate returns ErrGateTimeout when the timeout is reached while still waiting for the delegate gate.
+type timeoutGate struct {
+	gate    Gate
+	timeout time.Duration
+}
+
+// NewTimeoutGate wraps a Gate implementation with one that sets a timeout on the context passed to the
+// delegated Gate.
+func NewTimeoutGate(timeout time.Duration, gate Gate) Gate {
+	return &timeoutGate{
+		gate:    gate,
+		timeout: timeout,
+	}
+}
+
+func (t *timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.gate.Start(ctx)
+	}
+
+	// Inject our own error so that we can differentiate between a timeout caused by this gate
+	// or a timeout in the original request timeout.
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, ErrGateTimeout)
+	defer cancel()
+
+	err := t.gate.Start(ctx)
+	// Note that we only return an error for a timeout when the delegate has also returned an
+	// error. This ensures that when we get a slot in the delegate, our caller will call Done()
+	// and release the slot.
+	if err != nil && errors.Is(context.Cause(ctx), ErrGateTimeout) {
+		err = ErrGateTimeout
+	}
+	return err
+}
+
+func (t *timeoutGate) Done() {
+	t.gate.Done()
 }
 
 func NewRejecting(maxConcurrent int) Gate {

@@ -2356,6 +2356,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.store-gateway-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.store-gateway-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -3677,6 +3699,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "ingester.client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ingester.client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.client.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -7806,6 +7850,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.frontend-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.frontend-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -8096,6 +8162,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "querier.scheduler-client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.scheduler-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.scheduler-client.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -8475,6 +8563,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -14058,6 +14168,28 @@
                   "fieldCategory": "advanced"
                 },
                 {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.keepalive-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
                   "kind": "block",
                   "name": "cluster_validation",
                   "required": false,
@@ -15845,6 +15977,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ruler.client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ruler.client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -16920,6 +17074,28 @@
                   "fieldCategory": "advanced"
                 },
                 {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.keepalive-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
                   "kind": "block",
                   "name": "cluster_validation",
                   "required": false,
@@ -17272,6 +17448,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 5000000000,
                   "fieldFlag": "ruler.distributor.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.keepalive-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
@@ -19569,6 +19767,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -21763,6 +21983,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
