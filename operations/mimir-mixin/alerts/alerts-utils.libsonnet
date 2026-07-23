@@ -9,9 +9,17 @@
   jobNotMatcher(job)::
     '%s!~"%s%s"' % [$._config.per_job_label, $._config.alert_job_prefix, formatJobForQuery(job)],
 
+  // The $read_compartment variable is a Grafana dashboard template variable and
+  // only makes sense in dashboards. It's injected into the compartmentalized job
+  // names (see compartmentalized_job_names in config.libsonnet), which are shared
+  // with alerting and recording rules. Since Prometheus rules don't have that
+  // variable, we strip it here so alerts match across all read compartments.
+  // This is a no-op for job names that don't reference it.
+  local stripDashboardVars(job) = std.strReplace(job, '$read_compartment', ''),
+
   local formatJobForQuery(job) =
-    if std.isArray(job) then '(%s)' % std.join('|', job)
-    else if std.isString(job) then job
+    if std.isArray(job) then '(%s)' % std.join('|', std.map(stripDashboardVars, job))
+    else if std.isString(job) then stripDashboardVars(job)
     else error 'expected job "%s" to be a string or an array, but it is type "%s"' % [job, std.type(job)],
 
   withRunbookURL(url_format, groups)::
