@@ -1707,10 +1707,9 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 			bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-			// The filesystem bucket fails concurrent uploads of the same object, unlike real
-			// object storages where the last writer wins. Serialize uploads to restore the
-			// real-world behavior: both cleaners are expected to upload the bucket index
-			// concurrently at the end of their cleanup run.
+			// Our filesystem bucket for testing fails concurrent uploads of the same object,
+			// unlike real object storages where the last writer wins. Serializing uploads
+			// avoids this error and allows us to test with concurrency.
 			bucketClient = &serializedUploadBucket{Bucket: bucketClient}
 
 			// Create two blocks and mark one of them for deletion at a time before the deletion delay.
