@@ -1297,6 +1297,22 @@ func TestRingBufferView_IsDirty(t *testing.T) {
 		shouldHaveDirtyViews(t, hbuff, hviews)
 	})
 
+	t.Run("append at start", func(t *testing.T) {
+		// Note that HPoint buffers don't have an AppendAtStart() method
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+
+		_, err := fbuff.AppendAtStart(promql.FPoint{T: 0})
+		require.NoError(t, err)
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+	})
+
 	t.Run("discard points", func(t *testing.T) {
 		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
 		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}

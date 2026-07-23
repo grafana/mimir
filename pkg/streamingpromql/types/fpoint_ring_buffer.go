@@ -162,6 +162,10 @@ func (b *FPointRingBuffer) AppendAtStart(point promql.FPoint) (bool, error) {
 		return resized, err
 	}
 
+	// Explicitly increase the generation here even if the underlying buffer was not
+	// resized since appending at the start of the buffer changes what the "first" item
+	// in the buffer and views are.
+	b.generation++
 	b.firstIndex = (b.firstIndex - 1) & b.pointsIndexMask
 	b.points[b.firstIndex] = point
 	b.size++
