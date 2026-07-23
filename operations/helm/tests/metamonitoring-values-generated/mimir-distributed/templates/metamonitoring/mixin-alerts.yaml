@@ -5,10 +5,8 @@ kind: PrometheusRule
 metadata:
   name: metamonitoring-values-mimir-alerts
   labels:
-    helm.sh/chart: mimir-distributed-6.2.0-weekly.402
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
-    app.kubernetes.io/version: "r402-f09b358c"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:
@@ -1735,3 +1733,4 @@ spec:
               sum by(cluster, namespace, test) (rate(mimir_continuous_test_query_result_checks_failed_total[10m])) > 0
             labels:
               severity: warning
+  

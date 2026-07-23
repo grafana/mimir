@@ -5,10 +5,8 @@ kind: PrometheusRule
 metadata:
   name: metamonitoring-values-mimir-rules
   labels:
-    helm.sh/chart: mimir-distributed-6.2.0-weekly.402
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
-    app.kubernetes.io/version: "r402-f09b358c"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:
@@ -520,3 +518,4 @@ spec:
           - expr: |
               sum by (cluster, namespace, job) (cortex_usage_tracker_active_series)
             record: cluster_namespace_job:cortex_usage_tracker_active_series:sum
+  
