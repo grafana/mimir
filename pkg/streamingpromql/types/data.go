@@ -35,6 +35,24 @@ func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []Seri
 	return append(base, otherSeriesMetadata...), nil
 }
 
+// AppendSeriesMetadataFromPool appends otherSeriesMetadata to base, accounting for the memory of
+// the appended labels and growing base from SeriesMetadataSlicePool if it lacks capacity.
+//
+// base must have been obtained from SeriesMetadataSlicePool. Unlike AppendSeriesMetadata, this
+// tracks the slice capacity growth against the memory limit, so it can be used to build up a
+// result whose final size is not known in advance without stranding pooled slices.
+//
+// On error, base is returned to the pool and must not continue to be used.
+func AppendSeriesMetadataFromPool(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
+	for _, metadata := range otherSeriesMetadata {
+		if err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels); err != nil {
+			SeriesMetadataSlicePool.Put(&base, tracker)
+			return nil, err
+		}
+	}
+	return SeriesMetadataSlicePool.AppendToSlice(base, tracker, otherSeriesMetadata...)
+}
+
 type InstantVectorSeriesData struct {
 	// Floats contains floating point samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.

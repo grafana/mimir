@@ -17,6 +17,64 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+func TestAppendSeriesMetadataFromPool(t *testing.T) {
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	meta := func(name string) SeriesMetadata {
+		return SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, name)}
+	}
+
+	base, err := SeriesMetadataSlicePool.Get(4, tracker)
+	require.NoError(t, err)
+	require.Empty(t, base)
+	baseCap := cap(base)
+	require.GreaterOrEqual(t, baseCap, 4)
+
+	// Appends that fit within the existing capacity reuse the same backing array.
+	base, err = AppendSeriesMetadataFromPool(tracker, base, meta("a"), meta("b"))
+	require.NoError(t, err)
+	require.Equal(t, []SeriesMetadata{meta("a"), meta("b")}, base)
+	require.Equal(t, baseCap, cap(base), "appending within capacity must not reallocate")
+
+	// Appending past the capacity grows the slice from the pool.
+	grown, err := AppendSeriesMetadataFromPool(tracker, base, meta("c"), meta("d"), meta("e"), meta("f"), meta("g"))
+	require.NoError(t, err)
+	require.Equal(t, []SeriesMetadata{meta("a"), meta("b"), meta("c"), meta("d"), meta("e"), meta("f"), meta("g")}, grown)
+	require.Greater(t, cap(grown), baseCap, "appending past capacity must grow the slice")
+
+	// Returning the slice to the pool releases both the slice capacity and the accounted label
+	// memory (via the pool's put hook), so consumption returns to zero.
+	SeriesMetadataSlicePool.Put(&grown, tracker)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestAppendSeriesMetadataFromPool_MemoryLimitReturnsSliceToPool(t *testing.T) {
+	ctx := context.Background()
+
+	// Learn the exact memory a base slice of this size consumes, so we can build a tracker whose
+	// limit is fully consumed by the base slice and thus rejects any subsequent label accounting.
+	warmUp := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	sizeHint := 2
+	tmp, err := SeriesMetadataSlicePool.Get(sizeHint, warmUp)
+	require.NoError(t, err)
+	baseBytes := warmUp.CurrentEstimatedMemoryConsumptionBytes()
+	SeriesMetadataSlicePool.Put(&tmp, warmUp)
+
+	_, metric := createRejectedMetric()
+	tracker := limiter.NewMemoryConsumptionTracker(ctx, baseBytes, metric, "")
+
+	base, err := SeriesMetadataSlicePool.Get(sizeHint, tracker)
+	require.NoError(t, err)
+	require.Equal(t, baseBytes, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	// The label accounting can't fit under the limit, so the append fails and base is returned to
+	// the pool rather than being stranded.
+	result, err := AppendSeriesMetadataFromPool(tracker, base, SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "a")})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
 func TestInstantVectorSeriesData_Clone(t *testing.T) {
 	original := InstantVectorSeriesData{
 		Floats: []promql.FPoint{
