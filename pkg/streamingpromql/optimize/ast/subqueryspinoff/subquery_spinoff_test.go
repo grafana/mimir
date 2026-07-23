@@ -61,6 +61,8 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		{expr: `max_over_time(metric_b[2h:1m])`, expectSpinOffSuccess: false},       // Subquery is too simple to spin off.
 		{expr: `sum(metric_b)`, expectSpinOffSuccess: false},
 		{expr: `metric_b`, expectSpinOffSuccess: false},
+		{expr: `"foo"`, expectSpinOffSuccess: false},
+		{expr: `metric[5m]`, expectSpinOffSuccess: false},
 	}
 
 	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false)
@@ -76,8 +78,10 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 			require.Equal(t, expected, actual)
 
 			successCount := 0
+			noSubqueriesCount := 1
 			if q.expectSpinOffSuccess {
 				successCount = 1
+				noSubqueriesCount = 0
 			}
 
 			// We only bother checking some of the metrics here, most are covered by the tests for the Map function in pkg/frontend/querymiddleware/subqueryspinoff.
@@ -88,11 +92,25 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 				# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
 				# TYPE cortex_frontend_subquery_spinoff_successes_total counter
 				cortex_frontend_subquery_spinoff_successes_total %d
+				# HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin-off subqueries from.
+				# TYPE cortex_frontend_subquery_spinoff_skipped_total counter
+				cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
+				cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
+				cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
+				cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
 				`,
 				successCount,
+				noSubqueriesCount,
 			)
 
-			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_frontend_subquery_spinoff_attempts_total", "cortex_frontend_subquery_spinoff_successes_total"))
+			require.NoError(
+				t,
+				testutil.CollectAndCompare(reg, strings.NewReader(expectedMetrics),
+					"cortex_frontend_subquery_spinoff_attempts_total",
+					"cortex_frontend_subquery_spinoff_successes_total",
+					"cortex_frontend_subquery_spinoff_skipped_total",
+				),
+			)
 		})
 	}
 }
