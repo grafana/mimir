@@ -120,6 +120,7 @@
 * [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 * [BUGFIX] Query-frontend: Fix a goroutine leak when a querier's streaming response arrives just as the query is cancelled: the goroutine handling the response could stay blocked forever writing a response body that would never be read. #16151
+* [BUGFIX] Mimirtool: `mimirtool rules lint` no longer collapses multi-line PromQL expressions into a single line. Expressions are now formatted with the PromQL prettifier, which keeps expressions longer than 100 characters on multiple lines, like the query formatter in the Prometheus UI. #16196
 
 ### Mixin
 
