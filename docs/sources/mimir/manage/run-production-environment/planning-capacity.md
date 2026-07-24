@@ -167,7 +167,7 @@ sum(prometheus_tsdb_head_series)
 
 When running compaction in the experimental [scheduler mode](../../../references/architecture/components/compactor-scheduler/), deploy exactly one compactor-scheduler replica.
 
-The compactor-scheduler requires little CPU and memory compared to the compactors, because it only coordinates work and doesn't read or compact blocks itself. Its resources utilization is determined by the number of tenants and scheduled jobs. It also requires a small persistent disk to store its job queues.
+The compactor-scheduler requires little CPU and memory compared to the compactors, because it only coordinates work and doesn't read or compact blocks itself. Its resource utilization is determined by the number of tenants and scheduled jobs. It also requires a small persistent disk to store its job queues.
 
 The estimated required CPU, memory and disk for the compactor-scheduler instance are:
 
