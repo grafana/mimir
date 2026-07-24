@@ -1558,7 +1558,7 @@ GET /compactor/tenant/{tenant}/planned_jobs
 
 Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 When compactors run in [scheduler mode](../architecture/components/compactor-scheduler/), this list is an independent estimate rather than the compactor-scheduler's actual queue, so it may not exactly match the jobs being distributed to the compactors, though it is a good approximation.
-Additionally, the assignment of jobs to compactors shown on this page should be ignored in scheduler mode, as it is based on the compactor hash ring.
+In scheduler mode, ignore the assignment of jobs to compactors shown on this page, as it is based on the compactor hash ring.
 
 ## Overrides-exporter
 
