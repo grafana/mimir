@@ -61,6 +61,7 @@
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
+* [ENHANCEMENT] MQE: Allow common subexpression elimination to deduplicate range vector splitting nodes when subset selector elimination has merged the selectors. #16215
 * [ENHANCEMENT] MQE: Reduce the number of requests to the intermediate result cache of range vector splitting by using the batch API. #16024
 * [ENHANCEMENT] Querier: track physical and equivalent samples read for remote read requests in query statistics, mirroring the statistics emitted for instant and range queries. #15694
 * [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
@@ -88,7 +89,11 @@
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in binary operations that use `ignoring` or no `on`/`ignoring` clause. #15178
 * [ENHANCEMENT] Query-frontend: Add experimental flags to broaden subquery spin-off. `-query-frontend.subquery-spin-off-simple-subqueries=true` spins off subqueries whose inner expression was previously considered too simple to spin off and `-query-frontend.subquery-spin-off-with-excess-downstream-queries=true` spins off subqueries when the rewritten query contains more downstream queries than spun-off subqueries. All are disabled by default and require subquery spin-off to be enabled with `-query-frontend.subquery-spin-off-enabled=true`. #16211
 * [ENHANCEMENT] Block-builder: Disable authentication for AssignJob and UpdateJob gRPC methods as they are control-plane methods that don't have an inherent orgID. #16222
+* [ENHANCEMENT] gRPC clients: Add advanced CLI flags to configure client keepalive: #16221
+  * `-<prefix>.keepalive-time` (default `20s`)
+  * `-<prefix>.keepalive-timeout` (default `10s`)
 * [BUGFIX] Continuous-test: Fix native histogram queries being subject to the PromQL lookback period, which carried the most recently written histogram forward past its real timestamp. This caused startup recovery of the last written histogram sample to always fail (the recovery query end time is "now", so lookback returned samples whose values didn't match the expected value for those later timestamps), silently abandoning the histogram write history on every restart. Histogram queries now wrap the selector in `last_over_time(...[1s])`, matching the existing float query behavior. #16163
+* [BUGFIX] Memberlist: Validate experimental propagation delay tracker config at startup so a non-positive beacon interval or lifetime fails with a clear error instead of panicking when the tracker is enabled. #16221
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix the partition reader skipping available records when replaying from the max replay period with file-based offset enforcement enabled. If the timestamp-based start offset lookup unexpectedly resolves to the partition end despite a recent tail record, the reader retries the lookup and then clamps the start offset to the partition start. #16161
@@ -118,7 +123,7 @@
 * [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
 * [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
 * [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
-* [BUGFIX] Querier: Fix experimental search `/api/v1/search/metric_names?include_metadata=true` almost never returning metric metadata. #16062
+* [BUGFIX] Querier: Fix experimental search `/api/v1/search/metric_names?include_metadata=true` almost never returning metric metadata. #16062, #16214
 * [BUGFIX] Querier: Stop querying a partition that has been inactive for longer than `-querier.query-ingesters-within`, preventing query failures when the partition is still registered but has no available ingesters to serve the queries. #15721
 * [BUGFIX] Query-frontend: Fix `queue_time_seconds` in the query stats log always reporting 0 when a query is cancelled while still waiting in the query-scheduler queue. #16094
 * [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155

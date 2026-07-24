@@ -1152,7 +1152,7 @@ func (q *searchableTenantQuerier) SearchLabelValues(ctx context.Context, name st
 	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
 }
 
-func (q *searchableTenantQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (q *searchableTenantQuerier) FetchMetricMetadata(ctx context.Context, names []string, _ [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	tenantID, _ := tenant.TenantID(ctx)
 	tenantMD := q.src.metadataByTenant[tenantID]
 	out := make(map[string]metadata.Metadata, len(names))
@@ -1366,7 +1366,7 @@ func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
 		require.True(t, ok, "mergeQuerier must satisfy the metadata fetcher interface")
 
 		ctx := user.InjectOrgID(t.Context(), "t1|t2")
-		got, err := f.FetchMetricMetadata(ctx, []string{"shared", "only_t2"})
+		got, err := f.FetchMetricMetadata(ctx, []string{"shared", "only_t2"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{
 			"shared":  {Type: model.MetricTypeCounter, Help: "from t1"},
@@ -1388,10 +1388,200 @@ func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
 		f := querier.(querierapi.MetricMetadataFetcher)
 
 		ctx := user.InjectOrgID(t.Context(), "only")
-		got, err := f.FetchMetricMetadata(ctx, []string{"a", "missing"})
+		got, err := f.FetchMetricMetadata(ctx, []string{"a", "missing"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "h"}}, got)
 	})
+}
+
+// TestMergeQueryable_FetchMetricMetadata_HonorsTenantScope validates a specific
+// multi tenant federated query edge case.
+//
+// The metric metadata map is indexed per tenant. It is possible that for a given metric name
+// there are different metadata records between tenants.
+//
+// In this unit test, tenants t1, t2 and t3 each have a metric called `shared`.
+// t1 has submitted it as a counter whereas t2 and t3 have submitted it as a gauge
+// (with distinct help strings so they can be told apart). t4 does not own `shared`.
+//
+// It is technically possible for a federated search (t1|t2|t3|t4) to be issued with a matcher
+// limiting the results to a specific tenant (__tenant_id__="t2"), to exclude a tenant
+// (__tenant_id__!="t1"), or to the union of several tenants via repeated match[] selectors.
+//
+// Without specific handling of this we would return the first federated tenant's metadata record.
+//
+// It should be noted that no other selectors will have any effect here. If we have a metric name
+// from a conflicting series foo{env="prod"} gauge, foo{env="dev"} counter this will not be
+// filterable since the ingester storing the metadata stores the metadata keyed only under the metric name.
+//
+// It is only via tenant federation that we can differentiate between multiple metadata records keyed
+// under the same name.
+func TestMergeQueryable_FetchMetricMetadata_HonorsTenantScope(t *testing.T) {
+	t1Metadata := metadata.Metadata{Type: model.MetricTypeCounter, Help: "from t1"}
+	t2Metadata := metadata.Metadata{Type: model.MetricTypeGauge, Help: "from t2"}
+	t3Metadata := metadata.Metadata{Type: model.MetricTypeGauge, Help: "from t3"}
+
+	src := &searchableTenantQueryable{
+		metadataByTenant: map[string]map[string]metadata.Metadata{
+			"t1": {"shared": t1Metadata},
+			"t2": {"shared": t2Metadata},
+			"t3": {"shared": t3Metadata},
+			"t4": {"only_t4": {Type: model.MetricTypeGauge, Help: "t4 only"}},
+		},
+	}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	f, ok := querier.(querierapi.MetricMetadataFetcher)
+	require.True(t, ok, "mergeQuerier must satisfy the metadata fetcher interface")
+
+	ctx := user.InjectOrgID(t.Context(), "t1|t2|t3|t4")
+
+	eq := func(val string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchEqual, defaultTenantLabel, val)
+	}
+	neq := func(val string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchNotEqual, defaultTenantLabel, val)
+	}
+
+	tc := map[string]struct {
+		matcher  [][]*labels.Matcher
+		expected *metadata.Metadata
+	}{
+		"no tenant selector - first ordered tenant record is used": {
+			matcher:  nil,
+			expected: &t1Metadata,
+		},
+		"t1 tenant selector": {
+			matcher:  [][]*labels.Matcher{{eq("t1")}},
+			expected: &t1Metadata,
+		},
+		"t2 tenant selector": {
+			matcher:  [][]*labels.Matcher{{eq("t2")}},
+			expected: &t2Metadata,
+		},
+		// t1 sorts first and also owns "shared", but scoping to t3 must return t3's record.
+		"t3 tenant selector": {
+			matcher:  [][]*labels.Matcher{{eq("t3")}},
+			expected: &t3Metadata,
+		},
+		// t4 does not own "shared", so a t4-scoped fetch returns nothing.
+		"t4 tenant selector - tenant lacks the metric": {
+			matcher:  [][]*labels.Matcher{{eq("t4")}},
+			expected: nil,
+		},
+		"unknown tenant selector - no tenant metadata": {
+			matcher:  [][]*labels.Matcher{{eq("t9")}},
+			expected: nil,
+		},
+		// Excluding t1 leaves the union {t2, t3, t4}; t2 sorts first among the owners of "shared".
+		"exclude t1 tenant selector": {
+			matcher:  [][]*labels.Matcher{{neq("t1")}},
+			expected: &t2Metadata,
+		},
+		// Both exclusions must live in ONE selector (AND within a set) to exclude
+		// t1 and t2. As two separate match[] selectors they would be OR-ed, and
+		// the union {t2,t3,t4} ∪ {t1,t3,t4} is every tenant — the exclusions cancel.
+		"exclude t1 and t2 in one selector": {
+			matcher:  [][]*labels.Matcher{{neq("t1"), neq("t2")}},
+			expected: &t3Metadata,
+		},
+		// The union (t4 OR t3) must cover both tenants: t4 has no "shared" record, so it falls
+		// through to t3's, and the excluded t1 (which sorts first and owns "shared") must never win.
+		"union of tenant selectors falls through to the covering tenant": {
+			matcher:  [][]*labels.Matcher{{eq("t4")}, {eq("t3")}},
+			expected: &t3Metadata,
+		},
+	}
+
+	for name, test := range tc {
+		t.Run(name, func(t *testing.T) {
+			got, err := f.FetchMetricMetadata(ctx, []string{"shared"}, test.matcher)
+			require.NoError(t, err)
+			md, ok := got["shared"]
+			if test.expected != nil {
+				require.True(t, ok)
+				require.Equal(t, *test.expected, md)
+			} else {
+				require.False(t, ok)
+			}
+		})
+	}
+}
+
+// TestMetadataTenantJobs pins the tenant-scoping logic that backs the federated
+// metadata fetch: which tenants a fetch must cover given the request's OR-ed
+// selector sets. The returned slice is the fan-out job list (one upstream fetch
+// per entry), so asserting it also pins that there is no redundant per-selector
+// fetch.
+func TestMetadataTenantJobs(t *testing.T) {
+	ids := []string{"t1", "t2", "t3"}
+	eq := func(name, val string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchEqual, name, val) }
+
+	tests := []struct {
+		name        string
+		matcherSets [][]*labels.Matcher
+		want        []string
+	}{
+		{
+			name:        "no selector sets fetches all tenants",
+			matcherSets: nil,
+			want:        []string{"t1", "t2", "t3"},
+		},
+		{
+			name:        "a single set without a tenant matcher fetches all tenants",
+			matcherSets: [][]*labels.Matcher{{eq("job", "a")}},
+			want:        []string{"t1", "t2", "t3"},
+		},
+		{
+			name:        "a single set scoped to one tenant fetches only that tenant",
+			matcherSets: [][]*labels.Matcher{{eq(defaultTenantLabel, "t2"), eq("foo", "x")}},
+			want:        []string{"t2"},
+		},
+		{
+			name: "two sets scoped to the same tenant dedupe to a single fetch",
+			matcherSets: [][]*labels.Matcher{
+				{eq(defaultTenantLabel, "t2"), eq("foo", "x")},
+				{eq(defaultTenantLabel, "t2"), eq("bar", "y")},
+			},
+			want: []string{"t2"},
+		},
+		{
+			name: "two sets scoped to distinct tenants union them",
+			matcherSets: [][]*labels.Matcher{
+				{eq(defaultTenantLabel, "t2")},
+				{eq(defaultTenantLabel, "t3")},
+			},
+			want: []string{"t2", "t3"},
+		},
+		{
+			name: "multiple sets, none with a tenant matcher, widen to all tenants",
+			matcherSets: [][]*labels.Matcher{
+				{eq("job", "a")},
+				{eq("job", "b")},
+			},
+			want: []string{"t1", "t2", "t3"},
+		},
+		{
+			name: "one unscoped set widens the union to all tenants even alongside a scoped set",
+			matcherSets: [][]*labels.Matcher{
+				{eq(defaultTenantLabel, "t2")},
+				{eq("job", "b")},
+			},
+			want: []string{"t1", "t2", "t3"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := metadataTenantJobs(defaultTenantLabel, ids, tc.matcherSets)
+			// The caller sorts before its first-tenant-wins union; mirror that so
+			// the map-derived order in the scoped paths is deterministic here.
+			slices.Sort(got)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // TestMergeQueryable_SearchLabelValues_SingleTenantBypass pins the bypass

@@ -88,12 +88,12 @@ func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name stri
 }
 
 // FetchMetricMetadata passes through to the inner querier's metadata fetcher.
-func (q *memoryTrackingQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (q *memoryTrackingQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	f, ok := q.inner.(querierapi.MetricMetadataFetcher)
 	if !ok {
 		return nil, fmt.Errorf("inner querier %T does not support metric metadata fetch", q.inner)
 	}
-	return f.FetchMetricMetadata(ctx, names)
+	return f.FetchMetricMetadata(ctx, names, matcherSets)
 }
 
 func (q *memoryTrackingQuerier) Close() error {

@@ -55,6 +55,14 @@ type ActiveSeriesResponse struct {
 
 // MetricMetadataFetcher fetches metric metadata for a set of metric names,
 // returning it keyed by metric name.
+//
+// matcherSets are the request's OR-ed search selectors (one inner slice per
+// match[] entry). A tenant-federation-aware implementation uses only their
+// tenant (__tenant_id__) matchers, to scope the fetch to the union of tenants
+// the selectors touched — so metadata matches the tenants the search saw.
+// Implementations backed by the ingester metadata store are keyed by (tenant,
+// metric name) and cannot filter by any other label, so they ignore
+// matcherSets entirely.
 type MetricMetadataFetcher interface {
-	FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
+	FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error)
 }

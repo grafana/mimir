@@ -42,7 +42,7 @@ func findMetadataFetcher(queriers []storage.Querier) querierapi.MetricMetadataFe
 
 // FetchMetricMetadata delegates to the per-source querier that can supply
 // metadata. It returns nil when no such source is available.
-func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	// Metadata lives in the ingesters, keyed by metric name and independent of
 	// the query time range, so fetch it from the distributor querier directly
 	// rather than via getQueriers. getQueriers gates the ingester leaf on the
@@ -70,7 +70,7 @@ func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string)
 		}
 	}
 
-	return fetcher.FetchMetricMetadata(ctx, names)
+	return fetcher.FetchMetricMetadata(ctx, names, matcherSets)
 }
 
 // mimirSearcher is the cross-source Searcher interface used at the querier

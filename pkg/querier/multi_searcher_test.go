@@ -66,7 +66,7 @@ func (m *mockSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *st
 	return storage.NewSearchResultSetFromSlice(m.valuesResults, nil)
 }
 
-func (m *mockSearchQuerier) FetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (m *mockSearchQuerier) FetchMetricMetadata(_ context.Context, names []string, _ [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
 	m.metadataFetchCall++
 	if m.metadataErr != nil {
 		return nil, m.metadataErr
@@ -338,7 +338,7 @@ func TestMultiQuerier_FetchMetricMetadata(t *testing.T) {
 		mq := buildSearchTestMultiQuerier(t, distQ, nil)
 		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{}}
 
-		got, err := mq.FetchMetricMetadata(ctx, []string{"a", "b"})
+		got, err := mq.FetchMetricMetadata(ctx, []string{"a", "b"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"}}, got)
 	})
@@ -347,7 +347,7 @@ func TestMultiQuerier_FetchMetricMetadata(t *testing.T) {
 		mq := buildSearchTestMultiQuerier(t, nil, nil)
 		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{}}
 
-		got, err := mq.FetchMetricMetadata(ctx, []string{"a"})
+		got, err := mq.FetchMetricMetadata(ctx, []string{"a"}, nil)
 		require.NoError(t, err)
 		assert.Nil(t, got)
 	})
