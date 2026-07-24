@@ -41,6 +41,12 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
+	// EnableDelayedNameRemovalPrometheusEngine applies only when constructing the Prometheus engine
+	// (primary or fallback) from these options via PrometheusEngineOpts. MQE controls delayed name
+	// removal per-tenant via Limits, and rejects CommonOpts.EnableDelayedNameRemoval so that enabling
+	// the feature the Prometheus way fails loudly instead of being silently ignored.
+	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"-"`
+
 	// TimeNow returns the current time. It is used when materializing range vector splitting operators to compute
 	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
 	TimeNow func() time.Time `yaml:"-"`
@@ -130,6 +136,16 @@ func (c *RangeQuerySplittingAndCachingConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (o *EngineOpts) Validate() error {
 	return o.RangeVectorSplitting.Validate()
+}
+
+// PrometheusEngineOpts returns the options for constructing the Prometheus engine, whether it is
+// used as the primary engine or as MQE's fallback. It applies delayed name removal to a copy of
+// CommonOpts, which is deliberately never set on CommonOpts itself: MQE rejects that option because
+// it controls the feature per-tenant via Limits instead.
+func (o EngineOpts) PrometheusEngineOpts() promql.EngineOpts {
+	commonOpts := o.CommonOpts
+	commonOpts.EnableDelayedNameRemoval = o.EnableDelayedNameRemovalPrometheusEngine
+	return commonOpts
 }
 
 func (c *RangeVectorSplittingConfig) Validate() error {

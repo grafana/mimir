@@ -22,6 +22,7 @@
   * Important: When upgrading to this release, you must ensure all queriers are running Mimir 3.1 before upgrading to ensure no interruption to service.
 * [CHANGE] Query-frontend and querier: multi-node remote execution is now always enabled whenever remote execution is enabled. The `-query-frontend.enable-multiple-node-remote-execution-requests` CLI flag and associated config file option has been removed. #16187
 * [CHANGE] Query-frontend and querier: enable subset selector elimination by default. #16195
+* [CHANGE] MQE: fail fast and complain loudly when delayed name removal is enabled on the wrong flag. #16207
 * [CHANGE] Vendored Prometheus: relabel configs now always serialize `separator`/`replacement` (upstream #18653). The `/runtime_config` (and `?mode=diff`) output for tenants that set an empty `separator`/`replacement` in `metric_relabel_configs` will now show those fields explicitly. No effect on relabeling behavior. #16198
 * [CHANGE] Query-frontend: Enable query sharding by default. Disable it with `-query-frontend.parallelize-shardable-queries=false`. #16212
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.producer-compression` flag to configure the Kafka producer compression codec. Supported values are `none`, `gzip`, `snappy`, `lz4`, and `zstd`. Set it to `none` to target Azure Event Hub's Kafka-compatible endpoint, which does not support compressed produce requests. #15235

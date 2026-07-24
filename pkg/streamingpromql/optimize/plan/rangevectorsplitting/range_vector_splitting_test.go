@@ -1497,7 +1497,8 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
-	opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
+	// This helper builds only the Mimir query engine, which reads delayed name removal from its
+	// limits provider (set above), not from CommonOpts.
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
 	}

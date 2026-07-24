@@ -92,6 +92,21 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	}
 }
 
+// TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected verifies that MQE fails loudly when
+// delayed name removal is enabled the Prometheus way (via CommonOpts) rather than being silently
+// ignored, since MQE only honours the per-tenant limits setting.
+func TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.EqualError(t, err, "enabling delayed name removal via the Prometheus engine option is not supported by the Mimir query engine; enable it per-tenant via the enable_delayed_name_removal setting (-querier.enable-delayed-name-removal flag) instead")
+	require.Nil(t, engine)
+}
+
 func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	t.Run("range query", func(t *testing.T) {
 		requireRangeQueryIsUnsupported(t, expression, expectedError)
@@ -212,9 +227,9 @@ func TestRangeVectorSelectors(t *testing.T) {
 	delayedLimits.EnableDelayedNameRemoval = true
 	delayedOpts := NewTestEngineOpts()
 	delayedOpts.Limits = delayedLimits
-	delayedOpts.CommonOpts.EnableDelayedNameRemoval = true
+	delayedOpts.EnableDelayedNameRemovalPrometheusEngine = true
 
-	delayedPrometheusEngine := promql.NewEngine(delayedOpts.CommonOpts)
+	delayedPrometheusEngine := promql.NewEngine(delayedOpts.PrometheusEngineOpts())
 	delayedPlanner, err := NewQueryPlanner(delayedOpts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	delayedMimirEngine, err := NewEngine(delayedOpts, stats.NewQueryMetrics(nil), delayedPlanner)
@@ -2414,13 +2429,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 		limits := NewStaticQueryLimitsProvider()
 		limits.EnableDelayedNameRemoval = delayedNameRemovalEnabled
 		opts.Limits = limits
-		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+		opts.EnableDelayedNameRemovalPrometheusEngine = delayedNameRemovalEnabled
 
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
-		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		prometheusEngine := promql.NewEngine(opts.PrometheusEngineOpts())
 
 		engineSets = append(engineSets, struct {
 			mimirEngine               promql.QueryEngine
