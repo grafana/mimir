@@ -93,6 +93,12 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		RoutingEnabled: d.limits.ReadcacheReadRouting(userID) == validation.ReadcacheReadRoutingNautilus,
 	}
 
+	w0, w1 := d.readcacheQueryWindow(userID, from, to)
+	plan.W0, plan.W1 = w0, w1
+	if !w0.Before(w1) {
+		return plan
+	}
+
 	log := d.GetNautilusLog()
 	if log == nil {
 		plan.Unavailable = "no live nautilus assignment log snapshot is available"
@@ -103,9 +109,6 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		plan.Unavailable = "no live readcache assignment log snapshot is available"
 		return plan
 	}
-
-	w0, w1 := d.readcacheQueryWindow(userID, from, to)
-	plan.W0, plan.W1 = w0, w1
 
 	metricName, named := extractExactMetricName(matchers)
 	plan.MetricName, plan.Named = metricName, named

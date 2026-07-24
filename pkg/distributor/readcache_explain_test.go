@@ -92,4 +92,20 @@ func TestDistributor_ExplainReadcacheQuery(t *testing.T) {
 		assert.Empty(t, plan.Partitions)
 		assert.Zero(t, plan.TotalCalls)
 	})
+
+	t.Run("future query is empty without assignment logs", func(t *testing.T) {
+		d := &Distributor{
+			now:    func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{}, nil),
+		}
+		futureFrom := model.TimeFromUnixNano(now.Add(24 * time.Hour).UnixNano())
+		futureTo := model.TimeFromUnixNano(now.Add(24*time.Hour + time.Minute).UnixNano())
+
+		plan := d.ExplainReadcacheQuery(context.Background(), userID, futureFrom, futureTo, nil)
+
+		assert.Empty(t, plan.Unavailable)
+		assert.Empty(t, plan.Partitions)
+		assert.Zero(t, plan.TotalCalls)
+		assert.False(t, plan.W0.Before(plan.W1))
+	})
 }

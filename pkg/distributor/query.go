@@ -141,6 +141,11 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			if err != nil {
 				return err
 			}
+			if len(replicationSets) == 0 {
+				// The padded wall-clock window is empty, so this selector
+				// range cannot contain data served by readcache.
+				return nil
+			}
 		} else {
 			// partitionByInstance stays nil on the ingester path:
 			// query-load attribution hints only exist for readcache
@@ -295,6 +300,14 @@ func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 // window) returns errReadcacheRoutingUnavailable. There is no ingester
 // fallback for nautilus-only tenants.
 func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, to model.Time, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
+	w0, w1 := d.readcacheQueryWindow(userID, from, to)
+	if !w0.Before(w1) {
+		// The selector range is entirely outside the readcache serving
+		// window (too old) or too far in the future to contain an
+		// accepted sample. Neither case requires assignment-log coverage.
+		return nil, nil, nil
+	}
+
 	log := d.GetNautilusLog()
 	if log == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
@@ -303,8 +316,6 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	if rcLog == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
 	}
-
-	w0, w1 := d.readcacheQueryWindow(userID, from, to)
 
 	var partitionIDs []int32
 	metricName, named := extractExactMetricName(matchers)

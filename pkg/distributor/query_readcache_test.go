@@ -136,7 +136,10 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 	})
 
 	t.Run("missing assignment log is a hard failure with no ingester fallback", func(t *testing.T) {
-		d := &Distributor{now: func() time.Time { return now }}
+		d := &Distributor{
+			now:    func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{}, nil),
+		}
 		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.Error(t, err)
 		var rcErr errReadcacheRoutingUnavailable
@@ -144,7 +147,10 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 	})
 
 	t.Run("missing readcache log is a hard failure", func(t *testing.T) {
-		d := &Distributor{now: func() time.Time { return now }}
+		d := &Distributor{
+			now:    func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{}, nil),
+		}
 		al := assignment.NewLog()
 		require.True(t, al.Apply(now, assignment.EvenSplit(partitions), 5*time.Minute, time.Minute))
 		d.nautilusLog.Store(al)
@@ -368,9 +374,25 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	require.Nil(t, d.GetReadcacheLog())
 
 	queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher(model.MetricNameLabel, "foo"))
+	now := time.Now()
+	recentFrom := model.TimeFromUnixNano(now.Add(-time.Minute).UnixNano())
+	recentTo := model.TimeFromUnixNano(now.UnixNano())
+	_, err := d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, mustEqualMatcher(model.MetricNameLabel, "foo"))
 	require.Error(t, err, "nautilus-only read must fail when the assignment log is not live")
 
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),
 		"nautilus-only routing must not dial ingesters even when readcache is unavailable")
+
+	// A query whose entire selector window is too far in the future to
+	// contain an accepted sample is known to be empty. It must not need
+	// a live assignment log and must not fail just because Nautilus has
+	// no partition covering that future wall-clock interval.
+	futureFrom := model.TimeFromUnixNano(now.Add(24 * time.Hour).UnixNano())
+	futureTo := futureFrom.Add(time.Minute)
+	result, err := d.QueryStream(ctx, queryMetrics, futureFrom, futureTo, mustEqualMatcher(model.MetricNameLabel, "foo"))
+	require.NoError(t, err)
+	assert.Empty(t, result.StreamingSeries)
+	assert.Empty(t, result.StreamReaders)
+	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),
+		"an empty future query must not dial ingesters")
 }
