@@ -20,7 +20,7 @@ import (
 // and we don't care about performance here so we can use an interface+generics.
 type ringBuffer[T any] interface {
 	DiscardPointsAtOrBefore(t int64)
-	Append(p T) (bool, error)
+	Append(p T) error
 	Reset()
 	Use(s []T) error
 	Release()
@@ -109,12 +109,10 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	shouldHavePoints(t, buf, points[3:5]...)
 
 	// Trigger expansion of buffer (we resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well).
-	resized, err := buf.Append(points[5])
+	err := buf.Append(points[5])
 	require.NoError(t, err)
-	require.True(t, resized, "expected Append() to trigger a resize")
-	resized, err = buf.Append(points[6])
+	err = buf.Append(points[6])
 	require.NoError(t, err)
-	require.False(t, resized, "expected Append() not to trigger a resize")
 
 	shouldHavePoints(t, buf, points[3:7]...)
 
@@ -232,9 +230,8 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		require.Equal(t, 2, len(buf.GetPoints()))
 		require.Equal(t, 2, buf.size)
 
-		nextPoint, resized, err := buf.NextPoint()
+		nextPoint, err := buf.NextPoint()
 		require.NoError(t, err)
-		require.True(t, resized, "expected NextPoint() to trigger a resize")
 
 		*nextPoint = points[2]
 		// We assign "NextPoint" points[2], and then check it is in the ring
@@ -280,9 +277,8 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		// Check we only have the expected points
 		shouldHavePoints(t, buf, points[2:4]...)
 
-		nextPoint, resized, err := buf.NextPoint()
+		nextPoint, err := buf.NextPoint()
 		require.NoError(t, err)
-		require.False(t, resized, "expected NextPoint() not to trigger a resize")
 
 		*nextPoint = points[4]
 		// We assign "NextPoint" points[4], and then check it is in the ring
@@ -443,8 +439,7 @@ func TestRingBuffer_ViewBetweenSearchingBackwards(t *testing.T) {
 }
 
 func mustAppend[T any](t *testing.T, buf ringBuffer[T], point T) {
-	_, err := buf.Append(point)
-	require.NoError(t, err)
+	require.NoError(t, buf.Append(point))
 }
 
 func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
@@ -907,7 +902,7 @@ func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
-			_, err := buff.AppendSlice(tc.append)
+			err := buff.AppendSlice(tc.append)
 			require.NoError(t, err)
 			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
@@ -922,36 +917,32 @@ func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 	require.Len(t, buff.points, 2)
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored in the upper end of the existing 2 slot buffer
-	resized, err := buff.AppendAtStart(promql.FPoint{T: 9, F: 20})
+	err := buff.AppendAtStart(promql.FPoint{T: 9, F: 20})
 	require.NoError(t, err)
-	require.False(t, resized, "expected AppendAtStart() not to trigger a buffer resize")
 	require.Equal(t, 2, buff.size)
 	require.Equal(t, 1, buff.firstIndex)
 	require.Len(t, buff.points, 2)
 	require.Equal(t, promql.FPoint{T: 9, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 8, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 8, F: 20})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendAtStart() to trigger a buffer resize")
 	require.Equal(t, 3, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 8, F: 20}, buff.PointAt(0))
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored at the end of the existing buffer
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 7, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 7, F: 20})
 	require.NoError(t, err)
-	require.False(t, resized, "expected AppendAtStart() not to trigger a buffer resize")
 	require.Equal(t, 4, buff.size)
 	require.Equal(t, 3, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 7, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 6, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 6, F: 20})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendAtStart() to trigger a buffer resize")
 	require.Equal(t, 5, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 8)
@@ -961,9 +952,9 @@ func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	// insert 2 samples - the first point will be at the tail of the ring
-	_, err := buff.AppendAtStart(promql.FPoint{T: 10, F: 20})
+	err := buff.AppendAtStart(promql.FPoint{T: 10, F: 20})
 	require.NoError(t, err)
-	_, err = buff.AppendAtStart(promql.FPoint{T: 5, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 5, F: 20})
 	require.NoError(t, err)
 
 	require.Equal(t, 2, buff.size)
@@ -971,9 +962,8 @@ func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	require.Len(t, buff.points, 2)
 
 	// append a slice and validate that the buffer has been re-aligned to start at firstIndex=0
-	resized, err := buff.AppendSlice([]promql.FPoint{{T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}})
+	err = buff.AppendSlice([]promql.FPoint{{T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendSlice() to trigger a buffer resize")
 	shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, []promql.FPoint{{T: 5, F: 20}, {T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}}...)
 
 	require.Equal(t, 0, buff.firstIndex)
@@ -992,7 +982,7 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Equal(t, 0, buff.firstIndex)
 
 	buff.RemoveLast()
-	_, err := buff.AppendAtStart(promql.FPoint{T: 5})
+	err := buff.AppendAtStart(promql.FPoint{T: 5})
 	require.NoError(t, err)
 	require.Equal(t, 4, buff.size)
 	require.Len(t, buff.points, 4)
@@ -1005,7 +995,7 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Len(t, buff.points, 4)
 	require.Equal(t, 3, buff.firstIndex)
 
-	_, err = buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}})
+	err = buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}})
 	require.NoError(t, err)
 }
 
@@ -1307,7 +1297,7 @@ func TestRingBufferView_IsDirty(t *testing.T) {
 
 		fviews := shouldHaveCleanViews(t, fbuff)
 
-		_, err := fbuff.AppendAtStart(promql.FPoint{T: 0})
+		err := fbuff.AppendAtStart(promql.FPoint{T: 0})
 		require.NoError(t, err)
 
 		shouldHaveDirtyViews(t, fbuff, fviews)

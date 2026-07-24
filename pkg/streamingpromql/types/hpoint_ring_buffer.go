@@ -63,17 +63,16 @@ func (b *HPointRingBuffer) RemoveFirst() {
 }
 
 // Append adds p to this buffer, expanding it if required.
-// A boolean is returned indicating if the underlying buffer had to be resized.
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
-func (b *HPointRingBuffer) Append(p promql.HPoint) (bool, error) {
-	hPoint, resized, err := b.NextPoint()
+func (b *HPointRingBuffer) Append(p promql.HPoint) error {
+	hPoint, err := b.NextPoint()
 	if err != nil {
-		return resized, err
+		return err
 	}
 	hPoint.T = p.T
 	hPoint.H = p.H
-	return resized, nil
+	return nil
 }
 
 // EmptyView returns an empty view associated with this buffer that is marked as dirty. This
@@ -207,17 +206,13 @@ func (b *HPointRingBuffer) Count() int {
 
 // NextPoint gets the next point in this buffer, expanding it if required.
 //
-// A boolean is returned indicating if the underlying buffer had to be resized.
-//
 // The returned point's timestamp (HPoint.T) must be set to greater than or equal
 // to the timestamp of the last point in the buffer before further methods
 // are called on this buffer (with the exception of RemoveLastPoint, Reset or Close).
 //
 // This method allows reusing an existing HPoint in this buffer where possible,
 // reducing the number of FloatHistograms allocated.
-func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, bool, error) {
-	resized := false
-
+func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -227,16 +222,15 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, bool, error) {
 
 		newSlice, err := getHPointSliceForRingBuffer(newSize, b.memoryConsumptionTracker)
 		if err != nil {
-			return nil, resized, err
+			return nil, err
 		}
 
 		if !pool.IsPowerOfTwo(cap(newSlice)) {
 			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
-			return nil, resized, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
+			return nil, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 		}
 
-		resized = true
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
@@ -257,7 +251,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, bool, error) {
 	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.size++
 
-	return &b.points[nextIndex], resized, nil
+	return &b.points[nextIndex], nil
 }
 
 // RemoveLastPoint removes the last point that was allocated.

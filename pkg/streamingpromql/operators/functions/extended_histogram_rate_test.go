@@ -5,7 +5,6 @@ package functions
 import (
 	"context"
 	"errors"
-	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -24,10 +23,9 @@ func newHistogramView(t *testing.T, points []promql.HPoint) *types.HPointRingBuf
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 	buf := types.NewHPointRingBuffer(tracker)
 	for _, p := range points {
-		_, err := buf.Append(p)
-		require.NoError(t, err)
+		require.NoError(t, buf.Append(p))
 	}
-	return buf.ViewUntilSearchingForwards(math.MaxInt64, nil)
+	return buf.ViewAll(nil)
 }
 
 // recordingEmitter returns an EmitAnnotationFunc that records the rendered message of every
