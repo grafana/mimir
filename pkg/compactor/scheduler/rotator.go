@@ -98,22 +98,22 @@ func (r *Rotator) start(ctx context.Context) error {
 func (r *Rotator) iter(ctx context.Context) error {
 	// TimerService is single threaded and this is the only usage of the intervalsBeforeLeaseExpiration variable so accessing and mutating it is safe
 	expireLeases := true
-	plan := true
+	plan := r.planningInterval > 0
 	if r.intervalsBeforeLeaseExpiration > 0 {
 		r.intervalsBeforeLeaseExpiration--
 		level.Info(r.logger).Log("msg", "lease expiration will not be enforced this maintenance interval to provide cushion between restarts", "intervals_remaining", r.intervalsBeforeLeaseExpiration, "interval_duration", r.maintenanceInterval)
 		expireLeases = false
 	}
 	// RecoverFrom sets intervalsBeforeColdStartPlanning before the service is started and is the only other use of this variable so accessing and mutating it is safe
-	if r.intervalsBeforeColdStartPlanning > 0 {
+	if plan && r.intervalsBeforeColdStartPlanning > 0 {
 		r.intervalsBeforeColdStartPlanning--
 		level.Info(r.logger).Log("msg", "planning will not be performed this maintenance interval to prevent possible job duplication", "intervals_remaining", r.intervalsBeforeColdStartPlanning, "interval_duration", r.maintenanceInterval)
 		plan = false
 	}
 
-	// Always run maintenance: cleanup jobs are evaluated every interval, independent of the
-	// planning and lease-expiration cold-start gates.
-	r.Maintenance(ctx, expireLeases, plan)
+	if expireLeases || plan || r.cleanupInterval > 0 {
+		r.Maintenance(ctx, expireLeases, plan)
+	}
 
 	return nil
 }

@@ -14,7 +14,11 @@ import (
 func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistenceManager, error) {
 	switch cfg.PersistenceType {
 	case "bbolt":
-		return openBboltJobPersistenceManager(cfg.Bbolt.Dir, cfg.Bbolt.ShardCount, cfg.CleanupInterval <= 0, logger)
+		discardFilter := jobDiscardFilter{
+			discardPlanning: cfg.PlanningInterval <= 0,
+			discardCleanup:  cfg.CleanupInterval <= 0,
+		}
+		return openBboltJobPersistenceManager(cfg.Bbolt.Dir, cfg.Bbolt.ShardCount, discardFilter, logger)
 	case "none":
 		return &NopJobPersistenceManager{}, nil
 	default:

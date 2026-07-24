@@ -1108,7 +1108,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor-scheduler.bbolt.shard-count int
     	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
   -compactor-scheduler.cleanup-interval duration
-    	[experimental] The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission.
+    	[experimental] The duration of time between when cleanup jobs are submitted aligned by UTC. Set to a nonpositive value to disable cleanup job submission.
   -compactor-scheduler.lane-policy.policy string
     	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
   -compactor-scheduler.lease-duration duration
@@ -1124,7 +1124,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor-scheduler.persistence-type string
     	[experimental] The type of persistence the compactor scheduler should use. Valid values: none, bbolt (default "bbolt")
   -compactor-scheduler.planning-interval duration
-    	[experimental] The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval. (default 30m0s)
+    	[experimental] The duration of time between when plan jobs are submitted aligned by UTC. Set to a nonpositive value to disable plan job submission, which additionally discards any persisted compaction jobs during recovery. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval. (default 30m0s)
   -compactor-scheduler.repeated-failure-report-threshold int
     	[experimental] The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit. (default 2)
   -compactor-scheduler.tenant-discovery-backoff.backoff-max-period duration

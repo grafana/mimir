@@ -222,13 +222,16 @@ compactor_scheduler:
   [lease_duration: <duration> | default = 10m]
 
   # (experimental) The duration of time between when plan jobs are submitted
-  # aligned by UTC. Note that -compactor.first-level-compaction-wait-period is
-  # accounted for during alignment of this interval.
+  # aligned by UTC. Set to a nonpositive value to disable plan job submission,
+  # which additionally discards any persisted compaction jobs during recovery.
+  # Note that -compactor.first-level-compaction-wait-period is accounted for
+  # during alignment of this interval.
   # CLI flag: -compactor-scheduler.planning-interval
   [planning_interval: <duration> | default = 30m]
 
   # (experimental) The duration of time between when cleanup jobs are submitted
-  # aligned by UTC. Set to 0 to disable cleanup job submission.
+  # aligned by UTC. Set to a nonpositive value to disable cleanup job
+  # submission.
   # CLI flag: -compactor-scheduler.cleanup-interval
   [cleanup_interval: <duration> | default = 0s]
 

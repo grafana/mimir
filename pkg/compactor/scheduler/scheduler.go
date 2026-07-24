@@ -58,8 +58,8 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
-	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
-	f.DurationVar(&cfg.CleanupInterval, "compactor-scheduler.cleanup-interval", 0, "The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission.")
+	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Set to a nonpositive value to disable plan job submission, which additionally discards any persisted compaction jobs during recovery. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
+	f.DurationVar(&cfg.CleanupInterval, "compactor-scheduler.cleanup-interval", 0, "The duration of time between when cleanup jobs are submitted aligned by UTC. Set to a nonpositive value to disable cleanup job submission.")
 	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 3, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 5, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
@@ -77,12 +77,6 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.LeaseDuration <= 0 {
 		return errors.New("compactor-scheduler.lease-duration must be positive")
-	}
-	if cfg.PlanningInterval <= 0 {
-		return errors.New("compactor-scheduler.planning-interval must be positive")
-	}
-	if cfg.CleanupInterval < 0 {
-		return errors.New("compactor-scheduler.cleanup-interval must not be negative")
 	}
 	if cfg.MaintenanceInterval <= 0 {
 		return errors.New("compactor-scheduler.maintenance-interval must be positive")

@@ -278,8 +278,8 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		reviveJobs, deleteJobs = jt.computeLeaseExpiration(leaseDuration, now)
 	}
 
-	// Note: a plan job will never be created if there is already an active plan job (even if we're about to expire a lease).
-	// Therefore lease expiration and planning are mutually exclusive. The same holds for cleanup jobs.
+	// Note: computePlan/computeCleanup will never return a non-nil value if there is already an active job of the same type (even if we're about to expire a lease).
+	// Therefore cleanup and plan job creation is mutually exclusive with expiration.
 	var planJob *TrackedPlanJob
 	if plan {
 		planJob = jt.computePlan(planningInterval, compactionWaitPeriod, now)
@@ -338,6 +338,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	if cleanupJob != nil {
+		// Prefer the cleanup job at the front of the queue to prevent a stale bucket index
 		if l, wasEmpty := jt.toPendingFront(cleanupJob); wasEmpty {
 			becameNonEmpty = append(becameNonEmpty, l)
 		}
@@ -391,6 +392,10 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 // This function only computes what needs to change without persisting or modifying in-memory state.
 // A write lock must be held in order to call this function.
 func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Duration, now time.Time) *TrackedPlanJob {
+	if planningInterval <= 0 {
+		// Plan submission is disabled
+		return nil
+	}
 	if _, ok := jt.incompleteJobs[planJobId]; ok {
 		// There is already a plan job
 		return nil
