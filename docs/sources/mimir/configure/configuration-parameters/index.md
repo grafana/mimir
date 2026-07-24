@@ -1977,6 +1977,19 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.store-gateway-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.store-gateway-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
+
   cluster_validation:
     # (experimental) Primary cluster validation label.
     # CLI flag: -querier.store-gateway-client.cluster-validation.label
@@ -2752,6 +2765,19 @@ ruler_client:
   # CLI flag: -ruler.client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -ruler.client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -ruler.client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
+
   cluster_validation:
     # (experimental) Primary cluster validation label.
     # CLI flag: -ruler.client.cluster-validation.label
@@ -3424,6 +3450,19 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
+
   cluster_validation:
     # (experimental) Primary cluster validation label.
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
@@ -3685,6 +3724,18 @@ backoff_config:
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
 
+# (advanced) After a duration of this time if the client doesn't see any
+# activity it pings the server to see if the transport is still alive. This also
+# determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.
+# CLI flag: -<prefix>.keepalive-time
+[keepalive_time: <duration> | default = 20s]
+
+# (advanced) After having pinged for keepalive check, the client waits for a
+# duration of this time and if no activity is seen even after that the
+# connection is closed.
+# CLI flag: -<prefix>.keepalive-timeout
+[keepalive_timeout: <duration> | default = 10s]
+
 cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
@@ -3848,6 +3899,19 @@ grpc_client_config:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -querier.frontend-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.frontend-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.frontend-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
