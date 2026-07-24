@@ -171,8 +171,8 @@ The compactor-scheduler requires little CPU and memory compared to the compactor
 
 The estimated required CPU, memory and disk for the compactor-scheduler instance are:
 
-- CPU: 0.5 cores
-- Memory: 1GB
+- CPU: 0.1 cores
+- Memory: 256MB
 - Disk: 1GB
 
 The guidance above for sizing the number of compactor instances applies unchanged in scheduler mode.
