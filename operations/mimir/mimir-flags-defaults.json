@@ -1023,6 +1023,7 @@
   "compactor-scheduler.max-leases": 3,
   "compactor-scheduler.lease-duration": 600000000000,
   "compactor-scheduler.planning-interval": 1800000000000,
+  "compactor-scheduler.cleanup-interval": 0,
   "compactor-scheduler.maintenance-interval": 120000000000,
   "compactor-scheduler.maintenance-intervals-before-lease-expiration": 3,
   "compactor-scheduler.maintenance-intervals-before-cold-start-planning": 5,

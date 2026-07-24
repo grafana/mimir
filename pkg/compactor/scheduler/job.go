@@ -13,6 +13,7 @@ import (
 const (
 	reservedJobIdLen = 1
 	planJobId        = "p"
+	cleanupJobId     = "c"
 	infiniteLeases   = 0
 )
 
@@ -269,5 +270,66 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 		},
 		order:           stored.Order,
 		totalBlockBytes: stored.Job.TotalBlocksBytes,
+	}, nil
+}
+
+type TrackedCleanupJob struct {
+	baseTrackedJob
+}
+
+func NewTrackedCleanupJob(creationTime time.Time) *TrackedCleanupJob {
+	return &TrackedCleanupJob{
+		baseTrackedJob: newBaseTrackedJob(cleanupJobId, creationTime),
+	}
+}
+
+func (j *TrackedCleanupJob) CopyBase() TrackedJob {
+	return &TrackedCleanupJob{
+		baseTrackedJob: j.baseTrackedJob,
+	}
+}
+
+func (j *TrackedCleanupJob) Serialize() ([]byte, error) {
+	info := compactorschedulerpb.StoredJobInfo{
+		CreationTime: j.creationTime.Unix(),
+		Status:       compactorschedulerpb.StoredJobStatus(j.status),
+		StatusTime:   j.StatusTime().Unix(),
+		NumLeases:    int32(j.numLeases),
+		Epoch:        j.epoch,
+	}
+	return info.Marshal()
+}
+
+func (j *TrackedCleanupJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
+	return &compactorschedulerpb.LeaseJobResponse{
+		Key: &compactorschedulerpb.JobKey{
+			Id:    cleanupJobId,
+			Epoch: j.epoch,
+		},
+		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:  tenant,
+			JobType: compactorschedulerpb.JOB_TYPE_CLEANUP,
+		},
+	}
+}
+
+func (j *TrackedCleanupJob) Order() uint32 {
+	return 1
+}
+
+func deserializeCleanupJob(content []byte) (*TrackedCleanupJob, error) {
+	var info compactorschedulerpb.StoredJobInfo
+	if err := info.Unmarshal(content); err != nil {
+		return nil, err
+	}
+	return &TrackedCleanupJob{
+		baseTrackedJob: baseTrackedJob{
+			id:           cleanupJobId,
+			creationTime: time.Unix(info.CreationTime, 0),
+			status:       info.Status,
+			statusTime:   time.Unix(info.StatusTime, 0),
+			numLeases:    int(info.NumLeases),
+			epoch:        info.Epoch,
+		},
 	}, nil
 }
