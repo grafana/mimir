@@ -54,7 +54,7 @@ A short compactor-scheduler outage doesn't stop in-progress compactions: compact
 
 To run compaction in scheduler mode:
 
-1. Deploy the compactor-scheduler, using `-target=compactor-scheduler`.
+1. Deploy the compactor-scheduler, using `-target=compactor-scheduler` and other configuration parameters as described in [compactor-scheduler configuration](../../../../configure/configuration-parameters/#compactor_scheduler).
 1. Configure the compactors with:
    - `-compactor.scheduler-client.enabled=true`
    - `-compactor.scheduler-client.scheduler-endpoint=<host:port>`, pointing to the compactor-scheduler gRPC endpoint.
@@ -66,6 +66,8 @@ In scheduler mode, compactors still register in the compactor hash ring to coord
 The mode is a per-compactor setting, applied at startup. There is no coordination between the two modes. Running both modes simultaneously could result in a tenant being planned and compacted by both. This doesn't corrupt data, but it duplicates work for compactors and potentially increases store-gateway load. A mixed fleet is expected while the configuration change rolls out, but don't run it as a steady state.
 
 On a fresh deployment, the compactor-scheduler delays planning for a few maintenance intervals (`-compactor-scheduler.maintenance-intervals-before-cold-start-planning`), giving the compactor rollout time to complete before the first jobs are planned. The rollout itself stops any in-flight standalone compactions, so in practice little or no work is duplicated. This makes it safe to migrate in a single step, rolling out the compactor-scheduler and switching the compactors to scheduler mode together, as described above.
+
+If limiting which tenants are compacted using `-compactor.enabled-tenants` or `-compactor.disabled-tenants`, the same values should be configured on the compactor-scheduler. Compactors should still be configured with the same values as they apply to blocks cleanup as well.
 
 ## Compactor-scheduler configuration
 
