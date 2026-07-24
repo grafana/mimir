@@ -7,6 +7,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: block-builder
+  name: block-builder
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: block-builder
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: block-builder-scheduler
   name: block-builder-scheduler
   namespace: default
@@ -457,7 +470,7 @@ spec:
   strategy:
     rollingUpdate:
       maxSurge: 25%
-      maxUnavailable: 50%
+      maxUnavailable: 0
   template:
     metadata:
       labels:

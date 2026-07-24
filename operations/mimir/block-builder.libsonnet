@@ -111,10 +111,13 @@
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(30 * 60) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('25%') +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable('50%'),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   block_builder_deployment: if !$._config.block_builder.enabled then null else
     self.newBlockBuilderDeployment('block-builder', $.block_builder_container, $.block_builder_node_affinity_matchers),
+
+  block_builder_pdb: if !$._config.block_builder.enabled then null else
+    $.newMimirPdb('block-builder'),
 }
 
 {
