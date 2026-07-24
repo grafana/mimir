@@ -155,6 +155,7 @@
 * [CHANGE] Query-frontend: Enable query sharding by default. Disable it by setting `_config.query_sharding_enabled` to `false`. #16212
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
+* [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.1. #15328, #15626, #16129
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
