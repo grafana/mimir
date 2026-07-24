@@ -222,12 +222,31 @@ func TestRangeVectorOperator_Buffering_NoFiltering_OverlappingRanges(t *testing.
 			types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 			types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
-			consumer1Data := testReadConsumerToEnd(t, expectedSeries, consumer1)
-			consumer2Data := testReadConsumerToEnd(t, expectedSeries, consumer2)
+			consumer1Floats, consumer1Histograms := testReadConsumerToEnd(t, expectedSeries, consumer1)
+			consumer2Floats, consumer2Histograms := testReadConsumerToEnd(t, expectedSeries, consumer2)
 
-			require.Len(t, consumer1Data, expectedStepsPerSeries*expectedSeries)
-			require.Len(t, consumer2Data, expectedStepsPerSeries*expectedSeries)
-			require.Equal(t, consumer1Data, consumer2Data)
+			require.Len(t, consumer1Floats, expectedStepsPerSeries*expectedSeries)
+			require.Len(t, consumer1Histograms, expectedStepsPerSeries*expectedSeries)
+			require.Len(t, consumer2Floats, expectedStepsPerSeries*expectedSeries)
+			require.Len(t, consumer2Histograms, expectedStepsPerSeries*expectedSeries)
+
+			for i := range len(consumer1Floats) {
+				testutils.RequireEqualFPoints(t, consumer1Floats[i], consumer2Floats[i])
+			}
+
+			for i := range len(consumer1Histograms) {
+				testutils.RequireEqualHPoints(t, consumer1Histograms[i], consumer2Histograms[i])
+			}
+
+			for i := range len(consumer1Floats) {
+				types.FPointSlicePool.Put(&consumer1Floats[i], memoryConsumptionTracker)
+				types.FPointSlicePool.Put(&consumer2Floats[i], memoryConsumptionTracker)
+			}
+
+			for i := range len(consumer1Histograms) {
+				types.HPointSlicePool.Put(&consumer1Histograms[i], memoryConsumptionTracker)
+				types.HPointSlicePool.Put(&consumer2Histograms[i], memoryConsumptionTracker)
+			}
 
 			require.NoError(t, consumer1.FinishedReading(ctx))
 			require.NoError(t, consumer2.FinishedReading(ctx))
@@ -248,10 +267,13 @@ func TestRangeVectorOperator_Buffering_NoFiltering_OverlappingRanges(t *testing.
 	}
 }
 
-func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDuplicationConsumer) []*types.RangeVectorStepData {
+func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDuplicationConsumer) ([][]promql.FPoint, [][]promql.HPoint) {
 	t.Helper()
 
-	var out []*types.RangeVectorStepData
+	var (
+		outFloats     [][]promql.FPoint
+		outHistograms [][]promql.HPoint
+	)
 	for range numSeries {
 		err := consumer.NextSeries(context.Background())
 		if errors.Is(err, types.EOS) {
@@ -267,10 +289,17 @@ func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDup
 			}
 
 			require.NoError(t, err)
-			out = append(out, d)
+
+			floats, err := d.Floats.CopyPoints()
+			require.NoError(t, err)
+			outFloats = append(outFloats, floats)
+
+			histograms, err := d.Histograms.CopyPoints()
+			require.NoError(t, err)
+			outHistograms = append(outHistograms, histograms)
 		}
 	}
-	return out
+	return outFloats, outHistograms
 }
 
 func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
@@ -844,7 +873,7 @@ func TestRangeVectorOperator_CloneStepDataStructure(t *testing.T) {
 
 	// set explicitly to avoid reflection complexity in handling these
 	data.Floats = fpoints.ViewAll(nil)
-	data.Histograms = hpoints.ViewUntilSearchingBackwards(0, nil)
+	data.Histograms = hpoints.ViewAll(nil)
 
 	v := reflect.ValueOf(data).Elem() // reflect on struct value
 	r := v.Type()                     // struct type

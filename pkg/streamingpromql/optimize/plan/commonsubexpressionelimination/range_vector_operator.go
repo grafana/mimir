@@ -162,6 +162,12 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 				b.lastNextStepSamplesCallIndex = b.timeRange.StepCount - 1
 				continue
 			}
+
+			// There are consumers that will read this series so ensure that per-series buffers
+			// for FPoint and HPoints are created before we attempt to merge step data into shared
+			// buffers. Do this now since entries need to be added the respective ring buffers in
+			// order.
+			b.initBuffersForSeries(b.lastNextSeriesCallIndex)
 		}
 
 		stepData, err := b.Inner.NextStepSamples(ctx)
@@ -180,6 +186,31 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 	}
 
 	return lastStepData, nil
+}
+
+func (b *RangeVectorDuplicationBuffer) initBuffersForSeries(seriesIndex int) {
+	_ = b.buffer.GetOrCreateFloatBuffer(seriesIndex)
+	_ = b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
+}
+
+// updateDirtyViews updates the FPoint and HPoint views of stepData if the underlying
+// buffers have been modified since the views were created.
+func (b *RangeVectorDuplicationBuffer) updateDirtyViews(seriesIndex int, stepData *types.RangeVectorStepData) {
+	// Steps with anchored or smoothed modifiers use their own dedicated buffers which aren't
+	// ever modified after being created (and hence can't be "dirty").
+	if stepData == nil || stepData.Anchored || stepData.Smoothed {
+		return
+	}
+
+	if stepData.Floats.IsDirty() {
+		floats := b.buffer.GetOrCreateFloatBuffer(seriesIndex)
+		stepData.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, stepData.Floats)
+	}
+
+	if stepData.Histograms.IsDirty() {
+		histograms := b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
+		stepData.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, stepData.Histograms)
+	}
 }
 
 // combineStepData copies stepData into buffers owned by this struct (either shared per series or unique
@@ -255,6 +286,20 @@ func (b *RangeVectorDuplicationBuffer) releaseLastReadSamples() {
 	// Release the previously read series, if we can.
 	if !b.anyConsumerWillReadStep(b.lastReturnedSeriesIndex, b.lastReturnedStepSamplesIndex) {
 		if d, present := b.buffer.RemoveIfPresent(b.lastReturnedSeriesIndex, b.lastReturnedStepSamplesIndex); present {
+
+			// If this query isn't using smoothed or anchored modifiers, discard any parts of the shared
+			// per-series buffers that we don't need. This frees up space in the buffers and some of underlying
+			// histogram objects for reuse with new points.
+			if !d.stepData.Smoothed && !d.stepData.Anchored {
+				if floats, ok := b.buffer.seriesFloatData.GetIfPresent(b.lastReturnedSeriesIndex); ok {
+					floats.DiscardPointsAtOrBefore(d.stepData.RangeStart)
+				}
+
+				if histograms, ok := b.buffer.seriesHistogramData.GetIfPresent(b.lastReturnedSeriesIndex); ok {
+					histograms.DiscardPointsAtOrBefore(d.stepData.RangeStart)
+				}
+			}
+
 			d.Close()
 		}
 	}
@@ -274,11 +319,14 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 
 	// Release the previous step if all consumers are done with it.
 	b.releaseLastReadSamples()
+
 	b.lastReturnedSeriesIndex = seriesIdx
 	b.lastReturnedStepSamplesIndex = stepIdx
 
 	// Check if the series is already buffered (e.g., another consumer triggered buffering first).
 	if d, ok := b.buffer.GetIfPresent(seriesIdx, stepIdx); ok {
+		// Update the float and histogram views based on the current state of the buffer if needed.
+		b.updateDirtyViews(seriesIdx, d.stepData)
 		// We can't remove the step data from the buffer now even if this is the last consumer for this series -
 		// we'll do this in the next call to NextSeries so that we can return the cloned sample ring buffers to their pools.
 		return d.stepData, nil
@@ -323,6 +371,10 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 		return nil, err
 	}
 
+	// Update float and histogram views based on currently buffered data before
+	// returning since step data is created with empty views immediately after it
+	// is buffered.
+	b.updateDirtyViews(seriesIdx, d.stepData)
 	return d.stepData, nil
 }
 
@@ -665,14 +717,19 @@ func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVector
 	merged.RangeEnd = stepData.RangeEnd
 	merged.StepT = stepData.StepT
 
+	// Note that even when there are floats or histograms for this step we don't create
+	// a real view for it now. Instead, we create an empty view that is marked as dirty.
+	// This will be replaced by a real view before being returned to a consumer and marked
+	// as clean then.
+
 	if floats != nil {
-		merged.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+		merged.Floats = floats.EmptyView()
 	} else {
 		merged.Floats = &types.FPointRingBufferView{}
 	}
 
 	if histograms != nil {
-		merged.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+		merged.Histograms = histograms.EmptyView()
 	} else {
 		merged.Histograms = &types.HPointRingBufferView{}
 	}
