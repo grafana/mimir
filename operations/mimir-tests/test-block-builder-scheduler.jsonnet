@@ -1,15 +1,9 @@
-local mimir = import 'mimir/mimir.libsonnet';
-
-mimir {
+// Based on test-block-builder.jsonnet. Tests the "full migration" mode where
+// block-builder is the sole L0 block producer and ingesters stop shipping blocks.
+(import 'test-block-builder.jsonnet') {
   _config+:: {
-    namespace: 'default',
-    external_url: 'http://test',
-
-    storage_backend: 'gcs',
-    blocks_storage_bucket_name: 'blocks-bucket',
-
     block_builder+: {
-      enabled: true,
+      ingester_tsdb_ship_blocks_enabled: false,
     },
   },
 }
