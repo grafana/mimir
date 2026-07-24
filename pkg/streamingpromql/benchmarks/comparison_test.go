@@ -9,6 +9,9 @@ import (
 	"context"
 	"math"
 	"os"
+	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +91,69 @@ func BenchmarkQuery(b *testing.B) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func BenchmarkRangeVectorQueryCase(b *testing.B) {
+	metricSizes := []int{10, 100}
+
+	q := createBenchmarkQueryable(b, metricSizes)
+	cases := []BenchCase{
+		{
+			Expr: `
+				histogram_count(
+					sum(
+					  rate(nh_X{
+						route!="madeupfortest4"
+					  }[20m])
+					)
+				) 
+				/
+				histogram_fraction(0, +Inf,
+					sum(
+					  increase(nh_X{
+						route!="madeupfortest4"
+					  }[20m])
+					)
+				)
+			`,
+			Steps: 50,
+		},
+	}
+	var tmp []BenchCase
+	for _, c := range cases {
+		if !strings.Contains(c.Expr, "X") {
+			tmp = append(tmp, c)
+		} else {
+			for _, count := range metricSizes {
+				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps, InstantQueryOnly: c.InstantQueryOnly, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
+			}
+		}
+	}
+	cases = tmp
+	opts := streamingpromql.NewTestEngineOpts()
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(b, err)
+	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(b, err)
+
+	ctx := user.InjectOrgID(context.Background(), UserID)
+	runtime.GC()
+
+	for _, c := range cases {
+		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
+		end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
+
+		b.Run(c.Name(), func(b *testing.B) {
+			for b.Loop() {
+				res, cleanup := c.Run(ctx, b, start, end, interval, mimirEngine, q)
+				if res != nil {
+					cleanup()
+				}
+			}
+
 		})
 	}
 }

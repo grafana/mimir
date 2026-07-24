@@ -281,3 +281,33 @@ func TrimIndent(s string) string {
 func isEmpty(s string) bool {
 	return strings.TrimSpace(s) == ""
 }
+
+func RequireEqualFPoints(t *testing.T, expected, actual []promql.FPoint) {
+	if expected == nil {
+		require.Nil(t, actual, "expected nil result")
+		return
+	}
+
+	require.Len(t, actual, len(expected))
+
+	for i, expectedPoint := range expected {
+		actualPoint := actual[i]
+		require.Equal(t, expectedPoint.T, actualPoint.T)
+		requireInEpsilonIfNotZeroOrInf(t, expectedPoint.F, actualPoint.F, "expected point %+v, but have %+v", expectedPoint, actualPoint)
+	}
+}
+
+func RequireEqualHPoints(t *testing.T, expected, actual []promql.HPoint) {
+	if expected == nil {
+		require.Nil(t, actual, "expected nil result")
+		return
+	}
+
+	require.Len(t, actual, len(expected))
+
+	for i, expectedPoint := range expected {
+		actualPoint := actual[i]
+		require.Equal(t, expectedPoint.T, actualPoint.T)
+		requireHistogramMatch(t, expectedPoint.H, actualPoint.H)
+	}
+}
