@@ -126,10 +126,10 @@ func (jp *BboltJobPersister) WriteAndDeleteJobs(writes, deletes []TrackedJob) er
 }
 
 type BboltJobPersistenceManager struct {
-	dbs      []*bbolt.DB
-	meta     *compactorschedulerpb.PersistenceMetadata
+	dbs           []*bbolt.DB
+	meta          *compactorschedulerpb.PersistenceMetadata
 	discardFilter jobDiscardFilter
-	logger   log.Logger
+	logger        log.Logger
 }
 
 func openBboltJobPersistenceManager(dir string, shardCount int, discardFilter jobDiscardFilter, logger log.Logger) (*BboltJobPersistenceManager, error) {
@@ -148,10 +148,10 @@ func openBboltJobPersistenceManager(dir string, shardCount int, discardFilter jo
 	}
 
 	return &BboltJobPersistenceManager{
-		dbs:      dbs,
-		meta:     meta,
+		dbs:           dbs,
+		meta:          meta,
 		discardFilter: discardFilter,
-		logger:   logger,
+		logger:        logger,
 	}, nil
 }
 
