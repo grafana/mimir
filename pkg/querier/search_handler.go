@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -541,7 +542,8 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		// so a single batched fetch covers the fully-deduped result.
 		//
 		// This handler stays tenant federation agnostic, but if the queryable is
-		// tenant federation aware then the metadata will be fetched across tenants.
+		// tenant federation aware then the metadata will be fetched across the
+		// tenants the request's selectors scope to.
 		//
 		// Metadata enrichment is best-effort: a missing fetcher or a fetch error
 		// just leaves results un-enriched.
@@ -551,7 +553,14 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 				// small batch_size requested via the API) can't turn into one all-ingester
 				// metadata fan-out per single/few results.
 				fetchBatchSize := max(req.batchSize, searchDefaultBatchSize)
-				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetcher.FetchMetricMetadata, fetchBatchSize, logger)
+				// Pass down the request's selectors so a tenant-federation aware
+				// fetcher scopes metadata to the union of tenants the selectors
+				// touched.
+				matcherSets := req.matchers
+				fetch := func(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+					return fetcher.FetchMetricMetadata(ctx, names, matcherSets)
+				}
+				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetch, fetchBatchSize, logger)
 			}
 		}
 

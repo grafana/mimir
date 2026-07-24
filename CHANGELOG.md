@@ -117,7 +117,7 @@
 * [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
 * [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
 * [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
-* [BUGFIX] Querier: Fix experimental search `/api/v1/search/metric_names?include_metadata=true` almost never returning metric metadata. #16062
+* [BUGFIX] Querier: Fix experimental search `/api/v1/search/metric_names?include_metadata=true` almost never returning metric metadata. #16062, #16214
 * [BUGFIX] Querier: Stop querying a partition that has been inactive for longer than `-querier.query-ingesters-within`, preventing query failures when the partition is still registered but has no available ingesters to serve the queries. #15721
 * [BUGFIX] Query-frontend: Fix `queue_time_seconds` in the query stats log always reporting 0 when a query is cancelled while still waiting in the query-scheduler queue. #16094
 * [BUGFIX] MQE: Fix the binary operation narrow-selectors optimization incorrectly using binary operation matchers across an `on()` / `on(...) group_left`/`group_right` join boundary, which could cause some queries to unexpectedly evaluate as an empty result. #16155

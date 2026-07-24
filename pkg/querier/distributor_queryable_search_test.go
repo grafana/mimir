@@ -158,7 +158,7 @@ func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
 			}, nil)
 		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
 
-		got, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a", "b"})
+		got, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a", "b"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{
 			"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
@@ -177,7 +177,7 @@ func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
 		dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata(nil), errors.New("boom"))
 		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
 
-		_, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a"})
+		_, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a"}, nil)
 		require.EqualError(t, err, "boom")
 	})
 }
