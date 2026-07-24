@@ -277,7 +277,10 @@ func (cfg *KVConfig) Validate() error {
 	if cfg.CompressionAlgorithm != "" && !slices.Contains(supportedCompressionAlgorithms, cfg.CompressionAlgorithm) {
 		return fmt.Errorf("memberlist compression algorithm %q is not supported, valid values: %s", cfg.CompressionAlgorithm, strings.Join(supportedCompressionAlgorithms, ", "))
 	}
-	return cfg.ZoneAwareRouting.Validate()
+	if err := cfg.ZoneAwareRouting.Validate(); err != nil {
+		return err
+	}
+	return cfg.PropagationDelayTracker.Validate()
 }
 
 // GetRejoinSeedNodes returns the seed nodes to use for periodic rejoin.
