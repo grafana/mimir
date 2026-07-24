@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/mem"
 )
 
 func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
@@ -55,6 +56,19 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), 100000, 0, nil)
 		require.Len(t, partials, 1)
 		assert.Equal(t, reqv2, partials[0])
+	})
+
+	t.Run("should return the input WriteRequest for a non-positive size limit", func(t *testing.T) {
+		for _, limit := range []int{0, -1} {
+			partials := SplitWriteRequestByMaxMarshalSize(reqv1, reqv1.Size(), limit)
+			require.Len(t, partials, 1)
+			require.Same(t, reqv1, partials[0])
+
+			reqv2 := testReqV2Static(t)
+			partials = SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit, 0, nil)
+			require.Len(t, partials, 1)
+			require.Same(t, reqv2, partials[0])
+		}
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit", func(t *testing.T) {
@@ -145,55 +159,21 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests, honoring the size limit, and bin-packing - RW2", func(t *testing.T) {
-		// 220 allows the first and second WriteRequests to fit into one request, but not the third.
 		const limit = 220
 		reqv2 := testReqV2Static(t)
+		original := testReqV2Static(t)
 
 		partials := SplitWriteRequestByMaxMarshalSizeRW2(reqv2, reqv2.Size(), limit, 0, nil)
-		assert.Equal(t, []*WriteRequest{
-			{
-				Source:              RULE,
-				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
-				TimeseriesRW2: []TimeSeriesRW2{
-					{
-						LabelsRefs: []uint32{1, 2, 3, 4},
-						Samples:    []Sample{{TimestampMs: 20}},
-						Exemplars:  []ExemplarRW2{{Timestamp: 30}},
-						Histograms: []Histogram{{Timestamp: 10}},
-						Metadata: MetadataRW2{
-							Type:    METRIC_TYPE_COUNTER,
-							HelpRef: 5,
-						},
-					},
-					{
-						LabelsRefs: []uint32{1, 6, 3, 4},
-						Samples:    []Sample{{TimestampMs: 30}},
-						Metadata: MetadataRW2{
-							Type:    METRIC_TYPE_COUNTER,
-							HelpRef: 7,
-						},
-					},
-				},
-			}, {
-				Source:              RULE,
-				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_3", "This is the third test metric."},
-				TimeseriesRW2: []TimeSeriesRW2{
-					{
-						LabelsRefs: []uint32{1, 2},
-						Metadata: MetadataRW2{
-							Type:    METRIC_TYPE_COUNTER,
-							HelpRef: 3,
-						},
-					},
-				},
-			},
-		}, partials)
-
+		require.Len(t, partials, 2)
+		require.Equal(t, 2, max(len(partials[0].TimeseriesRW2), len(partials[1].TimeseriesRW2)))
 		for _, partial := range partials {
 			assert.LessOrEqual(t, partial.Size(), limit)
 		}
+		originalData, err := original.Marshal()
+		require.NoError(t, err)
+		mergedData, err := mergeRW2s(partials).Marshal()
+		require.NoError(t, err)
+		require.Equal(t, originalData, mergedData)
 	})
 
 	t.Run("should split the input WriteRequest into multiple requests with size bigger than limit if limit < size(symbols)", func(t *testing.T) {
@@ -283,6 +263,108 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 
 		for _, partial := range partials {
 			assert.Greater(t, partial.Size(), limit)
+		}
+	})
+
+	t.Run("should not preallocate more partial request slots than entities", func(t *testing.T) {
+		const limit = 1
+
+		timeseriesReq := &WriteRequest{Timeseries: reqv1.Timeseries}
+		timeseriesPartials := SplitWriteRequestByMaxMarshalSize(timeseriesReq, timeseriesReq.Size(), limit)
+		assert.LessOrEqual(t, cap(timeseriesPartials), len(timeseriesReq.Timeseries))
+
+		metadataReq := &WriteRequest{Metadata: reqv1.Metadata}
+		metadataPartials := SplitWriteRequestByMaxMarshalSize(metadataReq, metadataReq.Size(), limit)
+		assert.LessOrEqual(t, cap(metadataPartials), len(metadataReq.Metadata))
+
+		rw2Req := testReqV2Static(t)
+		rw2Partials := SplitWriteRequestByMaxMarshalSizeRW2(rw2Req, rw2Req.Size(), limit, 0, nil)
+		assert.LessOrEqual(t, cap(rw2Partials), len(rw2Req.TimeseriesRW2))
+	})
+
+	t.Run("should account for embedded message framing when selecting a partial request", func(t *testing.T) {
+		timeseriesReq := &WriteRequest{
+			Source:     RULE,
+			Timeseries: reqv1.Timeseries,
+		}
+		baseSize := newPartialWriteRequest(timeseriesReq).Size()
+		limit := baseSize + embeddedMessageFieldSize(timeseriesReq.Timeseries[0].Size()) + timeseriesReq.Timeseries[1].Size()
+		timeseriesPartials := SplitWriteRequestByMaxMarshalSize(timeseriesReq, timeseriesReq.Size(), limit)
+		require.Len(t, timeseriesPartials, 2)
+		for _, partial := range timeseriesPartials {
+			require.LessOrEqual(t, partial.Size(), limit)
+		}
+
+		metadataReq := &WriteRequest{
+			Source:   RULE,
+			Metadata: reqv1.Metadata[:2],
+		}
+		baseSize = newPartialWriteRequest(metadataReq).Size()
+		limit = baseSize + embeddedMessageFieldSize(metadataReq.Metadata[0].Size()) + metadataReq.Metadata[1].Size()
+		metadataPartials := SplitWriteRequestByMaxMarshalSize(metadataReq, metadataReq.Size(), limit)
+		require.Len(t, metadataPartials, 2)
+		for _, partial := range metadataPartials {
+			require.LessOrEqual(t, partial.Size(), limit)
+		}
+
+		rw2Req := testReqV2Static(t)
+		for limit := 1; limit < rw2Req.Size(); limit++ {
+			partials := SplitWriteRequestByMaxMarshalSizeRW2(rw2Req, rw2Req.Size(), limit, 0, nil)
+			for _, partial := range partials {
+				if len(partial.TimeseriesRW2) > 1 {
+					require.LessOrEqual(t, partial.Size(), limit)
+				}
+			}
+		}
+	})
+
+	t.Run("should preserve request settings without transferring buffer ownership", func(t *testing.T) {
+		assertSettings := func(t *testing.T, partial *WriteRequest) {
+			t.Helper()
+			require.Equal(t, RULE, partial.Source)
+			require.True(t, partial.SkipLabelValidation)
+			require.True(t, partial.SkipLabelCountValidation)
+			require.True(t, partial.skipUnmarshalingExemplars)
+			require.True(t, partial.skipNormalizeMetadataMetricName)
+			require.True(t, partial.skipDeduplicateMetadata)
+			require.Nil(t, partial.Buffer())
+			require.Nil(t, partial.sourceBufferHolders)
+			require.False(t, partial.unmarshalFromRW2)
+			require.Empty(t, partial.rw2symbols.pages)
+		}
+
+		setRequestSettings := func(req *WriteRequest) {
+			req.Source = RULE
+			req.SkipLabelValidation = true
+			req.SkipLabelCountValidation = true
+			req.skipUnmarshalingExemplars = true
+			req.skipNormalizeMetadataMetricName = true
+			req.skipDeduplicateMetadata = true
+			req.SetBuffer(mem.SliceBuffer([]byte("request buffer")))
+
+			source := &WriteRequest{}
+			source.SetBuffer(mem.SliceBuffer([]byte("source buffer")))
+			req.AddSourceBufferHolder(&source.BufferHolder)
+			source.FreeBuffer()
+		}
+
+		req := generateWriteRequest(2, 2, 1, 2)
+		setRequestSettings(req)
+		t.Cleanup(req.FreeBuffer)
+		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), 1)
+		require.Greater(t, len(partials), 1)
+		for _, partial := range partials {
+			assertSettings(t, partial)
+		}
+
+		rw2Req := generateWriteRequestRW2(2, 2, 1, 0)
+		setRequestSettings(rw2Req)
+		rw2Req.unmarshalFromRW2 = true
+		t.Cleanup(rw2Req.FreeBuffer)
+		rw2Partials := SplitWriteRequestByMaxMarshalSizeRW2(rw2Req, rw2Req.Size(), 1, 0, nil)
+		require.Greater(t, len(rw2Partials), 1)
+		for _, partial := range rw2Partials {
+			assertSettings(t, partial)
 		}
 	})
 
@@ -385,6 +467,9 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 			}
 
 			for _, partial := range partials {
+				if partial.Size() > maxSize {
+					require.Equal(t, 1, len(partial.Timeseries)+len(partial.Metadata), "only an individually oversized entity may exceed the limit")
+				}
 				merged.Timeseries = append(merged.Timeseries, partial.Timeseries...)
 				merged.Metadata = append(merged.Metadata, partial.Metadata...)
 			}
@@ -411,6 +496,11 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 
 			maxSize := req.Size() / (1 + rnd.Intn(10))
 			partials := SplitWriteRequestByMaxMarshalSizeRW2(req, req.Size(), maxSize, 0, nil)
+			for _, partial := range partials {
+				if partial.Size() > maxSize {
+					require.Len(t, partial.TimeseriesRW2, 1, "only an individually oversized entity may exceed the limit")
+				}
+			}
 
 			// Ensure the merge of all partial requests is equal to the original one.
 			merged := mergeRW2s(partials)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -16,13 +17,17 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
+	grpcsnappy "github.com/grafana/dskit/grpcencoding/snappy"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/mem"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
@@ -33,10 +38,11 @@ import (
 type mockDistributorServer struct {
 	distributorpb.UnimplementedDistributorServer
 
-	mu       sync.Mutex
-	requests []*mimirpb.WriteRequest
-	userIDs  []string
-	errs     []error
+	mu         sync.Mutex
+	requests   []*mimirpb.WriteRequest
+	userIDs    []string
+	errs       []error
+	errsByCall map[int]error
 
 	blockUntilContextDone bool
 	onPush                func(calls int)
@@ -61,6 +67,9 @@ func (m *mockDistributorServer) Push(ctx context.Context, req *mimirpb.WriteRequ
 	calls := len(m.requests)
 	if m.onPush != nil {
 		m.onPush(calls)
+	}
+	if err := m.errsByCall[calls]; err != nil {
+		return nil, err
 	}
 
 	if len(m.errs) > 0 {
@@ -89,10 +98,22 @@ func (m *mockDistributorServer) lastUserID() string {
 	return m.userIDs[len(m.userIDs)-1]
 }
 
-func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger log.Logger, configure func(*DistributorConfig)) *DistributorGRPCClient {
+func (m *mockDistributorServer) allRequests() []*mimirpb.WriteRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*mimirpb.WriteRequest(nil), m.requests...)
+}
+
+func (m *mockDistributorServer) allUserIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.userIDs...)
+}
+
+func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger log.Logger, configure func(*DistributorConfig), serverOptions ...grpc.ServerOption) *DistributorGRPCClient {
 	t.Helper()
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(serverOptions...)
 	distributorpb.RegisterDistributorServer(grpcServer, srv)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -130,15 +151,139 @@ func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger
 }
 
 func newTestWriteRequest() *mimirpb.WriteRequest {
+	return newTestWriteRequestWithSeries(1)
+}
+
+func newTestWriteRequestWithSeries(numSeries int) *mimirpb.WriteRequest {
+	seriesLabels := make([][]mimirpb.LabelAdapter, 0, numSeries)
+	samples := make([]mimirpb.Sample, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		seriesLabels = append(seriesLabels, mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+			model.MetricNameLabel, "test_metric_"+strconv.Itoa(i),
+			"padding", strings.Repeat("x", 32),
+		)))
+		samples = append(samples, mimirpb.Sample{TimestampMs: 123, Value: float64(i)})
+	}
+
 	return mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{
-			mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test_metric")),
-		},
-		[]mimirpb.Sample{{TimestampMs: 123, Value: 456}},
+		seriesLabels,
+		samples,
 		nil,
 		nil,
 		mimirpb.RULE,
 	)
+}
+
+func maxWriteRequestSizeForOneSeries(req *mimirpb.WriteRequest) int {
+	maxSize := 0
+	for idx := range req.Timeseries {
+		oneSeriesReq := &mimirpb.WriteRequest{
+			Timeseries:          req.Timeseries[idx : idx+1],
+			Source:              req.Source,
+			SkipLabelValidation: req.SkipLabelValidation,
+		}
+		maxSize = max(maxSize, oneSeriesReq.Size())
+	}
+	return maxSize
+}
+
+func metricNamesFromWriteRequests(requests []*mimirpb.WriteRequest) []string {
+	metricNames := make([]string, 0)
+	for _, req := range requests {
+		for _, ts := range req.Timeseries {
+			for _, lbl := range ts.Labels {
+				if lbl.Name == model.MetricNameLabel {
+					metricNames = append(metricNames, lbl.Value)
+					break
+				}
+			}
+		}
+	}
+	return metricNames
+}
+
+func requireRequestsPerWriteMetric(t *testing.T, client *DistributorGRPCClient, expectedCount uint64, expectedSum float64) {
+	t.Helper()
+
+	metric := &dto.Metric{}
+	require.NoError(t, client.requestsPerWriteRequest.Write(metric))
+	require.Equal(t, expectedCount, metric.GetHistogram().GetSampleCount())
+	require.Equal(t, expectedSum, metric.GetHistogram().GetSampleSum())
+}
+
+func compressPayload(t *testing.T, compressorName string, payload []byte) int {
+	t.Helper()
+
+	compressor := encoding.GetCompressor(compressorName)
+	require.NotNil(t, compressor)
+
+	var compressed bytes.Buffer
+	writer, err := compressor.Compress(&compressed)
+	require.NoError(t, err)
+	_, err = writer.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	return compressed.Len()
+}
+
+func TestMaxUncompressedPayloadSize(t *testing.T) {
+	t.Run("uncompressed payload uses the configured limit", func(t *testing.T) {
+		for _, limit := range []int{-1, 0, 1, 100, int(^uint(0) >> 1)} {
+			actual, err := maxUncompressedPayloadSize(limit, "")
+			require.NoError(t, err)
+			require.Equal(t, max(limit, 0), actual)
+		}
+	})
+
+	t.Run("compressed payload reserves framing overhead", func(t *testing.T) {
+		for _, tc := range []struct {
+			limit    int
+			expected int
+		}{
+			{limit: 0, expected: 0},
+			{limit: 31, expected: 0},
+			{limit: 32, expected: 1},
+			{limit: 16415, expected: 16384},
+			{limit: 16423, expected: 16384},
+			{limit: 16424, expected: 16385},
+		} {
+			for _, compressorName := range []string{grpcgzip.Name, grpcsnappy.Name, s2.Name} {
+				actual, err := maxUncompressedPayloadSize(tc.limit, compressorName)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual, "compressor %s", compressorName)
+			}
+		}
+	})
+
+	t.Run("compressed payload calculation does not overflow", func(t *testing.T) {
+		maxInt := int(^uint(0) >> 1)
+		actual, err := maxUncompressedPayloadSize(maxInt, grpcgzip.Name)
+		require.NoError(t, err)
+		require.Positive(t, actual)
+		require.True(t, compressedPayloadFits(actual, maxInt))
+		require.False(t, compressedPayloadFits(actual+1, maxInt))
+	})
+
+	t.Run("unsupported compressor fails closed", func(t *testing.T) {
+		_, err := maxUncompressedPayloadSize(100, "future-compressor")
+		require.EqualError(t, err, `compression type "future-compressor" has no payload-size bound`)
+	})
+}
+
+func TestCompressedPayloadSizeUpperBound(t *testing.T) {
+	random := rand.New(rand.NewSource(12345))
+	for _, size := range []int{0, 1, 16383, 16384, 16385, 65534, 65535, 65536, 2 * 65535, 2*65535 + 1, 1<<20 - 1, 1 << 20, 1<<20 + 1} {
+		payload := make([]byte, size)
+		_, err := random.Read(payload)
+		require.NoError(t, err)
+
+		upperBound, ok := compressedPayloadSizeUpperBound(size)
+		require.True(t, ok)
+		for _, compressorName := range []string{grpcgzip.Name, grpcsnappy.Name, s2.Name} {
+			compressedSize := compressPayload(t, compressorName, payload)
+			require.LessOrEqual(t, compressedSize, upperBound, "compressor %s, payload size %d", compressorName, size)
+		}
+	}
 }
 
 func TestDistributorGRPCClient(t *testing.T) {
@@ -167,6 +312,106 @@ func TestDistributorGRPCClient(t *testing.T) {
 		require.Equal(t, 1, srv.calls())
 		require.Equal(t, "test-user", srv.lastUserID())
 		require.Equal(t, mimirpb.RULE, srv.lastRequest().Source)
+		requireRequestsPerWriteMetric(t, client, 1, 1)
+	})
+
+	t.Run("push splits oversized request", func(t *testing.T) {
+		srv := &mockDistributorServer{}
+		req := newTestWriteRequestWithSeries(4)
+		expectedMetricNames := metricNamesFromWriteRequests([]*mimirpb.WriteRequest{req})
+		maxSize := maxWriteRequestSizeForOneSeries(req)
+		req.SetBuffer(mem.SliceBuffer([]byte("request buffer")))
+
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+			cfg.GRPCClientConfig.MaxSendMsgSize = maxSize
+		})
+
+		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), req)
+		require.NoError(t, err)
+		require.Nil(t, req.Buffer())
+
+		requests := srv.allRequests()
+		require.Len(t, requests, 4)
+		for _, request := range requests {
+			require.LessOrEqual(t, request.Size(), maxSize)
+			require.Equal(t, mimirpb.RULE, request.Source)
+		}
+		require.Equal(t, expectedMetricNames, metricNamesFromWriteRequests(requests))
+		require.Equal(t, []string{"test-user", "test-user", "test-user", "test-user"}, srv.allUserIDs())
+		requireRequestsPerWriteMetric(t, client, 1, 4)
+	})
+
+	for _, compressorName := range []string{grpcgzip.Name, grpcsnappy.Name, s2.Name} {
+		t.Run("push splits oversized request with "+compressorName+" compression", func(t *testing.T) {
+			srv := &mockDistributorServer{}
+			req := newTestWriteRequestWithSeries(4)
+			expectedMetricNames := metricNamesFromWriteRequests([]*mimirpb.WriteRequest{req})
+			maxUncompressedSize := maxWriteRequestSizeForOneSeries(req)
+			maxSendMsgSize, ok := compressedPayloadSizeUpperBound(maxUncompressedSize)
+			require.True(t, ok)
+
+			client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+				cfg.GRPCClientConfig.MaxSendMsgSize = maxSendMsgSize
+				cfg.GRPCClientConfig.GRPCCompression = compressorName
+			}, grpc.MaxRecvMsgSize(maxSendMsgSize))
+
+			_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), req)
+			require.NoError(t, err)
+
+			requests := srv.allRequests()
+			require.Len(t, requests, 4)
+			for _, request := range requests {
+				require.LessOrEqual(t, request.Size(), maxUncompressedSize)
+			}
+			require.Equal(t, expectedMetricNames, metricNamesFromWriteRequests(requests))
+			requireRequestsPerWriteMetric(t, client, 1, 4)
+		})
+	}
+
+	t.Run("push retries split requests independently", func(t *testing.T) {
+		srv := &mockDistributorServer{
+			errsByCall: map[int]error{2: status.Error(codes.Unavailable, "try again")},
+		}
+		req := newTestWriteRequestWithSeries(4)
+		maxSize := maxWriteRequestSizeForOneSeries(req)
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+			cfg.GRPCClientConfig.MaxSendMsgSize = maxSize
+		})
+
+		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), req)
+		require.NoError(t, err)
+		require.Equal(t, []string{"test_metric_0", "test_metric_1", "test_metric_1", "test_metric_2", "test_metric_3"}, metricNamesFromWriteRequests(srv.allRequests()))
+		requireRequestsPerWriteMetric(t, client, 1, 4)
+	})
+
+	t.Run("push stops after split request failure", func(t *testing.T) {
+		srv := &mockDistributorServer{
+			errsByCall: map[int]error{2: status.Error(codes.ResourceExhausted, "limited")},
+		}
+		var logs bytes.Buffer
+		req := newTestWriteRequestWithSeries(4)
+		maxSize := maxWriteRequestSizeForOneSeries(req)
+		client := setupDistributorGRPCClient(t, srv, log.NewLogfmtLogger(&logs), func(cfg *DistributorConfig) {
+			cfg.GRPCClientConfig.MaxSendMsgSize = maxSize
+		})
+
+		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), req)
+		require.Equal(t, codes.ResourceExhausted, status.Code(err))
+		require.Equal(t, []string{"test_metric_0", "test_metric_1"}, metricNamesFromWriteRequests(srv.allRequests()))
+		require.Contains(t, logs.String(), "request=2 requests=4")
+		requireRequestsPerWriteMetric(t, client, 1, 4)
+	})
+
+	t.Run("push reports an unsplittable request", func(t *testing.T) {
+		srv := &mockDistributorServer{}
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+			cfg.GRPCClientConfig.MaxSendMsgSize = 1
+		})
+
+		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
+		require.Equal(t, codes.ResourceExhausted, status.Code(err))
+		require.Equal(t, 0, srv.calls())
+		requireRequestsPerWriteMetric(t, client, 1, 1)
 	})
 
 	t.Run("push retries", func(t *testing.T) {
@@ -284,6 +529,8 @@ func TestDistributorGRPCClient(t *testing.T) {
 		require.Contains(t, logOutput, "retryable=false")
 		require.Contains(t, logOutput, "attempt=1")
 		require.Contains(t, logOutput, "max_attempts=2")
+		require.Contains(t, logOutput, "request=1")
+		require.Contains(t, logOutput, "requests=1")
 	})
 
 	t.Run("push returns context error when context is canceled before first attempt", func(t *testing.T) {
@@ -373,6 +620,43 @@ func TestDistributorGRPCClient(t *testing.T) {
 	})
 }
 
+func TestSplitWriteRequest(t *testing.T) {
+	t.Run("does not split at the size limit", func(t *testing.T) {
+		req := newTestWriteRequest()
+		t.Cleanup(func() {
+			req.FreeBuffer()
+			mimirpb.ReuseSlice(req.Timeseries)
+		})
+
+		requests := splitWriteRequest(req, req.Size())
+		require.Len(t, requests, 1)
+		require.Same(t, req, requests[0])
+	})
+
+	t.Run("does not split with a non-positive limit", func(t *testing.T) {
+		req := &mimirpb.WriteRequest{}
+
+		for _, maxSize := range []int{0, -1} {
+			requests := splitWriteRequest(req, maxSize)
+			require.Len(t, requests, 1)
+			require.Same(t, req, requests[0])
+		}
+	})
+
+	t.Run("does not drop an unsupported oversized request", func(t *testing.T) {
+		req := newTestWriteRequest()
+		req.TimeseriesRW2 = []mimirpb.TimeSeriesRW2{{LabelsRefs: []uint32{1, 2}}}
+		t.Cleanup(func() {
+			req.FreeBuffer()
+			mimirpb.ReuseSlice(req.Timeseries)
+		})
+
+		requests := splitWriteRequest(req, 1)
+		require.Len(t, requests, 1)
+		require.Same(t, req, requests[0])
+	})
+}
+
 func TestDistributorConfig_Validate(t *testing.T) {
 	t.Run("address validation", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -444,6 +728,15 @@ func TestDistributorConfig_Validate(t *testing.T) {
 		cfg.GRPCClientConfig.GRPCCompression = "unsupported"
 
 		require.EqualError(t, cfg.Validate(), `ruler's distributor client gRPC settings: unsupported compression type: "unsupported"`)
+	})
+
+	t.Run("rejects a custom compressor without a payload-size bound", func(t *testing.T) {
+		var cfg DistributorConfig
+		flagext.DefaultValues(&cfg)
+		cfg.GRPCClientConfig.CustomCompressors = append(cfg.GRPCClientConfig.CustomCompressors, "future-compressor")
+		cfg.GRPCClientConfig.GRPCCompression = "future-compressor"
+
+		require.EqualError(t, cfg.Validate(), `ruler's distributor client gRPC settings: compression type "future-compressor" has no payload-size bound`)
 	})
 
 	t.Run("validate does not mutate custom compressors", func(t *testing.T) {
