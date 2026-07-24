@@ -59,6 +59,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -216,6 +217,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -373,6 +375,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

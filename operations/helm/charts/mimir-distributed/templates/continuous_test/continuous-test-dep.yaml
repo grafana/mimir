@@ -27,6 +27,7 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "continuous-test") }}
       {{- if .Values.continuous_test.priorityClassName }}
       priorityClassName: {{ .Values.continuous_test.priorityClassName }}
       {{- end }}

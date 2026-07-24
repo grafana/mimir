@@ -32,6 +32,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: gateway-nginx-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 1001
         runAsGroup: 1001

@@ -33,6 +33,7 @@ spec:
 {{ toYaml .Values.minio.makeBucketJob.podAnnotations | indent 8 }}
 {{- end }}
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
 {{- with .Values.minio.makeBucketJob.dnsConfig }}
       dnsConfig:

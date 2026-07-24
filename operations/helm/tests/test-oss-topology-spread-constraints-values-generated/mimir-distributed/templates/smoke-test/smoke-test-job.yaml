@@ -26,6 +26,7 @@ spec:
         app.kubernetes.io/component: smoke-test
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

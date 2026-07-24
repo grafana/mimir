@@ -117,6 +117,7 @@ passing_deployment := {"contents": {
 			"some-other-label": "query-frontend",
 		}},
 		"spec": {
+			"automountServiceAccountToken": false,
 			"securityContext": {
 				"fsGroup": 10001,
 				"runAsGroup": 10001,

@@ -36,6 +36,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-requests-and-limits-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

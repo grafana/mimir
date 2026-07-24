@@ -78,6 +78,7 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "alertmanager") }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}

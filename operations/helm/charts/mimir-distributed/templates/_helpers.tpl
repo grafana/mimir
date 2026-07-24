@@ -448,6 +448,25 @@ mimir.vaultAgent.annotations takes 2 arguments
   .component = the name of the component
 */}}
 {{- define "mimir.vaultAgent.annotations" -}}
+{{- if include "mimir.vaultAgent.isEnabledForComponent" . }}
+vault.hashicorp.com/agent-inject: 'true'
+vault.hashicorp.com/role: '{{ .ctx.Values.vaultAgent.roleName }}'
+vault.hashicorp.com/agent-inject-secret-client.crt: '{{ .ctx.Values.vaultAgent.clientCertPath }}'
+vault.hashicorp.com/agent-inject-secret-client.key: '{{ .ctx.Values.vaultAgent.clientKeyPath }}'
+vault.hashicorp.com/agent-inject-secret-server.crt: '{{ .ctx.Values.vaultAgent.serverCertPath }}'
+vault.hashicorp.com/agent-inject-secret-server.key: '{{ .ctx.Values.vaultAgent.serverKeyPath }}'
+vault.hashicorp.com/agent-inject-secret-root.crt: '{{ .ctx.Values.vaultAgent.caCertPath }}'
+{{- end}}
+{{- end -}}
+
+{{/*
+Return whether the component gets Vault Agent secret injection when vaultAgent.enabled is true.
+Outputs "true" or an empty string.
+mimir.vaultAgent.isEnabledForComponent takes 2 arguments
+  .ctx = the root context of the chart
+  .component = the name of the component
+*/}}
+{{- define "mimir.vaultAgent.isEnabledForComponent" -}}
 {{- $vaultEnabledComponents := dict
   "admin-api" true
   "alertmanager" true
@@ -462,15 +481,7 @@ mimir.vaultAgent.annotations takes 2 arguments
   "ruler" true
   "store-gateway" true
 -}}
-{{- if hasKey $vaultEnabledComponents .component }}
-vault.hashicorp.com/agent-inject: 'true'
-vault.hashicorp.com/role: '{{ .ctx.Values.vaultAgent.roleName }}'
-vault.hashicorp.com/agent-inject-secret-client.crt: '{{ .ctx.Values.vaultAgent.clientCertPath }}'
-vault.hashicorp.com/agent-inject-secret-client.key: '{{ .ctx.Values.vaultAgent.clientKeyPath }}'
-vault.hashicorp.com/agent-inject-secret-server.crt: '{{ .ctx.Values.vaultAgent.serverCertPath }}'
-vault.hashicorp.com/agent-inject-secret-server.key: '{{ .ctx.Values.vaultAgent.serverKeyPath }}'
-vault.hashicorp.com/agent-inject-secret-root.crt: '{{ .ctx.Values.vaultAgent.caCertPath }}'
-{{- end}}
+{{- if hasKey $vaultEnabledComponents .component -}}true{{- end -}}
 {{- end -}}
 
 {{/*
