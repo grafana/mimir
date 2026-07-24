@@ -44,7 +44,9 @@ Jobs are leased to compactors, not permanently assigned. If a compactor doesn't 
 
 ## State
 
-The compactor-scheduler persists its job queues to local disk, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. After a restart, the compactor-scheduler recovers the queues from disk. When it starts with no recovered state, it delays planning for a few maintenance intervals, defined by `-compactor-scheduler.maintenance-intervals-before-cold-start-planning`, to avoid enqueueing jobs that duplicate work still in progress. If the persisted state becomes corrupted, it can be wiped and rebuilt: refer to the [recovery steps](../../../../manage/mimir-runbooks/#MimirCompactorSchedulerUnreachable) in the runbooks.
+The compactor-scheduler persists its job queues to local disk, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. The state is sharded across multiple database files, configured by `-compactor-scheduler.bbolt.shard-count`. Changing the shard count triggers an automatic migration of the state at the next startup.
+
+After a restart, the compactor-scheduler recovers the queues from disk. When it starts with no recovered state, it delays planning for a few maintenance intervals, defined by `-compactor-scheduler.maintenance-intervals-before-cold-start-planning`, to avoid enqueueing jobs that duplicate work still in progress. After every restart, it also waits a few maintenance intervals, defined by `-compactor-scheduler.maintenance-intervals-before-lease-expiration`, before enforcing lease expiration: lease renewals aren't persisted, so this prevents re-leasing jobs that compactors are still working on. If the persisted state becomes corrupted, it can be wiped and rebuilt: refer to the [recovery steps](../../../../manage/mimir-runbooks/#MimirCompactorSchedulerUnreachable) in the runbooks.
 
 Run exactly one compactor-scheduler replica. Two active compactor-schedulers would both schedule work for all tenants, resulting in duplicate compactions. Because it runs as a single replica, zone-aware replication doesn't apply to the compactor-scheduler.
 
