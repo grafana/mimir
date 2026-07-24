@@ -139,6 +139,7 @@
     compartmentalized_job_names: {
       ingester: ['ingester.*$read_compartment', 'cortex', 'mimir'],
       block_builder: ['block-builder.*$read_compartment'],
+      block_builder_scheduler: ['block-builder-scheduler.*$read_compartment'],
       compactor: ['compactor.*$read_compartment', 'cortex', 'mimir'],
       compactor_scheduler: ['compactor-scheduler.*$read_compartment'],
       store_gateway: ['store-gateway.*$read_compartment', 'cortex', 'mimir'],
