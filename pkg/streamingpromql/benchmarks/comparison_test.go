@@ -9,7 +9,6 @@ import (
 	"context"
 	"math"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -140,7 +139,6 @@ func BenchmarkRangeVectorQueryCase(b *testing.B) {
 	require.NoError(b, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	runtime.GC()
 
 	for _, c := range cases {
 		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)

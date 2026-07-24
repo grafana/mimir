@@ -92,7 +92,7 @@ func (b *HPointRingBuffer) EmptyView() *HPointRingBufferView {
 // ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
 // earlier timestamps.
 // existing is an existing view instance for this buffer that is reused if provided. It can be nil.
-// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned view is no longer valid if the buffer is modified in a way that causes HPointRingBufferView.IsDirty() to return true.
 func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
 		existing = &HPointRingBufferView{buffer: b}
@@ -111,7 +111,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 }
 
 // ViewAll returns a view which includes all points in the ring buffer.
-// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned view is no longer valid if the buffer is modified in a way that causes HPointRingBufferView.IsDirty() to return true.
 func (b *HPointRingBuffer) ViewAll(existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
 		existing = &HPointRingBufferView{buffer: b}
@@ -125,6 +125,7 @@ func (b *HPointRingBuffer) ViewAll(existing *HPointRingBufferView) *HPointRingBu
 
 // ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
+// The returned view is no longer valid if the buffer is modified in a way that causes HPointRingBufferView.IsDirty() to return true.
 func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
 		existing = &HPointRingBufferView{buffer: b}
@@ -144,6 +145,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 
 // ViewBetweenSearchingBackwards returns a view into this buffer including only points with timestamps
 // greater than minT and less than or equal to maxT. The method panics if minT is greater than maxT.
+// The returned view is no longer valid if the buffer is modified in a way that causes HPointRingBufferView.IsDirty() to return true.
 func (b *HPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
 		existing = &HPointRingBufferView{buffer: b}
