@@ -50,3 +50,56 @@ func TestRate(t *testing.T) {
 		require.InDelta(t, tick.want, r.Rate(), 0.0000000001, "unexpected rate")
 	}
 }
+
+func TestRateWithWarmup(t *testing.T) {
+	ticks := []struct {
+		events int64
+		want   float64
+	}{
+		{120, 0},
+		{0, 0},
+		{60, 1},
+		{120, 1.2},
+	}
+	r := NewEWMARateWithWarmup(0.2, time.Minute, 3)
+
+	for _, tick := range ticks {
+		r.Add(tick.events)
+		r.Tick()
+		require.InDelta(t, tick.want, r.Rate(), 0.0000000001, "unexpected rate")
+	}
+}
+
+func TestRateWithZeroWarmupMatchesDefault(t *testing.T) {
+	defaultRate := NewEWMARate(0.2, time.Minute)
+	zeroWarmupRate := NewEWMARateWithWarmup(0.2, time.Minute, 0)
+
+	for _, events := range []int64{60, 30, 0, 60} {
+		defaultRate.Add(events)
+		zeroWarmupRate.Add(events)
+		defaultRate.Tick()
+		zeroWarmupRate.Tick()
+
+		require.InDelta(t, defaultRate.Rate(), zeroWarmupRate.Rate(), 0.0000000001)
+	}
+}
+
+func TestRateWithWarmupSeedsMean(t *testing.T) {
+	ticks := []struct {
+		events int64
+		want   float64
+	}{
+		{60, 0},
+		{30, 0},
+		{0, 0.5},
+		{0, 0.4},
+	}
+
+	r := NewEWMARateWithWarmup(0.2, time.Minute, 3)
+
+	for _, tick := range ticks {
+		r.Add(tick.events)
+		r.Tick()
+		require.InDelta(t, tick.want, r.Rate(), 0.0000000001, "unexpected rate")
+	}
+}
