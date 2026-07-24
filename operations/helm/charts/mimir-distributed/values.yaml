@@ -3686,20 +3686,20 @@ metaMonitoring:
     groups: []
   #  - name: mimir_api_1
   #    rules:
-  #    - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #    - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[4m]))
   #        by (le, cluster, job))
   #      record: cluster_job:cortex_request_duration_seconds:99quantile
-  #    - expr: histogram_quantile(0.50, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #    - expr: histogram_quantile(0.50, sum(rate(cortex_request_duration_seconds_bucket[4m]))
   #        by (le, cluster, job))
   #      record: cluster_job:cortex_request_duration_seconds:50quantile
-  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job) / sum(rate(cortex_request_duration_seconds_count[1m]))
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[4m])) by (cluster, job) / sum(rate(cortex_request_duration_seconds_count[4m]))
   #        by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds:avg
-  #    - expr: sum(rate(cortex_request_duration_seconds_bucket[1m])) by (le, cluster, job)
+  #    - expr: sum(rate(cortex_request_duration_seconds_bucket[4m])) by (le, cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_bucket:sum_rate
-  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job)
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[4m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
-  #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
+  #    - expr: sum(rate(cortex_request_duration_seconds_count[4m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
 
   # -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
