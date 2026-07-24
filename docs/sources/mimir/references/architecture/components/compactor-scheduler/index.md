@@ -40,7 +40,7 @@ The `-compactor.scheduler-client.lanes` parameter configures the worker goroutin
 
 ### Job leases
 
-Jobs are leased to compactors, not permanently assigned. If a compactor doesn't report progress on a job for longer than `-compactor-scheduler.lease-duration`, the compactor-scheduler makes the job available for other compactors to lease. A job that has been leased more than `-compactor-scheduler.repeated-failure-report-threshold` times without completing is reported as a repeated failure, and once it has been leased `-compactor-scheduler.max-leases` times it is removed from the queue. A discarded job is still re-planned and re-enqueued on the next planning interval, unless it no longer exists (for example, if the tenant has been deleted or the blocks were marked for deletion).
+Jobs are leased to compactors, not permanently assigned. If a compactor doesn't report progress on a job for longer than `-compactor-scheduler.lease-duration`, the compactor-scheduler makes the job available for other compactors to lease. A job that has been leased more than `-compactor-scheduler.repeated-failure-report-threshold` times without completing is reported as a repeated failure, and once it has been leased `-compactor-scheduler.max-leases` times it is removed from the queue. Planning jobs are exempt from these limits and are always retried. A discarded job is still re-planned and re-enqueued on the next planning interval, unless it no longer exists (for example, if the tenant has been deleted or the blocks were marked for deletion).
 
 ## State
 
