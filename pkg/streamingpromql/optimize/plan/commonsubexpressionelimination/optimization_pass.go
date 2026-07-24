@@ -609,11 +609,7 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 		firstSelector, _ := firstPath.NodeAtOffsetFromLeaf(0)
 
 		if group.hasSubsetSelectors() {
-			// The call below is safe to do without a bounds check: we explicitly exclude the root node above,
-			// so we'll always be able to get the parent of the current node.
-			parent, _ := firstPath.NodeAtOffsetFromLeaf(length + 1)
-
-			if safe, err := IsSafeToApplyFilteringAfter(firstNode, parent, group, delayedNameRemovalEnabled); err != nil {
+			if safe, err := IsSafeToApplyFilteringAfter(firstNode, group, delayedNameRemovalEnabled); err != nil {
 				return -1, err
 			} else if !safe {
 				return length, nil
@@ -649,19 +645,19 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 	return length, nil
 }
 
-func IsSafeToApplyFilteringAfter(node planning.Node, parent planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) (bool, error) {
+func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) (bool, error) {
 	switch node := node.(type) {
 	case *core.Subquery:
 		// Subqueries return the inner series' labels as-is, so it's always safe to apply filtering afterwards.
 		return true, nil
 
 	case *core.FunctionCall:
-		if _, ok := parent.(*rangevectorsplitting.SplitFunctionCall); ok {
-			// SplitFunctionCall must have the FunctionCall node as its child, so filtering must occur beneath the function call.
-			return false, nil
-		}
-
 		return IsSafeToApplyFilteringAfterFunction(node, group, delayedNameRemovalEnabled)
+
+	case *rangevectorsplitting.SplitFunctionCall:
+		// SplitFunctionCall produces the same series as its inner FunctionCall, so filtering after it is safe
+		// when filtering after that FunctionCall is.
+		return IsSafeToApplyFilteringAfterFunction(node.Inner, group, delayedNameRemovalEnabled)
 
 	case *core.UnaryExpression:
 		if delayedNameRemovalEnabled {
