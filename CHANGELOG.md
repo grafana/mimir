@@ -88,6 +88,7 @@
 * [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.write-timeout-overhead` to configure the overhead added on top of the Kafka write timeout (default 2s, unchanged). #16023
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in binary operations that use `ignoring` or no `on`/`ignoring` clause. #15178
 * [ENHANCEMENT] Query-frontend: Add experimental flags to broaden subquery spin-off. `-query-frontend.subquery-spin-off-simple-subqueries=true` spins off subqueries whose inner expression was previously considered too simple to spin off and `-query-frontend.subquery-spin-off-with-excess-downstream-queries=true` spins off subqueries when the rewritten query contains more downstream queries than spun-off subqueries. All are disabled by default and require subquery spin-off to be enabled with `-query-frontend.subquery-spin-off-enabled=true`. #16211
+* [ENHANCEMENT] Block-builder: Disable authentication for AssignJob and UpdateJob gRPC methods as they are control-plane methods that don't have an inherent orgID. #16222
 * [ENHANCEMENT] gRPC clients: Add advanced CLI flags to configure client keepalive: #16221
   * `-<prefix>.keepalive-time` (default `20s`)
   * `-<prefix>.keepalive-timeout` (default `10s`)
