@@ -155,6 +155,11 @@ func (d *Distributor) consumeReadcacheStream(stream rebalancer.NautilusRebalance
 		}
 		first = false
 		d.readcacheLog.Store(log)
+		if d.readcacheInitialSync != nil {
+			d.readcacheInitialSyncOnce.Do(func() {
+				close(d.readcacheInitialSync)
+			})
+		}
 	}
 }
 

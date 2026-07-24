@@ -285,6 +285,15 @@ type Distributor struct {
 	// queries to the readcache pod currently owning the partition.
 	readcacheLog syncatomic.Pointer[readcacheassignment.Log]
 
+	// initial assignment synchronization completes during starting(),
+	// before the distributor reports Running. This prevents embedded
+	// distributors in queriers from accepting reads while either log
+	// is still nil.
+	nautilusInitialSync      chan struct{}
+	nautilusInitialSyncOnce  sync.Once
+	readcacheInitialSync     chan struct{}
+	readcacheInitialSyncOnce sync.Once
+
 	// readcachePool dials readcache pods by instance ID. Until a
 	// readcache ring exists, addresses are resolved from a static
 	// flag-driven map (see ReadcacheConfig.Addresses). nil if no
@@ -1199,6 +1208,28 @@ func (d *Distributor) starting(ctx context.Context) error {
 		}
 		d.nautilusRebalancerConn = conn
 		level.Info(d.log).Log("msg", "connected to nautilus rebalancer", "address", d.cfg.NautilusRebalancerAddress)
+
+		// Query-capable processes embed the distributor and become ready
+		// when this service reaches Running. Start both assignment
+		// watchers here and wait for their initial snapshots so a newly
+		// ready querier cannot race its first assignment-log sync.
+		d.nautilusInitialSync = make(chan struct{})
+		d.readcacheInitialSync = make(chan struct{})
+		go d.watchNautilusAssignments(ctx)
+		go d.watchReadcacheAssignments(ctx)
+
+		level.Info(d.log).Log("msg", "waiting for initial nautilus and readcache assignment snapshots")
+		select {
+		case <-ctx.Done():
+			return errors.Wrap(ctx.Err(), "waiting for initial nautilus assignment snapshot")
+		case <-d.nautilusInitialSync:
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Wrap(ctx.Err(), "waiting for initial readcache assignment snapshot")
+		case <-d.readcacheInitialSync:
+		}
+		level.Info(d.log).Log("msg", "initial nautilus and readcache assignment snapshots received")
 	}
 
 	return nil
@@ -1209,8 +1240,6 @@ func (d *Distributor) running(ctx context.Context) error {
 	defer ingestionRateTicker.Stop()
 
 	if d.nautilusRebalancerConn != nil {
-		go d.watchNautilusAssignments(ctx)
-		go d.watchReadcacheAssignments(ctx)
 		go d.runSpotlightLoop(ctx)
 	}
 
@@ -1321,6 +1350,11 @@ func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer
 		d.nautilusActiveTable.Store(table)
 		d.nautilusActiveTableMu.Unlock()
 		d.nautilusAssignmentsReceived.Inc()
+		if d.nautilusInitialSync != nil {
+			d.nautilusInitialSyncOnce.Do(func() {
+				close(d.nautilusInitialSync)
+			})
+		}
 
 		fields := []interface{}{
 			"msg", "received nautilus assignment update",
