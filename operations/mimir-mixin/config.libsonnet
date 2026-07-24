@@ -126,6 +126,17 @@
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
+    // Unlike the job_names above, these are format strings, expanded with the zone suffix (e.g.
+    // 'distributor-zone-%(zone)s.*' becomes 'distributor-zone-a.*') to match one zone's deployments
+    // of a component. Used to build the per-zone panels, e.g. when
+    // show_multi_zone_write_path_panels is enabled.
+    // The expanded job names must also be matched by the component's job_names regexes above,
+    // otherwise the per-zone deployments would be missing from the aggregate panels.
+    multi_zone_job_name_formats: {
+      distributor: ['distributor-zone-%(zone)s.*'],
+      gateway: ['cortex-gw.*-zone-%(zone)s'],
+    },
+
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
@@ -795,6 +806,17 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: true,
+
+    // Show optional panels on the Writes dashboard breaking down the traffic of write path components
+    // deployed per availability zone (e.g. distributor-zone-a), to help spotting a degradation only
+    // affecting a single zone. Disabled by default, because it only applies to deployments where the
+    // gateway and the distributor are deployed per zone (see multi_zone_write_path_enabled in the
+    // Mimir jsonnet).
+    show_multi_zone_write_path_panels: false,
+
+    // The zone suffixes of multi-zone write path deployments. Used to build the per-zone panels when
+    // show_multi_zone_write_path_panels is enabled.
+    multi_zone_write_path_zones: ['a', 'b', 'c'],
 
     // External Grafana URL prefix for dashboard links in alerts.
     // This is used to generate absolute URLs in alert annotations that link to dashboards.

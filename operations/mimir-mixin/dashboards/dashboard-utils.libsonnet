@@ -2084,7 +2084,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  ingestStorageKafkaProducedRecordsRatePanel(jobName)::
+  ingestStorageKafkaProducedRecordsRatePanel(jobMatcher)::
     $.timeseriesPanel('Kafka produced records / sec') +
     $.panelDescription(
       'Kafka produced records / sec',
@@ -2099,12 +2099,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         (sum(
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         ) or vector(0))
-      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      ||| % { job_matcher: jobMatcher },
       |||
         sum by(reason) (
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         )
-      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      ||| % { job_matcher: jobMatcher },
     ], [
       'success',
       'failed - {{ reason }}',
@@ -2114,7 +2114,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       success: $._colors.success,
     }),
 
-  ingestStorageKafkaProducedRecordsLatencyPanel(jobName)::
+  ingestStorageKafkaProducedRecordsLatencyPanel(jobMatcher)::
     $.timeseriesPanel('Kafka produced records latency') +
     $.panelDescription(
       'Kafka produced records latency',
@@ -2124,10 +2124,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [jobMatcher],
       ],
       [
         'avg',
@@ -2295,4 +2295,197 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.dashboards_default_latency_mode
     else
       'classic',
+
+  //
+  // Multi-zone write path.
+  //
+  // The helpers below build the optional per-zone panels of the Writes dashboard, enabled via the
+  // show_multi_zone_write_path_panels config option. They break down the traffic of write path
+  // components deployed per availability zone (e.g. distributor-zone-a), to help spotting a
+  // degradation only affecting a single zone. On deployments without per-zone components the
+  // per-zone series and panels show no data.
+  //
+
+  // Returns the job names matching one zone's deployments, e.g. ['distributor-zone-a.*'].
+  multiZoneJobNames(jobNameFormats, zone)::
+    [format % { zone: zone } for format in jobNameFormats],
+
+  // Returns a job selector matching one zone's deployments, optionally restricted to a route regex.
+  multiZoneJobSelector(jobNameFormats, zone, routeRegex=null)::
+    $.jobSelector($.multiZoneJobNames(jobNameFormats, zone)) +
+    (if routeRegex == null then [] else [utils.selector.re('route', routeRegex)]),
+
+  // Returns a matcher which excludes a component's per-zone jobs (the given jobNameFormats
+  // expanded with every configured zone), or an empty string when the per-zone panels are
+  // disabled. It's appended to the selector of the aggregate series of panels which also show
+  // per-zone series: the aggregate job regexes (e.g. 'distributor.*') match the per-zone
+  // deployments too, so without it the same traffic would be plotted twice on those panels.
+  // On deployments without per-zone components the exclusion matches no job, so the aggregate
+  // series are unaffected.
+  multiZoneJobsExclusionMatcher(jobNameFormats)::
+    if !$._config.show_multi_zone_write_path_panels
+    then ''
+    else
+      // Negate the same job regex which jobMatcher() would use to match the per-zone
+      // deployments, so that exactly the jobs matched by the per-zone series are excluded.
+      local zoneJobNames = std.flatMap(
+        function(zone) $.multiZoneJobNames(jobNameFormats, zone),
+        $._config.multi_zone_write_path_zones
+      );
+      ', %s!~"%s(%s)"' % [$._config.per_job_label, $._config.job_prefix, formatJobForQuery(zoneJobNames)],
+
+  // Appends the per-zone jobs exclusion to the given selector. No-op when the per-zone panels
+  // are disabled.
+  withoutMultiZoneJobs(selector, jobNameFormats)::
+    selector + $.multiZoneJobsExclusionMatcher(jobNameFormats),
+
+  // Per-zone series are shown with the same color family of the matching aggregate series, with
+  // a different shade per zone. Up to 3 zones get a distinct shade; any additional zone reuses
+  // the darkest one.
+  local multiZoneColorFamilies = {
+    green: ['#73BF69', '#37872D', '#19730E'],
+    yellow: ['#F2CC0C', '#B08000', '#7A5C00'],
+    orange: ['#FF9830', '#FF780A', '#FA6400'],
+    red: ['#F2495C', '#C4162A', '#AD0317'],
+    'light-blue': ['#73C2DE', '#2574A9', '#1A5276'],
+    blue: ['#5794F2', '#1F60C4', '#123B70'],
+    grey: ['#A9A9A9', '#808080', '#5A5A5A'],
+  },
+
+  // Maps '<series> zone-<zone>' legends to a per-zone shade, for each series -> color family
+  // pair in seriesColorFamilies.
+  multiZoneSeriesColors(seriesColorFamilies)::
+    local zones = $._config.multi_zone_write_path_zones;
+    {
+      ['%s zone-%s' % [series, zones[zi]]]:
+        local shades = multiZoneColorFamilies[seriesColorFamilies[series]];
+        shades[std.min(zi, std.length(shades) - 1)]
+      for series in std.objectFields(seriesColorFamilies)
+      for zi in std.range(0, std.length(zones) - 1)
+    },
+
+  // The status groups shown on "Requests / sec" panels (see qpsPanelNativeHistogram) and the
+  // distributor 'rejected' series, mapped to their color family.
+  local multiZoneQpsSeriesColorFamilies = {
+    '1xx': 'yellow',
+    '2xx': 'green',
+    '3xx': 'light-blue',
+    '4xx': 'orange',
+    '5xx': 'red',
+    OK: 'green',
+    success: 'green',
+    'error': 'red',
+    cancel: 'grey',
+    rejected: 'yellow',
+  },
+
+  // Extension for a "Requests / sec" panel built with qpsPanelNativeHistogram(): adds per-zone
+  // series next to the aggregate ones. The aggregate panel selector should be wrapped with
+  // withoutMultiZoneJobs(), so that the aggregate and per-zone series don't overlap. Empty when
+  // the per-zone panels are disabled.
+  multiZoneQpsPanelMixin(metricName, jobNameFormats, routeRegex)::
+    if !$._config.show_multi_zone_write_path_panels then {} else (
+      {
+        targets+: std.flatMap(
+          function(zone) [
+            target {
+              legendFormat: '{{status}} zone-%s' % zone,
+              refId: 'zone_%s_%s' % [zone, target.refId],
+            }
+            for target in $.qpsPanelNativeHistogram(
+              metricName,
+              utils.toPrometheusSelectorNaked($.multiZoneJobSelector(jobNameFormats, zone, routeRegex))
+            ).targets
+          ],
+          $._config.multi_zone_write_path_zones
+        ),
+      } + $.aliasColors($.multiZoneSeriesColors(multiZoneQpsSeriesColorFamilies))
+    ),
+
+  // A "Latency per zone" panel, showing the per-zone p99 and p50 latency of a write path
+  // component. It complements the aggregate "Latency" panel, and it's built from the same
+  // recording rules.
+  multiZoneLatencyPanel(metric, jobNameFormats, routeRegex)::
+    local zones = $._config.multi_zone_write_path_zones;
+    assert std.length(zones) > 0 : 'multiZoneLatencyPanel: multi_zone_write_path_zones must contain at least one zone when show_multi_zone_write_path_panels is enabled';
+    // The per-zone average is not shown to limit the number of series on the panel.
+    local shownPercentiles = ['99th percentile', '50th percentile'];
+    local zoneTargets(zone) =
+      $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zone, routeRegex)).targets;
+    $.timeseriesPanel('Latency per zone') +
+    $.latencyRecordingRulePanelNativeHistogram(metric, $.multiZoneJobSelector(jobNameFormats, zones[0], routeRegex)) +
+    {
+      // Targets are ordered percentile-first, so that the same percentile from different zones is
+      // shown next to each other.
+      targets: [
+        target {
+          legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+          refId: 'zone_%s_%s' % [zone, target.refId],
+        }
+        for percentile in shownPercentiles
+        for zone in zones
+        for target in zoneTargets(zone)
+        if target.legendFormat == percentile
+      ],
+    } +
+    $.aliasColors($.multiZoneSeriesColors({ '99th percentile': 'blue', '50th percentile': 'green' })),
+
+  // Extension for the "Kafka produced records / sec" panel built with
+  // ingestStorageKafkaProducedRecordsRatePanel(): adds per-zone series next to the aggregate
+  // ones. The aggregate panel's job matcher should be wrapped with $.withoutMultiZoneJobs(), so
+  // that the aggregate and per-zone series don't overlap. Empty when the per-zone panels are
+  // disabled.
+  multiZoneIngestStorageKafkaProducedRecordsRatePanelMixin(jobNameFormats)::
+    if !$._config.show_multi_zone_write_path_panels then {} else (
+      {
+        targets+: std.flatMap(
+          function(zone) std.mapWithIndex(
+            // The targets built by queryPanel() have no refId, so it's derived from the index.
+            function(i, target) target {
+              legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+              refId: 'zone_%s_%d' % [zone, i],
+            },
+            $.ingestStorageKafkaProducedRecordsRatePanel(
+              $.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))
+            ).targets
+          ),
+          $._config.multi_zone_write_path_zones
+        ),
+      } + $.aliasColors($.multiZoneSeriesColors({ success: 'green' }))
+    ),
+
+  // A "Kafka produced records latency per zone" panel, showing the per-zone latency of records
+  // synchronously produced to Kafka. It complements the aggregate panel built with
+  // ingestStorageKafkaProducedRecordsLatencyPanel(). Only the p99 and p100 percentiles are shown
+  // to limit the number of series on the panel.
+  multiZoneIngestStorageKafkaProducedRecordsLatencyPanel(jobNameFormats)::
+    // Only these percentiles of the aggregate panel are shown, to limit the number of series
+    // on the panel.
+    local shownPercentiles = [
+      { legend: '99th percentile', refId: 'p99' },
+      { legend: '100th percentile', refId: 'p100' },
+    ];
+    local zoneTargets(zone) =
+      $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($.multiZoneJobNames(jobNameFormats, zone))).targets;
+    $.timeseriesPanel('Kafka produced records latency per zone') +
+    $.panelDescription(
+      'Kafka produced records latency per zone',
+      'Latency of records synchronously produced to Kafka, broken down by availability zone.',
+    ) +
+    {
+      // Targets are ordered percentile-first, so that the same percentile from different zones is
+      // shown next to each other.
+      targets: [
+        target {
+          legendFormat: '%s zone-%s' % [target.legendFormat, zone],
+          refId: 'zone_%s_%s' % [zone, percentile.refId],
+        }
+        for percentile in shownPercentiles
+        for zone in $._config.multi_zone_write_path_zones
+        for target in zoneTargets(zone)
+        if target.legendFormat == percentile.legend
+      ],
+      fieldConfig+: { defaults+: { unit: 's' } },
+    } +
+    $.aliasColors($.multiZoneSeriesColors({ '99th percentile': 'blue', '100th percentile': 'red' })),
 }
