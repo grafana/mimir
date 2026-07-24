@@ -1417,7 +1417,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 GET /compactor/ring
 ```
 
-Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor.
+Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor. When compactors run in [scheduler mode](../architecture/components/compactor-scheduler/), the compactor ring is only used to shard blocks cleanup.
 
 ### Start block upload
 
@@ -1557,6 +1557,8 @@ GET /compactor/tenant/{tenant}/planned_jobs
 ```
 
 Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
+When compactors run in [scheduler mode](../architecture/components/compactor-scheduler/), this list may not exactly match the jobs that the compactor-scheduler is distributing to the compactors, though it is a good approximation.
+Additionally, the assignment of jobs to compactors shown on this page should be ignored in scheduler mode, as it is based on the compactor hash ring.
 
 ## Overrides-exporter
 

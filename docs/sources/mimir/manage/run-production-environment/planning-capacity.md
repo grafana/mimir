@@ -163,6 +163,20 @@ For more information about how to scale the compactor for large tenants, refer t
 sum(prometheus_tsdb_head_series)
 ```
 
+### (Optional) Compactor-scheduler
+
+When running compaction in the experimental [scheduler mode](../../../references/architecture/components/compactor-scheduler/), deploy exactly one compactor-scheduler replica.
+
+The compactor-scheduler requires little CPU and memory compared to the compactors, because it only coordinates work and doesn't read or compact blocks itself. Its resources utilization is determined by the number of tenants and scheduled jobs. It also requires a small persistent disk to store its job queues.
+
+The estimated required CPU, memory and disk for the compactor-scheduler instance are:
+
+- CPU: 0.5 cores
+- Memory: 1GB
+- Disk: 1GB
+
+The guidance above for sizing the number of compactor instances applies unchanged in scheduler mode.
+
 ### (Optional) Alertmanager
 
 The [Alertmanager](../../../references/architecture/components/alertmanager/) component resources’ utilization is determined by the number of alerts firing at the same time.

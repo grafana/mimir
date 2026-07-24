@@ -19,6 +19,13 @@ The compactor is the component responsible for:
 
 The compactor is stateless.
 
+The compactor plans and distributes compaction jobs in one of two modes:
+
+- **Standalone mode** (the default): each compactor plans its own compaction jobs, and compactors shard the work among themselves using a hash ring. Refer to [Compactor sharding](#compactor-sharding).
+- **Scheduler mode** (experimental): compactors lease jobs from a [compactor-scheduler](../compactor-scheduler/), which coordinates planning and distributes jobs centrally.
+
+Unless otherwise noted, the rest of this document applies to both modes.
+
 ## How compaction works
 
 Compaction occurs on a per-tenant basis.
@@ -40,7 +47,7 @@ Compaction can be tuned for clusters with large tenants. Configuration specifies
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
 - **Horizontal scaling**<br />
-  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding](../../../../configure/configure-shuffle-sharding/) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
+  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding](../../../../configure/configure-shuffle-sharding/) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant. In scheduler mode, shuffle sharding currently only affects blocks cleanup, which is still sharded through the hash ring: any compactor can execute compaction jobs for any tenant.
 
 ## Compaction algorithm
 
@@ -77,7 +84,7 @@ Splitting and merging can be horizontally scaled. Non-conflicting and non-overla
 
 ## Compactor sharding
 
-The compactor shards compaction jobs, either from a single tenant or multiple tenants. The compaction of a single tenant can be split and processed by multiple compactor instances.
+In standalone mode, the compactor shards compaction jobs, either from a single tenant or multiple tenants. The compaction of a single tenant can be split and processed by multiple compactor instances.
 
 Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded across the available compactor instances without any manual intervention.
 
@@ -85,9 +92,11 @@ Compactor sharding uses a [hash ring](../../hash-ring/). At startup, a compactor
 
 To configure the compactors' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).
 
+In scheduler mode, compaction jobs are distributed by the [compactor-scheduler](../compactor-scheduler/) instead, and `-compactor.compaction-interval` has no effect. The planning cadence is controlled by `-compactor-scheduler.planning-interval`. The compactor still registers in the hash ring, which is used to shard blocks cleanup, including bucket index updates, block deletion, and retention enforcement.
+
 ### Waiting for a stable hash ring at startup
 
-A cluster cold start or an increase of two or more compactor instances at the same time may result in each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
+In standalone mode, a cluster cold start or an increase of two or more compactor instances at the same time may result in each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
 
 To mitigate the issue, compactors can be configured to wait for a stable hash ring at startup. A ring is considered stable if no instance is added to or removed from the hash ring for at least `-compactor.ring.wait-stability-min-duration`. The maximum time the compactor will wait is controlled by the flag `-compactor.ring.wait-stability-max-duration` (or the respective YAML configuration option). Once the compactor has finished waiting, either because the ring stabilized or because the maximum wait time was reached, it will start up normally.
 
@@ -95,7 +104,7 @@ The default value of zero for `-compactor.ring.wait-stability-min-duration` disa
 
 ## Compaction jobs order
 
-The compactor allows configuring of the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). The configured ordering defines which compaction jobs should be executed first. The following values of `-compactor.compaction-jobs-order` are supported:
+The compactor allows configuring of the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). In standalone mode, the configured ordering defines which compaction jobs each compactor executes first. In scheduler mode, it defines the order in which planned compaction jobs are enqueued and distributed by the compactor-scheduler. The following values of `-compactor.compaction-jobs-order` are supported:
 
 - `smallest-range-oldest-blocks-first` (default)
 
