@@ -45,7 +45,7 @@ The compactor runs at regular, configurable intervals.
 Compaction can be tuned for clusters with large tenants. Configuration specifies both vertical and horizontal scaling of how the compactor runs as it compacts on a per-tenant basis.
 
 - **Vertical scaling**<br />
-  The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
+  The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core. In scheduler mode, this setting doesn't control how many jobs a compactor runs concurrently: each worker executes one job at a time, and the number of workers leasing compaction jobs is configured through `-compactor.scheduler-client.lanes`.
 - **Horizontal scaling**<br />
   By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding](../../../../configure/configure-shuffle-sharding/) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant. In scheduler mode, shuffle sharding currently only affects blocks cleanup, which is still sharded through the hash ring: any compactor can execute compaction jobs for any tenant.
 
@@ -161,7 +161,9 @@ Large tenants may require a lot of disk space. Assuming `max_compaction_range_bl
 compactor.compaction-concurrency * max_compaction_range_blocks_size * 2
 ```
 
-Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1`, we would recommend having a disk with at least 450GB available.
+Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1` (standalone mode), we would recommend having a disk with at least 450GB available.
+
+In scheduler mode, the compaction concurrency is determined by the number of workers leasing jobs from lanes with compaction work, which is one with the default `-compactor.scheduler-client.lanes`.
 
 ## Compactor configuration
 
