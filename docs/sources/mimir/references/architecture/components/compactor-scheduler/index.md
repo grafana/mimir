@@ -15,6 +15,15 @@ The compactor-scheduler is experimental. For the related configuration parameter
 
 When a compactor-scheduler is deployed, compactors run in _scheduler mode_: instead of using a [hash ring](../../hash-ring/) to determine which tenants and blocks to compact, they request jobs from the compactor-scheduler and execute them. Any compactor can execute jobs for any tenant. For a description of standalone mode, which is the default, refer to [compactor sharding](../compactor/#compactor-sharding).
 
+## Benefits of using the compactor-scheduler
+
+Compared to standalone mode, scheduler mode:
+
+- Spreads work evenly across the whole compactor fleet. Because jobs aren't tied to the compactors that own a tenant in the hash ring, no compactor sits idle while others are backlogged, which improves utilization and reduces the overall time to compact with properly sized compactors.
+- Ensures tenant fairness: pending jobs are distributed with a round-robin between tenants, so a tenant with many jobs can't starve the others.
+- Retries failed jobs sooner. In standalone mode, when a job fails, the compactor restarts its whole compaction iteration, and the failed job isn't retried until that iteration reaches it again. In scheduler mode, a failed job returns to the queue and is assigned to the next idle compactor.
+- Allows scaling compactors based on the amount of pending work, because the compactor-scheduler knows the queue of outstanding jobs.
+
 ## How it works
 
 The following flow describes how compaction work moves through a Grafana Mimir cluster running in scheduler mode:
