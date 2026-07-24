@@ -21,10 +21,12 @@ spec:
   clusterIP: None
   ports:
     - name: memcached-client
+      appProtocol: tcp
       port: {{ .port }}
       targetPort: {{ .port }}
     {{ if $.ctx.Values.memcachedExporter.enabled }}
     - name: http-metrics
+      appProtocol: http
       port: 9150
       targetPort: 9150
     {{ end }}
