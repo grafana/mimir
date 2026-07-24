@@ -12,4 +12,17 @@
   querier_zone_a_args+:: perCompartmentQuerierArgs,
   querier_zone_b_args+:: perCompartmentQuerierArgs,
   querier_zone_c_args+:: perCompartmentQuerierArgs,
+
+  // Config validation.
+  local querierCompartmentConfigError = if !$._config.compartments_ingester_enabled then null else $.validateMimirCompartmentsConfig([
+    'querier_deployment',
+    'querier_zone_a_deployment',
+    'querier_zone_b_deployment',
+    'querier_zone_c_deployment',
+    'ruler_querier_deployment',
+    'ruler_querier_zone_a_deployment',
+    'ruler_querier_zone_b_deployment',
+    'ruler_querier_zone_c_deployment',
+  ]),
+  assert querierCompartmentConfigError == null : querierCompartmentConfigError,
 }

@@ -54,6 +54,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     'compartments.enabled': true,
     'compartments.read.num-compartments': $._config.compartments_read_count,
     'compartments.write.num-compartments': $._config.compartments_write_count,
+    'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
     'ingest-storage.kafka.topic': $._config.compartments_ingest_storage_kafka_topic,
   },
 
@@ -82,10 +83,16 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   blocks_chunks_zone_b_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
   blocks_chunks_zone_c_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
 
-  // Validates that per-compartment Deployments/StatefulSets configuration options are correctly
-  // parameterised for the compartment they belong to.
+  // Validates that Deployments/StatefulSets have the common compartments flags and that their
+  // configuration options are correctly parameterised for the compartment they belong to.
   validateMimirCompartmentsConfig(resourceNames)::
     local root = $;
+    local targetFlag = '-target';
+    local requiredCommonFlags = [
+      { flag: '-compartments.enabled', value: std.toString(root.mimirCompartmentsCommonArgs['compartments.enabled']) },
+      { flag: '-compartments.read.num-compartments', value: std.toString(root.mimirCompartmentsCommonArgs['compartments.read.num-compartments']) },
+      { flag: '-compartments.write.num-compartments', value: std.toString(root.mimirCompartmentsCommonArgs['compartments.write.num-compartments']) },
+    ];
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
     local blocksBucketFlag = '-' + root.mimirBlocksStorageBucketNameFlag;
@@ -223,12 +230,36 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local validateReadCompartmentId(name, compartment, container) =
       validateCompartmentId(name, compartment, container, readIdSuffix, 'read');
 
-    local validateContainer(name, compartment, container) =
+    local validateCommonFlag(name, container, expected) =
+      local value = flagValue(container, expected.flag);
+      if value == null then
+        'The Deployment or StatefulSet "%s" is missing "%s=%s" on the Mimir container with "%s=%s".' % [name, expected.flag, expected.value, targetFlag, flagValue(container, targetFlag)]
+      else if value != expected.value then
+        'The Deployment or StatefulSet "%s" sets "%s=%s", but compartments require "%s=%s" on every Mimir container.' % [name, expected.flag, value, expected.flag, expected.value]
+      else
+        null;
+
+    local validateCommonFlags(name, container) =
       std.foldl(
+        function(firstError, expected) if firstError != null then firstError else validateCommonFlag(name, container, expected),
+        requiredCommonFlags,
+        null
+      );
+
+    local isMimirContainer(container) = flagValue(container, targetFlag) != null;
+
+    local validateContainer(name, compartment, container) =
+      local parameterisationError = std.foldl(
         function(firstError, validator) if firstError != null then firstError else validator(name, compartment, container),
         [validateKafkaAddress, validateKafkaTopic, validateBlocksBucket, validateWriteCompartmentId, validateReadCompartmentId],
         null
       );
+      if parameterisationError != null then
+        parameterisationError
+      else if isMimirContainer(container) then
+        validateCommonFlags(name, container)
+      else
+        null;
 
     local validateResource(resource) =
       if resource == null then

@@ -40,6 +40,9 @@ local env = (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
     autoscaling_store_gateway_min_replicas_per_compartment_zone: 1,
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
     enable_pvc_auto_deletion_for_store_gateways: true,
+
+    // Exercise the global overrides-exporter workload.
+    overrides_exporter_enabled: true,
   },
 };
 
@@ -47,6 +50,45 @@ local rulerDistributorAddress(zone) =
   'dns:///distributor-zone-%s.%s.svc.%s:9095' % [zone, env._config.namespace, env._config.cluster_domain];
 
 local rulerBlocksBucket(args) = args[env.mimirBlocksStorageBucketNameFlag];
+
+local all(values) = std.foldl(function(acc, value) acc && value, values, true);
+local any(values) = std.foldl(function(acc, value) acc || value, values, false);
+
+local hasCommonArgs(args) = all([
+  std.objectHas(args, flag) && args[flag] == env.mimirCompartmentsCommonArgs[flag]
+  for flag in std.objectFields(env.mimirCompartmentsCommonArgs)
+]);
+
+local globalComponentArgs = {
+  alertmanager: env.alertmanager_args,
+  query_scheduler: env.query_scheduler_args,
+  ruler_query_scheduler: env.ruler_query_scheduler_args,
+  overrides_exporter: env.overrides_exporter_args,
+  memberlist_bridge: env.memberlist_bridge_args,
+};
+
+local resourceContainers(resource) =
+  if resource == null ||
+     !std.objectHas(resource, 'spec') ||
+     !std.objectHas(resource.spec, 'template') ||
+     !std.objectHas(resource.spec.template, 'spec') ||
+     !std.objectHas(resource.spec.template.spec, 'containers') then
+    []
+  else
+    resource.spec.template.spec.containers;
+
+local rootFlagNames = [
+  '-compartments.enabled',
+  '-compartments.read.num-compartments',
+  '-compartments.write.num-compartments',
+];
+
+local hasAnyRootFlag(resource) = any([
+  std.isString(arg) && any([std.startsWith(arg, flag + '=') for flag in rootFlagNames])
+  for container in resourceContainers(resource)
+  if std.objectHas(container, 'args')
+  for arg in container.args
+]);
 
 local coexistenceEnv = env {
   _config+:: {
@@ -59,6 +101,35 @@ local routedCoexistenceEnv = coexistenceEnv {
     compartments_distributor_routing_enabled: true,
   },
 };
+
+local dataPathCoexistenceEnv = env {
+  _config+:: {
+    no_compartments_distributor_enabled: true,
+    no_compartments_ingester_enabled: true,
+    no_compartments_store_gateway_enabled: true,
+    no_compartments_compactor_enabled: true,
+  },
+};
+
+local dataPathCoexistenceResources = {
+  distributor: dataPathCoexistenceEnv.distributor_zone_a_deployment,
+  ingester: dataPathCoexistenceEnv.ingester_zone_a_statefulset,
+  store_gateway: dataPathCoexistenceEnv.store_gateway_zone_a_statefulset,
+  compactor: dataPathCoexistenceEnv.compactor_statefulset,
+  compactor_scheduler: dataPathCoexistenceEnv.compactor_scheduler_statefulset,
+};
+
+local missingCommonArgs = [name for name in std.objectFields(globalComponentArgs) if !hasCommonArgs(globalComponentArgs[name])];
+assert std.length(missingCommonArgs) == 0 :
+       'expected global Mimir component args to inherit compartments defaults; missing on: %s' % std.join(', ', missingCommonArgs);
+
+local missingCoexistenceResources = [name for name in std.objectFields(dataPathCoexistenceResources) if std.length(resourceContainers(dataPathCoexistenceResources[name])) == 0];
+assert std.length(missingCoexistenceResources) == 0 :
+       'expected legacy no-compartments coexistence resources to render; missing: %s' % std.join(', ', missingCoexistenceResources);
+
+local coexistenceResourcesWithRootFlags = [name for name in std.objectFields(dataPathCoexistenceResources) if hasAnyRootFlag(dataPathCoexistenceResources[name])];
+assert std.length(coexistenceResourcesWithRootFlags) == 0 :
+       'expected legacy no-compartments coexistence resources to omit compartments root flags; found on: %s' % std.join(', ', coexistenceResourcesWithRootFlags);
 
 assert env._config.compartments_distributor_routing_enabled :
        'expected compartments-only deployments to route to compartment distributors';
