@@ -45,7 +45,7 @@
       'blocks-storage.tsdb.head-compaction-interval': '15m',
 
       'block-builder.data-dir': '/data/tsdb',
-      'block-builder.scheduler.address': 'block-builder-scheduler.%(namespace)s.svc.cluster.local.:9095' % $._config,
+      'block-builder.scheduler.address': 'block-builder-scheduler.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
 
       // Reduce ingestion concurrency: block-builders are IO-bound and don't need to
       // process faster than the 1h job backlog window.
