@@ -51,7 +51,12 @@ To run compaction in scheduler mode:
 In scheduler mode, compactors still register in the compactor hash ring to coordinate blocks cleanup, which includes keeping the bucket index updated, deleting blocks, and enforcing retention.
 
 
-TODO: explain how migration from standalone mode works
+### Migrate from standalone mode
+
+The mode is a per-compactor setting, applied at startup. There is no coordination between the two modes. Running both modes simultaneously could result in a tenant being planned and compacted by both. This doesn't corrupt data, but it duplicates work for compactors and potentially increases store-gateways load.
+A mixed fleet is expected while the configuration change rolls out, but don't run it as a steady state.
+
+On a fresh deployment, the compactor-scheduler's cold start (`-compactor-scheduler.maintenance-intervals-before-cold-start-planning`) mitigates the duplicate work issue, giving time to compactors that are still running in standalone mode to finish their work and for the rollout to complete before planning starts. In practice, this makes it safe to migrate solely by rolling out the compactor-scheduler and switching compactors to scheduler mode in a single step, as described above.
 
 ## Compactor-scheduler configuration
 
