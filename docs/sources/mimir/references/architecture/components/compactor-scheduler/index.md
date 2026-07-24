@@ -25,19 +25,21 @@ The following flow describes how compaction work moves through a Grafana Mimir c
 1. Compactors lease the compaction jobs, execute them, and periodically report progress back to the compactor-scheduler.
 1. When a compactor reports that a job completed, the compactor-scheduler removes the job from the queue.
 
-By default, planning jobs and compaction jobs are kept in separate queues ("lanes") that are consumed from different worker goroutines, so that planning is not starved by long-running compactions. The `-compactor.scheduler-client.lanes` parameter configures how many worker goroutines each compactor runs and the lanes each worker leases jobs from.
+Planning jobs and compaction jobs are kept in separate queues, called lanes. Within each lane, the compactor-scheduler ensures tenant fairness using a round-robin between all tenants that have pending jobs in that lane.
 
-The compactor-scheduler ensures tenant fairness using a round-robin between all tenants that have pending jobs.
+The `-compactor.scheduler-client.lanes` parameter configures the worker goroutines each compactor runs and the lanes each worker leases jobs from. The default value, `compact+plan,plan`, runs two workers: one that leases compaction jobs and falls back to planning jobs, and one dedicated to planning jobs, so that planning is not starved by long-running compactions.
 
 ### Job leases
 
-Jobs are leased to compactors, not permanently assigned. If a compactor doesn't report progress on a job for longer than `-compactor-scheduler.lease-duration`, the compactor-scheduler makes the job available for other compactors to lease. A job that has been leased `-compactor-scheduler.max-leases` times without completing is removed from the queue and reported as a repeated failure. A discarded job will still be re-planned and re-enqueued on the next planning interval, unless it no longer exists (e.g., the tenant has been deleted or the blocks were marked for deletion).
+Jobs are leased to compactors, not permanently assigned. If a compactor doesn't report progress on a job for longer than `-compactor-scheduler.lease-duration`, the compactor-scheduler makes the job available for other compactors to lease. A job that has been leased more than `-compactor-scheduler.repeated-failure-report-threshold` times without completing is reported as a repeated failure, and once it has been leased `-compactor-scheduler.max-leases` times it is removed from the queue. A discarded job is still re-planned and re-enqueued on the next planning interval, unless it no longer exists (for example, if the tenant has been deleted or the blocks were marked for deletion).
 
 ## State
 
-The compactor-scheduler persists its job queues to local disk, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. After a restart, the compactor-scheduler recovers the queues from disk and delays planning for a few maintenance intervals to avoid enqueueing duplicate jobs.
+The compactor-scheduler persists its job queues to local disk, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. After a restart, the compactor-scheduler recovers the queues from disk. When it starts with no recovered state, it delays planning for a few maintenance intervals, defined by `-compactor-scheduler.maintenance-intervals-before-cold-start-planning`, to avoid enqueueing jobs that duplicate work still in progress. If the persisted state becomes corrupted, it can be wiped and rebuilt: refer to the [recovery steps](../../../../manage/mimir-runbooks/#mimircompactorschedulerunreachable) in the runbooks.
 
-Run exactly one compactor-scheduler replica. Two active compactor-schedulers would both schedule work for all tenants, resulting in duplicate compactions. A short compactor-scheduler outage doesn't stop in-progress compactions: compactors keep executing the jobs they hold, and retry job requests and progress reports with backoff until the compactor-scheduler is available again.
+Run exactly one compactor-scheduler replica. Two active compactor-schedulers would both schedule work for all tenants, resulting in duplicate compactions. Because it runs as a single replica, zone-aware replication doesn't apply to the compactor-scheduler.
+
+A short compactor-scheduler outage doesn't stop in-progress compactions: compactors keep executing the jobs they hold, retry job requests with backoff, and resume progress reports at the next report interval, until the compactor-scheduler is available again.
 
 ## Enable scheduler mode
 
