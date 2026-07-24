@@ -254,6 +254,9 @@
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: true,
 
+    // Regular expression matching node disk devices to exclude from container filesystem metrics.
+    node_disk_device_exclude_regex: '.*sda.*',
+
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
 
