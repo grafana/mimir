@@ -36,7 +36,7 @@ The following flow describes how compaction work moves through a Grafana Mimir c
 
 Planning jobs and compaction jobs are kept in separate queues, called lanes. Within each lane, the compactor-scheduler ensures tenant fairness using a round-robin across all tenants that have pending jobs in that lane.
 
-The `-compactor.scheduler-client.lanes` parameter configures the worker goroutines each compactor runs and the lanes each worker leases jobs from. The default value, `compact+plan,plan`, runs two workers: one that leases compaction jobs and falls back to planning jobs, and one dedicated to planning jobs, so that planning is not starved by long-running compactions.
+The `-compactor.scheduler-client.lanes` parameter configures the worker goroutines each compactor runs and the lanes each worker leases jobs from. The default value, `compact+plan,plan`, runs two workers: one that leases compaction jobs and falls back to planning jobs, and one dedicated to planning jobs, so that planning is not starved by long-running compactions. Each worker executes one job at a time, so the compaction parallelism of a compactor is determined by how many of its workers lease compaction jobs.
 
 ### Job leases
 
