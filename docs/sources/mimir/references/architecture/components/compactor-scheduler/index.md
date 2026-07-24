@@ -19,9 +19,9 @@ When a compactor-scheduler is deployed, compactors run in _scheduler mode_: inst
 
 Compared to standalone mode, scheduler mode:
 
-- Spreads work evenly across the whole compactor fleet. Because jobs aren't tied to the compactors that own a tenant in the hash ring, no compactor sits idle while others are backlogged, which improves utilization and reduces the overall time to compact with properly sized compactors.
-- Ensures tenant fairness: pending jobs are distributed with a round-robin between tenants, so a tenant with many jobs can't starve the others.
-- Retries failed jobs sooner. In standalone mode, when a job fails, the compactor restarts its whole compaction iteration, and the failed job isn't retried until that iteration reaches it again. In scheduler mode, a failed job returns to the queue and is assigned to the next idle compactor.
+- Spreads work evenly across the whole compactor fleet. Because jobs aren't tied to the compactors that own a tenant in the hash ring, no compactor sits idle while others are backlogged, which improves utilization and, with properly sized compactors, reduces the overall time to compact.
+- Ensures tenant fairness: pending jobs are distributed with a round-robin across tenants, so a tenant with many jobs can't starve the others.
+- Retries failed jobs more efficiently. In standalone mode, when a job fails, the compactor restarts the compaction of the whole tenant, and reaches the failed job again only after re-planning and re-walking the preceding jobs. In scheduler mode, a failed job returns to the queue, and the next available compactor leases just that job.
 - Allows scaling compactors based on the amount of pending work, because the compactor-scheduler knows the queue of outstanding jobs.
 
 ## How it works
@@ -34,7 +34,7 @@ The following flow describes how compaction work moves through a Grafana Mimir c
 1. Compactors lease the compaction jobs, execute them, and periodically report progress back to the compactor-scheduler.
 1. When a compactor reports that a job completed, the compactor-scheduler removes the job from the queue.
 
-Planning jobs and compaction jobs are kept in separate queues, called lanes. Within each lane, the compactor-scheduler ensures tenant fairness using a round-robin between all tenants that have pending jobs in that lane.
+Planning jobs and compaction jobs are kept in separate queues, called lanes. Within each lane, the compactor-scheduler ensures tenant fairness using a round-robin across all tenants that have pending jobs in that lane.
 
 The `-compactor.scheduler-client.lanes` parameter configures the worker goroutines each compactor runs and the lanes each worker leases jobs from. The default value, `compact+plan,plan`, runs two workers: one that leases compaction jobs and falls back to planning jobs, and one dedicated to planning jobs, so that planning is not starved by long-running compactions.
 
@@ -61,13 +61,11 @@ To run compaction in scheduler mode:
 
 In scheduler mode, compactors still register in the compactor hash ring to coordinate blocks cleanup, which includes keeping the bucket index updated, deleting blocks, and enforcing retention.
 
-
 ### Migrate from standalone mode
 
-The mode is a per-compactor setting, applied at startup. There is no coordination between the two modes. Running both modes simultaneously could result in a tenant being planned and compacted by both. This doesn't corrupt data, but it duplicates work for compactors and potentially increases store-gateways load.
-A mixed fleet is expected while the configuration change rolls out, but don't run it as a steady state.
+The mode is a per-compactor setting, applied at startup. There is no coordination between the two modes. Running both modes simultaneously could result in a tenant being planned and compacted by both. This doesn't corrupt data, but it duplicates work for compactors and potentially increases store-gateway load. A mixed fleet is expected while the configuration change rolls out, but don't run it as a steady state.
 
-On a fresh deployment, the compactor-scheduler's cold start (`-compactor-scheduler.maintenance-intervals-before-cold-start-planning`) mitigates the duplicate work issue, giving time to compactors that are still running in standalone mode to finish their work and for the rollout to complete before planning starts. In practice, this makes it safe to migrate solely by rolling out the compactor-scheduler and switching compactors to scheduler mode in a single step, as described above.
+On a fresh deployment, the compactor-scheduler delays planning for a few maintenance intervals (`-compactor-scheduler.maintenance-intervals-before-cold-start-planning`), giving the compactor rollout time to complete before the first jobs are planned. The rollout itself stops any in-flight standalone compactions, so in practice little or no work is duplicated. This makes it safe to migrate in a single step, rolling out the compactor-scheduler and switching the compactors to scheduler mode together, as described above.
 
 ## Compactor-scheduler configuration
 
