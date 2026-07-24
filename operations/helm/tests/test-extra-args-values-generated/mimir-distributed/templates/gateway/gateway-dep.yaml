@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: docker.io/nginxinc/nginx-unprivileged:1.29-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.31-alpine
           imagePullPolicy: IfNotPresent
           args:
             - -flag-bool=false
