@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1484,4 +1485,115 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 			b.ReportMetric(float64(totalTimeseries)/b.Elapsed().Seconds(), "timeseries/sec")
 		})
 	}
+}
+
+func TestIngester_TSDBRetention_offsetCatalogue(t *testing.T) {
+	// oldSampleTs is old enough to be compacted from the head on the first forced
+	// compaction, and old enough to exceed the short retention we set below.
+	oldSampleTs := time.Now().Add(-3 * time.Hour).UnixMilli()
+
+	ctx := t.Context()
+	logger := util_test.NewTestingLogger(t)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = math.MaxInt64 // manual control
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	// Short retention so that the compacted block becomes eligible for deletion by DefaultBlocksToDelete;
+	// the offset-catalogue check then gates whether it actually gets deleted.
+	cfg.BlocksStorageConfig.TSDB.Retention = time.Second
+	cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled = true
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, logger)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester)) })
+
+	partitionID := ingester.ingestPartitionID
+	writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer)) })
+
+	writeSeries := func(metricName string, ts int64) {
+		s := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, metricName)),
+			Samples: []mimirpb.Sample{{TimestampMs: ts, Value: 1}},
+		}}
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{s},
+			Source:     mimirpb.API,
+		}))
+	}
+
+	// Write and compact two blocks by force-compacting after each sample was written.
+	// DefaultBlocksToDelete will mark the older one deletable once retention expires.
+	writeSeries("metric_old", oldSampleTs)
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		db := ingester.getTSDB(userID)
+		if db == nil {
+			return 0
+		}
+		return int(db.Head().NumSeries())
+	})
+	ingester.compactBlocks(ctx, true, math.MaxInt64, nil)
+
+	writeSeries("metric_new", time.Now().UnixMilli())
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		return int(ingester.getTSDB(userID).Head().NumSeries())
+	})
+	ingester.compactBlocks(ctx, true, math.MaxInt64, nil)
+
+	userBlocksDir := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 2, "force-compaction expected to produce two blocks")
+
+	// Stamp both blocks in the offset-catalogue.
+	ingester.offsetCataloguesSync(ctx)
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+
+	catalogue := db.offsetCatalogue.Data()
+	require.Len(t, catalogue.Data, 2)
+
+	// Find the older block (lowest ULID time = first compacted).
+	blocks := listBlocksInDir(t, userBlocksDir)
+	oldBlockID := blocks[0].String()
+	var watermark int64
+	for id, wm := range catalogue.Data {
+		if id == oldBlockID {
+			watermark = wm.Offset
+			break
+		}
+	}
+
+	// compactWithNewSeries pushes a fresh series and force-compacts so that
+	// reloadBlocks fires — the only path that calls our blocksToDelete callback.
+	compactWithNewSeries := func(metricName string) {
+		writeSeries(metricName, time.Now().UnixMilli())
+		test.Poll(t, 5*time.Second, 1, func() interface{} {
+			return int(db.Head().NumSeries())
+		})
+		ingester.compactBlocks(ctx, true, math.MaxInt64, nil)
+	}
+
+	t.Run("block retained when committedOffset is unknown", func(t *testing.T) {
+		// committedOffset=-1; offset-catalogue path is skipped entirely.
+		compactWithNewSeries("metric_guard_1")
+		require.Contains(t, listBlocksInDir(t, userBlocksDir), blocks[0])
+	})
+
+	t.Run("block retained when committedOffset is below watermark", func(t *testing.T) {
+		db.committedOffset.Store(watermark - 1)
+		compactWithNewSeries("metric_guard_2")
+		require.Contains(t, listBlocksInDir(t, userBlocksDir), blocks[0])
+	})
+
+	t.Run("block deleted when committedOffset reaches watermark", func(t *testing.T) {
+		db.committedOffset.Store(watermark)
+		compactWithNewSeries("metric_trigger")
+		remaining := listBlocksInDir(t, userBlocksDir)
+		for _, id := range remaining {
+			require.NotEqual(t, oldBlockID, id.String())
+		}
+	})
 }

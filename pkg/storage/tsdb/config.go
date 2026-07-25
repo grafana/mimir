@@ -293,6 +293,9 @@ type TSDBConfig struct {
 		Enabled bool `yaml:"enabled" category:"experimental"`
 
 		SyncConcurrency int `yaml:"sync_concurrency" category:"experimental"`
+
+		ConsumerGroup             string        `yaml:"consumer_group" category:"experimental"`
+		ConsumerGroupPollInterval time.Duration `yaml:"consumer_group_poll_interval" category:"experimental"`
 	} `yaml:"offset_catalogue" category:"experimental"`
 }
 
@@ -351,6 +354,8 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.BoolVar(&cfg.OffsetCatalogue.Enabled, "blocks-storage.tsdb.offset-catalogue.enabled", false, "Controls the maintaining of kafka offset catalogue per block.")
 	f.IntVar(&cfg.OffsetCatalogue.SyncConcurrency, "blocks-storage.tsdb.offset-catalogue.sync-concurrency", 10, "Maximum number of tenants concurrently syncing offset catalogue to disk.")
+	f.StringVar(&cfg.OffsetCatalogue.ConsumerGroup, "blocks-storage.tsdb.offset-catalogue.consumer-group", "", "The Kafka consumer group whose committed offset is compared against block watermarks to determine when ingester blocks can be deleted.")
+	f.DurationVar(&cfg.OffsetCatalogue.ConsumerGroupPollInterval, "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval", 5*time.Minute, "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
@@ -404,6 +409,12 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		}
 		if cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
 			return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
+		}
+	}
+
+	if cfg.OffsetCatalogue.Enabled {
+		if cfg.OffsetCatalogue.ConsumerGroup != "" && cfg.OffsetCatalogue.ConsumerGroupPollInterval <= 0 {
+			return fmt.Errorf("offset catalogue poll interval for consumer group %s must be non-negative", cfg.OffsetCatalogue.ConsumerGroup)
 		}
 	}
 
