@@ -407,6 +407,130 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringLeftSide:  []int{1, 0, 3, 2},
 			expectedOrderFavouringRightSide: []int{1, 3, 0, 2},
 		},
+		"fill-missing-right series mixed with a normal series": {
+			// input[0]: normal            -> latestLeftSeries=2, latestRightSeries=2
+			// input[1]: fill-missing-right -> latestLeftSeries=1, latestRightSeries=-1
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
+				},
+				{
+					leftSeriesIndices: []int{1},
+					rightSide:         nil,
+					fillMissingRight:  true,
+				},
+			},
+
+			// Favour left (left asc, tie right asc): input[1](L=1) < input[0](L=2).
+			expectedOrderFavouringLeftSide: []int{1, 0},
+			// Favour right (right asc, tie left asc): input[1](R=-1) < input[0](R=2).
+			expectedOrderFavouringRightSide: []int{1, 0},
+		},
+		"fill-missing-left series mixed with a normal series": {
+			// input[0]: normal           -> latestLeftSeries=2, latestRightSeries=2
+			// input[1]: fill-missing-left -> latestLeftSeries=-1, latestRightSeries=1
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
+				},
+				{
+					leftSeriesIndices: nil,
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
+					fillMissingLeft:   true,
+				},
+			},
+
+			// Favour left (left asc, tie right asc): input[1](L=-1) < input[0](L=2).
+			expectedOrderFavouringLeftSide: []int{1, 0},
+			// Favour right (right asc, tie left asc): input[1](R=1) < input[0](R=2).
+			expectedOrderFavouringRightSide: []int{1, 0},
+		},
+		"mix of one fill-missing-left, one fill-missing-right, and one normal series": {
+			// input[0]: normal            -> latestLeftSeries=2, latestRightSeries=2
+			// input[1]: fill-missing-left  -> latestLeftSeries=-1, latestRightSeries=3
+			// input[2]: fill-missing-right -> latestLeftSeries=3, latestRightSeries=-1
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
+				},
+				{
+					leftSeriesIndices: nil,
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
+					fillMissingLeft:   true,
+				},
+				{
+					leftSeriesIndices: []int{3},
+					rightSide:         nil,
+					fillMissingRight:  true,
+				},
+			},
+
+			// Favour left (left asc): L values input[0]=2, input[1]=-1, input[2]=3 -> -1, 2, 3.
+			expectedOrderFavouringLeftSide: []int{1, 0, 2},
+			// Favour right (right asc): R values input[0]=2, input[1]=3, input[2]=-1 -> -1, 2, 3.
+			expectedOrderFavouringRightSide: []int{2, 0, 1},
+		},
+		"two fill-missing-right series mixed with a normal series, tie-break on left index": {
+			// Both fill-missing-right series have latestRightSeries=-1, so the favour-right
+			// sorter must tie-break on the left index.
+			// input[0]: fill-missing-right -> latestLeftSeries=3, latestRightSeries=-1
+			// input[1]: fill-missing-right -> latestLeftSeries=1, latestRightSeries=-1
+			// input[2]: normal             -> latestLeftSeries=2, latestRightSeries=2
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices: []int{3},
+					rightSide:         nil,
+					fillMissingRight:  true,
+				},
+				{
+					leftSeriesIndices: []int{1},
+					rightSide:         nil,
+					fillMissingRight:  true,
+				},
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
+				},
+			},
+
+			// Favour left (left asc): L values input[0]=3, input[1]=1, input[2]=2 -> 1, 2, 3.
+			expectedOrderFavouringLeftSide: []int{1, 2, 0},
+			// Favour right (right asc, tie left asc): R values input[0]=-1, input[1]=-1, input[2]=2.
+			// input[0] and input[1] tie on R=-1, tie-break on left: input[1](L=1) < input[0](L=3).
+			expectedOrderFavouringRightSide: []int{1, 0, 2},
+		},
+		"two fill-missing-left series mixed with a normal series, tie-break on right index": {
+			// Both fill-missing-left series have latestLeftSeries=-1, so the favour-left
+			// sorter must tie-break on the right index.
+			// input[0]: fill-missing-left -> latestLeftSeries=-1, latestRightSeries=3
+			// input[1]: fill-missing-left -> latestLeftSeries=-1, latestRightSeries=1
+			// input[2]: normal            -> latestLeftSeries=2, latestRightSeries=2
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices: nil,
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
+					fillMissingLeft:   true,
+				},
+				{
+					leftSeriesIndices: nil,
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
+					fillMissingLeft:   true,
+				},
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
+				},
+			},
+
+			// Favour left (left asc, tie right asc): L values input[0]=-1, input[1]=-1, input[2]=2.
+			// input[0] and input[1] tie on L=-1, tie-break on right: input[1](R=1) < input[0](R=3).
+			expectedOrderFavouringLeftSide: []int{1, 0, 2},
+			// Favour right (right asc): R values input[0]=3, input[1]=1, input[2]=2 -> 1, 2, 3.
+			expectedOrderFavouringRightSide: []int{1, 2, 0},
+		},
 	}
 
 	for name, testCase := range testCases {
