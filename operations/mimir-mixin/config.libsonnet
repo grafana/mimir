@@ -770,9 +770,9 @@
     // The Prometheus scrape interval configured in your Prometheus. Used by rateInterval() and
     // stepInterval() to compute safe windows automatically.
     // See https://www.robustperception.io/what-range-should-i-use-with-rate/
-    // Default is 1m to match common Grafana Alloy / ServiceMonitor defaults. Precompiled
-    // mixins are built with this value; rateInterval(min) uses max(min, 4*scrape_interval).
-    // Rebuild the mixin with a different scrape_interval if yours differs.
+    // Default is 1m, the Prometheus default scrape interval. Precompiled mixins are built
+    // with this value; rateInterval(min) uses max(min, 4*scrape_interval). Rebuild the
+    // mixin with a different scrape_interval if yours differs.
     // See https://github.com/grafana/mimir/issues/12782
     scrape_interval: '1m',
 
