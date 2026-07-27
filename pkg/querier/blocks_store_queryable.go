@@ -314,6 +314,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
 		cacheBucketID := ""
 
+		bucketReg := reg
 		if compartmentsCfg.Enabled {
 			// Each read compartment has its own bucket, store-gateway ring and metadata cache within this
 			// single process.
@@ -322,14 +323,14 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			// metrics "component" label and the ring name/key — rather than an extra label which would change
 			// a metric's label set and panic on collision with the same metric registered by another component
 			//(e.g. the usage-stats reporter's bucket client, or the ingester ring).
-			component = compartments.WithReadCompartmentSuffix(component, idx)
+			bucketReg = prometheus.WrapRegistererWith(prometheus.Labels{"read_compartment": compartments.ReadCompartmentID(idx)}, reg)
 			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
 		}
 
-		finder, err := newBlocksStoreQueryableFinder(component, cacheBucketID, bucketCfg, storageCfg, limits, logger, reg)
+		finder, err := newBlocksStoreQueryableFinder(component, cacheBucketID, bucketCfg, storageCfg, limits, logger, bucketReg)
 		if err != nil {
 			return nil, err
 		}

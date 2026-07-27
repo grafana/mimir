@@ -89,3 +89,8 @@ func ReplaceWriteCompartment(s string, writeCompartmentID int) string {
 func WithReadCompartmentSuffix(name string, compartmentID int) string {
 	return name + "-rc-" + strconv.Itoa(compartmentID)
 }
+
+// ReadCompartmentID returns the "rc-<id>" string ID.
+func ReadCompartmentID(compartmentID int) string {
+	return "rc-" + strconv.Itoa(compartmentID)
+}
