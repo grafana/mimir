@@ -15,6 +15,8 @@ import (
 func TestCollapseConstants(t *testing.T) {
 	testCases := map[string]string{
 		"2":                                  "2",
+		"(2)":                                "2",
+		"((((2))))":                          "2",
 		"-2":                                 "-2",
 		"-(2)":                               "-2",
 		"+(2)":                               "2",
@@ -61,11 +63,25 @@ func TestCollapseConstants(t *testing.T) {
 			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, collapseConstants)
 			require.Equal(t, expected, result.String())
 
-			// Check for unnecessary unary expressions.
-			if u, ok := result.(*parser.UnaryExpr); ok {
-				_, isNumberLiteral := u.Expr.(*parser.NumberLiteral)
-				require.Falsef(t, isNumberLiteral, "should not have a unary expression wrapping a number literal:\n%v", parser.Tree(result))
-			}
+			// Check for unnecessary unary or step-invariant expressions or parentheses.
+			parser.Inspect(result, func(node parser.Node, _ []parser.Node) error {
+				if u, ok := result.(*parser.UnaryExpr); ok {
+					_, isNumberLiteral := u.Expr.(*parser.NumberLiteral)
+					require.Falsef(t, isNumberLiteral, "should not have a unary expression wrapping a number literal:\n%v", parser.Tree(result))
+				}
+
+				if s, ok := result.(*parser.StepInvariantExpr); ok {
+					_, isNumberLiteral := s.Expr.(*parser.NumberLiteral)
+					require.Falsef(t, isNumberLiteral, "should not have a step-invariant expression wrapping a number literal:\n%v", parser.Tree(result))
+				}
+
+				if p, ok := result.(*parser.ParenExpr); ok {
+					_, isNumberLiteral := p.Expr.(*parser.NumberLiteral)
+					require.Falsef(t, isNumberLiteral, "should not have parentheses expression wrapping a number literal:\n%v", parser.Tree(result))
+				}
+
+				return nil
+			})
 		})
 	}
 }
