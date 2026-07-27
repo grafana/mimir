@@ -68,15 +68,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if vectorMatching.On {
-		lbls := vectorMatching.MatchingLabels
-
-		// We never want to include __name__, even if it's explicitly mentioned in on(...).
-		// See https://github.com/prometheus/prometheus/issues/16631.
-		if i := slices.Index(vectorMatching.MatchingLabels, model.MetricNameLabel); i != -1 {
-			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
-			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
-			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
-		}
+		lbls := matchingLabelsWithoutName(vectorMatching.MatchingLabels)
 
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
@@ -109,14 +101,7 @@ func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Label
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if vectorMatching.On {
-		lbls := vectorMatching.MatchingLabels
-
-		// We never include __name__, even if it's explicitly mentioned in on(...) as per https://github.com/prometheus/prometheus/issues/16631.
-		if i := slices.Index(vectorMatching.MatchingLabels, model.MetricNameLabel); i != -1 {
-			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
-			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
-			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
-		}
+		lbls := matchingLabelsWithoutName(vectorMatching.MatchingLabels)
 
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
@@ -131,6 +116,16 @@ func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Label
 		lb.Del(vectorMatching.MatchingLabels...)
 		return lb.Labels()
 	}
+}
+
+// matchingLabelsWithoutName returns a copy of matchingLabels with __name__ removed. We never
+// include __name__ in output group labels, even when it is explicitly mentioned in on(...), as
+// per https://github.com/prometheus/prometheus/issues/16631. It returns a new slice and never
+// mutates the input, which may be shared with the query plan.
+func matchingLabelsWithoutName(matchingLabels []string) []string {
+	return slices.DeleteFunc(slices.Clone(matchingLabels), func(l string) bool {
+		return l == model.MetricNameLabel
+	})
 }
 
 func formatConflictError(
