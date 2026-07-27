@@ -1,4 +1,7 @@
 {
+  assert $._config.compactor_standalone_enabled || $._config.compactor_scheduler_enabled
+         : 'at least one of compactor_standalone_enabled and compactor_scheduler_enabled must be enabled',
+
   grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
 
@@ -291,6 +294,9 @@
 
     // Whether mimir compactor scheduler is enabled (experimental)
     compactor_scheduler_enabled: false,
+
+    // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
+    compactor_standalone_enabled: true,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
