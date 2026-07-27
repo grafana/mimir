@@ -722,6 +722,13 @@
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
 
+    // The regular expression used to identify the node's boot/root disk device.
+    // This device is excluded from the "Disk writes" and "Disk reads" panels, since it
+    // typically doesn't hold Mimir data and would otherwise skew the per-device breakdown.
+    // Override this if your nodes don't use "sda" as the boot device (e.g. some cloud
+    // providers default to "vda").
+    node_boot_disk_device_regex: '.*sda.*',
+
     // Whether certain dashboard description headers should be shown
     show_dashboard_descriptions: {
       writes: true,
