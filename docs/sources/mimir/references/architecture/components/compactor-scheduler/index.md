@@ -44,6 +44,10 @@ The `-compactor.scheduler-client.lanes` parameter configures the worker goroutin
 
 Jobs are leased to compactors, not permanently assigned. If a compactor doesn't report progress on a job for longer than `-compactor-scheduler.lease-duration`, the compactor-scheduler makes the job available for other compactors to lease. A job that has been leased more than `-compactor-scheduler.repeated-failure-report-threshold` times without completing is reported as a repeated failure, and once it has been leased `-compactor-scheduler.max-leases` times it is removed from the queue. Planning jobs are exempt from these limits and are always retried. A discarded job is still re-planned and re-enqueued on the next planning interval, unless it no longer exists (for example, if the tenant has been deleted or the blocks were marked for deletion).
 
+### Block metadata cache
+
+Both planning jobs and compaction jobs read block metadata from object storage. Compactors can cache this metadata in a shared external cache, configured with the `-compactor.scheduler-client.metadata-cache.*` parameters, to reduce object storage operations.
+
 ## State
 
 The compactor-scheduler persists its job queues to local disk, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. The state is sharded across multiple database files, configured by `-compactor-scheduler.bbolt.shard-count`. Changing the shard count triggers an automatic migration of the state at the next startup.
