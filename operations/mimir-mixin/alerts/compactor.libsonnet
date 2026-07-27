@@ -20,9 +20,7 @@
           },
         },
       ] + (
-        // The following alerts are based on metrics only exposed by compactors running in
-        // standalone mode (planning compactions locally instead of pulling jobs from the
-        // compactor scheduler).
+        // The following alerts only apply when running in standalone mode
         if !$._config.compactor_standalone_enabled then [] else [
           // Alert if the compactor has not successfully run compaction in the last X hours.
           {
