@@ -19,10 +19,12 @@ When a compactor-scheduler is deployed, compactors run in _scheduler mode_: inst
 
 Compared to standalone mode, scheduler mode:
 
-- Spreads work evenly across the whole compactor fleet. Because jobs aren't tied to the compactors that own a tenant in the hash ring, no compactor sits idle while others are backlogged, which improves utilization and, with properly sized compactors, reduces the overall time to compact.
-- Ensures tenant fairness: pending jobs are distributed with a round-robin across tenants, so a tenant with many jobs can't starve the others.
-- Retries failed jobs more efficiently. In standalone mode, when a job fails, the compactor restarts the compaction of the whole tenant, and reaches the failed job again only after re-planning and re-walking the preceding jobs. In scheduler mode, a failed job returns to the queue, and the next available compactor leases just that job.
-- Allows scaling compactors based on the amount of pending work, because the compactor-scheduler knows the queue of outstanding jobs.
+- Distributes work dynamically through queuing rather than through a hash ring. If a job is available, any free compactor can lease it.
+- Deduplicates compaction planning across compactor replicas: planned compaction jobs are shared through the compactor-scheduler. This reduces the number of object storage operations required for compaction planning.
+- Separates compaction planning from execution, so compaction can progress even if planning degrades.
+- Caches block metadata in a shared external cache. In standalone mode, each compactor caches block metadata on its own disk, so scaling events cause metadata to be refetched from object storage.
+- Enables autoscaling compactors based on direct compaction job information, such as total bytes of pending work, rather than second-order signals like CPU usage.
+- Retries failed jobs without re-planning the whole tenant.
 
 ## How it works
 
