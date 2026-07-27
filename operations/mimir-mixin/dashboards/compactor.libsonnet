@@ -105,7 +105,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addShowNativeLatencyVariable($.latencyVariableDefault())
-    .addRow(
+    .addRowIf(
+      $._config.compactor_standalone_enabled,
       $.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary')
       .addPanel(
         $.startedCompletedFailedPanel(
@@ -255,7 +256,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
-      ($.row('Summary (scheduler mode)') + { collapse: true })
+      ($.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary') + { collapse: true })
       .addPanel(
         $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
