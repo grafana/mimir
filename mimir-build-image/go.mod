@@ -207,7 +207,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/jsonnet-bundler/jsonnet-bundler v0.6.0 // indirect
 	github.com/jstemmer/go-junit-report v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.0.0 // indirect
