@@ -142,15 +142,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
         if multi then
           if $._config.singleBinary
           then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending, includeAll=false)
-          else d
-               .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, sort=sortAscending)
-               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending, includeAll=false)
+          else
+            local base = d
+                         .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, sort=sortAscending)
+                         .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending, includeAll=false);
+            if $._config.compartments_enabled
+            then base.addMultiTemplate('read_compartment', $._config.dashboard_variables.read_compartments_query, $._config.per_job_label, sort=sortAscending, includeAll=true, regex=$._config.dashboard_variables.read_compartments_query_regex, allValue='')
+            else base
         else
           if $._config.singleBinary
           then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
-          else d
-               .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true, sort=sortAscending)
-               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending),
+          else
+            local base = d
+                         .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true, sort=sortAscending)
+                         .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending);
+            if $._config.compartments_enabled
+            then base.addTemplate('read_compartment', $._config.dashboard_variables.read_compartments_query, $._config.per_job_label, sort=sortAscending, includeAll=true, regex=$._config.dashboard_variables.read_compartments_query_regex, allValue='')
+            else base,
 
       addActiveUserSelectorTemplates()::
         self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortNaturalAscending),
@@ -209,7 +217,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobMatcher(job)::
     if $._config.singleBinary
     then '%s=~"$job"' % $._config.per_job_label
-    else '%s=~"$cluster", %s=~"%s(%s)"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job)],
+    else std.join(', ', std.prune([
+      '%s=~"$cluster"' % [$._config.per_cluster_label],
+      '%s=~"%s(%s)"' % [$._config.per_job_label, $._config.job_prefix, formatJobForQuery(job)],
+    ])),
 
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)
@@ -224,7 +235,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobSelector(job)::
     if $._config.singleBinary
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re($._config.per_job_label, '$job')]
-    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '%s(%s)' % [$._config.job_prefix, formatJobForQuery(job)])],
+    else std.prune([
+      utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'),
+      utils.selector.re($._config.per_job_label, '%s(%s)' % [$._config.job_prefix, formatJobForQuery(job)]),
+    ]),
 
   recordingRulePrefix(selectors)::
     std.join('_', [matcher.label for matcher in selectors]),

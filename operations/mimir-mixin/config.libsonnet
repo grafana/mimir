@@ -25,6 +25,10 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
+    // If Mimir deployments has compartments enabled, set to true to enable
+    // specific dropdowns and job selectors.
+    compartments_enabled: false,
+
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
@@ -124,6 +128,21 @@
       backend: ['ruler|ruler-zone-.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
+    } + (
+      // When compartments are enabled, override the job names of the
+      // compartmentalized components so that dashboards select only
+      // the jobs belonging to the currently selected read compartment.
+      if $._config.compartments_enabled then $._config.compartmentalized_job_names else {}
+    ),
+
+    // These are overrides for the job names for matching a specific compartment.
+    compartmentalized_job_names: {
+      ingester: ['ingester.*$read_compartment', 'cortex', 'mimir'],
+      block_builder: ['block-builder.*$read_compartment'],
+      block_builder_scheduler: ['block-builder-scheduler.*$read_compartment'],
+      compactor: ['compactor.*$read_compartment', 'cortex', 'mimir'],
+      compactor_scheduler: ['compactor-scheduler.*$read_compartment'],
+      store_gateway: ['store-gateway.*$read_compartment', 'cortex', 'mimir'],
     },
 
     // Unlike the job_names above, these are format strings, expanded with the zone suffix (e.g.
@@ -227,6 +246,8 @@
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
+      read_compartments_query: 'cortex_build_info{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
+      read_compartments_query_regex: '/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g',  // match "-rc-XX" but shown as "rc-XX" in the UI
     },
 
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
