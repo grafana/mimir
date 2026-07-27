@@ -254,8 +254,11 @@ type vectorVectorBinaryOperationEvaluator struct {
 	expressionPosition       posrange.PositionRange
 	emitAnnotation           types.EmitAnnotationFunc
 
-	// fillLeft/fillRight are the fill modifier values substituted when only the other side has a
-	// sample at a timestep (fill_left/fill and fill_right/fill respectively). nil disables filling.
+	// fillLeft is the value substituted for the left operand at a timestep where only the right side
+	// has a sample (from a fill_left(...) or fill(...) modifier). fillRight is the analogous
+	// substitute for the right operand at a timestep where only the left side has a sample (from
+	// fill_right(...) or fill(...)). A nil value disables filling for that side: timesteps where only
+	// the other side has a sample produce no output.
 	fillLeft  *float64
 	fillRight *float64
 
@@ -313,10 +316,18 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	rightPoints := len(right.Floats) + len(right.Histograms)
 
 	// maxPoints is an upper bound on the number of output points, used to size a newly allocated
-	// output slice. Without fill, output only occurs where both sides have a sample, so the smaller
-	// side bounds it. A fill lets every sample on the other side produce output, so a set fill side
-	// is bounded by the opposite side's point count, and both fills by their sum. The result is also capped by the
-	// number of steps in the query time range.
+	// output slice.
+	//
+	// Without fill, a timestep only produces output when both sides have a sample, so the smaller
+	// side's point count bounds the total: maxPoints = min(leftPoints, rightPoints).
+	//
+	// Setting a fill value removes that gating for one side. fillRight substitutes a value for the
+	// right operand whenever only the left side has a sample, so every left-side timestep now
+	// produces output: the bound becomes leftPoints. Symmetrically, fillLeft makes every
+	// right-side timestep produce output, bounding it by rightPoints. With both set, every
+	// timestep on either side produces output, so the bound is leftPoints + rightPoints (a loose
+	// upper bound; matched timesteps are double-counted here since they'd only emit once, but
+	// that's fine for sizing a slice).
 	maxPoints := min(leftPoints, rightPoints)
 	switch {
 	case e.fillLeft != nil && e.fillRight != nil:

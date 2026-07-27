@@ -527,7 +527,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			// Only one-to-one matching supports the 'fill' modifier so far.
 			// Grouped (group_left/group_right) fills, and fills on set operators, remain unsupported.
 			if expr.VectorMatching.Card != parser.CardOneToOne {
-				return nil, compat.NewNotSupportedError("'fill' modifier with grouping")
+				return nil, compat.NewNotSupportedError("'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)")
 			}
 		}
 

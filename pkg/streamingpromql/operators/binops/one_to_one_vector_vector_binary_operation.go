@@ -7,6 +7,7 @@ package binops
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/go-kit/log"
@@ -18,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -483,9 +485,19 @@ func (b *OneToOneVectorVectorBinaryOperation) addFilledLeftSeries(
 
 		if _, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
 			// Collision with a left-derived output series. A fill-left series can't be merged into it
-			// (it has no leftSeriesIndices), and overwriting would discard real data, so we keep the
-			// existing series and skip this one. Only reachable in a degenerate empty-__name__ case for
-			// comparison filters; impossible for arithmetic operators.
+			// (it has no leftSeriesIndices), and overwriting would discard real data.
+			//
+			// This is only legitimately reachable for operators that retain __name__ (comparison
+			// filters used without the bool modifier, or trim operators): a degenerate empty-__name__
+			// case can produce two right-side groups whose filled labels collide. In that case we keep
+			// the existing series and intentionally skip this one.
+			//
+			// For operators that do not retain __name__ (arithmetic operators) this collision is
+			// impossible, so reaching it indicates a bug in the query engine.
+			if !promqlext.RetainsMetricName(b.Op, b.ReturnBool) {
+				return -1, fmt.Errorf("unexpected output series collision during left-side fill for operator %v that does not retain __name__; this indicates a bug in the query engine", b.Op)
+			}
+
 			continue
 		}
 

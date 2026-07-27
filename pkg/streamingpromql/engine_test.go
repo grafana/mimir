@@ -79,9 +79,9 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
 		// Grouped (group_left/group_right) fills are not supported yet.
-		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with grouping",
-		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with grouping",
-		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with grouping",
+		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
