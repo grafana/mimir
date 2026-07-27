@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -766,15 +767,11 @@ func TestDistributor_QueryStream_NoMetricNamePruningOnIngesterPath(t *testing.T)
 		"ingester reads must cover every partition: the production topic is all-labels sharded, so no partition can be pruned by metric name")
 }
 
-// TestDistributor_QueryStream_EmitsReadcacheHitsHistogram verifies
-// that cortex_distributor_query_readcache_instances_hit_per_query
-// observes exactly one sample per Distributor.QueryStream call, and
-// that the value is 0 when the tenant is not on nautilus routing
-// (the "served entirely from ingesters" baseline). The zero
-// observation is load-bearing for read-path migration dashboards:
-// without it we couldn't tell apart "no readcache routing yet" from
-// "no query traffic at all".
-func TestDistributor_QueryStream_EmitsReadcacheHitsHistogram(t *testing.T) {
+// TestDistributor_QueryStream_ExcludesIngesterQueriesFromReadcacheFanoutMetrics
+// verifies that readcache fanout metrics only describe queries actually
+// routed to readcache. Ingester-routed queries feed neither the scoped
+// instance-hit histogram nor the full-fanout counter.
+func TestDistributor_QueryStream_ExcludesIngesterQueriesFromReadcacheFanoutMetrics(t *testing.T) {
 	const tenantID = "user"
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
@@ -802,24 +799,33 @@ func TestDistributor_QueryStream_EmitsReadcacheHitsHistogram(t *testing.T) {
 	})
 
 	queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-	// Full-fanout matcher: avoids any reliance on readcache routing
-	// and exercises the simplest histogram path (no readcache
-	// dialed, observation should be 0).
+	// This selector would require full fanout if it were routed to
+	// readcache, but this tenant uses ingesters.
 	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
 	require.NoError(t, err)
 
 	count, sum := histogramCountAndSum(t, d.queryReadcacheInstancesHit)
-	assert.Equal(t, uint64(1), count, "histogram must observe exactly once per Distributor.QueryStream call (got %d)", count)
-	assert.Equal(t, 0.0, sum, "value must be 0 when readcache routing is disabled (got %v)", sum)
+	assert.Equal(t, uint64(0), count)
+	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 
-	// A second query continues to observe; this guards against an
-	// accidental "observe only on the first call" regression.
+	// An exact metric name does not change that exclusion.
+	_, err = d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher(model.MetricNameLabel, "foo"))
+	require.NoError(t, err)
+
+	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(0), count)
+	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
+
+	// A second full-fanout-shaped ingester query remains excluded.
 	_, err = d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
 	require.NoError(t, err)
 
 	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
-	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, uint64(0), count)
 	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 }
 
 // histogramCountAndSum reads the in-process sample count and sum of

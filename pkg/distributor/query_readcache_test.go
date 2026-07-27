@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -380,6 +381,29 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	_, err := d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, mustEqualMatcher(model.MetricNameLabel, "foo"))
 	require.Error(t, err, "nautilus-only read must fail when the assignment log is not live")
 
+	count, sum := histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(1), count, "an exact metric-name query must feed the scoped fanout histogram")
+	assert.Equal(t, 0.0, sum, "routing failed before any readcache instance was reached")
+	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
+
+	// Without an exact metric name, readcache routing must inspect every
+	// relevant partition. Count that query separately and leave the
+	// scoped instance-hit histogram unchanged.
+	_, err = d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, mustEqualMatcher("job", "api"))
+	require.Error(t, err)
+	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 1.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
+
+	// A regex metric-name matcher still spans more than one metric-name
+	// hash range and therefore remains a full-fanout query.
+	_, err = d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "foo.*"))
+	require.Error(t, err)
+	count, _ = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, 2.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
+
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),
 		"nautilus-only routing must not dial ingesters even when readcache is unavailable")
 
@@ -393,6 +417,10 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	require.NoError(t, err)
 	assert.Empty(t, result.StreamingSeries)
 	assert.Empty(t, result.StreamReaders)
+	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 2.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),
 		"an empty future query must not dial ingesters")
 }

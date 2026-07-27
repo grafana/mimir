@@ -106,15 +106,14 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	// Allocate the per-query readcache hit tracker outside the
-	// instrument.CollectedRequest closure so the histogram is
-	// always observed exactly once per call — including the error
-	// paths below where the closure returns early. Zero observations
-	// (errored or all-ingester queries) are intentional: they form
-	// the baseline that the readcache routing migration drifts
-	// upward from.
+	// instrument.CollectedRequest closure so named readcache queries
+	// can observe it on every exit path after routing is selected.
 	hits := newReadcacheHitTracker()
+	observeReadcacheHits := false
 	defer func() {
-		d.queryReadcacheInstancesHit.Observe(float64(hits.count()))
+		if observeReadcacheHits {
+			d.queryReadcacheInstancesHit.Observe(float64(hits.count()))
+		}
 	}()
 
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
@@ -130,6 +129,13 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			partitionByInstance map[string]int32
 		)
 		if d.shouldRouteReadToReadcache(ctx) {
+			_, hasExactMetricName := extractExactMetricName(matchers)
+			if hasExactMetricName {
+				observeReadcacheHits = true
+			} else {
+				d.queryReadcacheFullFanout.Inc()
+			}
+
 			// Nautilus-only tenant: resolve partitions from the
 			// rebalancer assignment log and route exclusively to
 			// readcache. No ingester fallback.

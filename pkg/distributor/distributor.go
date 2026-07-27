@@ -178,6 +178,7 @@ type Distributor struct {
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	queryReadcacheInstancesHit       prometheus.Histogram
+	queryReadcacheFullFanout         prometheus.Counter
 	queryIngesterCompartmentsHit     prometheus.Histogram
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
@@ -736,14 +737,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"method", "status_code"})),
 		queryReadcacheInstancesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_distributor_query_readcache_instances_hit_per_query",
-			// One observation per Distributor.QueryStream call. The count is the
-			// number of *distinct* readcache instances the distributor committed
-			// to using to serve the query (deduped across partitions). A value
-			// of 0 means the query was served entirely from ingesters; tracking
-			// it explicitly lets us watch the read-path migration drift upward
-			// without needing a separate "any readcache used" counter.
-			Help:    "Number of distinct readcache instances queried while serving a Distributor.QueryStream call. 0 means the query was served entirely from ingesters.",
-			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
+			// One observation per readcache-routed Distributor.QueryStream call
+			// with an exact, non-empty __name__ matcher. The count is the number
+			// of *distinct* readcache instances the distributor committed to
+			// using (deduped across partitions).
+			Help:    "Number of distinct readcache instances queried while serving a metric-name-scoped Distributor.QueryStream call.",
+			Buckets: prometheus.LinearBuckets(0, 2, 129),
+		}),
+		queryReadcacheFullFanout: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_query_readcache_full_fanout_queries_total",
+			Help: "Total number of readcache-routed Distributor.QueryStream calls without an exact, non-empty __name__ matcher, requiring fanout to every relevant partition.",
 		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",

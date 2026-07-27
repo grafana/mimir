@@ -50,14 +50,11 @@ func (e errReadcacheRoutingUnavailable) Error() string {
 // and each goroutine may independently resolve a readcache instance
 // via queryClientForInstance.
 //
-// At the end of a query the tracker's count feeds the
+// At the end of a metric-name-scoped readcache query the tracker's
+// count feeds the
 // cortex_distributor_query_readcache_instances_hit_per_query
-// histogram. A count of 0 is a load-bearing datapoint: it means the
-// query was served entirely from ingesters (either because the
-// tenant isn't on nautilus-only routing, the assignment log was
-// empty, or every partition's readcache owner failed to dial and
-// the path fell back to ingesters). Tracking that "0" lets us
-// observe the migration as the value drifts upward.
+// histogram. Queries without an exact metric name are tracked by the
+// separate full-fanout counter.
 type readcacheHitTracker struct {
 	mu        sync.Mutex
 	instances map[string]struct{}
@@ -290,8 +287,7 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 // When a readcache client is returned and hits is non-nil, the
 // chosen readcache instance ID is recorded in hits so the caller can
 // emit a per-query histogram observation. The ingester branch never
-// records into hits (a readcache count of zero means "served
-// entirely from ingesters", which is the migration baseline).
+// records into hits.
 func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.InstanceDesc, partitionByInstance map[string]int32, hits *readcacheHitTracker, _ log.Logger) (client.IngesterClient, bool, error) {
 	if d.shouldRouteReadToReadcache(ctx) {
 		if d.readcachePool == nil {
