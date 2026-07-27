@@ -256,7 +256,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
-      ($.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary') + { collapse: true })
+      $.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary')
       .addPanel(
         $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
