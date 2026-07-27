@@ -12,14 +12,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const expectedMetricsTemplate = `
@@ -653,11 +651,6 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			observer := streamingpromql.NoopPlanningObserver{}
 
 			opts := streamingpromql.NewTestEngineOpts()
-
-			// Enable the experimental fill binary operator modifiers for tests.
-			fillParserOpts := promqlext.NewPromQLParserOptions()
-			fillParserOpts.EnableBinopFillModifiers = true
-			opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
 
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
