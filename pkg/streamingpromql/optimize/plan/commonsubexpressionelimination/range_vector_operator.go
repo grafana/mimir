@@ -682,7 +682,7 @@ func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVector
 	for _, section := range [][]promql.FPoint{headF, tailF} {
 		for _, p := range section {
 			if floats != nil && (floats.Count() == 0 || p.T > lastF.T) {
-				_, err := floats.Append(promql.FPoint{T: p.T, F: p.F})
+				err := floats.Append(promql.FPoint{T: p.T, F: p.F})
 				if err != nil {
 					return bufferedRangeVectorStepData{}, err
 				}
@@ -695,7 +695,7 @@ func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVector
 		for _, p := range section {
 			if histograms != nil && (histograms.Count() == 0 || p.T > lastH.T) {
 				// Try to reuse an existing HPoint and FloatHistogram if possible.
-				dest, _, err := histograms.NextPoint()
+				dest, err := histograms.NextPoint()
 				if err != nil {
 					return bufferedRangeVectorStepData{}, err
 				}

@@ -1156,7 +1156,7 @@ func (o *failingRangeVectorOperator) NextStepSamples(_ context.Context) (*types.
 	if o.floats == nil {
 		o.floats = types.NewFPointRingBuffer(o.memoryConsumptionTracker)
 
-		if _, err := o.floats.Append(promql.FPoint{T: 1000, F: 1234}); err != nil {
+		if err := o.floats.Append(promql.FPoint{T: 1000, F: 1234}); err != nil {
 			return nil, err
 		}
 
@@ -1167,7 +1167,7 @@ func (o *failingRangeVectorOperator) NextStepSamples(_ context.Context) (*types.
 	if o.histograms == nil {
 		o.histograms = types.NewHPointRingBuffer(o.memoryConsumptionTracker)
 
-		if _, err := o.histograms.Append(promql.HPoint{T: 1000, H: &histogram.FloatHistogram{Count: 100, Sum: 2}}); err != nil {
+		if err := o.histograms.Append(promql.HPoint{T: 1000, H: &histogram.FloatHistogram{Count: 100, Sum: 2}}); err != nil {
 			return nil, err
 		}
 
