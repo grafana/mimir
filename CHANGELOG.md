@@ -126,6 +126,7 @@
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [CHANGE] Alerts: `MimirIngesterKafkaReadFailed` now fires as `warning` after 5m, and escalates to `critical` if it persists for 30m. `MimirStrongConsistencyEnforcementFailed` severity changed from `critical` to `warning`, since queriers retry on a different ingester and fire their own alerts if that retry fails. #16019
 * [CHANGE] Remove Grafana Enterprise Metrics (GEM) specific build of the mixin. #16031
+* [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
 * [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
@@ -139,7 +140,6 @@
 * [ENHANCEMENT] Dashboards: Simplify the ingest storage produced-records queries in the "Writes" and "Ruler" dashboards by removing the fallback to the `cortex_ingest_storage_writer_produce_requests_total` and `cortex_ingest_storage_writer_produce_failures_total` metrics, which were renamed to `cortex_ingest_storage_writer_produce_records_enqueued_total` and `cortex_ingest_storage_writer_produce_records_failed_total` more than a year ago. #16035
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 * [BUGFIX] Alerts: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
-* [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178 #12782
 
 ### Jsonnet
 
