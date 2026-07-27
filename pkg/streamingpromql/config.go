@@ -142,7 +142,7 @@ func (o *EngineOpts) Validate() error {
 // used as the primary engine or as MQE's fallback. It applies delayed name removal to a copy of
 // CommonOpts, which is deliberately never set on CommonOpts itself: MQE rejects that option because
 // it controls the feature per-tenant via Limits instead.
-func (o EngineOpts) PrometheusEngineOpts() promql.EngineOpts {
+func (o *EngineOpts) PrometheusEngineOpts() promql.EngineOpts {
 	commonOpts := o.CommonOpts
 	commonOpts.EnableDelayedNameRemoval = o.EnableDelayedNameRemovalPrometheusEngine
 	return commonOpts
