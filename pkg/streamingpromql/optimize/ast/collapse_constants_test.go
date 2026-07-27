@@ -65,17 +65,17 @@ func TestCollapseConstants(t *testing.T) {
 
 			// Check for unnecessary unary or step-invariant expressions or parentheses.
 			parser.Inspect(result, func(node parser.Node, _ []parser.Node) error {
-				if u, ok := result.(*parser.UnaryExpr); ok {
+				if u, ok := node.(*parser.UnaryExpr); ok {
 					_, isNumberLiteral := u.Expr.(*parser.NumberLiteral)
 					require.Falsef(t, isNumberLiteral, "should not have a unary expression wrapping a number literal:\n%v", parser.Tree(result))
 				}
 
-				if s, ok := result.(*parser.StepInvariantExpr); ok {
+				if s, ok := node.(*parser.StepInvariantExpr); ok {
 					_, isNumberLiteral := s.Expr.(*parser.NumberLiteral)
 					require.Falsef(t, isNumberLiteral, "should not have a step-invariant expression wrapping a number literal:\n%v", parser.Tree(result))
 				}
 
-				if p, ok := result.(*parser.ParenExpr); ok {
+				if p, ok := node.(*parser.ParenExpr); ok {
 					_, isNumberLiteral := p.Expr.(*parser.NumberLiteral)
 					require.Falsef(t, isNumberLiteral, "should not have parentheses expression wrapping a number literal:\n%v", parser.Tree(result))
 				}
