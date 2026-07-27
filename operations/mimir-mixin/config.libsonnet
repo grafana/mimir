@@ -235,7 +235,7 @@
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
-      read_compartments_query: '{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
+      read_compartments_query: 'cortex_build_info{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
       read_compartments_query_regex: '/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g',  // match "-rc-XX" but shown as "rc-XX" in the UI
     },
 
