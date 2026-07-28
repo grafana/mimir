@@ -236,6 +236,46 @@ groups:
               )
             )
           record: cluster_namespace_deployment:actual_replicas:count
+        - expr: |+
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                sum by (cluster, namespace, deployment_without_compartment) (
+                  label_replace(
+                    cluster_namespace_deployment:actual_replicas:count{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                    "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                  )
+                ),
+                "deployment", "$1", "deployment_without_compartment", "(.*)"
+              )
+            )
+            # Skip a component that still has a bare-name count (mid-migration to compartments) to avoid
+            # recording the same series twice. Compare against the source of the rule above, not the recorded
+            # metric: that includes this rule's own output and would suppress this rule every other evaluation.
+            unless
+            # Convenience rule to get the number of replicas for both a deployment and a statefulset.
+            #
+            # Notes:
+            # - Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
+            #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
+            #   to "deployment".
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                sum by (cluster, namespace, deployment_without_zone) (
+                  label_replace(
+                    kube_deployment_spec_replicas,
+                    "deployment_without_zone", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
+                  )
+                )
+                or
+                sum by (cluster, namespace, deployment_without_zone) (
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?")
+                ),
+                "deployment", "$1", "deployment_without_zone", "(.*)"
+              )
+            )
+
+          record: cluster_namespace_deployment:actual_replicas:count
         - expr: |
             ceil(
               quantile_over_time(0.99,

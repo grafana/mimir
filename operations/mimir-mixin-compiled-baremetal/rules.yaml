@@ -220,6 +220,30 @@ groups:
               )
             )
           record: cluster_namespace_deployment:actual_replicas:count
+        - expr: |+
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                sum by (cluster, namespace, deployment_without_compartment) (
+                  label_replace(
+                    cluster_namespace_deployment:actual_replicas:count{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                    "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                  )
+                ),
+                "deployment", "$1", "deployment_without_compartment", "(.*)"
+              )
+            )
+            # Skip a component that still has a bare-name count (mid-migration to compartments) to avoid
+            # recording the same series twice. Compare against the source of the rule above, not the recorded
+            # metric: that includes this rule's own output and would suppress this rule every other evaluation.
+            unless
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                cortex_build_info{namespace="baremetal"},
+                "deployment", "$1", "job", "baremetal/(.*)"
+              )
+            )
+
+          record: cluster_namespace_deployment:actual_replicas:count
         - expr: |
             ceil(
               quantile_over_time(0.99,
