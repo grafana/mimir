@@ -59,7 +59,12 @@ func WriteTenantDeletionMark(ctx context.Context, bkt objstore.Bucket, userID st
 func ReadTenantDeletionMark(ctx context.Context, bkt objstore.BucketReader, userID string, logger log.Logger) (*TenantDeletionMark, error) {
 	markerFile := path.Join(userID, TenantDeletionMarkPath)
 
-	r, err := bkt.Get(ctx, markerFile)
+	reader := bkt
+	if instrumented, ok := bkt.(objstore.InstrumentedBucketReader); ok {
+		reader = instrumented.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr)
+	}
+
+	r, err := reader.Get(ctx, markerFile)
 	if err != nil {
 		if bkt.IsObjNotFoundErr(err) {
 			return nil, nil
