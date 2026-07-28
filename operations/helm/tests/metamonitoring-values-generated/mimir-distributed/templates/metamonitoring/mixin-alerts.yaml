@@ -241,9 +241,12 @@ spec:
                 )
                 or
                 ( # Ingest storage timeseries
+                  # The ingester ID deduplicates the zone replicas of a partition, which hold the same series.
+                  # It restarts from 0 in every read compartment, so the compartment is part of the identity too,
+                  # otherwise all compartments but one are deduplicated away.
                   sum by(cluster, namespace) (
-                    max by(ingester_id, cluster, namespace) (
-                      label_replace(cortex_ingester_memory_series,
+                    max by(ingester_id, read_compartment, cluster, namespace) (
+                      label_replace(label_replace(cortex_ingester_memory_series, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"),
                         "ingester_id", "$1",
                         "pod", ".*-([0-9]+)$"
                       )
@@ -510,20 +513,20 @@ spec:
               (
                 # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
                 max by (cluster, namespace, rollout_group) (
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     unless
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
                   # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                   *
                 (
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     !=
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
               ) and (
                 # Pick only those which are unchanging for the interval.
-                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -542,20 +545,20 @@ spec:
               (
                 # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
                 max by (cluster, namespace, rollout_group) (
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     unless
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
                   # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                   *
                 (
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     !=
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
               ) and (
                 # Pick only those which are unchanging for the interval.
-                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -572,11 +575,11 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
             expr: |
               (
-                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               ) and (
-                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -592,11 +595,11 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
             expr: |
               (
-                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               ) and (
-                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -1088,7 +1091,7 @@ spec:
               count by (cluster, namespace) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
               and
               # and there is only one zone
-              count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+              count by (cluster, namespace) (group by (cluster, namespace, zone) (label_replace(cortex_ingester_tsdb_wal_corruptions_total, "zone", "$1", "job", ".*-(zone-[a-z]).*"))) == 1
             labels:
               deployment: single-zone
               severity: critical
@@ -1097,11 +1100,11 @@ spec:
               message: Mimir Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
             expr: |
-              # alert when there are more than one corruptions
-              count by (cluster, namespace) (sum by (cluster, namespace, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+              # alert when there are corruptions in more than one zone
+              count by (cluster, namespace) (sum by (cluster, namespace, zone) (label_replace((rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0), "zone", "$1", "job", ".*-(zone-[a-z]).*"))) > 1
               and
               # and there are multiple zones
-              count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+              count by (cluster, namespace) (group by (cluster, namespace, zone) (label_replace(cortex_ingester_tsdb_wal_corruptions_total, "zone", "$1", "job", ".*-(zone-[a-z]).*"))) > 1
             labels:
               deployment: multi-zone
               severity: critical
@@ -1136,10 +1139,10 @@ spec:
               severity: warning
           - alert: MimirBucketIndexNotUpdated
             annotations:
-              message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
+              message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} has not been updated since {{ $value | humanizeDuration }}.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
             expr: |
-              min by(cluster, namespace, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
+              min by(cluster, namespace, user, read_compartment) (time() - (label_replace(max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))) > 2100
             for: 2m
             labels:
               severity: critical
@@ -1671,10 +1674,20 @@ spec:
               severity: critical
           - alert: MimirFewerIngestersConsumingThanActivePartitions
             annotations:
-              message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
+              message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} have fewer ingesters consuming than active partitions.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfeweringestersconsumingthanactivepartitions
             expr: |
-              max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (cluster, namespace) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (cluster, namespace, partition)) by (cluster, namespace)
+              max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)"))
+                >
+              (
+                count by (cluster, namespace, read_compartment) (
+                  count by (cluster, namespace, read_compartment, partition) (label_replace(cortex_ingest_storage_reader_last_consumed_offset{}, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
+                )
+                  or
+                # A compartment whose ingesters all stopped consuming has no series here, and vector matching
+                # would drop it from the comparison, so default it to zero consumers.
+                (max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)")) * 0)
+              )
             for: 15m
             labels:
               severity: critical
