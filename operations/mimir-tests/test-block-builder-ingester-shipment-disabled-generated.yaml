@@ -513,10 +513,7 @@ spec:
         - name: GOMAXPROCS
           value: "4"
         - name: GOMEMLIMIT
-          valueFrom:
-            resourceFieldRef:
-              divisor: 1
-              resource: limits.memory
+          value: "8589934592"
         image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: block-builder
@@ -932,17 +929,6 @@ spec:
         - -server.http-listen-port=8080
         - -target=block-builder-scheduler
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: GOMAXPROCS
-          valueFrom:
-            resourceFieldRef:
-              divisor: 1
-              resource: limits.cpu
-        - name: GOMEMLIMIT
-          valueFrom:
-            resourceFieldRef:
-              divisor: 1
-              resource: limits.memory
         image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: block-builder-scheduler
