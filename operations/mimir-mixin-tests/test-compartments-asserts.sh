@@ -72,7 +72,7 @@ for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
   fi
 done
 
-for ALERT in "MimirBucketIndexNotUpdated"; do
+for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJobs" "MimirCompactorSchedulerRepeatedJobFailure"; do
   EXPR=$(ALERT="${ALERT}" yq eval '.groups[].rules[] | select(.alert == env(ALERT)) | .expr' "${ALERTS_FILE}")
 
   if [ -z "${EXPR}" ]; then
