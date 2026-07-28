@@ -278,6 +278,14 @@
     rollout_stuck_alert_ignore_deployments: [],
     rollout_stuck_alert_ignore_statefulsets: [],
 
+    // Maps a Deployment or StatefulSet name to the workloads it is rolled out and scaled with:
+    // 'ingester-zone-a' -> 'ingester', and with compartments 'ingester-zone-a-rc-0' -> 'ingester-rc-0'.
+    // The compartment suffix must be matched explicitly because label_replace anchors its regex, otherwise
+    // the whole name ends up in the first capture group. The question marks make the groups non-greedy,
+    // otherwise the first one always matches everything and the optional suffixes are not removed.
+    workload_group_regex: '(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?',
+    workload_group_replacement: '$1$2',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
