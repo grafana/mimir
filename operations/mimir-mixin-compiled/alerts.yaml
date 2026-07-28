@@ -260,8 +260,8 @@ groups:
               or
               ( # Ingest storage timeseries
                 sum by(cluster, namespace) (
-                  max by(ingester_id, cluster, namespace) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, cluster, namespace) (
+                    label_replace(label_replace(cortex_ingester_memory_series, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"),
                       "ingester_id", "$1",
                       "pod", ".*-([0-9]+)$"
                     )
