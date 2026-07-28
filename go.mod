@@ -29,9 +29,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.33.1
-	github.com/prometheus/client_golang v1.23.3-0.20260305100053-48a6770e980b
+	github.com/prometheus/client_golang v1.23.3-0.20260724065723-ecdb8254ba61
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.70.0
+	github.com/prometheus/common v0.70.1
 	github.com/prometheus/prometheus v1.99.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
@@ -301,7 +301,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.19.0
+	github.com/klauspost/compress v1.19.1
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
