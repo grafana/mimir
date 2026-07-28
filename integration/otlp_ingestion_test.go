@@ -86,6 +86,11 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
