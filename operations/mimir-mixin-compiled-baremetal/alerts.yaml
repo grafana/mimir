@@ -1645,10 +1645,20 @@ groups:
             severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
           annotations:
-            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
+            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} have fewer ingesters consuming than active partitions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfeweringestersconsumingthanactivepartitions
           expr: |
-            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (cluster, namespace) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (cluster, namespace, partition)) by (cluster, namespace)
+            max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)"))
+              >
+            (
+              count by (cluster, namespace, read_compartment) (
+                count by (cluster, namespace, read_compartment, partition) (label_replace(cortex_ingest_storage_reader_last_consumed_offset{}, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
+              )
+                or
+              # A compartment whose ingesters all stopped consuming has no series here, and vector matching
+              # would drop it from the comparison, so default it to zero consumers.
+              (max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)")) * 0)
+            )
           for: 15m
           labels:
             severity: critical
