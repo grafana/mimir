@@ -61,8 +61,8 @@
     // Pin Go threads to CPU request: block-builders are IO-bound during fetch so extra threads
     // add little throughput but increase context-switch cost.
     GOMAXPROCS: std.toString($.util.parseCPU($.block_builder_container.resources.requests.cpu)),
-    // Dynamically set GOMEMLIMIT based on memory request, leaving headroom up to the limit.
-    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.block_builder_container.resources.requests.memory))),
+    // Dynamically set GOMEMLIMIT based on memory limit to protect against OOM.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.block_builder_container.resources.limits.memory))),
   },
 
   block_builder_node_affinity_matchers:: [],

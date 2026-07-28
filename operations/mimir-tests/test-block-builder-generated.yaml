@@ -513,7 +513,7 @@ spec:
         - name: GOMAXPROCS
           value: "4"
         - name: GOMEMLIMIT
-          value: "8589934592"
+          value: "12884901888"
         image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: block-builder
