@@ -51,7 +51,7 @@
       // process faster than the 1h job backlog window.
       'ingest-storage.kafka.ingestion-concurrency-max': 2,
       // Align fetch concurrency with GOMAXPROCS for better throughput / lower memory.
-      'ingest-storage.kafka.fetch-concurrency-max': '4',
+      'ingest-storage.kafka.fetch-concurrency-max': 4,
     } +
     $.mimirRuntimeConfigFile,
 
@@ -118,9 +118,7 @@
 
   block_builder_pdb: if !$._config.block_builder.enabled then null else
     $.newMimirPdb('block-builder'),
-}
 
-{
   // Stop shipping ingester blocks when the block-builder is the sole L0 block producer.
   ingester_args+:: if !$._config.block_builder.enabled || $._config.block_builder.ingester_tsdb_ship_blocks_enabled then {} else {
     'blocks-storage.tsdb.ship-interval': 0,
