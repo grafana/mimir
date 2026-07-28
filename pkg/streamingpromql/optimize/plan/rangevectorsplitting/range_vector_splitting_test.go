@@ -1500,7 +1500,6 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
-	opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
 	}

@@ -76,15 +76,17 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-		// This only applies to the fallback Prometheus engine. MQE's is defined per-tenant via limits.
-		EnableDelayedNameRemoval: cfg.EnableDelayedNameRemovalPrometheusEngine,
-		Parser:                   promqlext.NewPromQLParser(),
+		// Delayed name removal is deliberately not set here: MQE rejects it on CommonOpts. It is
+		// carried separately below and applied only when the Prometheus engine is constructed from
+		// these options via PrometheusEngineOpts.
+		Parser: promqlext.NewPromQLParser(),
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
 	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
 	cfg.MimirQueryEngine.Logger = logger
 	cfg.MimirQueryEngine.Limits = limits
+	cfg.MimirQueryEngine.EnableDelayedNameRemovalPrometheusEngine = cfg.EnableDelayedNameRemovalPrometheusEngine
 
 	return cfg.MimirQueryEngine
 }
