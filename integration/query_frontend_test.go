@@ -42,6 +42,7 @@ type queryFrontendTestConfig struct {
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	remoteExecutionEnabled      bool
+	rangeVectorSplittingEnabled bool
 
 	// useMQEForSplittingAndCaching runs time-splitting, results caching and subquery spin-off inside the
 	// Mimir query engine (MQE) instead of in the query-frontend middleware. It requires remote execution
@@ -244,6 +245,25 @@ func TestQueryFrontendWithMQEForSplittingAndCaching(t *testing.T) {
 	})
 }
 
+func TestQueryFrontendWithMQERangeVectorSplitting(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+			)
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+		remoteExecutionEnabled:      true,
+		rangeVectorSplittingEnabled: true,
+		withHistograms:              true,
+	})
+}
+
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runScenario := func(t *testing.T, enableRemoteExecution bool) {
 		runQueryFrontendTest(t, queryFrontendTestConfig{
@@ -301,6 +321,17 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.enable-remote-execution":             strconv.FormatBool(cfg.remoteExecutionEnabled),
 		"-query-frontend.use-mimir-query-engine-for-sharding": strconv.FormatBool(cfg.remoteExecutionEnabled), // If remote execution isn't enabled, we can't run sharding inside MQE either.
 	})
+
+	if cfg.rangeVectorSplittingEnabled {
+		flags = mergeFlags(flags, map[string]string{
+			// Common subexpression elimination is enabled by default but using it for range vectors in range
+			// queries is not by default.
+			"-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination": "true",
+			"-querier.mimir-query-engine.range-vector-splitting.enabled":                                   "true",
+			"-querier.mimir-query-engine.range-vector-splitting.backend":                                   "memcached",
+			"-querier.mimir-query-engine.range-vector-splitting.memcached.addresses":                       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		})
+	}
 
 	if cfg.useMQEForSplittingAndCaching {
 		flags = mergeFlags(flags, map[string]string{
