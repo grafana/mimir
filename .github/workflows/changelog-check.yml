@@ -20,6 +20,14 @@ jobs:
       - name: Check if changelog should be skipped
         id: check-label
         run: |
+          # Renovate's labels vary by update type (e.g. update-patch, severity:*) and don't always
+          # include dependency-update, so the label check below can't be relied on for its PRs.
+          if [ "$PR_AUTHOR" = 'renovate-sh-app[bot]' ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "PR is authored by $PR_AUTHOR, skipping changelog check"
+            exit 0
+          fi
+
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
 
           if echo "$LABELS" | grep -qE '^(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release|backport)$'; then
@@ -31,6 +39,7 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
 
       - name: Check PR reference in CHANGELOG.md
         if: steps.check-label.outputs.skip == 'false'
