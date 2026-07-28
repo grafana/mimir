@@ -37,37 +37,40 @@
         },
         {
           // Alert if the scheduler has recorded repeated job failures.
+          // A scheduler is deployed per read compartment, so keep the compartment to know which one to look at.
           alert: $.alertName('CompactorSchedulerRepeatedJobFailure'),
           expr: |||
-            sum by(%(alert_aggregation_labels)s) (
-              increase(cortex_compactor_scheduler_repeated_job_failures_total[%(rate_interval)s])
+            sum by(%(alert_aggregation_labels)s, read_compartment) (
+              %(repeated_failures)s
             ) > 0
           ||| % $._config {
-            rate_interval: $.rateInterval('5m'),
+            repeated_failures: $.withReadCompartmentLabel('increase(cortex_compactor_scheduler_repeated_job_failures_total[%s])' % $.rateInterval('5m')),
           },
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s has jobs failing repeatedly.' % $._config,
+            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} has jobs failing repeatedly.' % $._config,
           },
         },
         {
           // Alert if the scheduler is not completing any jobs.
+          // A scheduler is deployed per read compartment, so sum per compartment: otherwise a scheduler that
+          // completes jobs hides a stalled one.
           alert: $.alertName('CompactorSchedulerNotCompletingJobs'),
           'for': '30m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s) (
-              increase(cortex_compactor_scheduler_jobs_completed_total[%(rate_interval)s])
+            sum by(%(alert_aggregation_labels)s, read_compartment) (
+              %(jobs_completed)s
             ) == 0
           ||| % $._config {
-            rate_interval: $.rateInterval('6h'),
+            jobs_completed: $.withReadCompartmentLabel('increase(cortex_compactor_scheduler_jobs_completed_total[%s])' % $.rateInterval('6h')),
           },
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s is not completing any jobs.' % $._config,
+            message: '%(product)s Compactor scheduler in %(alert_aggregation_variables)s{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} is not completing any jobs.' % $._config,
           },
         },
       ],
