@@ -152,7 +152,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		c, err := e2emimir.NewClient("", q.HTTPEndpoint(), "", "", userID)
 		require.NoError(t, err)
 
-		_, err = c.Query("series_1", now)
+		_, _, _, err = c.Query("series_1", now)
 		require.NoError(t, err)
 	}
 
@@ -170,7 +170,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
-			result, err := c.Query("series_1", now)
+			result, _, _, err := c.Query("series_1", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector, result.(model.Vector))

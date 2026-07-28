@@ -188,7 +188,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		api := v1.NewAPI(queryClient)
 
 		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
 		require.NoError(t, err)
 		require.Equal(t, model.Vector{
 			{Metric: model.Metric{"foo": "bar"}, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Value: totalShards},
@@ -200,7 +200,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -223,7 +223,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))

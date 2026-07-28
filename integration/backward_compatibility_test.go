@@ -330,7 +330,7 @@ func checkQueries(
 
 			for _, query := range instantQueries {
 				t.Run(fmt.Sprintf("instant query: %s", query.expr), func(t *testing.T) {
-					result, err := c.Query(query.expr, query.time)
+					result, _, _, err := c.Query(query.expr, query.time)
 					require.NoError(t, err)
 					require.Equal(t, model.ValVector, result.Type())
 					require.Equal(t, query.expectedVector, result.(model.Vector))

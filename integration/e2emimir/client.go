@@ -319,25 +319,25 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 }
 
 // Query runs an instant query.
-func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, promv1.Warnings, promv1.Infos, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.Query(ctx, query, ts, opts...)
-	return value, err
+	value, warnings, infos, err := c.querierClient.Query(ctx, query, ts, opts...)
+	return value, warnings, infos, err
 }
 
 // QueryRange runs a range query.
-func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, promv1.Warnings, promv1.Infos, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
+	value, warnings, infos, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
 	}, opts...)
-	return value, err
+	return value, warnings, infos, err
 }
 
 // QueryRangeRaw runs a ranged query directly against the querier API.
@@ -500,7 +500,7 @@ func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.O
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
 	return result, err
 }
 
@@ -509,7 +509,7 @@ func (c *Client) LabelValues(label string, start, end time.Time, matches []strin
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
 	return result, err
 }
 
@@ -518,7 +518,7 @@ func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...prom
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
 	if err != nil {
 		return nil, err
 	}

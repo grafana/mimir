@@ -161,7 +161,7 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 	require.NoError(t, err)
 
 	for name, expectedVector := range expectedVectors {
-		result, err := queryClient.Query(name, now)
+		result, _, _, err := queryClient.Query(name, now)
 		require.NoErrorf(t, err, "metric: %s", name)
 		require.Equalf(t, model.ValVector, result.Type(), "metric: %s", name)
 		assert.Equalf(t, expectedVector, result.(model.Vector), "metric: %s", name)
@@ -399,7 +399,7 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 	// expected series is returned.
 	for name, expectedVector := range expectedVectors {
 		test.Poll(t, 30*time.Second, expectedVector, func() interface{} {
-			res, err := queryClient.Query(name, now)
+			res, _, _, err := queryClient.Query(name, now)
 			if err != nil || res.Type() != model.ValVector {
 				return model.Vector(nil)
 			}
@@ -418,7 +418,7 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 		}
 		querierSumBefore, querierCountBefore := querierStoreGatewayCompartmentsHit(t, querier)
 
-		_, err := queryClient.Query(name, now)
+		_, _, _, err := queryClient.Query(name, now)
 		require.NoErrorf(t, err, "metric: %s", name)
 
 		// The targeted compartment's store-gateway served one more Series request...
@@ -450,7 +450,7 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 		}
 		querierSumBefore, querierCountBefore := querierStoreGatewayCompartmentsHit(t, querier)
 
-		_, err := queryClient.Query(`{__name__=~"compartment_series_.*"}`, now)
+		_, _, _, err := queryClient.Query(`{__name__=~"compartment_series_.*"}`, now)
 		require.NoError(t, err)
 
 		for i := range storeGateways {
