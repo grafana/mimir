@@ -229,9 +229,12 @@ groups:
               )
               or
               ( # Ingest storage timeseries
+                # The ingester ID deduplicates the zone replicas of a partition, which hold the same series.
+                # It restarts from 0 in every read compartment, so the compartment is part of the identity too,
+                # otherwise all compartments but one are deduplicated away.
                 sum by(cluster, namespace) (
-                  max by(ingester_id, cluster, namespace) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, cluster, namespace) (
+                    label_replace(label_replace(cortex_ingester_memory_series, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"),
                       "ingester_id", "$1",
                       "pod", ".*-([0-9]+)$"
                     )

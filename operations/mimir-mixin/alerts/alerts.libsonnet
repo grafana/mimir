@@ -357,9 +357,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
               or
               ( # Ingest storage timeseries
+                # The ingester ID deduplicates the zone replicas of a partition, which hold the same series.
+                # It restarts from 0 in every read compartment, so the compartment is part of the identity too,
+                # otherwise all compartments but one are deduplicated away.
                 sum by(%(alert_aggregation_labels)s) (
-                  max by(ingester_id, %(alert_aggregation_labels)s) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, %(alert_aggregation_labels)s) (
+                    label_replace(%(memory_series)s,
                       "ingester_id", "$1",
                       "%(per_instance_label)s", ".*-([0-9]+)$"
                     )
@@ -367,7 +370,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
             ) > 100000
-          ||| % $._config,
+          ||| % $._config {
+            memory_series: $.withReadCompartmentLabel('cortex_ingester_memory_series'),
+          },
           labels: {
             severity: 'warning',
           },
