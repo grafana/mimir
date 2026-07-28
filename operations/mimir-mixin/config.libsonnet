@@ -278,6 +278,12 @@
     rollout_stuck_alert_ignore_deployments: [],
     rollout_stuck_alert_ignore_statefulsets: [],
 
+    // Maps a workload to the group it is rolled out and scaled with: 'ingester-zone-a' -> 'ingester',
+    // 'ingester-zone-a-rc-0' -> 'ingester-rc-0'. label_replace anchors the regex and '(.*?)' must stay
+    // non-greedy, or the optional suffixes end up in the first capture group instead of being stripped.
+    workload_group_regex: '(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?',
+    workload_group_replacement: '$1$2',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
