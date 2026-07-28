@@ -112,6 +112,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: _config.mimir_scaling_rules[_config.deployment_type].actual_replicas_count % _config,
           },
           {
+            // Some of the rules below size a component for a whole namespace and label the result with the
+            // bare component name, but the rule above only records per-compartment names ("ingester-rc-0"),
+            // so the Scaling dashboard would have nothing to join them to. Also record the total across a
+            // component's compartments. The selector matches nothing when compartments are disabled.
+            record: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
+            // As in the rule above, strip the compartment into an additional label first, so that the
+            // aggregation happens before the names collide.
+            expr: |||
+              sum by (%(alert_aggregation_labels)s, deployment) (
+                label_replace(
+                  sum by (%(alert_aggregation_labels)s, deployment_without_compartment) (
+                    label_replace(
+                      %(actual_replicas)s{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                      "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                    )
+                  ),
+                  "deployment", "$1", "deployment_without_compartment", "(.*)"
+                )
+              )
+              # Skip a component that already has a replica count under its bare name, which happens while a
+              # namespace is being migrated to compartments, to avoid recording the same series twice.
+              unless
+              %(actual_replicas)s
+            ||| % (_config {
+                     actual_replicas: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
+                   }),
+          },
+          {
             // Distributors should be able to deal with 240k samples/s.
             record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,
             labels: {

@@ -82,6 +82,9 @@ for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJ
   fi
 done
 
+assert_matches "${RULES_FILE}" 'deployment_without_compartment' \
+  "No rule records the actual replica count of a component across its read compartments, so the namespace-wide required_replicas rules have nothing to join against."
+
 PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewerIngestersConsumingThanActivePartitions") | .expr' "${ALERTS_FILE}")
 for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
   if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then

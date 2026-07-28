@@ -217,6 +217,23 @@ groups:
             )
           record: cluster_namespace_deployment:actual_replicas:count
         - expr: |
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                sum by (cluster, namespace, deployment_without_compartment) (
+                  label_replace(
+                    cluster_namespace_deployment:actual_replicas:count{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                    "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                  )
+                ),
+                "deployment", "$1", "deployment_without_compartment", "(.*)"
+              )
+            )
+            # Skip a component that already has a replica count under its bare name, which happens while a
+            # namespace is being migrated to compartments, to avoid recording the same series twice.
+            unless
+            cluster_namespace_deployment:actual_replicas:count
+          record: cluster_namespace_deployment:actual_replicas:count
+        - expr: |
             ceil(
               quantile_over_time(0.99,
                 sum by (cluster, namespace) (
