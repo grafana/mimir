@@ -322,7 +322,9 @@ groups:
               ) / 4)
                 /
               avg by (cluster, namespace) (
-                memcached_limit_bytes{job=~".+/memcached"}
+                # This sizes the chunks cache, so match its per-zone and per-compartment deployments too,
+                # while still leaving out the frontend, index-queries and metadata caches.
+                memcached_limit_bytes{job=~".+/memcached(-zone-[a-z])?(-rc-[0-9]+)?"}
               )
             )
           labels:

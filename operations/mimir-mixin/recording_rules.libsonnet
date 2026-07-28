@@ -253,7 +253,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 ) / 4)
                   /
                 avg by (%(alert_aggregation_labels)s) (
-                  memcached_limit_bytes{job=~".+/memcached"}
+                  # This sizes the chunks cache, so match its per-zone and per-compartment deployments too,
+                  # while still leaving out the frontend, index-queries and metadata caches.
+                  memcached_limit_bytes{job=~".+/memcached(-zone-[a-z])?(-rc-[0-9]+)?"}
                 )
               )
             ||| % _config,
