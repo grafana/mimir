@@ -72,6 +72,13 @@ for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
   fi
 done
 
+PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewerIngestersConsumingThanActivePartitions") | .expr' "${ALERTS_FILE}")
+for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
+  if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then
+    assert_failed "MimirFewerIngestersConsumingThanActivePartitions does not derive a read_compartment label from ${METRIC}.\nPartition IDs collide across compartments, so both sides must be compared per compartment."
+  fi
+done
+
 if [ $FAILED -ne 0 ]; then
   exit 1
 fi
