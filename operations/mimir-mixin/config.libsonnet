@@ -709,7 +709,7 @@
       workload_label_replaces: [
         { src_label: 'deployment', regex: '(.+)', replacement: '$1' },
         { src_label: 'statefulset', regex: '(.+)', replacement: '$1' },
-        { src_label: 'workload', regex: '(.*?)(?:-zone-[a-z])?', replacement: '$1' },
+        { src_label: 'workload', regex: $._config.workload_group_regex, replacement: $._config.workload_group_replacement },
       ],
     },
 
