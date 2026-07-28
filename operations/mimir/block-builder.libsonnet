@@ -58,15 +58,11 @@
   block_builder_ports:: $.util.defaultPorts,
 
   block_builder_env_map:: {
-    // Pin Go to 4 threads: block-builders are IO-bound during fetch so extra threads
+    // Pin Go threads to CPU request: block-builders are IO-bound during fetch so extra threads
     // add little throughput but increase context-switch cost.
-    GOMAXPROCS: '4',
-    GOMEMLIMIT: {
-      resourceFieldRef: {
-        resource: 'limits.memory',
-        divisor: 1,
-      },
-    },
+    GOMAXPROCS: std.toString($.util.parseCPU($.block_builder_container.resources.requests.cpu)),
+    // Dynamically set GOMEMLIMIT based on memory request, leaving headroom up to the limit.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.block_builder_container.resources.requests.memory))),
   },
 
   block_builder_node_affinity_matchers:: [],

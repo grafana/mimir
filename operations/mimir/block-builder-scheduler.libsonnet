@@ -31,21 +31,7 @@
 
   block_builder_scheduler_ports:: $.util.defaultPorts,
 
-  // Pin the Go runtime to the container's own limits, keeping scheduling overheads and heap usage bounded.
-  block_builder_scheduler_env_map:: {
-    GOMAXPROCS: {
-      resourceFieldRef: {
-        resource: 'limits.cpu',
-        divisor: 1,
-      },
-    },
-    GOMEMLIMIT: {
-      resourceFieldRef: {
-        resource: 'limits.memory',
-        divisor: 1,
-      },
-    },
-  },
+  block_builder_scheduler_env_map:: {},
 
   block_builder_scheduler_node_affinity_matchers:: [],
 
