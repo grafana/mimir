@@ -1124,10 +1124,10 @@ groups:
             severity: warning
         - alert: MimirBucketIndexNotUpdated
           annotations:
-            message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
+            message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} has not been updated since {{ $value | humanizeDuration }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
           expr: |
-            min by(cluster, namespace, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
+            min by(cluster, namespace, user, read_compartment) (time() - (label_replace(max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))) > 2100
           for: 2m
           labels:
             severity: critical
