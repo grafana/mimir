@@ -72,6 +72,16 @@ for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
   fi
 done
 
+for ALERT in "MimirBucketIndexNotUpdated"; do
+  EXPR=$(ALERT="${ALERT}" yq eval '.groups[].rules[] | select(.alert == env(ALERT)) | .expr' "${ALERTS_FILE}")
+
+  if [ -z "${EXPR}" ]; then
+    assert_failed "Alert ${ALERT} was not found in $(basename "${ALERTS_FILE}"): this assertion is checking nothing."
+  elif ! echo "${EXPR}" | grep -q -F -- 'read_compartment'; then
+    assert_failed "Alert ${ALERT} does not group by read_compartment, so a healthy compartment can mask a failing one."
+  fi
+done
+
 PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewerIngestersConsumingThanActivePartitions") | .expr' "${ALERTS_FILE}")
 for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
   if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then
