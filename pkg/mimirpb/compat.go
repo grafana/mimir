@@ -51,6 +51,7 @@ func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, e
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Samples = append(ts.Samples, s)
+		ts.RecordStartTimestamp(0)
 
 		if exemplars != nil {
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the

@@ -1050,7 +1050,8 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
 	currPos := 0
 	duplicatesFound := false
-	for _, s := range ts.Samples {
+	for idx := range ts.Samples {
+		s := ts.Samples[idx]
 		if _, ok := timestamps[s.TimestampMs]; ok {
 			// A sample with the same timestamp has already been validated, so we skip it.
 			duplicatesFound = true
@@ -1066,12 +1067,18 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 			return err
 		}
 
-		ts.Samples[currPos] = s
+		ts.Samples[currPos] = ts.Samples[idx]
+		if len(ts.SampleStartTimestamps) > 0 {
+			ts.SampleStartTimestamps[currPos] = ts.SampleStartTimestamps[idx]
+		}
 		currPos++
 	}
 
 	if duplicatesFound {
 		ts.Samples = ts.Samples[:currPos]
+		if len(ts.SampleStartTimestamps) > 0 {
+			ts.SampleStartTimestamps = ts.SampleStartTimestamps[:currPos]
+		}
 		ts.SamplesUpdated()
 	}
 
@@ -1182,6 +1189,10 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
+
+	if err := ts.ValidateSampleStartTimestamps(); err != nil {
+		return err
+	}
 
 	if err := validateLabels(d.sampleValidationMetrics, cfg.labels, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
 		return err

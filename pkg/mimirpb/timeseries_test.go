@@ -324,10 +324,12 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 					ResetHint:      Histogram_YES,
 					Timestamp:      100,
 					CustomValues:   []float64{5.0, 6.0},
+					StartTimestamp: 42,
 				},
 			},
 			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
+			SampleStartTimestamps:     []int64{7},
 		},
 	}
 
@@ -352,6 +354,129 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 		assert.True(t, reflect.DeepEqual(srcField.Interface(), dstField.Interface()),
 			"field %s was not copied correctly: src=%v, dst=%v", fieldName, srcField.Interface(), dstField.Interface())
 	}
+}
+
+func TestSampleStartTimestampLookup(t *testing.T) {
+	t.Run("empty parallel slice returns zero", func(t *testing.T) {
+		ts := &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 10}}}
+
+		assert.Equal(t, int64(0), ts.SampleStartTimestamp(0))
+	})
+
+	t.Run("populated parallel slice returns aligned value", func(t *testing.T) {
+		ts := &TimeSeries{
+			Samples:               []Sample{{Value: 1, TimestampMs: 10}, {Value: 2, TimestampMs: 20}},
+			SampleStartTimestamps: []int64{111, 222},
+		}
+
+		assert.Equal(t, int64(111), ts.SampleStartTimestamp(0))
+		assert.Equal(t, int64(222), ts.SampleStartTimestamp(1))
+	})
+}
+
+func TestRecordStartTimestamp(t *testing.T) {
+	t.Run("zero-only appends are not added to start timestamp slice", func(t *testing.T) {
+		ts := &TimeSeries{}
+		ts.Samples = append(ts.Samples, Sample{Value: 1, TimestampMs: 10})
+		ts.RecordStartTimestamp(0)
+		ts.Samples = append(ts.Samples, Sample{Value: 2, TimestampMs: 20})
+		ts.RecordStartTimestamp(0)
+
+		assert.Len(t, ts.Samples, 2)
+		assert.Empty(t, ts.SampleStartTimestamps)
+	})
+
+	t.Run("first non-zero start timestamp populates slice and zero-pads earlier samples", func(t *testing.T) {
+		ts := &TimeSeries{}
+		ts.Samples = append(ts.Samples, Sample{Value: 1, TimestampMs: 10})
+		ts.RecordStartTimestamp(0)
+		ts.Samples = append(ts.Samples, Sample{Value: 2, TimestampMs: 20})
+		ts.RecordStartTimestamp(0)
+		ts.Samples = append(ts.Samples, Sample{Value: 3, TimestampMs: 30})
+		ts.RecordStartTimestamp(333)
+
+		require.Len(t, ts.Samples, 3)
+		assert.Equal(t, []int64{0, 0, 333}, ts.SampleStartTimestamps)
+	})
+
+	t.Run("subsequent appends stay aligned once non-zero value is added", func(t *testing.T) {
+		ts := &TimeSeries{}
+		ts.Samples = append(ts.Samples, Sample{Value: 1, TimestampMs: 10})
+		ts.RecordStartTimestamp(111)
+		ts.Samples = append(ts.Samples, Sample{Value: 2, TimestampMs: 20})
+		ts.RecordStartTimestamp(0)
+		ts.Samples = append(ts.Samples, Sample{Value: 3, TimestampMs: 30})
+		ts.RecordStartTimestamp(333)
+
+		assert.Equal(t, []int64{111, 0, 333}, ts.SampleStartTimestamps)
+		require.NoError(t, ts.ValidateSampleStartTimestamps())
+	})
+}
+
+func TestValidateSampleStartTimestamps(t *testing.T) {
+	t.Run("empty parallel slice is valid", func(t *testing.T) {
+		ts := &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 10}}}
+		require.NoError(t, ts.ValidateSampleStartTimestamps())
+	})
+
+	t.Run("aligned parallel slice is valid", func(t *testing.T) {
+		ts := &TimeSeries{
+			Samples:               []Sample{{Value: 1, TimestampMs: 10}, {Value: 2, TimestampMs: 20}},
+			SampleStartTimestamps: []int64{111, 222},
+		}
+		require.NoError(t, ts.ValidateSampleStartTimestamps())
+	})
+
+	t.Run("non-empty but wrong length is rejected", func(t *testing.T) {
+		ts := &TimeSeries{
+			Samples:               []Sample{{Value: 1, TimestampMs: 10}, {Value: 2, TimestampMs: 20}},
+			SampleStartTimestamps: []int64{111},
+		}
+		err := ts.ValidateSampleStartTimestamps()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sample start timestamps length 1")
+		assert.Contains(t, err.Error(), "samples length 2")
+	})
+}
+
+func TestDeepCopyTimeseriesSampleStartTimestamps(t *testing.T) {
+	t.Run("copies populated sample start timestamps", func(t *testing.T) {
+		src := PreallocTimeseries{TimeSeries: &TimeSeries{
+			Labels:                []LabelAdapter{{Name: "a", Value: "b"}},
+			Samples:               []Sample{{Value: 1, TimestampMs: 2}, {Value: 3, TimestampMs: 4}},
+			SampleStartTimestamps: []int64{111, 222},
+		}}
+
+		dst := DeepCopyTimeseries(PreallocTimeseries{}, src, false, false)
+
+		assert.Equal(t, []int64{111, 222}, dst.SampleStartTimestamps)
+	})
+
+	t.Run("preserves an empty sample start timestamps slice as empty", func(t *testing.T) {
+		src := PreallocTimeseries{TimeSeries: &TimeSeries{
+			Labels:  []LabelAdapter{{Name: "a", Value: "b"}},
+			Samples: []Sample{{Value: 1, TimestampMs: 2}},
+		}}
+
+		dst := DeepCopyTimeseries(PreallocTimeseries{}, src, false, false)
+
+		assert.Empty(t, dst.SampleStartTimestamps)
+	})
+
+	t.Run("copied sample start timestamps do not alias source", func(t *testing.T) {
+		src := PreallocTimeseries{TimeSeries: &TimeSeries{
+			Labels:                []LabelAdapter{{Name: "a", Value: "b"}},
+			Samples:               []Sample{{Value: 1, TimestampMs: 2}},
+			SampleStartTimestamps: []int64{111},
+		}}
+
+		dst := DeepCopyTimeseries(PreallocTimeseries{}, src, false, false)
+		require.Equal(t, []int64{111}, dst.SampleStartTimestamps)
+
+		src.SampleStartTimestamps[0] = 999
+
+		assert.Equal(t, int64(111), dst.SampleStartTimestamps[0])
+	})
 }
 
 // assertNoZeroFieldsDeep recursively checks that all fields in a struct (and nested structs/slices)

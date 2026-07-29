@@ -22,11 +22,13 @@ func TestTimeseriesFromPool(t *testing.T) {
 		ts := TimeseriesFromPool()
 		ts.Labels = []LabelAdapter{{Name: "foo", Value: "bar"}}
 		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
+		ts.SampleStartTimestamps = []int64{99}
 		ReuseTimeseries(ts)
 
 		reused := TimeseriesFromPool()
 		assert.Len(t, reused.Labels, 0)
 		assert.Len(t, reused.Samples, 0)
+		assert.Len(t, reused.SampleStartTimestamps, 0)
 	})
 
 	// Test that TimeseriesFromPool panics when it receives a dirty object from the pool.
@@ -40,6 +42,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
 		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
 		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
+		{"SampleStartTimestamps", &TimeSeries{SampleStartTimestamps: []int64{42}}},
 	}
 	for _, tc := range dirtyPoolTests {
 		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {

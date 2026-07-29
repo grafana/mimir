@@ -40,6 +40,51 @@ func newTimeSeries() *TimeSeries {
 	}
 }
 
+// SampleStartTimestamp returns the start timestamp aligned with Samples[i].
+// A start timestamp value of zero means unknown or absent.
+func (m *TimeSeries) SampleStartTimestamp(i int) int64 {
+	if len(m.SampleStartTimestamps) == 0 {
+		return 0
+	}
+	return m.SampleStartTimestamps[i]
+}
+
+// RecordStartTimestamp records the start timestamp corresponding to the sample
+// most recently appended to Samples. It must be called exactly once, immediately
+// after each sample append.
+//
+// A zero value means that the start timestamp is absent. If all start timestamps
+// are zero, SampleStartTimestamps remains empty. When the first nonzero value is
+// recorded, the SampleStartTimestamps slice is zero-padded for each prior sample so
+// that the length of the slice matches the number of samples. After that, each start
+// timestamp, regardless if it is non-zero, is appended to maintain alignment.
+func (m *TimeSeries) RecordStartTimestamp(startTimestamp int64) {
+	if len(m.SampleStartTimestamps) > 0 {
+		m.SampleStartTimestamps = append(m.SampleStartTimestamps, startTimestamp)
+		return
+	}
+	if startTimestamp == 0 {
+		return
+	}
+
+	if cap(m.SampleStartTimestamps) < len(m.Samples) {
+		m.SampleStartTimestamps = make([]int64, len(m.Samples))
+	} else {
+		m.SampleStartTimestamps = m.SampleStartTimestamps[:len(m.Samples)]
+		clear(m.SampleStartTimestamps)
+	}
+	m.SampleStartTimestamps[len(m.Samples)-1] = startTimestamp
+}
+
+// ValidateSampleStartTimestamps verifies that sample start timestamps are
+// either absent or aligned one-for-one with samples.
+func (m *TimeSeries) ValidateSampleStartTimestamps() error {
+	if len(m.SampleStartTimestamps) != 0 && len(m.SampleStartTimestamps) != len(m.Samples) {
+		return fmt.Errorf("sample start timestamps length %d must be zero or match samples length %d", len(m.SampleStartTimestamps), len(m.Samples))
+	}
+	return nil
+}
+
 func newYoloSlice() []byte {
 	// The initial cap of 200 is an arbitrary number which has been chosen because the default
 	// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
@@ -279,9 +324,13 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	if symbols != nil {
-		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
+		if err := p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName); err != nil {
+			return err
+		}
+	} else if err := p.TimeSeries.Unmarshal(dAtA); err != nil {
+		return err
 	}
-	return p.TimeSeries.Unmarshal(dAtA)
+	return p.ValidateSampleStartTimestamps()
 }
 
 func (p *PreallocTimeseries) Size() int {
@@ -610,6 +659,13 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
 	}
 	copy(dstTs.Samples, srcTs.Samples)
+	
+	if cap(dstTs.SampleStartTimestamps) < len(srcTs.SampleStartTimestamps) {
+		dstTs.SampleStartTimestamps = make([]int64, len(srcTs.SampleStartTimestamps))
+	} else {
+		dstTs.SampleStartTimestamps = dstTs.SampleStartTimestamps[:len(srcTs.SampleStartTimestamps)]
+	}
+	copy(dstTs.SampleStartTimestamps, srcTs.SampleStartTimestamps)
 
 	// Copy the histograms.
 	if keepHistograms {
@@ -748,6 +804,7 @@ func copyHistogram(src Histogram) Histogram {
 		ResetHint:      src.ResetHint,
 		Timestamp:      src.Timestamp,
 		CustomValues:   slices.Clone(src.CustomValues),
+		StartTimestamp: src.StartTimestamp,
 	}
 }
 
