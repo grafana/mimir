@@ -21,6 +21,8 @@
     },
   },
 
+  assert !$._config.block_builder.enabled || $._config.ingest_storage_enabled : 'block-builder requires ingest storage to be enabled',
+
   // The block-builder converts ingest storage partitions into TSDB blocks.
   block_builder_args::
     $._config.commonConfig +
@@ -28,8 +30,6 @@
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
-    $._config.ingesterRingClientConfig +
-    $._config.ingesterLimitsConfig +
     $.ingest_storage_args +
     $.ingest_storage_kafka_consumer_args +
     $.ingest_storage_kafka_ingestion_args +
@@ -51,7 +51,7 @@
       // process faster than the 1h job backlog window.
       'ingest-storage.kafka.ingestion-concurrency-max': 2,
       // Align fetch concurrency with GOMAXPROCS for better throughput / lower memory.
-      'ingest-storage.kafka.fetch-concurrency-max': 4,
+      'ingest-storage.kafka.fetch-concurrency-max': std.min(std.ceil($.util.parseCPU($.block_builder_container.resources.requests.cpu)), 4),
     } +
     $.mimirRuntimeConfigFile,
 
