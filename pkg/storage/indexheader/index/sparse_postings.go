@@ -38,11 +38,12 @@ import (
 // │ │  offset <uvarint64>                    │ │
 // │ └────────────────────────────────────────┘ │
 // │                    . . .                   │
-// SparseTableOffsets do _not_ capture the last "offset" value in the entry, which points to the Postings list.
+// The sampled table offsets do _not_ capture the last "offset" value in the entry, which points to the Postings list.
 // They only capture an offset pointing _into_ the Postings Offsets table itself to quickly reach the table entries.
 type SparseTableOffsetsForLabel struct {
 	SparseTableOffsets []tableOffsetForLabelValue
-	LastValOffset      int64
+
+	lastValOffset int64
 }
 
 type tableOffsetForLabelValue struct {
@@ -52,25 +53,43 @@ type tableOffsetForLabelValue struct {
 	Offset int
 }
 
+func (e *SparseTableOffsetsForLabel) numOffsets() int {
+	return len(e.SparseTableOffsets)
+}
+
+// value returns the sampled label value at index i.
+func (e *SparseTableOffsetsForLabel) value(i int) string {
+	return e.SparseTableOffsets[i].Value
+}
+
+func (e *SparseTableOffsetsForLabel) tableOffset(i int) int {
+	return e.SparseTableOffsets[i].Offset
+}
+
+func (e *SparseTableOffsetsForLabel) appendOffset(value string, tableOff int64) error {
+	e.SparseTableOffsets = append(e.SparseTableOffsets, tableOffsetForLabelValue{Value: value, Offset: int(tableOff)})
+	return nil
+}
+
 // labelValuePrefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
-// If all SparseTableOffsets match the prefix, then end will equal the length of SparseTableOffsets.
-// labelValuePrefixOffsets returns false when no SparseTableOffsets match this prefix.
+// If all sampled offsets match the prefix, then end will equal the number of sampled offsets.
+// labelValuePrefixOffsets returns false when no sampled offsets match this prefix.
 func (e *SparseTableOffsetsForLabel) labelValuePrefixOffsets(prefix string) (start, end int, found bool) {
 	// Find the first offset that is greater or equal to the value.
-	start = sort.Search(len(e.SparseTableOffsets), func(i int) bool {
-		return prefix <= e.SparseTableOffsets[i].Value
+	start = sort.Search(e.numOffsets(), func(i int) bool {
+		return prefix <= e.value(i)
 	})
 
-	// We always include the last value in the SparseTableOffsets,
+	// We always include the last value in the sampled offsets,
 	// and given that prefix is always less or equal than the value,
 	// we can conclude that there are no values with this prefix.
-	if start == len(e.SparseTableOffsets) {
+	if start == e.numOffsets() {
 		return 0, 0, false
 	}
 
-	// Prefix is lower than the first value in the SparseTableOffsets, and that first value doesn't have this prefix.
+	// Prefix is lower than the first value in the sampled offsets, and that first value doesn't have this prefix.
 	// Next values won't have the prefix, so we can return early.
-	if start == 0 && prefix < e.SparseTableOffsets[0].Value && !strings.HasPrefix(e.SparseTableOffsets[0].Value, prefix) {
+	if first := e.value(0); start == 0 && prefix < first && !strings.HasPrefix(first, prefix) {
 		return 0, 0, false
 	}
 
@@ -78,14 +97,15 @@ func (e *SparseTableOffsetsForLabel) labelValuePrefixOffsets(prefix string) (sta
 	// But maybe the values in the previous offset also had the prefix,
 	// so we need to step back one offset to find all values with this prefix.
 	// Unless, of course, we are at the first offset.
-	if start > 0 && e.SparseTableOffsets[start].Value != prefix {
+	if start > 0 && e.value(start) != prefix {
 		start--
 	}
 
 	// Find the first offset which is larger than the prefix and doesn't have the prefix.
 	// All values at and after that offset will not match the prefix.
-	end = sort.Search(len(e.SparseTableOffsets)-start, func(i int) bool {
-		return prefix < e.SparseTableOffsets[i+start].Value && !strings.HasPrefix(e.SparseTableOffsets[i+start].Value, prefix)
+	end = sort.Search(e.numOffsets()-start, func(i int) bool {
+		v := e.value(i + start)
+		return prefix < v && !strings.HasPrefix(v, prefix)
 	})
 	end += start
 	return start, end, true
@@ -159,7 +179,9 @@ func SparseValuesFromPostingsOffsetsTable(
 				decbuf.Uvarint()          // Skip the key count
 				decbuf.SkipUvarintBytes() // Skip the name
 				value := decbuf.UvarintStr()
-				sparsePostingsOffsets[lastName].SparseTableOffsets = append(sparsePostingsOffsets[lastName].SparseTableOffsets, tableOffsetForLabelValue{Value: value, Offset: lastEntryOffsetInTable})
+				if err := sparsePostingsOffsets[lastName].appendOffset(value, int64(lastEntryOffsetInTable)); err != nil {
+					return nil, err
+				}
 
 				// Skip ahead to where we were before we called ResetAt() above.
 				decbuf.Skip(newValueOffsetInTable - decbuf.Offset())
@@ -174,13 +196,12 @@ func SparseValuesFromPostingsOffsetsTable(
 		if valuesForCurrentKey%sparseSampleFactor == 0 {
 			value := decbuf.UvarintStr()
 			off := decbuf.Uvarint64()
-			sparsePostingsOffsets[currentName].SparseTableOffsets = append(
-				sparsePostingsOffsets[currentName].SparseTableOffsets,
-				tableOffsetForLabelValue{Value: value, Offset: offsetInTable},
-			)
+			if err := sparsePostingsOffsets[currentName].appendOffset(value, int64(offsetInTable)); err != nil {
+				return nil, err
+			}
 
 			if lastName != currentName {
-				sparsePostingsOffsets[lastName].LastValOffset = int64(off - crc32.Size)
+				sparsePostingsOffsets[lastName].lastValOffset = int64(off - crc32.Size)
 			}
 
 			// If the current value is the last one for this name, we don't need to record it again.
@@ -206,7 +227,9 @@ func SparseValuesFromPostingsOffsetsTable(
 		decbuf.Uvarint()          // Skip the key count
 		decbuf.SkipUvarintBytes() // Skip the key
 		value := decbuf.UvarintStr()
-		sparsePostingsOffsets[currentName].SparseTableOffsets = append(sparsePostingsOffsets[currentName].SparseTableOffsets, tableOffsetForLabelValue{Value: value, Offset: lastEntryOffsetInTable})
+		if err := sparsePostingsOffsets[currentName].appendOffset(value, int64(lastEntryOffsetInTable)); err != nil {
+			return nil, err
+		}
 	}
 
 	if decbuf.Err() != nil {
@@ -214,21 +237,10 @@ func SparseValuesFromPostingsOffsetsTable(
 	}
 
 	if len(sparsePostingsOffsets) > 0 {
-		// In case LastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
+		// In case lastValOffset is unknown as we don't have next posting anymore. Guess from the index table of contents.
 		// The last posting list ends before the label offset table.
 		// In worst case we will overfetch a few bytes.
-		sparsePostingsOffsets[currentName].LastValOffset = int64(postingsListEnd) - crc32.Size
-	}
-
-	// Trim any extra space in the slices.
-	for k, v := range sparsePostingsOffsets {
-		if len(v.SparseTableOffsets) == cap(v.SparseTableOffsets) {
-			continue
-		}
-
-		l := make([]tableOffsetForLabelValue, len(v.SparseTableOffsets))
-		copy(l, v.SparseTableOffsets)
-		sparsePostingsOffsets[k].SparseTableOffsets = l
+		sparsePostingsOffsets[currentName].lastValOffset = int64(postingsListEnd) - crc32.Size
 	}
 
 	return sparsePostingsOffsets, nil
@@ -246,13 +258,13 @@ func SparsePostingsOffsetsTableToProto(
 
 	for labelName, offsets := range sparsePostingsOffsets {
 		proto.Postings[labelName] = &indexheaderpb.PostingValueOffsets{}
-		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseTableOffsets))
+		postingOffsets := make([]*indexheaderpb.PostingOffset, offsets.numOffsets())
 
-		for i, tableOffset := range offsets.SparseTableOffsets {
-			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: tableOffset.Value, TableOff: int64(tableOffset.Offset)}
+		for i := range postingOffsets {
+			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: offsets.value(i), TableOff: int64(offsets.tableOffset(i))}
 		}
 		proto.Postings[labelName].Offsets = postingOffsets
-		proto.Postings[labelName].LastValOffset = offsets.LastValOffset
+		proto.Postings[labelName].LastValOffset = offsets.lastValOffset
 	}
 
 	return proto
@@ -280,30 +292,34 @@ func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable
 
 	sparsePostingsOffsets = make(map[string]*SparseTableOffsetsForLabel, len(proto.Postings))
 	for sName, sOffsets := range proto.Postings {
-
 		olen := len(sOffsets.Offsets)
 		downsampledLen := (olen + step - 1) / step
 		if (olen > 1) && (downsampledLen == 1) {
 			downsampledLen++
 		}
 
-		sparsePostingsOffsets[sName] = &SparseTableOffsetsForLabel{
-			SparseTableOffsets: make([]tableOffsetForLabelValue, downsampledLen),
+		offsets := &SparseTableOffsetsForLabel{lastValOffset: sOffsets.LastValOffset}
+		sparsePostingsOffsets[sName] = offsets
+		if olen == 0 {
+			continue
 		}
-		for i, sPostingOff := range sOffsets.Offsets {
-			if i%step == 0 {
-				sparsePostingsOffsets[sName].SparseTableOffsets[i/step] = tableOffsetForLabelValue{
-					Value: sPostingOff.Value, Offset: int(sPostingOff.TableOff),
-				}
-			}
 
-			if i == olen-1 {
-				sparsePostingsOffsets[sName].SparseTableOffsets[downsampledLen-1] = tableOffsetForLabelValue{
-					Value: sPostingOff.Value, Offset: int(sPostingOff.TableOff),
-				}
+		// The downsampled entries are every step-th entry, except the last one,
+		// which is always the last entry of the full-resolution table.
+		srcIdx := func(k int) int {
+			if k == downsampledLen-1 {
+				return olen - 1
+			}
+			return k * step
+		}
+
+		offsets.SparseTableOffsets = make([]tableOffsetForLabelValue, 0, downsampledLen)
+		for k := 0; k < downsampledLen; k++ {
+			sPostingOff := sOffsets.Offsets[srcIdx(k)]
+			if err := offsets.appendOffset(sPostingOff.Value, sPostingOff.TableOff); err != nil {
+				return nil, err
 			}
 		}
-		sparsePostingsOffsets[sName].LastValOffset = sOffsets.LastValOffset
 	}
 	return sparsePostingsOffsets, err
 }
