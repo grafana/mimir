@@ -122,7 +122,7 @@ func NewStreamBinaryReader(
 	// we cannot necessarily rely on err != nil or the sparse values == nil,
 	// depending on what the failure mode of loading the existing sparse header was.
 	sparseHeaderLoaded := false
-	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := DownloadAndLoadSparseHeader(
+	sparseSymbols, sparsePostingsOffsets, err := DownloadAndLoadSparseHeader(
 		ctx, blockID, bkt, dir, sparseSampleFactor, l,
 	)
 	if err != nil {
@@ -289,7 +289,7 @@ func NewStreamBinaryReader(
 			defer finish()
 
 			start := time.Now()
-			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
+			sparseSymbols, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
 				ctx,
 				sectionSource{streamBinaryReader.symbolsTOC, streamBinaryReader.symbolsDecbufFactory},
 				sectionSource{streamBinaryReader.postingsOffsetsTOC, streamBinaryReader.postingsOffsetsDecbufFactory},
@@ -306,7 +306,7 @@ func NewStreamBinaryReader(
 
 			// Try to write to disk so we do not have to repeat this all again.
 			sparseHeaderProto := &indexheaderpb.Sparse{
-				Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
+				Symbols:             streamindex.SparseSymbolsToProto(sparseSymbols),
 				PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
 			}
 			localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
@@ -344,7 +344,7 @@ func NewStreamBinaryReader(
 		streamBinaryReader.symbolsTOC.IndexVersion,
 		streamBinaryReader.symbolsDecbufFactory,
 		int(streamBinaryReader.symbolsTOC.Symbols),
-		allSymbolsCount, sparseSymbolsOffsets,
+		sparseSymbols,
 	); err != nil {
 		return nil, fmt.Errorf("failed to initialize symbols table reader: %w", err)
 	}

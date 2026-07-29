@@ -37,8 +37,7 @@ type SymbolsTable struct {
 	tableOffset   int
 	decbufFactory streamencoding.DecbufFactory
 
-	allSymbolsCount      int
-	sparseSymbolsOffsets []int
+	sparseSymbols SparseSymbols
 }
 
 const symbolFactor = 32
@@ -47,18 +46,16 @@ func NewSymbolsTableReader(
 	indexVersion int,
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
-	allSymbolsCount int,
-	sparseSymbolsOffsets []int,
+	sparseSymbols SparseSymbols,
 ) (s *SymbolsTable, err error) {
 	switch indexVersion {
 	case index.FormatV2:
 		return &SymbolsTable{
 			// Context for DecbufFactory methods is unused for symbols table and does not need to be tied to request.
-			ctx:                  context.Background(),
-			tableOffset:          tableOffset,
-			decbufFactory:        decbufFactory,
-			allSymbolsCount:      allSymbolsCount,
-			sparseSymbolsOffsets: sparseSymbolsOffsets,
+			ctx:           context.Background(),
+			tableOffset:   tableOffset,
+			decbufFactory: decbufFactory,
+			sparseSymbols: sparseSymbols,
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown or unsupported index version %v", indexVersion)
@@ -76,10 +73,10 @@ func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
 		return "", err
 	}
 
-	if int(o) >= s.allSymbolsCount {
+	if int(o) >= s.sparseSymbols.Count() {
 		return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
 	}
-	d.ResetAt(s.sparseSymbolsOffsets[int(o/symbolFactor)])
+	d.ResetAt(s.sparseSymbols.tableOffset(int(o / symbolFactor)))
 	// Walk until we find the one we want.
 	for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
 		d.SkipUvarintBytes()
@@ -94,7 +91,7 @@ func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
 
 // ReverseLookup returns an error with cause ErrSymbolNotFound if the symbol cannot be found.
 func (s *SymbolsTable) ReverseLookup(sym string) (o uint32, err error) {
-	if len(s.sparseSymbolsOffsets) == 0 {
+	if s.sparseSymbols.NumOffsets() == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
@@ -115,7 +112,7 @@ func (s *SymbolsTable) ReverseLookup(sym string) (o uint32, err error) {
 // returned. If f returns an error, iteration stops immediately and the error is returned.
 // ForEachSymbol returns an error with cause ErrSymbolNotFound if any symbol cannot be found.
 func (s *SymbolsTable) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
-	if len(s.sparseSymbolsOffsets) == 0 {
+	if s.sparseSymbols.NumOffsets() == 0 {
 		return errors.New("no symbols")
 	}
 
@@ -141,8 +138,8 @@ func (s *SymbolsTable) ForEachSymbol(syms []string, f func(sym string, offset ui
 }
 
 func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
-	i := sort.Search(len(s.sparseSymbolsOffsets), func(i int) bool {
-		d.ResetAt(s.sparseSymbolsOffsets[i])
+	i := sort.Search(s.sparseSymbols.NumOffsets(), func(i int) bool {
+		d.ResetAt(s.sparseSymbols.tableOffset(i))
 		return string(d.UnsafeUvarintBytes()) > sym
 	})
 
@@ -150,10 +147,10 @@ func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint3
 		i--
 	}
 
-	d.ResetAt(s.sparseSymbolsOffsets[i])
+	d.ResetAt(s.sparseSymbols.tableOffset(i))
 	res := i * symbolFactor
 	var lastSymbol string
-	for d.Err() == nil && res <= s.allSymbolsCount {
+	for d.Err() == nil && res <= s.sparseSymbols.Count() {
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
 		if lastSymbol >= sym {
 			break
@@ -185,12 +182,12 @@ type SymbolsReader interface {
 
 func (s *SymbolsTable) Reader() SymbolsReader {
 	d := s.decbufFactory.NewDecbufAtUnchecked(s.ctx, s.tableOffset)
-	d.ResetAt(s.sparseSymbolsOffsets[0])
+	d.ResetAt(s.sparseSymbols.tableOffset(0))
 
 	return &SymbolsTableReaderV2{
 		d:             &d,
-		offsets:       s.sparseSymbolsOffsets,
-		lastSymbolRef: uint32(s.allSymbolsCount - 1),
+		sparseSymbols: s.sparseSymbols,
+		lastSymbolRef: uint32(s.sparseSymbols.Count() - 1),
 	}
 }
 
@@ -201,7 +198,7 @@ type SymbolsTableReaderV2 struct {
 	// atSymbol is the index the symbol currently pointed by the Decbuf head
 	atSymbol      uint32
 	lastSymbolRef uint32
-	offsets       []int
+	sparseSymbols SparseSymbols
 }
 
 func (r *SymbolsTableReaderV2) Close() error {
@@ -224,7 +221,7 @@ func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
 	if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
 		// Only ResetAt a bigger offset than the current one.
 		// We don't want to ResetAt an offset we've gone past: that will reverse the file reader, and we will do unnecessary reads.
-		d.ResetAt(r.offsets[int(targetOffsetIdx)])
+		d.ResetAt(r.sparseSymbols.tableOffset(int(targetOffsetIdx)))
 		r.atSymbol = targetOffsetIdx * symbolFactor
 	}
 	// We've offset to the right group of symbolFactor symbols. Now skip until the requested symbol within that group.
