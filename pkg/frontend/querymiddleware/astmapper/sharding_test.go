@@ -58,6 +58,28 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 0,
 		},
 		{
+			// A bare info() call is not sharded, just like a bare vector selector: there's no aggregation to parallelize.
+			in:                       `info(rate(foo[1m]))`,
+			out:                      `info(rate(foo[1m]))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			// info() is a many-to-one join, so its inner (enriched) vector can be sharded.
+			// For the single-argument form the target_info selector is injected later by the query engine.
+			in:                       `sum(info(rate(foo[1m])))`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(info(rate(foo{__query_shard__="x_of_y"}[1m])))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			// For the two-argument form, only the inner vector is sharded: the target_info (data label)
+			// selector must not be sharded, as each shard needs to see the full set of target_info series.
+			in: `sum by (job) (info(rate(foo[1m]), {namespace=~".+"}))`,
+			out: `sum by (job) (` +
+				concatShards(t, shardCount, `sum by (job) (info(rate(foo{__query_shard__="x_of_y"}[1m]), {namespace=~".+"}))`) +
+				`)`,
+			expectedShardableQueries: 1,
+		},
+		{
 			in:                       `sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
 			out:                      `sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
 			expectedShardableQueries: 0,

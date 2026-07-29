@@ -6,6 +6,7 @@
 
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
+* [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
 
 ### Mixin
 
