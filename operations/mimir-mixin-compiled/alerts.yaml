@@ -1099,7 +1099,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalwritesfailed
           expr: |
             rate(cortex_ingester_tsdb_wal_writes_failed_total[4m]) > 0
-          for: 3m
+          for: 12m
           labels:
             severity: critical
         - alert: MimirStoreGatewayHasNotSyncTheBucket
