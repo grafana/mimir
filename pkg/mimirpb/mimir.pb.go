@@ -507,6 +507,8 @@ type TimeSeries struct {
 	// Optional per-sample start timestamps in milliseconds, aligned one-for-one
 	// with samples. An empty slice means every sample has an unknown or absent
 	// start timestamp.
+	// Note: for Histogram samples, the start timestamp is stored within the Histogram
+	// proto, rather than using a separate slice.
 	SampleStartTimestamps []int64 `protobuf:"varint,7,rep,packed,name=sample_start_timestamps,json=sampleStartTimestamps,proto3" json:"sample_start_timestamps,omitempty"`
 
 	// Skip unmarshaling of exemplars.
