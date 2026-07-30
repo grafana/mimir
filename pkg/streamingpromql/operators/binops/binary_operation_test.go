@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -230,4 +232,70 @@ func BenchmarkBuildMatchers(b *testing.B) {
 			_ = BuildMatchers(ctx, logger, series, &Hints{Include: []string{"container", "region", "pod"}})
 		}
 	})
+}
+
+// TestTrimOperatorsRespectMutability guards the trim operators' handling of the
+// FloatHistogram.TrimBuckets contract: TrimBuckets mutates its receiver in place, so the
+// operators must only do so when they own the left histogram (canMutateLeft). When the left
+// histogram may be shared (e.g. it is the "one" side of a group_right join, reused across
+// multiple output series), mutating it in place corrupts the shared data and produces wrong
+// results for the other samples that reference it.
+func TestTrimOperatorsRespectMutability(t *testing.T) {
+	// Standard-schema histogram spanning buckets (1,2], (2,4], (4,8], so a trim at 2 actually
+	// removes/interpolates buckets and would be observable if the receiver were mutated.
+	newHistogram := func() *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Schema:          0,
+			Count:           30,
+			Sum:             100,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+			PositiveBuckets: []float64{10, 10, 10},
+		}
+	}
+
+	const rF = 2.0
+
+	testCases := map[string]struct {
+		op          parser.ItemType
+		isUpperTrim bool
+	}{
+		"TRIM_UPPER": {op: parser.TRIM_UPPER, isUpperTrim: true},
+		"TRIM_LOWER": {op: parser.TRIM_LOWER, isUpperTrim: false},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			f := arithmeticAndComparisonOperationFuncs[tc.op]
+			require.NotNil(t, f)
+
+			// Expected trimmed histogram, computed on a throwaway copy so the reference input is untouched.
+			expected := newHistogram().TrimBuckets(rF, tc.isUpperTrim)
+
+			t.Run("canMutateLeft=false does not mutate the shared left histogram", func(t *testing.T) {
+				lH := newHistogram()
+				original := lH.Copy()
+
+				_, result, keep, valid, err := f(0, rF, lH, nil, false, false, nil)
+				require.NoError(t, err)
+				require.True(t, keep)
+				require.True(t, valid)
+
+				require.Equal(t, expected, result, "returned histogram should be correctly trimmed")
+				require.NotSame(t, lH, result, "must return a copy, not the input")
+				require.Equal(t, original, lH, "input histogram must not be mutated when canMutateLeft is false")
+			})
+
+			t.Run("canMutateLeft=true trims the left histogram in place", func(t *testing.T) {
+				lH := newHistogram()
+
+				_, result, keep, valid, err := f(0, rF, lH, nil, true, false, nil)
+				require.NoError(t, err)
+				require.True(t, keep)
+				require.True(t, valid)
+
+				require.Equal(t, expected, result, "returned histogram should be correctly trimmed")
+				require.Same(t, lH, result, "may reuse the input in place when canMutateLeft is true")
+			})
+		})
+	}
 }

@@ -161,7 +161,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				rightH = h
 			}
 
-			t, f, h, ok = v.memoizedIterator.PeekPrev()
+			// The leading start-timestamp return value is ignored: MQE does not yet support
+			// per-sample start timestamps, so we preserve the existing look-back behaviour.
+			_, t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t <= ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}

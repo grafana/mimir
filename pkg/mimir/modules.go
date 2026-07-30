@@ -994,7 +994,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
 		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(opts.CommonOpts.Reg)
 	case querier.MimirEngine:
 		var err error
@@ -1008,7 +1008,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts)), opts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts())), opts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
@@ -1180,16 +1180,16 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(t.Cfg.Frontend.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests))
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 	}
 
 	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
 	// be sharded independently.
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, opts.CommonOpts.Reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
-	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
+	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -40,7 +41,7 @@ const (
 var (
 	// EnableManglingReturnedSlices enables mangling values in slices returned to pool to aid in detecting use-after-return bugs.
 	// Only used in tests.
-	EnableManglingReturnedSlices = false
+	EnableManglingReturnedSlices = atomic.NewBool(false)
 
 	FPointSlicePool = NewLimitingBucketedPool(
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []promql.FPoint {
@@ -49,6 +50,7 @@ var (
 		limiter.FPointSlices,
 		FPointSize,
 		false,
+		EnableManglingReturnedSlices,
 		mangleFPoint,
 		nil,
 	)
@@ -60,6 +62,7 @@ var (
 		limiter.HPointSlices,
 		HPointSize,
 		false,
+		EnableManglingReturnedSlices,
 		func(point promql.HPoint) promql.HPoint {
 			point.H = mangleHistogram(point.H)
 			return point
@@ -74,6 +77,7 @@ var (
 		limiter.Vectors,
 		VectorSampleSize,
 		false,
+		EnableManglingReturnedSlices,
 		mangleSample,
 		nil,
 	)
@@ -85,6 +89,7 @@ var (
 		limiter.Float64Slices,
 		Float64Size,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		nil,
 	)
@@ -96,6 +101,7 @@ var (
 		limiter.IntSlices,
 		IntSize,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		nil,
 	)
@@ -107,6 +113,7 @@ var (
 		limiter.CounterResetHintSlices,
 		CounterResetHintSize,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		nil,
 	)
@@ -118,6 +125,7 @@ var (
 		limiter.Int64Slices,
 		Int64Size,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		nil,
 	)
@@ -129,6 +137,7 @@ var (
 		limiter.BoolSlices,
 		BoolSize,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		nil,
 	)
@@ -140,6 +149,7 @@ var (
 		limiter.HistogramPointerSlices,
 		HistogramPointerSize,
 		true,
+		EnableManglingReturnedSlices,
 		mangleHistogram,
 		nil,
 	)
@@ -151,6 +161,7 @@ var (
 		limiter.SeriesMetadataSlices,
 		SeriesMetadataSize,
 		true,
+		EnableManglingReturnedSlices,
 		nil,
 		func(sms []SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) {
 			// When putting SeriesMetadata slices back to the pool, we decrease the memory consumption for each label in the metadata.
@@ -220,11 +231,12 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 	source      limiter.MemoryConsumptionSource
 	elementSize uint64
 	clearOnGet  bool
+	mangleOnPut *atomic.Bool
 	mangle      func(E) E
 	onPutHook   func(S, *limiter.MemoryConsumptionTracker)
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E, onPutHook func(S, *limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangleOnPut *atomic.Bool, mangle func(E) E, onPutHook func(S, *limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
 	if !clearOnGet && mangle == nil {
 		panic("must provide a mangling function for pools where items are not cleared on retrieval")
 	}
@@ -234,6 +246,7 @@ func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], sour
 		source:      source,
 		elementSize: elementSize,
 		clearOnGet:  clearOnGet,
+		mangleOnPut: mangleOnPut,
 		mangle:      mangle,
 		onPutHook:   onPutHook,
 	}
@@ -279,7 +292,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 		p.onPutHook(*s, tracker)
 	}
 
-	if EnableManglingReturnedSlices {
+	if p.mangleOnPut.Load() {
 		if p.mangle != nil {
 			for i, e := range *s {
 				(*s)[i] = p.mangle(e)

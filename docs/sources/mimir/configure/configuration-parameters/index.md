@@ -2010,6 +2010,19 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.store-gateway-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.store-gateway-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
+
   cluster_validation:
     # (experimental) Primary cluster validation label.
     # CLI flag: -querier.store-gateway-client.cluster-validation.label
@@ -2134,7 +2147,7 @@ mimir_query_engine:
 
   # (experimental) Enable subset selector elimination when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.enable-subset-selector-elimination
-  [enable_subset_selector_elimination: <boolean> | default = false]
+  [enable_subset_selector_elimination: <boolean> | default = true]
 
   # (experimental) Enable deduplication of range vector selectors in range
   # queries as part of common subexpression elimination. Requires common
@@ -2419,22 +2432,19 @@ results_cache:
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
-[parallelize_shardable_queries: <boolean> | default = false]
+[parallelize_shardable_queries: <boolean> | default = true]
 
 # (experimental) If set to true and the Mimir query engine is in use, use remote
 # execution to evaluate queries in queriers.
 # CLI flag: -query-frontend.enable-remote-execution
-[enable_remote_execution: <boolean> | default = false]
-
-# (experimental) Set to true to allow evaluating multiple query plan nodes
-# within a single remote execution request to queriers.
-# CLI flag: -query-frontend.enable-multiple-node-remote-execution-requests
-[enable_multiple_node_remote_execution_requests: <boolean> | default = false]
+[enable_remote_execution: <boolean> | default = true]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has
+# no effect if sharding is not enabled with
+# -query-frontend.parallelize-shardable-queries=true
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
-[use_mimir_query_engine_for_sharding: <boolean> | default = false]
+[use_mimir_query_engine_for_sharding: <boolean> | default = true]
 
 # (experimental) Set to true to enable rewriting histogram queries for a more
 # efficient order of execution.
@@ -2467,6 +2477,19 @@ results_cache:
 # JSON transparently.
 # CLI flag: -query-frontend.active-series-framed-responses
 [active_series_framed_responses: <boolean> | default = false]
+
+# (experimental) Set to true to spin off subqueries whose inner expression is
+# considered simple. Has no effect unless subquery spin-off is enabled with
+# -query-frontend.subquery-spin-off-enabled=true.
+# CLI flag: -query-frontend.subquery-spin-off-simple-subqueries
+[subquery_spin_off_simple_subqueries: <boolean> | default = false]
+
+# (experimental) Set to true to spin off subqueries even when the query contains
+# more downstream queries than spun-off subqueries. Has no effect unless
+# subquery spin-off is enabled with
+# -query-frontend.subquery-spin-off-enabled=true.
+# CLI flag: -query-frontend.subquery-spin-off-with-excess-downstream-queries
+[subquery_spin_off_with_excess_downstream_queries: <boolean> | default = false]
 
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
@@ -2774,6 +2797,19 @@ ruler_client:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -ruler.client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -ruler.client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -ruler.client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -3447,6 +3483,19 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -alertmanager.alertmanager-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
+
   cluster_validation:
     # (experimental) Primary cluster validation label.
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
@@ -3709,6 +3758,18 @@ backoff_config:
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
 
+# (advanced) After a duration of this time if the client doesn't see any
+# activity it pings the server to see if the transport is still alive. This also
+# determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.
+# CLI flag: -<prefix>.keepalive-time
+[keepalive_time: <duration> | default = 20s]
+
+# (advanced) After having pinged for keepalive check, the client waits for a
+# duration of this time and if no activity is seen even after that the
+# connection is closed.
+# CLI flag: -<prefix>.keepalive-timeout
+[keepalive_timeout: <duration> | default = 10s]
+
 cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
@@ -3872,6 +3933,19 @@ grpc_client_config:
   # relevant if ConnectTimeout > 0.
   # CLI flag: -querier.frontend-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
+
+  # (advanced) After a duration of this time if the client doesn't see any
+  # activity it pings the server to see if the transport is still alive. This
+  # also determines the socket's TCP_USER_TIMEOUT together with
+  # keepalive-timeout.
+  # CLI flag: -querier.frontend-client.keepalive-time
+  [keepalive_time: <duration> | default = 20s]
+
+  # (advanced) After having pinged for keepalive check, the client waits for a
+  # duration of this time and if no activity is seen even after that the
+  # connection is closed.
+  # CLI flag: -querier.frontend-client.keepalive-timeout
+  [keepalive_timeout: <duration> | default = 10s]
 
   cluster_validation:
     # (experimental) Primary cluster validation label.
@@ -5281,9 +5355,9 @@ ruler_alertmanager_client_config:
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
 # (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
+# compactor cycles. If set, this value should be larger than the TSDB block
+# range period (default: 2h). A value of 0s means that all blocks are considered
+# regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
@@ -6316,13 +6390,12 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # TSDB blocks retention in the ingester before a block is removed. If shipping
-  # is enabled, the retention will be relative to the time when the block was
-  # uploaded to storage. If shipping is disabled then its relative to the
-  # creation time of the block. This should be larger than the
-  # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
-  # large enough to give store-gateways and queriers enough time to discover
-  # newly uploaded blocks.
+  # TSDB blocks retention before a block is removed. If shipping is enabled, the
+  # retention will be relative to the time when the block was uploaded to
+  # storage. If shipping is disabled then it's relative to the creation time of
+  # the block. The value must be larger than both TSDB block range period
+  # (default: 2h) and -querier.query-store-after, and large enough to give
+  # store-gateways and queriers time to discover newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
   [retention_period: <duration> | default = 13h]
 

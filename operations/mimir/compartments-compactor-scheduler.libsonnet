@@ -38,7 +38,7 @@
   // StatefulSets, Services and PDBs.
   newCompactorSchedulerCompartmentStatefulSet(compartmentIdx)::
     local name = 'compactor-scheduler-rc-%d' % compartmentIdx;
-    $.newCompactorSchedulerStatefulSet(name, $.compactor_scheduler_containers['compartment_%d' % compartmentIdx]) +
+    $.newCompactorSchedulerStatefulSet(name, $.compactor_scheduler_containers['compartment_%d' % compartmentIdx], $.compactor_scheduler_node_affinity_matchers) +
     statefulSet.mixin.metadata.withLabelsMixin({ 'mimir-rc': std.toString(compartmentIdx) }) +
     statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'mimir-rc': std.toString(compartmentIdx) }),
 

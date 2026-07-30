@@ -22,6 +22,7 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -2357,6 +2358,31 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalEnabled:  true,
 		},
 
+		"split function call with filter on other label": {
+			node: &rangevectorsplitting.SplitFunctionCall{
+				Inner: &core.FunctionCall{
+					FunctionCallDetails: &core.FunctionCallDetails{
+						Function: functions.FUNCTION_RATE,
+					},
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"split function call with filter on __name__": {
+			node: &rangevectorsplitting.SplitFunctionCall{
+				Inner: &core.FunctionCall{
+					FunctionCallDetails: &core.FunctionCallDetails{
+						Function: functions.FUNCTION_RATE,
+					},
+				},
+			},
+			group: groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
 		"node with no special handling in IsSafeToApplyFilteringAfter": {
 			node:  &core.NumberLiteral{},
 			group: groupWithNoFilters,
@@ -2367,11 +2393,11 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, false)
+			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, false)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, safe)
 
-			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, true)
+			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, safe)
 		})

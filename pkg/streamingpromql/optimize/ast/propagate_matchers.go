@@ -220,7 +220,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	// Time
 	case "minute", "hour", "day_of_week", "day_of_month", "day_of_year", "days_in_month", "month", "year":
 		return 0, nil
-	case "timestamp":
+	case "timestamp", "start_timestamp":
 		return 0, nil
 	// No vector/matrix selectors
 	case "end", "max_of", "min_of", "pi", "range", "start", "step", "time", "vector":

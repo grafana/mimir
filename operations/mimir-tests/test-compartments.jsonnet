@@ -97,4 +97,20 @@ assert rulerBlocksBucket(env.ruler_zone_a_args) == env._config.compartments_bloc
 assert rulerBlocksBucket(env.ruler_zone_b_args) == env._config.compartments_blocks_storage_bucket_name :
        'expected zone-b ruler to use the parametrised blocks bucket';
 
+local schedulerAffinityMatchers = [
+  { key: 'topology.kubernetes.io/zone', operator: 'In', values: ['us-east-2a'] },
+];
+local schedulerAffinityEnv = env {
+  compactor_scheduler_node_affinity_matchers:: schedulerAffinityMatchers,
+};
+local compartmentSchedulerNodeSelectorTerms(compartmentIdx) =
+  local podSpec = schedulerAffinityEnv.compactor_scheduler_statefulsets['compartment_%d' % compartmentIdx].spec.template.spec;
+  if std.objectHas(podSpec, 'affinity')
+  then podSpec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms
+  else [];
+assert compartmentSchedulerNodeSelectorTerms(0) == [{ matchExpressions: schedulerAffinityMatchers }] :
+       'expected per-compartment compactor-schedulers to inherit compactor_scheduler_node_affinity_matchers';
+assert compartmentSchedulerNodeSelectorTerms(1) == [{ matchExpressions: schedulerAffinityMatchers }] :
+       'expected per-compartment compactor-schedulers to inherit compactor_scheduler_node_affinity_matchers';
+
 env

@@ -7,5 +7,5 @@ import (
 )
 
 func init() {
-	types.EnableManglingReturnedSlices = true
+	types.EnableManglingReturnedSlices.Store(true)
 }

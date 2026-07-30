@@ -686,18 +686,25 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, true, nil
 	},
-	// canMutateLeft is unused for the trim operators: TrimBuckets always returns a freshly copied histogram,
-	// so there is never an opportunity to reuse the input histogram in place.
-	parser.TRIM_UPPER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	// TrimBuckets mutates its receiver in place, so copy the left histogram first unless we are allowed to mutate it.
+	parser.TRIM_UPPER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil && rH == nil {
+			if !canMutateLeft {
+				lH = lH.Copy()
+			}
+
 			// histogram </ float: trim upper
 			return 0, lH.TrimBuckets(rF, true), true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.TRIM_LOWER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.TRIM_LOWER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil && rH == nil {
+			if !canMutateLeft {
+				lH = lH.Copy()
+			}
+
 			// histogram >/ float: trim lower
 			return 0, lH.TrimBuckets(rF, false), true, true, nil
 		}

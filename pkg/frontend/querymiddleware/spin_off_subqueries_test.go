@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -189,7 +190,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 		downstreamErr := errors.Errorf("some err")
 		downstream := mockHandlerWith(nil, downstreamErr)
 
-		spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, nil, nil, defaultStepFunc)
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, nil, nil, defaultStepFunc, subqueryspinoff.Options{})
 
 		// Run the query with subquery spin-off middleware wrapping the downstream one.
 		// We expect to get the downstream error.
@@ -314,6 +315,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 					reg,
 					fakeMiddleware,
 					defaultStepFunc,
+					subqueryspinoff.Options{},
 				)
 
 				ctx := user.InjectOrgID(context.Background(), "test")
@@ -380,6 +382,7 @@ func TestSpinOffSubqueries_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 			reg,
 			fakeMiddleware,
 			defaultStepFunc,
+			subqueryspinoff.Options{},
 		)
 
 		handler := spinoffMiddleware.Wrap(mockHandlerWith(nil, nil))

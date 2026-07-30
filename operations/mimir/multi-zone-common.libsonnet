@@ -35,6 +35,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         '-blocks-storage.bucket-store.chunks-cache.memcached.addresses',
         '-blocks-storage.bucket-store.index-cache.memcached.addresses',
         '-blocks-storage.bucket-store.metadata-cache.memcached.addresses',
+        '-querier.mimir-query-engine.range-vector-splitting.memcached.addresses',
         '-query-frontend.results-cache.memcached.addresses',
         '-ruler-storage.cache.memcached.addresses',
       ]

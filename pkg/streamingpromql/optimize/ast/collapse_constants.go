@@ -94,6 +94,12 @@ func (c *CollapseConstants) apply(expr parser.Expr) parser.Expr {
 		return expr
 	case *parser.StepInvariantExpr:
 		expr.Expr = c.apply(expr.Expr)
+
+		// If the inner expression is now just a number literal, drop the step invariant expression wrapper.
+		if _, ok := expr.Expr.(*parser.NumberLiteral); ok {
+			return expr.Expr
+		}
+
 		return expr
 	case *parser.VectorSelector, *parser.MatrixSelector, *parser.StringLiteral, *parser.NumberLiteral:
 		// Nothing to do.
