@@ -101,6 +101,11 @@ func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Label
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if vectorMatching.On {
+		// This produces the same labels as groupLabelsFunc for the on(...) case. With on(...) we
+		// keep only the listed labels and never __name__, so the result is the same for every
+		// operator. groupLabelsFunc has a RetainsMetricName branch, but we do not need one here.
+		// That branch matters only for the without(...) case, where the operator can retain
+		// __name__. A filled-in series has no metric name to retain.
 		lbls := matchingLabelsWithoutName(vectorMatching.MatchingLabels)
 
 		return func(l labels.Labels) labels.Labels {

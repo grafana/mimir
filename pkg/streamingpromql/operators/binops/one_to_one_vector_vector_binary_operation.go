@@ -310,9 +310,28 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	outputSeriesMap := map[string]oneToOneBinaryOperationOutputSeriesWithLabels{}
 
-	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, nil, nil, -1, nil, -1, err
+	// With fillRight, every left series makes output. The operator fills each unmatched left series
+	// and does not discard it. So the operator uses all left series. In that case leave leftSeriesUsed
+	// nil. InstantVectorOperatorBuffer reads a nil "used" slice as "the operator needs all series".
+	// This is correct and removes the need to get and fill an all-true slice.
+	// Do not apply the same optimization to rightSeriesUsed with fillLeft.
+	// addUnmatchedRightGroupsWithFilledLeftSides can skip a right group on a filled-labels collision
+	// (see the comment there). So a right series can stay unused even with fillLeft set.
+	var (
+		leftSeriesUsed []bool
+		err            error
+	)
+	lastLeftSeriesUsedIndex := -1
+
+	if !fillRight {
+		leftSeriesUsed, err = types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+
+		leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
+	} else {
+		lastLeftSeriesUsedIndex = len(b.leftMetadata) - 1
 	}
 
 	rightSeriesUsed, err := types.BoolSlicePool.Get(len(b.rightMetadata), b.MemoryConsumptionTracker)
@@ -320,8 +339,6 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		return nil, nil, nil, -1, nil, -1, err
 	}
 
-	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
-	lastLeftSeriesUsedIndex := -1
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 	lastRightSeriesUsedIndex := -1
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
@@ -348,11 +365,15 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			}
 
 			// Fill the right side using the same label function as a real match (the result metric is derived from the left operand).
-			if err := b.addLeftSeriesToOutput(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc(s.Labels), nil, true, leftSeriesIndex, leftSeriesUsed); err != nil {
+			if err := b.addLeftSeriesWithFilledRightSide(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc(s.Labels), leftSeriesIndex, leftSeriesUsed); err != nil {
 				return nil, nil, nil, -1, nil, -1, err
 			}
 
-			lastLeftSeriesUsedIndex = leftSeriesIndex
+			// leftSeriesUsed is nil only with fillRight. In that case lastLeftSeriesUsedIndex is
+			// already the final index, because the operator uses every left series.
+			if leftSeriesUsed != nil {
+				lastLeftSeriesUsedIndex = leftSeriesIndex
+			}
 			continue
 		}
 
@@ -396,13 +417,18 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		}
 
 		outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
-		leftSeriesUsed[leftSeriesIndex] = true
-		lastLeftSeriesUsedIndex = leftSeriesIndex
+
+		// leftSeriesUsed is nil only with fillRight. In that case lastLeftSeriesUsedIndex is already
+		// the final index, because the operator uses every left series.
+		if leftSeriesUsed != nil {
+			leftSeriesUsed[leftSeriesIndex] = true
+			lastLeftSeriesUsedIndex = leftSeriesIndex
+		}
 	}
 
 	// Fill the left side: emit output driven by the right side alone for any unmatched right group.
 	if fillLeft {
-		lastRightSeriesUsedIndex, err = b.addFilledLeftSeries(outputSeriesMap, &outputSeriesLabelsBytes, fillLabelsFunc, rightSideGroupsMap, matchedRightGroups, rightSeriesUsed, lastRightSeriesUsedIndex)
+		lastRightSeriesUsedIndex, err = b.addUnmatchedRightGroupsWithFilledLeftSides(outputSeriesMap, &outputSeriesLabelsBytes, fillLabelsFunc, rightSideGroupsMap, matchedRightGroups, rightSeriesUsed, lastRightSeriesUsedIndex)
 		if err != nil {
 			return nil, nil, nil, -1, nil, -1, err
 		}
@@ -425,15 +451,15 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
 }
 
-// addLeftSeriesToOutput registers a left-side series into the output series identified by
-// outputSeriesLabels. When fillMissingRight is true, the right side is synthesised from the RHS fill
-// value at evaluation time. outputSeriesLabelsBytes is a scratch buffer reused across calls.
-func (b *OneToOneVectorVectorBinaryOperation) addLeftSeriesToOutput(
+// addLeftSeriesWithFilledRightSide registers a left-side series into the output series identified by
+// outputSeriesLabels. The right side is synthesised from the RHS fill value at evaluation time.
+// outputSeriesLabelsBytes is a scratch buffer reused across calls.
+// leftSeriesUsed can be nil. Only the fillRight path reaches this function. With fillRight the
+// operator uses every left series, so the caller leaves leftSeriesUsed nil.
+func (b *OneToOneVectorVectorBinaryOperation) addLeftSeriesWithFilledRightSide(
 	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
 	outputSeriesLabelsBytes *[]byte,
 	outputSeriesLabels labels.Labels,
-	rightSide *oneToOneBinaryOperationRightSide,
-	fillMissingRight bool,
 	leftSeriesIndex int,
 	leftSeriesUsed []bool,
 ) error {
@@ -449,22 +475,26 @@ func (b *OneToOneVectorVectorBinaryOperation) addLeftSeriesToOutput(
 
 		outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
-			series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide, fillMissingRight: fillMissingRight},
+			series: &oneToOneBinaryOperationOutputSeries{fillMissingRight: true},
 		}
 
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = outputSeries
 	}
 
 	outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
-	leftSeriesUsed[leftSeriesIndex] = true
+
+	if leftSeriesUsed != nil {
+		leftSeriesUsed[leftSeriesIndex] = true
+	}
 
 	return nil
 }
 
-// addFilledLeftSeries emits output series for right-side groups that have no matching series on the
-// left side, using the LHS fill value. The left side of each such output series is synthesised at
-// evaluation time. It returns the updated index of the last right series that is needed.
-func (b *OneToOneVectorVectorBinaryOperation) addFilledLeftSeries(
+// addUnmatchedRightGroupsWithFilledLeftSides emits one output series for each right-side group that
+// has no matching series on the left side, using the LHS fill value. The left side of each such
+// output series is synthesised at evaluation time. It returns the updated index of the last right
+// series that is needed.
+func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedRightGroupsWithFilledLeftSides(
 	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
 	outputSeriesLabelsBytes *[]byte,
 	fillLabelsFunc func(labels.Labels) labels.Labels,

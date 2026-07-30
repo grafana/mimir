@@ -1023,6 +1023,189 @@ func TestOneToOneVectorVectorBinaryOperation_FillModifiers_OutputSeries(t *testi
 	}
 }
 
+func TestOneToOneVectorVectorBinaryOperation_FillModifiers_SeriesUsed(t *testing.T) {
+	// This test checks the leftSeriesUsed and rightSeriesUsed slices that computeOutputSeries returns
+	// with fill modifiers set. It also checks the memory optimization for the left side.
+	//
+	// With fill_right, every left series makes output. So computeOutputSeries leaves leftSeriesUsed
+	// nil. InstantVectorOperatorBuffer reads a nil "used" slice as "the operator needs all series".
+	// This removes the need to get and fill an all-true slice.
+	//
+	// With fill_left, the operator uses every right series. All rightSeriesUsed entries are true,
+	// because unmatched right groups still make output. rightSeriesUsed keeps its explicit form.
+	// The collision path in addUnmatchedRightGroupsWithFilledLeftSides can leave a right series
+	// unused. So the nil optimization does not apply to the right side.
+	//
+	// The test also checks that the last-used index equals the final input index for a full side.
+	fillZero := 0.0
+
+	// The left and right sides overlap only in part. "a" matches. The other series do not. This makes
+	// unmatched groups on both sides. Without a fill modifier the operator prunes those unmatched
+	// series. So the all-used result comes directly from the fill logic.
+	leftSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+		labels.FromStrings(model.MetricNameLabel, "left", "label", "b"),
+		labels.FromStrings(model.MetricNameLabel, "left", "label", "c"),
+	}
+	rightSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+		labels.FromStrings(model.MetricNameLabel, "right", "label", "d"),
+		labels.FromStrings(model.MetricNameLabel, "right", "label", "e"),
+	}
+
+	testCases := map[string]struct {
+		vectorMatching parser.VectorMatching
+
+		// expectLeftUsedNil is true when leftSeriesUsed must be nil. This is the "all left used" optimization.
+		expectLeftUsedNil bool
+		// The test checks expectAllLeftUsed only when expectLeftUsedNil is false.
+		expectAllLeftUsed  bool
+		expectAllRightUsed bool
+	}{
+		"fill_left marks every right series used, but not every left series": {
+			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}},
+			expectLeftUsedNil:  false,
+			expectAllLeftUsed:  false,
+			expectAllRightUsed: true,
+		},
+		"fill_right leaves leftSeriesUsed nil, but not every right series is used": {
+			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}},
+			expectLeftUsedNil:  true,
+			expectAllRightUsed: false,
+		},
+		"fill both leaves leftSeriesUsed nil and marks every right series used": {
+			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			expectLeftUsedNil:  true,
+			expectAllRightUsed: true,
+		},
+		"no fill prunes unmatched series on both sides": {
+			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne},
+			expectLeftUsedNil:  false,
+			expectAllLeftUsed:  false,
+			expectAllRightUsed: false,
+		},
+	}
+
+	allTrue := func(s []bool) bool {
+		for _, v := range s {
+			if !v {
+				return false
+			}
+		}
+		return true
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, testCase.vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			// Fill leftMetadata and rightMetadata. Then call the internal computeOutputSeries directly.
+			// This lets the test read the leftSeriesUsed and rightSeriesUsed slices that it returns.
+			o.leftMetadata, err = left.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			_, _, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, err := o.computeOutputSeries()
+			require.NoError(t, err)
+
+			require.Len(t, rightSeriesUsed, len(rightSeries))
+			require.Equal(t, testCase.expectAllRightUsed, allTrue(rightSeriesUsed), "rightSeriesUsed=%v", rightSeriesUsed)
+			if testCase.expectAllRightUsed {
+				require.Equal(t, len(rightSeries)-1, lastRightSeriesUsedIndex)
+			}
+
+			if testCase.expectLeftUsedNil {
+				// A nil leftSeriesUsed means the operator needs all left series. The buffer needs this.
+				require.Nil(t, leftSeriesUsed)
+				require.Equal(t, len(leftSeries)-1, lastLeftSeriesUsedIndex)
+			} else {
+				require.Len(t, leftSeriesUsed, len(leftSeries))
+				require.Equal(t, testCase.expectAllLeftUsed, allTrue(leftSeriesUsed), "leftSeriesUsed=%v", leftSeriesUsed)
+				if testCase.expectAllLeftUsed {
+					require.Equal(t, len(leftSeries)-1, lastLeftSeriesUsedIndex)
+				}
+			}
+
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillLeft_CollisionLeavesRightSeriesUnused(t *testing.T) {
+	// This test drives the filled-labels collision path in addUnmatchedRightGroupsWithFilledLeftSides.
+	// This path is the reason the "all right series used with fill_left" optimization does not apply
+	// to rightSeriesUsed. A later change that sets rightSeriesUsed to nil ("all used") with fill_left
+	// makes this test fail, because one right series stays unused here.
+	//
+	// The test uses on(__name__) matching, a name-retaining operator, and fill_left. The operator is
+	// NEQ without the bool modifier, so it acts as a filter and keeps the name. The two unmatched
+	// right series differ only in __name__. The group key keeps only __name__, so the two series go
+	// to different match groups. The filled labels drop __name__, so both groups fill to empty
+	// labels. The second group collides with the output series that the first group made. The
+	// operator skips the second group, so it never marks the second right series as used.
+	fillZero := 0.0
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// The left side has no series. So every right group is unmatched and takes the fill-left path.
+	leftSeries := []labels.Labels{}
+	rightSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "right_a"),
+		labels.FromStrings(model.MetricNameLabel, "right_b"),
+	}
+
+	vectorMatching := parser.VectorMatching{
+		Card:           parser.CardOneToOne,
+		On:             true,
+		MatchingLabels: []string{model.MetricNameLabel},
+		FillValues:     parser.VectorMatchFillValues{LHS: &fillZero},
+	}
+
+	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	// parser.NEQ without the bool modifier keeps the metric name. The operator needs this to reach
+	// the collision branch and not the "this indicates a bug" error.
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	o.leftMetadata, err = left.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+
+	allMetadata, _, _, _, rightSeriesUsed, _, err := o.computeOutputSeries()
+	require.NoError(t, err)
+
+	// The operator makes only one output series, because both right groups fill to the same empty
+	// labels. The two right groups collided. So one right series stays unused. This invariant makes
+	// the nil optimization unsafe for the right side with fill_left.
+	require.Len(t, allMetadata, 1)
+	require.Equal(t, labels.EmptyLabels(), allMetadata[0].Labels)
+
+	require.Len(t, rightSeriesUsed, len(rightSeries))
+	usedCount := 0
+	for _, used := range rightSeriesUsed {
+		if used {
+			usedCount++
+		}
+	}
+	require.Equal(t, 1, usedCount, "expected exactly one right series to be used, rightSeriesUsed=%v", rightSeriesUsed)
+
+	require.NoError(t, o.FinishedReading(ctx))
+	o.Close()
+}
+
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
 	// Verifies that exclude-style matchers are forwarded to the RHS via explicit
 	// exclude hints (set by an up-to-date query-frontend). When hints are nil
