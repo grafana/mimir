@@ -129,7 +129,8 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 func createPostingsOffsetsProto(n int) []*indexheaderpb.PostingOffset {
 	offsets := make([]*indexheaderpb.PostingOffset, n)
 	for i := 0; i < n; i++ {
-		offsets[i] = &indexheaderpb.PostingOffset{Value: fmt.Sprintf("%d", i), TableOff: int64(i)}
+		// Table offsets start after the table's length and entry count fields, like in a real file.
+		offsets[i] = &indexheaderpb.PostingOffset{Value: fmt.Sprintf("%d", i), TableOff: int64(8 + i)}
 	}
 	return offsets
 }
@@ -188,7 +189,8 @@ func TestSparsePostingsOffsetsForLabelValuePrefix(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			offsets := SparseTableOffsetsForLabel{}
 			for _, value := range testCase.existingValues {
-				require.NoError(t, offsets.appendOffset(value, 0))
+				// This test only cares about the values; any valid table offset will do.
+				require.NoError(t, offsets.appendOffset(value, 8))
 			}
 			start, end, found := offsets.labelValuePrefixOffsets(testCase.prefix)
 			assert.Equal(t, testCase.expectedStart, start)

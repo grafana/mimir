@@ -15,11 +15,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
-// symbolsTableLengthFieldSize is the size of the symbols table's leading length field.
-const symbolsTableLengthFieldSize = 4
-
 // SparseSymbols is the sampled in-memory representation of the symbols table:
-// the total number of symbols plus the table offset of every symbolFactor-th symbol.
+// the total number of symbols plus the table offset of every SymbolFactor-th symbol.
 //
 // Offsets are stored relative to the start of the table's content (after the leading length field):
 // the index writer caps the content at 2^32-1 bytes, so content-relative offsets always fit in uint32,
@@ -43,12 +40,12 @@ func (s SparseSymbols) NumOffsets() int {
 
 // tableOffset returns the offset of the i-th sampled symbol, relative to the start of the symbols table.
 func (s SparseSymbols) tableOffset(i int) int {
-	return int(s.offsets[i]) + symbolsTableLengthFieldSize
+	return int(s.offsets[i]) + tableLengthFieldSize
 }
 
 // appendOffset records a sampled symbol at the given offset relative to the start of the symbols table.
 func (s *SparseSymbols) appendOffset(tableOff int64) error {
-	off, err := tableOffsetToUint32(tableOff-symbolsTableLengthFieldSize, "symbols")
+	off, err := tableOffsetToUint32(tableOff-tableLengthFieldSize, "symbols")
 	if err != nil {
 		return err
 	}
@@ -93,9 +90,9 @@ func SparseValuesFromSymbolsTable(
 	sparseSymbols.count = decbuf.Be32int()
 
 	seen := 0
-	sparseSymbols.offsets = make([]uint32, 0, 1+sparseSymbols.count/symbolFactor)
+	sparseSymbols.offsets = make([]uint32, 0, 1+sparseSymbols.count/SymbolFactor)
 	for decbuf.Err() == nil && seen < sparseSymbols.count {
-		if seen%symbolFactor == 0 {
+		if seen%SymbolFactor == 0 {
 			if err := sparseSymbols.appendOffset(int64(decbuf.Offset())); err != nil {
 				return SparseSymbols{}, err
 			}
