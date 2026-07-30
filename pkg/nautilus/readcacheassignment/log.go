@@ -246,10 +246,13 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead, sa
 // In multi-owner mode all currently-active owners are returned.
 func (l *Log) Lookup(at time.Time, partitionID int32) []string {
 	var out []string
-	for _, e := range l.entries {
-		if e.PartitionID != partitionID {
-			continue
-		}
+	entries := l.entriesForPartition(partitionID)
+	// Entries are sorted by From within a partition. Leases starting
+	// after `at` cannot be active, so exclude that suffix too.
+	entries = entries[:sort.Search(len(entries), func(i int) bool {
+		return entries[i].From.After(at)
+	})]
+	for _, e := range entries {
 		if !e.ActiveAt(at) {
 			continue
 		}
@@ -274,11 +277,14 @@ func (l *Log) Lookup(at time.Time, partitionID int32) []string {
 // deterministic fan-out.
 func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
 	seen := make(map[string]struct{})
-	for _, e := range l.entries {
-		if e.PartitionID != partitionID {
-			continue
-		}
-		if !e.From.Before(w1) || !e.To.After(w0) {
+	entries := l.entriesForPartition(partitionID)
+	// Entries are sorted by From within a partition. From >= w1
+	// cannot overlap the half-open query window.
+	entries = entries[:sort.Search(len(entries), func(i int) bool {
+		return !entries[i].From.Before(w1)
+	})]
+	for _, e := range entries {
+		if !e.To.After(w0) {
 			continue
 		}
 		seen[e.InstanceID] = struct{}{}
@@ -299,11 +305,12 @@ func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
 // human can see WHY each readcache was selected for a query window.
 func (l *Log) EntriesDuring(partitionID int32, w0, w1 time.Time) []LogEntry {
 	var out []LogEntry
-	for _, e := range l.entries {
-		if e.PartitionID != partitionID {
-			continue
-		}
-		if !e.From.Before(w1) || !e.To.After(w0) {
+	entries := l.entriesForPartition(partitionID)
+	entries = entries[:sort.Search(len(entries), func(i int) bool {
+		return !entries[i].From.Before(w1)
+	})]
+	for _, e := range entries {
+		if !e.To.After(w0) {
 			continue
 		}
 		out = append(out, e)
@@ -387,6 +394,20 @@ func (l *Log) LeaseHorizon(at time.Time) time.Time {
 		}
 	}
 	return horizon
+}
+
+// entriesForPartition returns the contiguous slice belonging to
+// partitionID. sortEntries keeps entries ordered by PartitionID, so
+// both bounds can be found without scanning entries for other
+// partitions.
+func (l *Log) entriesForPartition(partitionID int32) []LogEntry {
+	start := sort.Search(len(l.entries), func(i int) bool {
+		return l.entries[i].PartitionID >= partitionID
+	})
+	end := start + sort.Search(len(l.entries)-start, func(i int) bool {
+		return l.entries[start+i].PartitionID > partitionID
+	})
+	return l.entries[start:end]
 }
 
 // sortEntries sorts entries ascending by (PartitionID, From,

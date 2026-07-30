@@ -4,6 +4,7 @@ package readcacheassignment
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -90,5 +91,42 @@ func benchApply(b *testing.B, numPartitions, numHistorical int) {
 		at := t0.Add(time.Duration(i+1) * lookahead)
 		b.StartTimer()
 		l.Apply(at, desired, lease, lookahead, 0)
+	}
+}
+
+// BenchmarkLog_OwnersDuring_DevSized measures the distributor query
+// routing pattern observed on dev-15: resolve ten selected partitions
+// against a 60K-entry readcache assignment log.
+func BenchmarkLog_OwnersDuring_DevSized(b *testing.B) {
+	const (
+		numPartitions          = 300
+		numEntriesPerPartition = 200
+		numSelectedPartitions  = 10
+	)
+
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	entries := make([]LogEntry, 0, numPartitions*numEntriesPerPartition)
+	for partitionID := range numPartitions {
+		for revision := range numEntriesPerPartition {
+			from := t0.Add(time.Duration(revision) * 5 * time.Minute)
+			entries = append(entries, LogEntry{
+				PartitionID: int32(partitionID),
+				InstanceID:  fmt.Sprintf("rc-%d", revision%22),
+				From:        from,
+				To:          from.Add(5 * time.Minute),
+			})
+		}
+	}
+	l := NewLogFromEntries(entries)
+	w1 := t0.Add(numEntriesPerPartition * 5 * time.Minute)
+	w0 := w1.Add(-2 * time.Hour)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		for partitionID := range numSelectedPartitions {
+			owners := l.OwnersDuring(int32(partitionID), w0, w1)
+			runtime.KeepAlive(owners)
+		}
 	}
 }
