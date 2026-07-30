@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Mimirtool: `mimirtool rules lint` no longer collapses multi-line PromQL expressions into a single line. Expressions are now formatted with the PromQL prettifier, which keeps expressions longer than 100 characters on multiple lines, like the query formatter in the Prometheus UI. #16196
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 
@@ -151,8 +152,6 @@
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 * [BUGFIX] Query-frontend: Fix a goroutine leak when a querier's streaming response arrives just as the query is cancelled: the goroutine handling the response could stay blocked forever writing a response body that would never be read. #16151
 * [BUGFIX] MQE: Fix issue where a sentinel value was inadvertently returned to a pool where it could be mutated by multiple threads at once. #16205
-* [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
-* [BUGFIX] Mimirtool: `mimirtool rules lint` no longer collapses multi-line PromQL expressions into a single line. Expressions are now formatted with the PromQL prettifier, which keeps expressions longer than 100 characters on multiple lines, like the query formatter in the Prometheus UI. #16196
 
 ### Mixin
 
