@@ -28,6 +28,12 @@ type SparseSymbols struct {
 	offsets []uint32
 }
 
+// NumSampledSymbols returns the number of symbols the sparse representation retains in memory
+// for a symbols table holding totalSymbols symbols: every symbolFactor-th one.
+func NumSampledSymbols(totalSymbols int) int {
+	return (totalSymbols + symbolFactor - 1) / symbolFactor
+}
+
 // Count returns the total number of symbols in the table.
 func (s SparseSymbols) Count() int {
 	return s.count

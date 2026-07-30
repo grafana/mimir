@@ -108,13 +108,13 @@ func buildBenchmarkGzippedSparseHeader(b *testing.B, sparseSampleFactor int) []b
 		addLabel(fmt.Sprintf("low_cardinality_%03d", i), 3)
 	}
 
-	// symbolFactor mirrors the unexported constant of the same name in the index package.
-	const symbolFactor = 32
 	symbolsCount := totalSampledEntries * sparseSampleFactor
-	numSymbolsOffsets := (symbolsCount + symbolFactor - 1) / symbolFactor
+	numSymbolsOffsets := streamindex.NumSampledSymbols(symbolsCount)
+	// Space the offsets like a table of ~30-byte symbols.
+	offsetStride := int64(symbolsCount/numSymbolsOffsets) * 30
 	symbolsOffsets := make([]int64, 0, numSymbolsOffsets)
 	for i := 0; i < numSymbolsOffsets; i++ {
-		symbolsOffsets = append(symbolsOffsets, 8+int64(i)*symbolFactor*30)
+		symbolsOffsets = append(symbolsOffsets, 8+int64(i)*offsetStride)
 	}
 
 	sparseHeaderProto := &indexheaderpb.Sparse{
