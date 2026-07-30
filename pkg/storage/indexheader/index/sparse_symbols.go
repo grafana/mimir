@@ -16,7 +16,7 @@ import (
 )
 
 // SparseSymbols is the sampled in-memory representation of the symbols table:
-// the total number of symbols plus the table offset of every SymbolFactor-th symbol.
+// the total number of symbols plus the table offset of every symbolFactor-th symbol.
 //
 // Offsets are stored relative to the start of the table's content (after the leading length field):
 // the index writer caps the content at 2^32-1 bytes, so content-relative offsets always fit in uint32,
@@ -90,9 +90,9 @@ func SparseValuesFromSymbolsTable(
 	sparseSymbols.count = decbuf.Be32int()
 
 	seen := 0
-	sparseSymbols.offsets = make([]uint32, 0, 1+sparseSymbols.count/SymbolFactor)
+	sparseSymbols.offsets = make([]uint32, 0, 1+sparseSymbols.count/symbolFactor)
 	for decbuf.Err() == nil && seen < sparseSymbols.count {
-		if seen%SymbolFactor == 0 {
+		if seen%symbolFactor == 0 {
 			if err := sparseSymbols.appendOffset(int64(decbuf.Offset())); err != nil {
 				return SparseSymbols{}, err
 			}

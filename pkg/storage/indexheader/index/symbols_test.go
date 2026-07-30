@@ -74,7 +74,7 @@ func TestSymbolsV2(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// We store only 4 SparseTableOffsets to symbols.
+		// We store only 4 sampled symbols offsets.
 		require.Equal(t, 4, s.sparseSymbols.NumOffsets())
 
 		t.Run(fmt.Sprintf("Lookup/DecbufFactory=%s", factoryName), func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestSymbolsV2(t *testing.T) {
 
 		t.Run(fmt.Sprintf("ForEachSymbol/DecbufFactory=%s", factoryName), func(t *testing.T) {
 			// Use ForEachSymbol to build an offset -> symbol mapping and ensure
-			// that it matches the expected SparseTableOffsets and symbols.
+			// that it matches the expected sampled offsets and symbols.
 			var symbols []string
 			expected := make(map[uint32]string)
 			for i := 99; i >= 0; i-- {

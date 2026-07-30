@@ -40,8 +40,7 @@ type SymbolsTable struct {
 	sparseSymbols SparseSymbols
 }
 
-// SymbolFactor is the sampling rate of the symbols table: every SymbolFactor-th symbol is retained in memory.
-const SymbolFactor = 32
+const symbolFactor = 32
 
 func NewSymbolsTableReader(
 	indexVersion int,
@@ -77,9 +76,9 @@ func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
 	if int(o) >= s.sparseSymbols.Count() {
 		return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
 	}
-	d.ResetAt(s.sparseSymbols.tableOffset(int(o / SymbolFactor)))
+	d.ResetAt(s.sparseSymbols.tableOffset(int(o / symbolFactor)))
 	// Walk until we find the one we want.
-	for i := o - (o / SymbolFactor * SymbolFactor); i > 0; i-- {
+	for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
 		d.SkipUvarintBytes()
 	}
 
@@ -149,7 +148,7 @@ func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint3
 	}
 
 	d.ResetAt(s.sparseSymbols.tableOffset(i))
-	res := i * SymbolFactor
+	res := i * symbolFactor
 	var lastSymbol string
 	for d.Err() == nil && res <= s.sparseSymbols.Count() {
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
@@ -217,13 +216,13 @@ func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
 		return "", fmt.Errorf("%w: %d", ErrSymbolNotFound, o)
 	}
 
-	if targetOffsetIdx, currentOffsetIdx := o/SymbolFactor, r.atSymbol/SymbolFactor; targetOffsetIdx > currentOffsetIdx {
+	if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
 		// Only ResetAt a bigger offset than the current one.
 		// We don't want to ResetAt an offset we've gone past: that will reverse the file reader, and we will do unnecessary reads.
 		d.ResetAt(r.sparseSymbols.tableOffset(int(targetOffsetIdx)))
-		r.atSymbol = targetOffsetIdx * SymbolFactor
+		r.atSymbol = targetOffsetIdx * symbolFactor
 	}
-	// We've offset to the right group of SymbolFactor symbols. Now skip until the requested symbol within that group.
+	// We've offset to the right group of symbolFactor symbols. Now skip until the requested symbol within that group.
 	for i := o - r.atSymbol; i > 0; i-- {
 		d.SkipUvarintBytes()
 		r.atSymbol++

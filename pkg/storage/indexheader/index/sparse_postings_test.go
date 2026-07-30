@@ -155,7 +155,7 @@ func TestSparsePostingsOffsetsForLabelValuePrefix(t *testing.T) {
 			expectedStart:  1,
 			expectedEnd:    2,
 		},
-		"prefix matches all SparseTableOffsets": {
+		"prefix matches all sampled offsets": {
 			existingValues: []string{"010", "019", "030", "031"},
 			prefix:         "0",
 			expectedFound:  true,
@@ -169,7 +169,7 @@ func TestSparsePostingsOffsetsForLabelValuePrefix(t *testing.T) {
 			expectedStart:  3,
 			expectedEnd:    4,
 		},
-		"prefix matches multiple SparseTableOffsets": {
+		"prefix matches multiple sampled offsets": {
 			existingValues: []string{"010", "019", "020", "030", "031"},
 			prefix:         "02",
 			expectedFound:  true,
