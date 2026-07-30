@@ -64,6 +64,10 @@ type Log struct {
 	// entries holds all entries (active, pre-issued, and expired).
 	// Kept sorted by (Range.Lo, From) for predictable iteration.
 	entries []LogEntry
+
+	// rangeIndex accelerates historical hash-range lookups without
+	// changing the authoritative entry representation.
+	rangeIndex *hashRangeIndex
 }
 
 // NewLog returns an empty Log.
@@ -78,7 +82,9 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 	cp := make([]LogEntry, len(entries))
 	copy(cp, entries)
 	sortEntries(cp)
-	return &Log{entries: cp}
+	l := &Log{entries: cp}
+	l.rebuildRangeIndex()
+	return l
 }
 
 // MergedWithEntries returns a new Log holding the receiver's entries
@@ -121,7 +127,9 @@ func (l *Log) MergedWithEntries(deltas []LogEntry) *Log {
 		merged = append(merged, d)
 	}
 	sortEntries(merged)
-	return &Log{entries: merged}
+	out := &Log{entries: merged}
+	out.rebuildRangeIndex()
+	return out
 }
 
 // Apply ensures, for every (Range, PartitionID) in `next`, that the
@@ -328,6 +336,7 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 
 	if changed {
 		sortEntries(l.entries)
+		l.rebuildRangeIndex()
 	}
 	return changed
 }
@@ -369,14 +378,21 @@ func (l *Log) Lookup(at time.Time, key uint32) (int32, bool) {
 // ascending for deterministic fan-out.
 func (l *Log) PartitionsOverlappingInterval(w0, w1 time.Time, lo, hi uint32) []int32 {
 	seen := make(map[int32]struct{})
-	for _, e := range l.entries {
-		if !e.From.Before(w1) || !e.To.After(w0) {
-			continue
+	if l.rangeIndex != nil && l.rangeIndex.entryCount == len(l.entries) {
+		l.rangeIndex.addPartitionsOverlappingInterval(l.entries, w0, w1, lo, hi, seen)
+	} else {
+		// Logs built through the public constructors always have an
+		// index. Keep the linear fallback for empty logs and internal
+		// test fixtures that populate entries directly.
+		for _, e := range l.entries {
+			if !e.From.Before(w1) || !e.To.After(w0) {
+				continue
+			}
+			if !e.Range.Overlaps(lo, hi) {
+				continue
+			}
+			seen[e.PartitionID] = struct{}{}
 		}
-		if !e.Range.Overlaps(lo, hi) {
-			continue
-		}
-		seen[e.PartitionID] = struct{}{}
 	}
 	return sortedDistinctPartitions(seen)
 }
@@ -432,6 +448,7 @@ func (l *Log) ActiveAt(at time.Time) []LogEntry {
 // pruned, and pre-issued future leases (To > closedBefore) are
 // always retained.
 func (l *Log) Prune(closedBefore time.Time) {
+	previousLen := len(l.entries)
 	out := l.entries[:0]
 	for _, e := range l.entries {
 		if e.To.Before(closedBefore) {
@@ -443,6 +460,9 @@ func (l *Log) Prune(closedBefore time.Time) {
 		l.entries[i] = LogEntry{}
 	}
 	l.entries = out
+	if len(l.entries) != previousLen {
+		l.rebuildRangeIndex()
+	}
 }
 
 // Entries returns a defensive copy of all entries in the log.
@@ -581,6 +601,10 @@ func (l *Log) LatestActiveAssignment(at time.Time) *Assignment {
 		entries[i] = Entry{Range: e.Range, PartitionID: e.PartitionID}
 	}
 	return &Assignment{Entries: entries}
+}
+
+func (l *Log) rebuildRangeIndex() {
+	l.rangeIndex = newHashRangeIndex(l.entries)
 }
 
 // sortEntries sorts entries ascending by (Range.Lo, From). Used to

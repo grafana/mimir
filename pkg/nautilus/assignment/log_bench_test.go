@@ -3,6 +3,7 @@
 package assignment
 
 import (
+	"runtime"
 	"testing"
 	"time"
 )
@@ -103,5 +104,47 @@ func benchApply(b *testing.B, numPartitions, slicesPerPartition, numHistorical i
 		at := t0.Add(time.Duration(i+1) * lookahead) // advance enough to require successors
 		b.StartTimer()
 		l.Apply(at, desired, lease, lookahead)
+	}
+}
+
+// BenchmarkLog_PartitionsOverlappingInterval_DevSized measures the
+// querier routing lookup that scans the hash assignment history for an
+// exact metric-name band.
+func BenchmarkLog_PartitionsOverlappingInterval_DevSized(b *testing.B) {
+	const historicalRevisions = 5
+
+	partitions := make([]int32, 300)
+	for i := range partitions {
+		partitions[i] = int32(i)
+	}
+	assignment := FineEvenSplit(partitions, 64)
+
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	entries := make([]LogEntry, 0, len(assignment.Entries)*(historicalRevisions+1))
+	for revision := historicalRevisions; revision >= 0; revision-- {
+		from := t0.Add(-time.Duration(revision) * 5 * time.Minute)
+		for _, e := range assignment.Entries {
+			entries = append(entries, LogEntry{
+				Range:       e.Range,
+				PartitionID: e.PartitionID,
+				From:        from,
+				To:          from.Add(5 * time.Minute),
+			})
+		}
+	}
+	l := NewLogFromEntries(entries)
+
+	const (
+		metricHashLo = uint32(0x80000000)
+		metricHashHi = uint32(0x8000ffff)
+	)
+	w0 := t0.Add(-historicalRevisions * 5 * time.Minute)
+	w1 := t0.Add(5 * time.Minute)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		partitions := l.PartitionsOverlappingInterval(w0, w1, metricHashLo, metricHashHi)
+		runtime.KeepAlive(partitions)
 	}
 }
