@@ -999,9 +999,10 @@ type Mimir struct {
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
 
 	// ExtraASTOptimizationPasses and ExtraQueryPlanOptimizationPasses are registered on both the querier
-	// and query-frontend planners (after the built-in passes, before sharding/subquery-spinoff). They let
-	// downstream builds run query-mutating logic as MQE optimisation passes whose effect is visible via the
-	// analysis endpoint. They must be set before the query planner modules initialise.
+	// and query-frontend planners by the planner module init (after the built-in passes, before
+	// sharding/subquery-spinoff). They let downstream builds run query-mutating logic as MQE optimisation
+	// passes whose effect is visible via the analysis endpoint. They must be set before the query planner
+	// modules initialise.
 	ExtraASTOptimizationPasses       []optimize.ASTOptimizationPass
 	ExtraQueryPlanOptimizationPasses []optimize.QueryPlanOptimizationPass
 }

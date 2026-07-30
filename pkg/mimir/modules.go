@@ -1103,13 +1103,18 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// allow anything this version of Mimir supports.
 	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 
-	opts.ExtraASTOptimizationPasses = t.ExtraASTOptimizationPasses
-	opts.ExtraQueryPlanOptimizationPasses = t.ExtraQueryPlanOptimizationPasses
-
 	var err error
 	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
 		return nil, err
+	}
+
+	// Register any extra passes injected from outside this package after the built-in passes registered by NewQueryPlanner.
+	for _, p := range t.ExtraASTOptimizationPasses {
+		t.QuerierQueryPlanner.RegisterASTOptimizationPass(p)
+	}
+	for _, p := range t.ExtraQueryPlanOptimizationPasses {
+		t.QuerierQueryPlanner.RegisterQueryPlanOptimizationPass(p)
 	}
 
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
@@ -1152,13 +1157,21 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		versionProvider = streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 	}
 
-	opts.ExtraASTOptimizationPasses = t.ExtraASTOptimizationPasses
-	opts.ExtraQueryPlanOptimizationPasses = t.ExtraQueryPlanOptimizationPasses
-
 	var err error
 	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
 		return err
+	}
+
+	// Register any extra passes injected from outside this package. These run after the built-in passes
+	// registered by NewQueryPlanner, but must be registered before the remote execution, subquery spin-off
+	// and sharding passes below so that query-mutating passes run before sharding, matching how the
+	// equivalent middlewares are ordered before query sharding today.
+	for _, p := range t.ExtraASTOptimizationPasses {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
+	}
+	for _, p := range t.ExtraQueryPlanOptimizationPasses {
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(p)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {

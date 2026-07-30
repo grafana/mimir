@@ -162,16 +162,6 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		))
 	}
 
-	// Register any extra passes injected from outside this package (e.g. enterprise builds). These run after
-	// the built-in passes above, but before the remote execution, subquery spin-off and sharding passes
-	// registered directly on the planner by the module init. See EngineOpts for why this ordering matters.
-	for _, p := range opts.ExtraASTOptimizationPasses {
-		planner.RegisterASTOptimizationPass(p)
-	}
-	for _, p := range opts.ExtraQueryPlanOptimizationPasses {
-		planner.RegisterQueryPlanOptimizationPass(p)
-	}
-
 	return planner, nil
 }
 

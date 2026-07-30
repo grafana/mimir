@@ -1975,22 +1975,22 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	require.Equal(t, expectedPlanningActivities, tracker.queries)
 }
 
-// TestQueryPlanner_ExtraOptimizationPasses verifies the EngineOpts extension point: extra passes are
-// registered after the built-in passes, are actually applied during planning, and surface through the
-// planning observer (and therefore the analysis endpoint).
+// TestQueryPlanner_ExtraOptimizationPasses verifies that passes registered on the planner after
+// construction (as the module init does for downstream builds) are actually applied during planning and
+// surface through the planning observer (and therefore the analysis endpoint).
 func TestQueryPlanner_ExtraOptimizationPasses(t *testing.T) {
 	opts := NewTestEngineOpts()
-
-	astApplied, planApplied := false, false
-	astPass := &recordingASTPass{name: "test AST pass", applied: &astApplied}
-	planPass := &recordingPlanPass{name: "test plan pass", applied: &planApplied}
-	opts.ExtraASTOptimizationPasses = append(opts.ExtraASTOptimizationPasses, astPass)
-	opts.ExtraQueryPlanOptimizationPasses = append(opts.ExtraQueryPlanOptimizationPasses, planPass)
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	// Extra passes must be registered after all built-in passes.
+	astApplied, planApplied := false, false
+	astPass := &recordingASTPass{name: "test AST pass", applied: &astApplied}
+	planPass := &recordingPlanPass{name: "test plan pass", applied: &planApplied}
+	planner.RegisterASTOptimizationPass(astPass)
+	planner.RegisterQueryPlanOptimizationPass(planPass)
+
+	// Passes registered after construction run after all built-in passes.
 	require.True(t, planner.astOptimizationPasses[len(planner.astOptimizationPasses)-1] == astPass, "extra AST pass should be registered last")
 	require.True(t, planner.planOptimizationPasses[len(planner.planOptimizationPasses)-1] == planPass, "extra plan pass should be registered last")
 

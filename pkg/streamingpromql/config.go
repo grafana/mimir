@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -69,18 +68,6 @@ type EngineOpts struct {
 	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
 	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
 	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
-
-	// ExtraASTOptimizationPasses and ExtraQueryPlanOptimizationPasses allow injecting custom optimization
-	// passes into the query planner from outside this package (e.g. enterprise builds), mirroring the
-	// ExtraInstantQueryMiddlewares/ExtraRangeQueryMiddlewares extension point on the query-frontend.
-	// They are set programmatically and so are not exposed as config flags.
-	//
-	// These passes are registered after all built-in passes but before the passes registered directly on
-	// the planner by the module init (remote execution, subquery spin-off and sharding). This ordering
-	// matters: query-mutating passes should run before sharding, the same way the equivalent middlewares
-	// are ordered before query sharding today.
-	ExtraASTOptimizationPasses       []optimize.ASTOptimizationPass       `yaml:"-"`
-	ExtraQueryPlanOptimizationPasses []optimize.QueryPlanOptimizationPass `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.
