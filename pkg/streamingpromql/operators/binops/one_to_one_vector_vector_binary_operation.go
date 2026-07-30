@@ -686,10 +686,12 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		}
 	}
 
-	// A filled-right output series has no shared right side, so this is always its last use.
-	isLastUseOfRightSide := true
+	var isLastUseOfRightSide bool
 
-	if !thisSeries.fillMissingRight {
+	if thisSeries.fillMissingRight {
+		// A filled-right output series has no shared right side, so this is always its last use.
+		isLastUseOfRightSide = true
+	} else {
 		// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
 		rightSide.outputSeriesCount--
 		isLastUseOfRightSide = rightSide.outputSeriesCount == 0
