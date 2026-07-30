@@ -189,7 +189,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, 0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", `/api/v1/query?query=up`, nil)
 			rec := httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -298,6 +298,105 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 	}
 }
 
+// TestProxyEndpoint_AmplificationWrapsAroundWriteFactor verifies that when the write amplification
+// factor W is set, read copies wrap around the W existing variants (k mod W, where variant 0 is the
+// base series sent with the original query) so the read factor may exceed the write factor without
+// referencing series that were never written.
+func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	const originalQuery = `up{job="api"}`
+
+	tests := []struct {
+		name        string
+		factor      float64
+		writeFactor int
+		// expectedQueries maps each expected query string to the number of times it must be seen,
+		// including the synchronously-sent original.
+		expectedQueries map[string]int
+	}{
+		{
+			// N=5, W=2: copies k=1..4 -> variants 1,0,1,0.
+			name:        "read factor exceeds write factor",
+			factor:      5.0,
+			writeFactor: 2,
+			expectedQueries: map[string]int{
+				originalQuery:       3, // original + copies k=2, k=4 (variant 0 = base series)
+				`up{job="api_amp1"}`: 2, // copies k=1, k=3
+			},
+		},
+		{
+			// N=3, W=3: wrapping enabled but not needed; behavior identical to strict mode.
+			name:        "read factor within write factor",
+			factor:      3.0,
+			writeFactor: 3,
+			expectedQueries: map[string]int{
+				originalQuery:       1,
+				`up{job="api_amp1"}`: 1,
+				`up{job="api_amp2"}`: 1,
+			},
+		},
+		{
+			// N=4, W=1: only the base series exists; all copies are duplicates of the original.
+			name:        "write factor of one duplicates the original",
+			factor:      4.0,
+			writeFactor: 1,
+			expectedQueries: map[string]int{
+				originalQuery: 4,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
+
+			var mu sync.Mutex
+			queries := map[string]int{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				queries[r.URL.Query().Get("query")]++
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
+
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+
+			route := Route{
+				Path:      "/api/v1/query",
+				RouteName: "api_v1_query",
+				Methods:   []string{"GET"},
+			}
+
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, tt.writeFactor, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+
+			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
+			rec := httptest.NewRecorder()
+
+			endpoint.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			// Drain async (fire-and-forget) amplified copies before asserting counts.
+			asyncDispatcher.Stop()
+			asyncDispatcher.Await()
+
+			mu.Lock()
+			got := map[string]int{}
+			for q, c := range queries {
+				got[q] = c
+			}
+			mu.Unlock()
+
+			require.Equal(t, tt.expectedQueries, got)
+		})
+	}
+}
+
 // TestProxyEndpoint_AmplifyAllReplicas verifies that with amplify-all-replicas-fraction=1 a single
 // heavy copy (matching the base value plus all replicas) is sent instead of the N-1 per-replica
 // copies, regardless of the amplification factor.
@@ -325,7 +424,7 @@ func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 	// Factor 3 would normally send 2 per-replica copies; with fraction 1.0 we expect a single copy.
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, rewriteOptions{}, 1.0, 0.0, asyncDispatcher)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, 0, rewriteOptions{}, 1.0, 0.0, asyncDispatcher)
 
 	req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 	rec := httptest.NewRecorder()
@@ -392,7 +491,7 @@ func TestProxyEndpoint_StrongConsistency(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 			// factor 3 -> 2 copies; strong-consistency-instant-fraction 1.0 -> every copy sampled.
-			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, rewriteOptions{}, 0.0, 1.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, 0, rewriteOptions{}, 0.0, 1.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", tt.route.Path+"?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
