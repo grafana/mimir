@@ -112,23 +112,18 @@ func TestDecodeOptions(t *testing.T) {
 }
 
 func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
+	// PropagatedHeaders are deliberately not part of this round-trip: EncodeOptions does not serialize
+	// them (they are propagated separately by Codec.AddHeadersForMetricQueryRequest to avoid double
+	// emission). See TestEncodeOptionsDoesNotSerializePropagatedHeaders.
 	for _, tt := range []struct {
-		name              string
-		in                Options
-		propagatedHeaders []string
+		name string
+		in   Options
 	}{
 		{name: "zero value", in: Options{}},
 		{name: "cache disabled", in: Options{CacheDisabled: true}},
 		{name: "sharding disabled", in: Options{ShardingDisabled: true}},
 		{name: "total shards set", in: Options{TotalShards: 128}},
 		{name: "all set", in: Options{CacheDisabled: true, TotalShards: 32}},
-		{
-			name: "propagated headers",
-			in: Options{
-				PropagatedHeaders: http.Header{"X-Test-Header": []string{"true"}},
-			},
-			propagatedHeaders: []string{"X-Test-Header"},
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -137,9 +132,21 @@ func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			EncodeOptions(req, tt.in)
 
-			require.Equal(t, tt.in, DecodeOptions(req, tt.propagatedHeaders))
+			require.Equal(t, tt.in, DecodeOptions(req, nil))
 		})
 	}
+}
+
+// TestEncodeOptionsDoesNotSerializePropagatedHeaders guards against re-emitting propagated headers on
+// encode: they are already propagated by Codec.AddHeadersForMetricQueryRequest on the metrics query path,
+// so serializing them here too would emit each header twice.
+func TestEncodeOptionsDoesNotSerializePropagatedHeaders(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	require.NoError(t, err)
+
+	EncodeOptions(req, Options{PropagatedHeaders: http.Header{"X-Test-Header": []string{"true"}}})
+
+	require.Empty(t, req.Header.Values("X-Test-Header"))
 }
 
 func TestDecodeCacheDisabledOption(t *testing.T) {

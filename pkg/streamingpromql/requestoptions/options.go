@@ -99,12 +99,4 @@ func EncodeOptions(r *http.Request, opts Options) {
 	if opts.TotalShards > 0 {
 		r.Header.Set(TotalShardsControlHeader, strconv.Itoa(int(opts.TotalShards)))
 	}
-	// Unlike the scalar options above, PropagatedHeaders is an http.Header that can hold multiple values
-	// per name, so we Add each one to preserve them all. Set would replace on every iteration, leaving
-	// only the last value.
-	for name, values := range opts.PropagatedHeaders {
-		for _, value := range values {
-			r.Header.Add(name, value)
-		}
-	}
 }
