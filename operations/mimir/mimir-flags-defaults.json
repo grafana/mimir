@@ -930,6 +930,7 @@
   "blocks-storage.tsdb.offset-catalogue.sync-concurrency": 10,
   "compactor.block-ranges": [],
   "compactor.block-sync-concurrency": 8,
+  "compactor.block-health-validation-concurrency": 8,
   "compactor.meta-sync-concurrency": 20,
   "compactor.data-dir": "./data-compactor/",
   "compactor.compaction-interval": 3600000000000,

@@ -32,6 +32,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -315,6 +316,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
+	healthValidationSem := semaphore.NewWeighted(int64(c.blockHealthValidationConcurrency))
+
 	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		meta := toCompact[idx]
 
@@ -326,7 +329,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure all source blocks are valid.
-		stats, err := block.GatherBlockHealthStats(ctx, jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
+		stats, err := gatherBlockHealthStats(ctx, healthValidationSem, jobLogger, bdir, meta.MinTime, meta.MaxTime)
 		if err != nil {
 			return fmt.Errorf("gather index issues for block %s: %w", bdir, err)
 		}
@@ -444,7 +447,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("remove tombstones: %w", err)
 		}
 
-		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
+		if err := verifyBlock(ctx, healthValidationSem, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
 		return nil
@@ -550,6 +553,24 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 	}
 	return true, compIDs, nil
+}
+
+func gatherBlockHealthStats(ctx context.Context, sem *semaphore.Weighted, logger log.Logger, bdir string, minTime, maxTime int64) (block.HealthStats, error) {
+	if err := sem.Acquire(ctx, 1); err != nil {
+		return block.HealthStats{}, err
+	}
+	defer sem.Release(1)
+
+	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
+}
+
+func verifyBlock(ctx context.Context, sem *semaphore.Weighted, logger log.Logger, bdir string, minTime, maxTime int64) error {
+	stats, err := gatherBlockHealthStats(ctx, sem, logger, bdir, minTime, maxTime)
+	if err != nil {
+		return err
+	}
+
+	return stats.AnyErr()
 }
 
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
@@ -877,24 +898,25 @@ var ownAllJobs = func(*Job) (bool, error) {
 
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
-	logger                        log.Logger
-	grouper                       Grouper
-	comp                          Compactor
-	planner                       Planner
-	compactDir                    string
-	bkt                           objstore.Bucket
-	concurrency                   int
-	skipUnhealthyBlocks           bool
-	sparseIndexHeaderSamplingRate int
-	maxPerBlockUploadConcurrency  int
-	sparseIndexHeaderconfig       indexheader.Config
-	ownJob                        ownCompactionJobFunc
-	sortJobs                      JobsOrderFunc
-	waitPeriod                    time.Duration
-	oooWaitPeriod                 time.Duration
-	skipFutureMaxTime             bool
-	blockSyncConcurrency          int
-	metrics                       *BucketCompactorMetrics
+	logger                           log.Logger
+	grouper                          Grouper
+	comp                             Compactor
+	planner                          Planner
+	compactDir                       string
+	bkt                              objstore.Bucket
+	concurrency                      int
+	skipUnhealthyBlocks              bool
+	sparseIndexHeaderSamplingRate    int
+	maxPerBlockUploadConcurrency     int
+	sparseIndexHeaderconfig          indexheader.Config
+	ownJob                           ownCompactionJobFunc
+	sortJobs                         JobsOrderFunc
+	waitPeriod                       time.Duration
+	oooWaitPeriod                    time.Duration
+	skipFutureMaxTime                bool
+	blockSyncConcurrency             int
+	blockHealthValidationConcurrency int
+	metrics                          *BucketCompactorMetrics
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -913,6 +935,7 @@ func NewBucketCompactor(
 	oooWaitPeriod time.Duration,
 	skipFutureMaxTime bool,
 	blockSyncConcurrency int,
+	blockHealthValidationConcurrency int,
 	metrics *BucketCompactorMetrics,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
@@ -926,25 +949,30 @@ func NewBucketCompactor(
 		return nil, fmt.Errorf("invalid per block upload concurrency level (%d), concurrency must be > 0", maxPerBlockUploadConcurrency)
 	}
 
+	if blockHealthValidationConcurrency <= 0 {
+		return nil, fmt.Errorf("invalid block health validation concurrency level (%d), concurrency level must be > 0", blockHealthValidationConcurrency)
+	}
+
 	return &BucketCompactor{
-		logger:                        logger,
-		grouper:                       grouper,
-		planner:                       planner,
-		comp:                          comp,
-		compactDir:                    compactDir,
-		bkt:                           bkt,
-		concurrency:                   concurrency,
-		skipUnhealthyBlocks:           skipUnhealthyBlocks,
-		ownJob:                        ownJob,
-		sortJobs:                      sortJobs,
-		waitPeriod:                    waitPeriod,
-		oooWaitPeriod:                 oooWaitPeriod,
-		skipFutureMaxTime:             skipFutureMaxTime,
-		blockSyncConcurrency:          blockSyncConcurrency,
-		metrics:                       metrics,
-		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
-		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
-		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
+		logger:                           logger,
+		grouper:                          grouper,
+		planner:                          planner,
+		comp:                             comp,
+		compactDir:                       compactDir,
+		bkt:                              bkt,
+		concurrency:                      concurrency,
+		skipUnhealthyBlocks:              skipUnhealthyBlocks,
+		ownJob:                           ownJob,
+		sortJobs:                         sortJobs,
+		waitPeriod:                       waitPeriod,
+		oooWaitPeriod:                    oooWaitPeriod,
+		skipFutureMaxTime:                skipFutureMaxTime,
+		blockSyncConcurrency:             blockSyncConcurrency,
+		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
+		metrics:                          metrics,
+		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
+		sparseIndexHeaderconfig:          sparseIndexHeaderconfig,
+		maxPerBlockUploadConcurrency:     maxPerBlockUploadConcurrency,
 	}, nil
 }
 

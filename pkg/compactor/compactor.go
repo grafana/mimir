@@ -65,6 +65,7 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
+	errInvalidBlockHealthValidationConcurrency    = fmt.Errorf("invalid block-health-validation-concurrency value, must be positive")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -96,21 +97,22 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges                 mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency        int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency         int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DataDir                     string                  `yaml:"data_dir"`
-	CompactionInterval          time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
-	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
-	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay               time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay          time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime           time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges                      mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency             int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	BlockHealthValidationConcurrency int                     `yaml:"block_health_validation_concurrency" category:"experimental"`
+	MetaSyncConcurrency              int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir                          string                  `yaml:"data_dir"`
+	CompactionInterval               time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries                int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency            int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod             time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
+	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
+	CleanupInterval                  time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency               int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay                    time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay               time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime                time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -163,6 +165,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.")
+	f.IntVar(&cfg.BlockHealthValidationConcurrency, "compactor.block-health-validation-concurrency", 8, "Number of blocks whose health can be validated concurrently during compaction. Health validation reads the block index and is CPU intensive, so setting this lower than -compactor.block-sync-concurrency makes CPU usage more uniform over the course of a compaction.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
@@ -220,6 +223,9 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config, logger log.Logg
 	}
 	if cfg.MaxBlockUploadValidationConcurrency < 0 {
 		return errInvalidMaxBlockUploadValidationConcurrency
+	}
+	if cfg.BlockHealthValidationConcurrency < 1 {
+		return errInvalidBlockHealthValidationConcurrency
 	}
 	if !slices.Contains(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
@@ -924,6 +930,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.compactorCfg.CompactionOOOWaitPeriod,
 		c.compactorCfg.CompactionSkipFutureMaxTime,
 		c.compactorCfg.BlockSyncConcurrency,
+		c.compactorCfg.BlockHealthValidationConcurrency,
 		c.bucketCompactorMetrics,
 		c.compactorCfg.SparseIndexHeadersSamplingRate,
 		c.compactorCfg.SparseIndexHeadersConfig,

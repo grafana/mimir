@@ -66,6 +66,8 @@ The following features are currently experimental:
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
+  - Limit how many block indexes are validated for health concurrently during compaction, independently of how many blocks are downloaded and uploaded concurrently.
+    - `-compactor.block-health-validation-concurrency`
 - Compactor scheduler
   - Coordinate compactors through a shared job queue and expose additional metrics about pending and active compaction work.
     - `-compactor-scheduler.*`
