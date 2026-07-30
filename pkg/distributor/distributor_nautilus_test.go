@@ -75,6 +75,50 @@ func minimalDistributorForRouting(t *testing.T, required bool) *Distributor {
 	return d
 }
 
+func TestWritePartitionTopicsConcurrently(t *testing.T) {
+	t.Run("single topic", func(t *testing.T) {
+		writes := []partitionTopicWrite{{topic: "ingest"}}
+		var called []string
+
+		err := writePartitionTopicsConcurrently(context.Background(), writes, func(_ context.Context, topicWrite partitionTopicWrite) error {
+			called = append(called, topicWrite.topic)
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ingest"}, called)
+	})
+
+	t.Run("tee topics overlap", func(t *testing.T) {
+		writes := []partitionTopicWrite{{topic: "ingest"}, {topic: "ingest_nautilus"}}
+		started := make(chan string, len(writes))
+		release := make(chan struct{})
+		done := make(chan error, 1)
+
+		go func() {
+			done <- writePartitionTopicsConcurrently(context.Background(), writes, func(_ context.Context, topicWrite partitionTopicWrite) error {
+				started <- topicWrite.topic
+				<-release
+				return nil
+			})
+		}()
+
+		got := map[string]bool{}
+		for range writes {
+			select {
+			case topic := <-started:
+				got[topic] = true
+			case <-time.After(time.Second):
+				t.Fatal("topic writes did not overlap")
+			}
+		}
+		assert.Equal(t, map[string]bool{"ingest": true, "ingest_nautilus": true}, got)
+
+		close(release)
+		require.NoError(t, <-done)
+	})
+}
+
 func TestGetKeysByAssignment_RequiredRejectsKeyNotCovered(t *testing.T) {
 	d := minimalDistributorForRouting(t, true)
 	// Table that intentionally covers only [0, 99]. Any key >= 100

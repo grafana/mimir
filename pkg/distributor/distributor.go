@@ -2789,6 +2789,21 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
+type partitionTopicWrite struct {
+	topic             string
+	partitionRequests []ingest.PartitionWriteRequest
+}
+
+func writePartitionTopicsConcurrently(ctx context.Context, writes []partitionTopicWrite, write func(context.Context, partitionTopicWrite) error) error {
+	g, ctx := errgroup.WithContext(ctx)
+	for _, topicWrite := range writes {
+		g.Go(func() error {
+			return write(ctx, topicWrite)
+		})
+	}
+	return g.Wait()
+}
+
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
@@ -2894,12 +2909,11 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	topics := d.ingestStorageTopicsForTenant(tenantID)
 
-	// Write all partitions in one ProduceSync call per destination
-	// topic. Nautilus-enrolled tenants can be configured to write the
-	// production ingest topic, the Nautilus topic, or both (tee). We
-	// treat any destination failure as a failed write so callers retry:
-	// a partial tee is worse than a duplicate on retry.
-	writeCtx := remoteRequestContext()
+	// Compute all destination partitioning before starting concurrent
+	// writes. The scheme helpers memoize their results without
+	// synchronization, so they must not be called by the write
+	// goroutines.
+	topicWrites := make([]partitionTopicWrite, 0, len(topics))
 	for _, topic := range topics {
 		var (
 			partitionKeys []ring.PartitionKeys
@@ -2933,13 +2947,33 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 			"partition_summary", formatPartitionKeySummary(partitionKeys),
 		)
 
-		if err := d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests); err != nil {
+		topicWrites = append(topicWrites, partitionTopicWrite{
+			topic:             topic,
+			partitionRequests: partitionRequests,
+		})
+	}
+
+	// Write all partitions in one ProduceSync call per destination
+	// topic. Nautilus-enrolled tenants can be configured to write the
+	// production ingest topic, the Nautilus topic, or both (tee). Run
+	// tee destinations concurrently so the Push critical path waits for
+	// the slower produce instead of the sum of both. Any destination
+	// failure still fails the whole write so callers retry: a partial
+	// tee is worse than a duplicate on retry.
+	err := writePartitionTopicsConcurrently(remoteRequestContext(), topicWrites, func(writeCtx context.Context, topicWrite partitionTopicWrite) error {
+		if err := d.ingestStorageWriter.MultiWriteSync(writeCtx, topicWrite.topic, tenantID, topicWrite.partitionRequests); err != nil {
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
-			return errors.Wrapf(err, "send data to partitions topic %q", topic)
+			return errors.Wrapf(err, "send data to partitions topic %q", topicWrite.topic)
 		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 
-		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
+	for _, topicWrite := range topicWrites {
+		d.observeNautilusPartitionWrites(tenantID, topicWrite.topic, topicWrite.partitionRequests)
 	}
 
 	// Spotlight observation only makes sense for writes that actually
