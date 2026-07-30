@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -221,6 +222,99 @@ func TestSelector_QueryRanges(t *testing.T) {
 	})
 }
 
+func TestSelector_ReportsCardinality(t *testing.T) {
+	start := time.Date(2024, 12, 11, 3, 12, 45, 0, time.UTC)
+	end := start.Add(time.Hour)
+	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
+	lookbackDelta := 5 * time.Minute
+
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "foo", "env", "prod", "instance", "a"),
+		labels.FromStrings("__name__", "foo", "env", "prod", "instance", "b"),
+		labels.FromStrings("__name__", "foo", "env", "dev", "instance", "c"),
+	}
+
+	baseMatchers := types.Matchers{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
+	expectedMinT, expectedMaxT := ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+	t.Run("without subsets", func(t *testing.T) {
+		qs, ctx := stats.ContextWithEmptyStats(context.Background())
+		s := &Selector{
+			Queryable:                &sliceQueryable{series: series},
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 baseMatchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+		}
+
+		_, err := s.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, []stats.SelectorCardinality{
+			{
+				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}},
+				MinT:        expectedMinT,
+				MaxT:        expectedMaxT,
+				SeriesCount: 3,
+			},
+		}, qs.LoadSelectorCardinalities())
+	})
+
+	t.Run("with subsets", func(t *testing.T) {
+		qs, ctx := stats.ContextWithEmptyStats(context.Background())
+		s := &Selector{
+			Queryable:     &sliceQueryable{series: series},
+			TimeRange:     timeRange,
+			LookbackDelta: lookbackDelta,
+			Matchers:      baseMatchers,
+			Subsets: []Subset{
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+			},
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+		}
+		defer s.Close()
+
+		_, err := s.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, []stats.SelectorCardinality{
+			{
+				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}},
+				MinT:        expectedMinT,
+				MaxT:        expectedMaxT,
+				SeriesCount: 3,
+			},
+			{
+				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}, {Type: int32(labels.MatchEqual), Name: "env", Value: "prod"}},
+				MinT:        expectedMinT,
+				MaxT:        expectedMaxT,
+				SeriesCount: 2,
+			},
+			{
+				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}, {Type: int32(labels.MatchEqual), Name: "env", Value: "dev"}},
+				MinT:        expectedMinT,
+				MaxT:        expectedMaxT,
+				SeriesCount: 1,
+			},
+		}, qs.LoadSelectorCardinalities())
+	})
+
+	t.Run("no stats in context", func(t *testing.T) {
+		s := &Selector{
+			Queryable:                &sliceQueryable{series: series},
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 baseMatchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()),
+		}
+
+		// Should not panic when there are no stats in the context.
+		_, err := s.SeriesMetadata(context.Background(), nil)
+		require.NoError(t, err)
+	})
+}
+
 func requireMinAndMaxTimes(t *testing.T, queryable *mockQueryable, expectedMinT, expectedMaxT int64) {
 	require.Equal(t, expectedMinT, queryable.mint)
 	require.Equal(t, expectedMaxT, queryable.maxt)
@@ -276,3 +370,54 @@ func (m *mockQuerier) LabelNames(context.Context, *storage.LabelHints, ...*label
 func (m *mockQuerier) Close() error {
 	panic("not supported")
 }
+
+// sliceQueryable is a storage.Queryable that returns a fixed set of series (identified by their labels).
+type sliceQueryable struct {
+	series []labels.Labels
+}
+
+func (q *sliceQueryable) Querier(int64, int64) (storage.Querier, error) {
+	return &sliceQuerier{series: q.series}, nil
+}
+
+type sliceQuerier struct {
+	series []labels.Labels
+}
+
+func (q *sliceQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	s := make([]storage.Series, 0, len(q.series))
+	for _, l := range q.series {
+		s = append(s, mockSeries{l})
+	}
+
+	return &sliceSeriesSet{series: s}
+}
+
+func (q *sliceQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (q *sliceQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (q *sliceQuerier) Close() error {
+	return nil
+}
+
+type sliceSeriesSet struct {
+	series []storage.Series
+	idx    int
+}
+
+func (s *sliceSeriesSet) Next() bool {
+	if s.idx >= len(s.series) {
+		return false
+	}
+	s.idx++
+	return true
+}
+
+func (s *sliceSeriesSet) At() storage.Series                { return s.series[s.idx-1] }
+func (s *sliceSeriesSet) Err() error                        { return nil }
+func (s *sliceSeriesSet) Warnings() annotations.Annotations { return nil }

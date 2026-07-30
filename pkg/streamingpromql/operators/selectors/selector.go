@@ -5,6 +5,7 @@ package selectors
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -117,7 +119,71 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		return nil, err
 	}
 
+	s.reportCardinality(ctx, len(metadata))
+
 	return metadata, nil
+}
+
+// reportCardinality records the number of series selected by this selector (and each of its subsets)
+// in the query stats, keyed by the selector's matchers and queried time range.
+//
+// The matchers are taken from the original expression (Selector.Matchers and each subset's filter),
+// ignoring any additional matchers pushed down by callers of SeriesMetadata.
+func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
+	queryStats := stats.FromContext(ctx)
+	if queryStats == nil {
+		return
+	}
+
+	minT, maxT := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
+
+	queryStats.AddSelectorCardinality(stats.SelectorCardinality{
+		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
+		MinT:        minT,
+		MaxT:        maxT,
+		SeriesCount: uint64(seriesCount),
+	})
+
+	for _, subset := range s.Subsets {
+		subsetCount := uint64(0)
+		for _, matches := range subset.matchingSeries {
+			if matches {
+				subsetCount++
+			}
+		}
+
+		queryStats.AddSelectorCardinality(stats.SelectorCardinality{
+			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
+			MinT:        minT,
+			MaxT:        maxT,
+			SeriesCount: subsetCount,
+		})
+	}
+}
+
+// labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
+// stats.LabelMatcher representation, deep-copying all strings so the result does not alias any
+// reused request buffer (see the note on unsafe memory tricks in the contributing guide).
+func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(base)+len(filter))
+
+	for _, m := range base {
+		out = append(out, stats.LabelMatcher{
+			Type:  int32(m.Type),
+			Name:  strings.Clone(m.Name),
+			Value: strings.Clone(m.Value),
+		})
+	}
+
+	for _, m := range filter {
+		out = append(out, stats.LabelMatcher{
+			Type:  int32(m.Type),
+			Name:  strings.Clone(m.Name),
+			Value: strings.Clone(m.Value),
+		})
+	}
+
+	return out
 }
 
 func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
