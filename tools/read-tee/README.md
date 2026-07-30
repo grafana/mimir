@@ -99,6 +99,7 @@ Copies flow through the full read path (query-frontend → querier → ingesters
 ```
 -backend.endpoint             The query-frontend endpoint to forward reads to. Required.
 -backend.amplification-factor Factor N (default 1 = passthrough). Integer part = original + (N-1) copies.
+-backend.write-amplification-factor  Write-tee factor W (default 0 = disabled). When set, copy k targets variant k mod W (0 = base series), so N may exceed W by wrapping around the variants that exist.
 -backend.negative-matchers-exclude-all-amp-values  Default true. Negative matchers (!=, !~) exclude the value in all forms (base + every _amp{N}); != becomes a regex-quoted !~. Set false to suffix negative matchers with _amp{k} like positive matchers.
 -backend.amplify-all-replicas-fraction  Fraction (0.0-1.0, default 0) of reads sent as a single heavy copy matching base + all replicas instead of N-1 per-replica copies. Requires amplification-factor > 1.
 -backend.strong-consistency-instant-fraction  Fraction (0.0-1.0, default 0) of instant-query copies sent with X-Read-Consistency: strong (per-copy, copies only). Mirrors the ruler.
@@ -111,4 +112,6 @@ Copies flow through the full read path (query-frontend → querier → ingesters
 
 ## Coordinating With Write-Tee
 
-Amplified copies only do real work if the `_amp{k}` series exist. Read-tee at factor `R` queries `_amp1`..`_amp{R-1}`; write-tee at factor `W` creates `_amp1`..`_amp{W-1}`. **Keep `R ≤ W`** — otherwise copies hit `_amp` series that were never written and return empty results (wasted load). The ksonnet library enforces this with an assertion.
+Amplified copies only do real work if the `_amp{k}` series exist. Read-tee at factor `R` queries `_amp1`..`_amp{R-1}`; write-tee at factor `W` creates `_amp1`..`_amp{W-1}`. By default, **keep `R ≤ W`** — otherwise copies hit `_amp` series that were never written and return empty results (wasted load). The ksonnet library enforces this with an assertion.
+
+To scale read load beyond write load, set `-backend.write-amplification-factor` to `W`. Copy `k` then wraps around the variants that actually exist (`k mod W`): variant 0 is the base series (the copy is sent with the original, unrewritten query) and variants 1..`W-1` are the written replicas. Every copy reads real data, so `R` may exceed `W` freely — the extra copies re-read the same series in distinct queries, which is representative read load (production queries re-read the same series constantly). One caveat: repeated identical *range* queries can partially collapse into the query-frontend results cache; *instant* queries (the ruler-shaped load) are not results-cached and do full work per copy.

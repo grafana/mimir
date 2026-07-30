@@ -46,6 +46,7 @@ type ProxyEndpoint struct {
 	metrics                   *ProxyMetrics
 	logger                    log.Logger
 	amplificationFactor       float64
+	writeAmplificationFactor  int
 	rewriteOpts               rewriteOptions
 	ampAllReplicasFraction    float64
 	strongConsistencyFraction float64
@@ -54,13 +55,14 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, rewriteOpts rewriteOptions, ampAllReplicasFraction, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, writeAmplificationFactor int, rewriteOpts rewriteOptions, ampAllReplicasFraction, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
 		backend:                   backend,
 		route:                     route,
 		metrics:                   metrics,
 		logger:                    logger,
 		amplificationFactor:       amplificationFactor,
+		writeAmplificationFactor:  writeAmplificationFactor,
 		rewriteOpts:               rewriteOpts,
 		ampAllReplicasFraction:    ampAllReplicasFraction,
 		strongConsistencyFraction: strongConsistencyFraction,
@@ -191,10 +193,13 @@ type amplifiedRequestSource struct {
 
 // prepareAmplifiedRequests builds the rewritten copies of the original read request. Normally it
 // builds N-1 per-replica copies (amplified replicas _amp1.._amp{N-1}, where N is the integer part
-// of the amplification factor), each with its query and match[] parameters suffixed _amp{k}. For a
-// sampled fraction of queries (amplify-all-replicas-fraction) it instead builds a single heavy copy
-// whose matchers target the base series plus every replica at once. Copies that fail to rewrite are
-// skipped and counted. Returns nil when amplification is disabled (factor <= 1).
+// of the amplification factor), each with its query and match[] parameters suffixed _amp{k}. When
+// the write amplification factor W is set, copy k instead targets variant k mod W so N may exceed
+// W: the copies wrap around the base series (variant 0, sent with the original unrewritten params)
+// and the W-1 replicas write-tee actually created. For a sampled fraction of queries
+// (amplify-all-replicas-fraction) it instead builds a single heavy copy whose matchers target the
+// base series plus every replica at once. Copies that fail to rewrite are skipped and counted.
+// Returns nil when amplification is disabled (factor <= 1).
 func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) []amplifiedRequest {
 	// Integer factors only for v1; the fractional part is ignored.
 	n := int(p.amplificationFactor)
@@ -244,7 +249,14 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 
 	result := make([]amplifiedRequest, 0, n-1)
 	for k := 1; k <= n-1; k++ {
-		a, ok := p.buildCopy(ctx, src, k, p.rewriteOpts, logger)
+		// With the write amplification factor set, wrap copies around the variants that actually
+		// exist: the base series (0) and replicas _amp1.._amp{W-1}. Without it, copy k targets
+		// _amp{k} unconditionally (the caller must keep N <= W).
+		variant := k
+		if p.writeAmplificationFactor > 0 {
+			variant = k % p.writeAmplificationFactor
+		}
+		a, ok := p.buildCopy(ctx, src, variant, p.rewriteOpts, logger)
 		if !ok {
 			continue
 		}
@@ -309,7 +321,13 @@ func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger
 // rewriteParams returns a copy of values with the "query" and "match[]" parameters rewritten for
 // the given replica. All other parameters are copied unchanged. Returns an error if any value
 // fails to rewrite (invalid PromQL), so the caller can skip that copy.
+//
+// Replica 0 is the base series (used by write-amplification-factor wrapping): the params are
+// returned verbatim, so the copy re-reads exactly what the original request read.
 func rewriteParams(values url.Values, replica int, opts rewriteOptions) (url.Values, error) {
+	if replica == 0 && !opts.matchAllReplicas {
+		return values, nil
+	}
 	out := make(url.Values, len(values))
 	for key, vs := range values {
 		switch key {
