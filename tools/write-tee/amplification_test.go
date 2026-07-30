@@ -4,6 +4,7 @@ package writetee
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -68,7 +69,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		_, err := AmplifyRequestBody(compressed, 1, 0)
+		_, err := AmplifyRequestBody(compressed, 1, 0, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "startSuffix must be >= 1")
 	})
@@ -77,7 +78,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -98,7 +99,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 3, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -115,7 +116,7 @@ func TestAmplifyRequestBody_RW2(t *testing.T) {
 		req := makeRW2RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -169,7 +170,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		_, err := AmplifyRequestBody(compressed, 1, 0)
+		_, err := AmplifyRequestBody(compressed, 1, 0, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "startSuffix must be >= 1")
 	})
@@ -178,7 +179,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -195,7 +196,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithLabels(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 3)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 3, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -212,7 +213,7 @@ func TestAmplifyRequestBody_RW1(t *testing.T) {
 		req := makeRW1RequestWithoutName(1)
 		compressed := compressRequest(t, &req)
 
-		suffixed, err := AmplifyRequestBody(compressed, 1, 2)
+		suffixed, err := AmplifyRequestBody(compressed, 1, 2, "")
 		require.NoError(t, err)
 		require.Len(t, suffixed, 1)
 
@@ -362,4 +363,44 @@ func decompressAndUnmarshalRW2(t *testing.T, body []byte) *mimirpb.WriteRequestR
 	result, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
 	require.NoError(t, err)
 	return result
+}
+
+// TestAmplifyRequestBody_AmpReplicaLabel verifies that when the amp replica label is set, each
+// replica's series get <label>=<replicaNum> inserted in label-name sort order, in addition to the
+// _amp{N} value suffixes.
+func TestAmplifyRequestBody_AmpReplicaLabel(t *testing.T) {
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "up"},
+				{Name: "job", Value: "api"},
+			},
+			Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1000}},
+		}}},
+	}
+	body, err := req.Marshal()
+	require.NoError(t, err)
+
+	bodies, err := AmplifyRequestBody(snappy.Encode(nil, body), 2, 1, "__amp__")
+	require.NoError(t, err)
+	require.Len(t, bodies, 2)
+
+	for i, b := range bodies {
+		decoded, err := snappy.Decode(nil, b)
+		require.NoError(t, err)
+		var out mimirpb.WriteRequest
+		require.NoError(t, out.Unmarshal(decoded))
+		require.Len(t, out.Timeseries, 1)
+		labels := out.Timeseries[0].Labels
+
+		var names, ampValue []string
+		for _, l := range labels {
+			names = append(names, string(l.Name))
+			if string(l.Name) == "__amp__" {
+				ampValue = append(ampValue, string(l.Value))
+			}
+		}
+		require.True(t, sort.StringsAreSorted(names), "labels must stay sorted, got %v", names)
+		require.Equal(t, []string{fmt.Sprintf("%d", i+1)}, ampValue)
+	}
 }

@@ -26,19 +26,21 @@ type ProxyEndpoint struct {
 	metrics              *ProxyMetrics
 	logger               log.Logger
 	amplificationFactor  float64
+	ampReplicaLabel      string
 	amplificationTracker *AmplificationTracker
 	asyncDispatcher      *AsyncBackendDispatcher
 
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, ampReplicaLabel string, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
 		backend:              backend,
 		route:                route,
 		metrics:              metrics,
 		logger:               logger,
 		amplificationFactor:  amplificationFactor,
+		ampReplicaLabel:      ampReplicaLabel,
 		amplificationTracker: amplificationTracker,
 		asyncDispatcher:      asyncDispatcher,
 	}
@@ -229,7 +231,7 @@ func (p *ProxyEndpoint) amplifiedBodies(body []byte, logger *spanlogger.SpanLogg
 	// Full amplified copies _amp1 .. _amp{floor-1} (floor-1 copies). The unsuffixed original that
 	// the endpoint receives synchronously is the base, so amplified copies are 1-indexed with no gap.
 	if fullCopies := floor - 1; fullCopies >= 1 {
-		replicaBodies, err := AmplifyRequestBody(body, fullCopies, 1)
+		replicaBodies, err := AmplifyRequestBody(body, fullCopies, 1, p.ampReplicaLabel)
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to create amplified replicas", "backend", p.backend.Name(), "err", err)
 		} else {
@@ -243,7 +245,7 @@ func (p *ProxyEndpoint) amplifiedBodies(body []byte, logger *spanlogger.SpanLogg
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", p.backend.Name(), "err", err)
 		} else {
-			fractionalBodies, err := AmplifyRequestBody(result.Body, 1, floor)
+			fractionalBodies, err := AmplifyRequestBody(result.Body, 1, floor, p.ampReplicaLabel)
 			if err != nil {
 				level.Error(logger).Log("msg", "Failed to suffix fractional request", "backend", p.backend.Name(), "err", err)
 			} else {

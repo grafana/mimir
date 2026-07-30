@@ -56,7 +56,7 @@ func BenchmarkAmplifyRequestBody(b *testing.B) {
 		for _, factor := range ampFactors {
 			b.Run(fmt.Sprintf("RW1/series=%d/factor=%dx", numSeries, factor), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					_, err := AmplifyRequestBody(rw1Compressed, 1, factor)
+					_, err := AmplifyRequestBody(rw1Compressed, 1, factor, "")
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -65,7 +65,7 @@ func BenchmarkAmplifyRequestBody(b *testing.B) {
 
 			b.Run(fmt.Sprintf("RW2/series=%d/factor=%dx", numSeries, factor), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					_, err := AmplifyRequestBody(rw2Compressed, 1, factor)
+					_, err := AmplifyRequestBody(rw2Compressed, 1, factor, "")
 					if err != nil {
 						b.Fatal(err)
 					}

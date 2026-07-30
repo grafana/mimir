@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -260,7 +261,7 @@ func SampleWriteRequest(body []byte, amplificationFactor float64, tracker *Ampli
 // AmplifyRequestBody creates count copies of the request body, each with label suffixes
 // _amp{startSuffix}, _amp{startSuffix+1}, ..., _amp{startSuffix+count-1}.
 // startSuffix must be >= 2 to avoid clashing with the unsuffixed mirrored/preferred endpoint.
-func AmplifyRequestBody(body []byte, count, startSuffix int) ([][]byte, error) {
+func AmplifyRequestBody(body []byte, count, startSuffix int, ampLabel string) ([][]byte, error) {
 	if count < 1 {
 		return nil, fmt.Errorf("count must be >= 1, got %d", count)
 	}
@@ -289,7 +290,7 @@ func AmplifyRequestBody(body []byte, count, startSuffix int) ([][]byte, error) {
 		}
 
 		for i := range count {
-			suffixedRW2 := applySuffixToRW2Request(rw2Req, startSuffix+i)
+			suffixedRW2 := applySuffixToRW2Request(rw2Req, startSuffix+i, ampLabel)
 			marshaled, err := proto.Marshal(&suffixedRW2)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal RW 2.0 replica %d: %w", startSuffix+i, err)
@@ -314,7 +315,7 @@ func AmplifyRequestBody(body []byte, count, startSuffix int) ([][]byte, error) {
 			Timeseries:               make([]mimirpb.PreallocTimeseries, len(req.Timeseries)),
 		}
 		for j := range req.Timeseries {
-			suffixedReq.Timeseries[j] = applySuffixToTimeSeries(&req.Timeseries[j], suffixNum)
+			suffixedReq.Timeseries[j] = applySuffixToTimeSeries(&req.Timeseries[j], suffixNum, ampLabel)
 		}
 
 		marshaled, err := proto.Marshal(&suffixedReq)
@@ -329,7 +330,7 @@ func AmplifyRequestBody(body []byte, count, startSuffix int) ([][]byte, error) {
 
 // applySuffixToRW2Request applies the _amp{N} suffix to all label values (except __name__)
 // for all series in an RW 2.0 request.
-func applySuffixToRW2Request(req *mimirpb.WriteRequestRW2, replicaNum int) mimirpb.WriteRequestRW2 {
+func applySuffixToRW2Request(req *mimirpb.WriteRequestRW2, replicaNum int, ampLabel string) mimirpb.WriteRequestRW2 {
 	// Find __name__ symbol ref (to identify which values to exclude from suffixing)
 	nameSymbolRef := findSymbolRef(req.Symbols, model.MetricNameLabel)
 
@@ -359,10 +360,23 @@ func applySuffixToRW2Request(req *mimirpb.WriteRequestRW2, replicaNum int) mimir
 		suffixedValueRefs[valueRef] = newRef
 	}
 
+	// When the amp replica label is enabled, add its name/value to the symbol table once; every
+	// series gets the same (name, value) pair inserted in label-name sort order.
+	ampLabelNameRef, ampLabelValueRef := uint32(0), uint32(0)
+	if ampLabel != "" {
+		ampLabelNameRef = uint32(len(suffixedSymbols))
+		suffixedSymbols = append(suffixedSymbols, ampLabel)
+		ampLabelValueRef = uint32(len(suffixedSymbols))
+		suffixedSymbols = append(suffixedSymbols, strconv.Itoa(replicaNum))
+	}
+
 	// Apply suffixes to all time series
 	suffixedSeries := make([]mimirpb.TimeSeriesRW2, len(req.Timeseries))
 	for i, ts := range req.Timeseries {
 		suffixedSeries[i] = applySuffixToTimeSeriesRW2(&ts, nameSymbolRef, suffixedValueRefs)
+		if ampLabel != "" {
+			suffixedSeries[i].LabelsRefs = insertLabelRefSorted(suffixedSeries[i].LabelsRefs, suffixedSymbols, ampLabel, ampLabelNameRef, ampLabelValueRef)
+		}
 	}
 
 	return mimirpb.WriteRequestRW2{
@@ -418,7 +432,7 @@ func applySuffixToTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, nameSymbolRef u
 // The replicaNum is appended as _amp{N} to all label values except __name__.
 // The original series is considered replica 1 (no suffix), so replicaNum should be >= 2.
 // This increases cardinality across all label dimensions.
-func applySuffixToTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mimirpb.PreallocTimeseries {
+func applySuffixToTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int, ampLabel string) mimirpb.PreallocTimeseries {
 	suffix := "_amp" + strconv.Itoa(replicaNum)
 
 	// Create a copy, sharing immutable slice references
@@ -449,7 +463,34 @@ func applySuffixToTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum in
 		}
 	}
 
+	// When the amp replica label is enabled, insert it in label-name sort order so each replica's
+	// series carry an addressable identity (used by read-tee to scope query copies to one replica).
+	if ampLabel != "" {
+		idx := sort.Search(len(ts.Labels), func(i int) bool { return ts.Labels[i].Name >= ampLabel })
+		ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{})
+		copy(ts.Labels[idx+1:], ts.Labels[idx:])
+		ts.Labels[idx] = mimirpb.LabelAdapter{Name: ampLabel, Value: strconv.Itoa(replicaNum)}
+	}
+
 	return ts
+}
+
+// insertLabelRefSorted inserts the (nameRef, valueRef) pair into an RW 2.0 series' LabelsRefs,
+// keeping the pairs sorted by label name (compared through the symbol table).
+func insertLabelRefSorted(labelsRefs []uint32, symbols []string, labelName string, nameRef, valueRef uint32) []uint32 {
+	idx := len(labelsRefs)
+	for i := 0; i+1 < len(labelsRefs); i += 2 {
+		ref := labelsRefs[i]
+		if int(ref) < len(symbols) && symbols[ref] >= labelName {
+			idx = i
+			break
+		}
+	}
+	out := make([]uint32, 0, len(labelsRefs)+2)
+	out = append(out, labelsRefs[:idx]...)
+	out = append(out, nameRef, valueRef)
+	out = append(out, labelsRefs[idx:]...)
+	return out
 }
 
 // findSymbolRef finds the index of a symbol in the symbol table.

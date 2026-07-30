@@ -60,7 +60,7 @@ func TestProxyEndpoint_AmplifiedCopiesAreFireAndForget(t *testing.T) {
 		Methods:   []string{"POST"},
 	}
 
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 2.0, NewAmplificationTracker(), asyncDispatcher)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 2.0, "", NewAmplificationTracker(), asyncDispatcher)
 
 	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
 	rec := httptest.NewRecorder()

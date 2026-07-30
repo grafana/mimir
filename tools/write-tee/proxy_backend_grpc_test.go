@@ -381,7 +381,7 @@ func TestProxyEndpoint_GRPCBackend(t *testing.T) {
 
 	tracker := NewAmplificationTracker()
 	// Amplification factor 2.0: original (sync) + one amplified copy (async) → 2 requests.
-	endpoint := NewProxyEndpoint(grpcBackend, route, metrics, logger, 2.0, tracker, asyncDispatcher)
+	endpoint := NewProxyEndpoint(grpcBackend, route, metrics, logger, 2.0, "", tracker, asyncDispatcher)
 
 	// Make a request. HTTPgRPC backends require a tenant via X-Scope-OrgID.
 	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))

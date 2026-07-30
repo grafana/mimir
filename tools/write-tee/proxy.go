@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 )
 
@@ -35,6 +36,7 @@ type ProxyConfig struct {
 
 	BackendEndpoint            string
 	AmplificationFactor        float64
+	AmpReplicaLabel            string
 	BackendReadTimeout         time.Duration
 	BackendSkipTLSVerify       bool
 	AsyncMaxInFlightPerBackend int
@@ -91,6 +93,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"Values > 1.0 amplify (duplicate) metrics: 3.5 means each metric is sent 3.5 times on average. "+
 			"Amplified copies have all label values (except __name__) suffixed with _amp{N} where N is the replica number (starting at 2).",
 	)
+	f.StringVar(&cfg.AmpReplicaLabel, "backend.amp-replica-label", "",
+		"When set (e.g. __amp__), each amplified replica's series get an extra label <name>=<replica number> in addition to the _amp{N} value suffixes. "+
+			"This gives every replica an addressable identity so read-tee can scope query copies (including ones with no label matchers) to a single replica's series. "+
+			"Base (unsuffixed) series don't get the label. Empty disables it.",
+	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
 	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight amplified requests (async fire-and-forget). Requests are dropped when at capacity.")
@@ -144,6 +151,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// The amplification factor must be >= 1.0 so the endpoint always receives the full original request.
 	if cfg.AmplificationFactor < 1.0 {
 		return nil, errors.New("amplification-factor must be >= 1.0")
+	}
+
+	// Validate the amp replica label (empty = disabled).
+	if cfg.AmpReplicaLabel != "" && !model.LabelName(cfg.AmpReplicaLabel).IsValid() {
+		return nil, errors.New("backend.amp-replica-label must be a valid Prometheus label name")
 	}
 
 	// Validate async max in-flight.
@@ -217,7 +229,7 @@ func (p *Proxy) Start() error {
 
 	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.AmpReplicaLabel, p.amplificationTracker, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -228,7 +240,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.AmpReplicaLabel, p.amplificationTracker, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.

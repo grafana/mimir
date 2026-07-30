@@ -165,7 +165,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, "", nil, asyncDispatcher)
 
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test body")))
 			rec := httptest.NewRecorder()
@@ -200,7 +200,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, "", nil, asyncDispatcher)
 
 	tests := []struct {
 		name               string
@@ -270,7 +270,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, "", nil, asyncDispatcher)
 
 	// Create a test request with Content-Type
 	req := httptest.NewRequest("POST", "/some/other/path", bytes.NewReader([]byte("test body")))
@@ -479,7 +479,7 @@ func TestAmplifiedBodies(t *testing.T) {
 			backend := NewHTTPProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false)
 			route := Route{Path: "/api/v1/push", RouteName: "test", Methods: []string{"POST"}}
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplifyFactor, tracker, nil)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplifyFactor, "", tracker, nil)
 
 			body := makeTestWriteRequest(t)
 			spLogger := spanlogger.FromContext(context.Background(), logger)
@@ -558,7 +558,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			defer asyncDispatcher.Stop()
 
 			tracker := NewAmplificationTracker()
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplificationFactor, tracker, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplificationFactor, "", tracker, asyncDispatcher)
 
 			// Create a minimal valid write request.
 			originalBody := makeTestWriteRequest(t)
