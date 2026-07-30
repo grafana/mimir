@@ -62,8 +62,11 @@ func measureLoadedSparseHeaderLiveMemory(b *testing.B, gzBytes []byte, sparseSam
 	runtime.ReadMemStats(&after)
 	runtime.KeepAlive(retained)
 
-	return float64(after.HeapAlloc-before.HeapAlloc) / replicas,
-		float64(after.HeapObjects-before.HeapObjects) / replicas
+	// Subtract as signed integers: if the heap shrank between the two measurements
+	// (e.g. floating garbage collected only by the second GC), report a negative value
+	// instead of wrapping the unsigned subtraction.
+	return float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / replicas,
+		float64(int64(after.HeapObjects)-int64(before.HeapObjects)) / replicas
 }
 
 // buildBenchmarkGzippedSparseHeader builds a sparse index-header proto with a realistic shape
@@ -105,11 +108,13 @@ func buildBenchmarkGzippedSparseHeader(b *testing.B, sparseSampleFactor int) []b
 		addLabel(fmt.Sprintf("low_cardinality_%03d", i), 3)
 	}
 
+	// symbolFactor mirrors the unexported constant of the same name in the index package.
+	const symbolFactor = 32
 	symbolsCount := totalSampledEntries * sparseSampleFactor
-	numSymbolsOffsets := (symbolsCount + streamindex.SymbolFactor - 1) / streamindex.SymbolFactor
+	numSymbolsOffsets := (symbolsCount + symbolFactor - 1) / symbolFactor
 	symbolsOffsets := make([]int64, 0, numSymbolsOffsets)
 	for i := 0; i < numSymbolsOffsets; i++ {
-		symbolsOffsets = append(symbolsOffsets, 8+int64(i)*streamindex.SymbolFactor*30)
+		symbolsOffsets = append(symbolsOffsets, 8+int64(i)*symbolFactor*30)
 	}
 
 	sparseHeaderProto := &indexheaderpb.Sparse{
