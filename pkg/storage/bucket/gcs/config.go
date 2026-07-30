@@ -7,6 +7,7 @@ package gcs
 
 import (
 	"flag"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 
@@ -29,6 +30,20 @@ type Config struct {
 	// Set to 1 to disable retries.
 	MaxRetries int `yaml:"max_retries" category:"advanced"`
 
+	// HTTP2Enabled enables HTTP/2 for connections to GCS. The transport built by the
+	// objstore GCS provider disables Go's automatic HTTP/2 support, so without this
+	// option all GCS requests use HTTP/1.1.
+	HTTP2Enabled bool `yaml:"http2_enabled" category:"experimental"`
+
+	// HedgeRequestsAt enables tail-latency hedging for GCS GET requests: when a request
+	// has not received a response within this duration, a duplicate request is sent and
+	// the first response to arrive wins. Zero disables hedging.
+	HedgeRequestsAt time.Duration `yaml:"hedge_requests_at" category:"experimental"`
+
+	// HedgeRequestsUpTo is the maximum total number of attempts per GET request
+	// (including the first) when hedging is enabled.
+	HedgeRequestsUpTo int `yaml:"hedge_requests_up_to" category:"experimental"`
+
 	HTTP common.HTTPConfig `yaml:"http"`
 }
 
@@ -44,6 +59,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", cfg.GCSServiceAccountShortDescription())
 	f.BoolVar(&cfg.EnableUploadRetries, prefix+"gcs.enable-upload-retries", true, "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.")
 	f.IntVar(&cfg.MaxRetries, prefix+"gcs.max-retries", 20, "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.")
+	f.BoolVar(&cfg.HTTP2Enabled, prefix+"gcs.http2-enabled", false, "Enable HTTP/2 for connections to GCS. When disabled, the client uses HTTP/1.1. When enabled, the client uses HTTP/2 with connection health-check pings, matching the Google Cloud client library defaults. The max-idle-connections and max-connections-per-host settings only apply to HTTP/1.1 connections.")
+	f.DurationVar(&cfg.HedgeRequestsAt, prefix+"gcs.hedge-requests-at", 0, "If set to a non-zero value, GCS GET requests that have not received a response within this duration are hedged by sending a duplicate request; the first response to arrive wins. Requests with a body are never hedged. Set to 0 to disable hedging.")
+	f.IntVar(&cfg.HedgeRequestsUpTo, prefix+"gcs.hedge-requests-up-to", 2, "Maximum total number of attempts per GCS GET request (including the first) when hedging is enabled with -"+prefix+"gcs.hedge-requests-at.")
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"gcs.", f)
 }
 
