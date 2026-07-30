@@ -233,16 +233,16 @@ func TestQuerySharding_ResultConsistency(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	memcached := e2ecache.NewMemcached()
 	consul := e2edb.NewConsul()
-	require.NoError(t, s.StartAndWaitReady(consul, memcached))
+	require.NoError(t, s.StartAndWaitReady(consul))
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		// Results caching is deliberately disabled (also the default): the sharded and unsharded requests
+		// share tenant, query, and time range, so a shared results cache could serve one path's response to
+		// the other and make the comparison pass even if sharded evaluation were wrong.
 		"-query-frontend.cache-results":                       "false",
 		"-query-frontend.parallelize-shardable-queries":       "true",
 		"-query-frontend.query-sharding-total-shards":         "0", // Disable sharding by default.
-		"-query-frontend.results-cache.backend":               "memcached",
-		"-query-frontend.results-cache.memcached.addresses":   "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.enable-remote-execution":             "true",
 		"-query-frontend.use-mimir-query-engine-for-sharding": "true",
 	})
