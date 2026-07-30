@@ -7,6 +7,19 @@
     compartments_ingester_autoscaling_min_replicas_per_compartment_zone: 1,
     compartments_ingester_autoscaling_max_replicas_per_compartment_zone: 10,
 
+    // Read compartment indexes whose KEDA autoscaling is disabled: the compartment's ReplicaTemplate
+    // and ScaledObject are not rendered, none of its zones get the autoscaling annotations, and its
+    // StatefulSets run the static replica count configured below (per zone). Only subtractive within
+    // an enabled component — it cannot re-enable single compartments when the component-level
+    // autoscaling knob is off.
+    ingest_storage_ingester_autoscaling_disabled_compartments: [],
+
+    // Explicit replica count (per zone) per disabled compartment, e.g. { compartment_0: 3 }.
+    // Required for every compartment listed above (the render fails otherwise). When first
+    // disabling a compartment, pick a count >= its current live replicas to avoid an immediate
+    // uncoordinated downscale; shrink deliberately afterwards.
+    ingester_compartment_static_replicas: {},
+
     // The regex to extract the ingester partition identifier from a pod name.
     compartments_ingester_zpdb_partition_regex: '[a-z\\-]+-zone-[a-z]-rc-[0-9]+-([0-9]+)',
 
@@ -33,6 +46,8 @@
   local isZoneAEnabled = $._config.multi_zone_ingester_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = $._config.multi_zone_ingester_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isZoneCEnabled = $._config.multi_zone_ingester_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.ingest_storage_ingester_autoscaling_disabled_compartments, compartment),
+  local compartmentStaticReplicas(compartment) = $._config.ingester_compartment_static_replicas['compartment_%d' % compartment],
 
   newIngesterCompartmentContainer(zone, compartmentIdx, args, extraEnvVarMap={})::
     $.newIngesterZoneContainer(zone, args, extraEnvVarMap),
@@ -143,7 +158,13 @@
   ingester_rollout_pdbs: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) newIngesterRolloutCompartmentPdb(compartment)),
 
   local autoscalingEnabled = isEnabled && $._config.ingest_storage_ingester_autoscaling_enabled,
-  local autoscaledCompartments = if autoscalingEnabled then std.range(0, numCompartments - 1) else [],
+  // Compartments with autoscaling disabled are subtracted here, so both their ReplicaTemplate and the
+  // ScaledObject targeting it stop rendering together.
+  local autoscaledCompartments = if !autoscalingEnabled then [] else [
+    compartment
+    for compartment in std.range(0, numCompartments - 1)
+    if !isCompartmentAutoscalingDisabled(compartment)
+  ],
   local compartmentLeaderName(compartmentIdx) = 'ingester-zone-a-rc-%d' % compartmentIdx,
 
   ingester_primary_zone_replica_templates: {
@@ -166,7 +187,13 @@
   },
 
   local ingesterCompartmentAutoscalingStatefulSetMixin(zone, compartmentIdx) =
-    if !autoscalingEnabled then {} else
+    if !autoscalingEnabled then {}
+    // Autoscaling is disabled for this compartment: there is no ReplicaTemplate to mirror and no
+    // prepare-downscale coordination, so each zone's StatefulSet runs an explicit static replica
+    // count (overriding the min-replicas default set by newIngesterCompartmentStatefulSet).
+    else if isCompartmentAutoscalingDisabled(compartmentIdx) then
+      statefulSet.mixin.spec.withReplicas(compartmentStaticReplicas(compartmentIdx))
+    else
       $.ingesterPartitionAutoscalingStatefulSetMixin(compartmentLeaderName(compartmentIdx), zone == 'a', $.ingester_primary_zone_replica_templates['compartment_%d' % compartmentIdx]),
 
   // Governing headless services (required by Kubernetes for StatefulSet pod DNS).
@@ -188,4 +215,15 @@
     'ingester_zone_c_statefulsets',
   ]),
   assert ingesterCompartmentConfigError == null : ingesterCompartmentConfigError,
+
+  local ingesterDisabledKnobsError = if !isEnabled then null else $.validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'ingest_storage_ingester_autoscaling_disabled_compartments',
+    $._config.ingest_storage_ingester_autoscaling_disabled_compartments,
+    'ingester_compartment_static_replicas',
+    $._config.ingester_compartment_static_replicas,
+    numCompartments,
+    'ingest_storage_ingester_autoscaling_enabled',
+    $._config.ingest_storage_ingester_autoscaling_enabled,
+  ),
+  assert ingesterDisabledKnobsError == null : ingesterDisabledKnobsError,
 }

@@ -6,6 +6,18 @@
     // Controls whether the zonal distributor services route to compartment distributors.
     // This setting can be used by downstream projects during migrations.
     compartments_distributor_routing_enabled: !self.no_compartments_distributor_enabled,
+
+    // Write compartment indexes whose KEDA autoscaling is disabled: the compartment's per-zone
+    // ScaledObjects are not rendered and its Deployments run the static replica count configured
+    // below. Only subtractive within an enabled component — it cannot re-enable single
+    // compartments when the component-level autoscaling knob is off.
+    autoscaling_distributor_disabled_compartments: [],
+
+    // Explicit replica count (per zone) per disabled compartment, e.g. { compartment_0: 3 }.
+    // Required for every compartment listed above (the render fails otherwise). When first
+    // disabling a compartment, pick a count >= its current live replicas to avoid an immediate
+    // uncoordinated downscale; shrink deliberately afterwards.
+    distributor_compartment_static_replicas: {},
   },
 
   assert !$._config.compartments_distributor_enabled || $._config.multi_zone_distributor_enabled
@@ -31,6 +43,8 @@
   local isAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
   local isNoCompartmentsEnabled = $._config.no_compartments_distributor_enabled,
   local isRoutingEnabled = isEnabled && $._config.compartments_distributor_routing_enabled,
+  local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.autoscaling_distributor_disabled_compartments, compartment),
+  local compartmentStaticReplicas(compartment) = $._config.distributor_compartment_static_replicas['compartment_%d' % compartment],
 
   newDistributorCompartmentContainer(zone, compartmentIdx, args, extraEnvVarMap={})::
     $.newDistributorZoneContainer(zone, args, extraEnvVarMap),
@@ -54,7 +68,13 @@
       ]) +
       podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),
     ]).spec } +
-    (if !isAutoscalingEnabled then {} else $.removeReplicasFromSpec),
+    (
+      if !isAutoscalingEnabled then {}
+      // Autoscaling is disabled for this compartment (no ScaledObjects rendered), so each zone's
+      // Deployment runs an explicit static replica count.
+      else if isCompartmentAutoscalingDisabled(compartmentIdx) then deployment.mixin.spec.withReplicas(compartmentStaticReplicas(compartmentIdx))
+      else $.removeReplicasFromSpec
+    ),
 
   newDistributorCompartmentScaledObject(name, zone, numCompartments)::
     $.newDistributorScaledObject(
@@ -126,10 +146,12 @@
   distributor_zone_b_pdbs: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.newMimirPdb('distributor-zone-b-wc-%d' % compartment)),
   distributor_zone_c_pdbs: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.newMimirPdb('distributor-zone-c-wc-%d' % compartment)),
 
-  // Scaled objects.
-  distributor_zone_a_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-a-wc-%d' % compartment, 'a', numCompartments)),
-  distributor_zone_b_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-b-wc-%d' % compartment, 'b', numCompartments)),
-  distributor_zone_c_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-c-wc-%d' % compartment, 'c', numCompartments)),
+  // Scaled objects. Compartments with autoscaling disabled are skipped; the remaining compartments
+  // deliberately keep weight = 1/numCompartments over the TOTAL compartment count, because write
+  // traffic still splits across every compartment regardless of how a disabled one is sized.
+  distributor_zone_a_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-a-wc-%d' % compartment, 'a', numCompartments), $._config.autoscaling_distributor_disabled_compartments),
+  distributor_zone_b_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-b-wc-%d' % compartment, 'b', numCompartments), $._config.autoscaling_distributor_disabled_compartments),
+  distributor_zone_c_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-c-wc-%d' % compartment, 'c', numCompartments), $._config.autoscaling_distributor_disabled_compartments),
 
   // Config validation.
   local distributorCompartmentMultiZoneError = $.validateMimirMultiZoneConfig([
@@ -145,4 +167,15 @@
     'distributor_zone_c_deployments',
   ]),
   assert distributorCompartmentConfigError == null : distributorCompartmentConfigError,
+
+  local distributorDisabledKnobsError = if !isEnabled then null else $.validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'autoscaling_distributor_disabled_compartments',
+    $._config.autoscaling_distributor_disabled_compartments,
+    'distributor_compartment_static_replicas',
+    $._config.distributor_compartment_static_replicas,
+    numCompartments,
+    'autoscaling_distributor_enabled',
+    $._config.autoscaling_distributor_enabled,
+  ),
+  assert distributorDisabledKnobsError == null : distributorDisabledKnobsError,
 }

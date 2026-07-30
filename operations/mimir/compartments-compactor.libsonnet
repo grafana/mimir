@@ -6,6 +6,18 @@
     // Per-compartment compactor autoscaling bounds (per read compartment).
     autoscaling_compactor_min_replicas_per_compartment: 1,
     autoscaling_compactor_max_replicas_per_compartment: 10,
+
+    // Read compartment indexes whose KEDA autoscaling is disabled: the compartment's ScaledObject
+    // is not rendered and its StatefulSet runs the static replica count configured below. Only
+    // subtractive within an enabled component — it cannot re-enable single compartments when the
+    // component-level autoscaling knob is off.
+    autoscaling_compactor_disabled_compartments: [],
+
+    // Explicit replica count per disabled compartment, e.g. { compartment_0: 3 }. Required for
+    // every compartment listed above (the render fails otherwise). When first disabling a
+    // compartment, pick a count >= its current live replicas to avoid an immediate uncoordinated
+    // downscale; shrink deliberately afterwards.
+    compactor_compartment_static_replicas: {},
   },
 
   assert !$._config.compartments_compactor_enabled || $._config.compactor_scheduler_enabled
@@ -16,10 +28,13 @@
          : 'compartments_compactor_enabled requires cortex_compactor_concurrent_rollout_enabled',
 
   local container = $.core.v1.container,
+  local statefulSet = $.apps.v1.statefulSet,
 
   local isEnabled = $._config.compartments_compactor_enabled,
   local numCompartments = $._config.compartments_read_count,
   local isNoCompartmentsEnabled = $._config.no_compartments_compactor_enabled,
+  local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.autoscaling_compactor_disabled_compartments, compartment),
+  local compartmentStaticReplicas(compartment) = $._config.compactor_compartment_static_replicas['compartment_%d' % compartment],
 
   local compartmentBlocksBucketArg(compartmentIdx) = {
     [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
@@ -45,18 +60,28 @@
     $.compactor_container +
     container.withArgs($.util.mapToFlags($.compactor_compartments_args['compartment_%d' % compartmentIdx])),
 
+  compactor_containers:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.newCompactorCompartmentContainer(compartment)),
+
   local compartmentCompactorMaxUnavailable = std.max(std.floor($._config.autoscaling_compactor_min_replicas_per_compartment / 2), 1),
 
   newCompactorCompartmentStatefulSet(compartmentIdx)::
     $.newCompactorStatefulSet(
       'compactor-rc-%d' % compartmentIdx,
-      $.newCompactorCompartmentContainer(compartmentIdx),
+      // Referenced through the compartment map (not built inline) so per-compartment container
+      // patches layered onto compactor_containers propagate into the rendered StatefulSet.
+      $.compactor_containers['compartment_%d' % compartmentIdx],
       $.compactor_node_affinity_matchers,
       true,
       compartmentCompactorMaxUnavailable,
     ) +
-    // The per-compartment ScaledObject owns the replica count.
-    $.removeReplicasFromSpec,
+    (
+      if isCompartmentAutoscalingDisabled(compartmentIdx)
+      // Autoscaling is disabled for this compartment (no ScaledObject rendered), so the
+      // StatefulSet runs an explicit static replica count.
+      then statefulSet.mixin.spec.withReplicas(compartmentStaticReplicas(compartmentIdx))
+      // The per-compartment ScaledObject owns the replica count.
+      else $.removeReplicasFromSpec
+    ),
 
   // StatefulSets, Services and PDBs.
   compactor_statefulsets: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartment) $.newCompactorCompartmentStatefulSet(compartment)),
@@ -73,7 +98,7 @@
       'pod=~"compactor-rc-%d-.*"' % compartment,
       $._config.autoscaling_compactor_min_replicas_per_compartment,
       $._config.autoscaling_compactor_max_replicas_per_compartment,
-    )),
+    ), $._config.autoscaling_compactor_disabled_compartments),
 
   // Null out the non-compartments compactor resources.
   compactor_statefulset: if !isNoCompartmentsEnabled then null else super.compactor_statefulset,
@@ -97,4 +122,15 @@
   // Config validation.
   local compactorCompartmentConfigError = $.validateMimirCompartmentsConfig(['compactor_statefulsets']),
   assert compactorCompartmentConfigError == null : compactorCompartmentConfigError,
+
+  local compactorDisabledKnobsError = if !isEnabled then null else $.validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'autoscaling_compactor_disabled_compartments',
+    $._config.autoscaling_compactor_disabled_compartments,
+    'compactor_compartment_static_replicas',
+    $._config.compactor_compartment_static_replicas,
+    numCompartments,
+    'autoscaling_compactor_enabled',
+    $._config.autoscaling_compactor_enabled,
+  ),
+  assert compactorDisabledKnobsError == null : compactorDisabledKnobsError,
 }
