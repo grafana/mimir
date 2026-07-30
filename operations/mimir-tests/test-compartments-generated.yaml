@@ -306,6 +306,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: overrides-exporter
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: querier-zone-a
   name: querier-zone-a
   namespace: default
@@ -1249,6 +1262,21 @@ spec:
     targetPort: 9150
   selector:
     name: memcached-zone-b-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  ports:
+  - name: overrides-exporter-http-metrics
+    port: 8080
+    targetPort: 8080
+  selector:
+    name: overrides-exporter
 ---
 apiVersion: v1
 kind: Service
@@ -2355,10 +2383,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
@@ -2448,10 +2479,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=false
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
@@ -2505,6 +2539,76 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: overrides-exporter
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: overrides-exporter
+    spec:
+      containers:
+      - args:
+        - -compactor.blocks-retention-period=0
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -distributor.ingestion-burst-size=200000
+        - -distributor.ingestion-rate-limit=10000
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -overrides-exporter.enabled-metrics=ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group
+        - -querier.max-partial-query-length=768h
+        - -ruler.max-rule-groups-per-tenant=85
+        - -ruler.max-rules-per-rule-group=20
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.http-listen-port=8080
+        - -store-gateway.tenant-shard-size=3
+        - -target=overrides-exporter
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: overrides-exporter
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 0.5Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: querier-zone-a
   namespace: default
 spec:
@@ -2550,7 +2654,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -2685,7 +2789,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -3053,10 +3157,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
@@ -3152,10 +3259,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
@@ -3310,7 +3420,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -3443,7 +3553,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -3817,10 +3927,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
@@ -3916,10 +4029,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
@@ -4285,10 +4401,13 @@ spec:
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
@@ -4644,6 +4763,9 @@ spec:
         - -compactor-scheduler.bbolt.dir=/data
         - -compactor-scheduler.persistence-type=bbolt
         - -compactor-scheduler.planning-interval=30m
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
@@ -4731,6 +4853,9 @@ spec:
         - -compactor-scheduler.bbolt.dir=/data
         - -compactor-scheduler.persistence-type=bbolt
         - -compactor-scheduler.planning-interval=30m
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000

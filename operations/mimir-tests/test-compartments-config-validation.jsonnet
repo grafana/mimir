@@ -37,6 +37,13 @@ local removeContainerArg(resource, flag) =
     } } },
   };
 
+local addSidecar(resource) =
+  resource {
+    spec+: { template+: { spec+: {
+      containers+: [{ name: 'sidecar' }],
+    } } },
+  };
+
 local isError(err, needle) = err != null && std.length(std.findSubstr(needle, err)) > 0;
 
 // Synthetic root carrying validateMimirCompartmentsConfig and the resource fields under test. Built
@@ -201,5 +208,26 @@ assert isError(err16, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && i
 local err17 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartment-id>') }, ['gf']);
 assert err17 == null :
        'case 17: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err17;
+
+// 18. Mimir workload containers must carry the compartments enabled flag.
+local err18 = validate(
+  { dist: removeContainerArg(distributor, '-compartments.enabled') },
+  ['dist'],
+);
+assert isError(err18, 'missing "-compartments.enabled=true"') :
+       'case 18: expected missing compartments.enabled error, got: %s' % err18;
+
+// 19. Mimir workload containers must use the configured compartment counts.
+local err19 = validate(
+  { dist: overrideContainerArgs(distributor, ['-compartments.read.num-compartments=3']) },
+  ['dist'],
+);
+assert isError(err19, '-compartments.read.num-compartments=3') && isError(err19, 'compartments require "-compartments.read.num-compartments=2"') :
+       'case 19: expected compartments.read.num-compartments mismatch error, got: %s' % err19;
+
+// 20. Sidecars without a Mimir target are outside the common compartments config contract.
+local err20 = validate({ dist: addSidecar(distributor) }, ['dist']);
+assert err20 == null :
+       'case 20: expected a non-Mimir sidecar to be ignored, got: %s' % err20;
 
 {}
