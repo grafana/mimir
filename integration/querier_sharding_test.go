@@ -355,13 +355,34 @@ overrides:
 		UseRelativeError: true,
 	})
 
+	// runQuery issues a single raw query and asserts how it affected the query-frontend's sharding-rewrite
+	// counter: an unsharded request (Sharding-Control: 0) must leave it unchanged, while a sharded request
+	// must increase it. Measuring the delta per request keeps the sharded and unsharded paths separate, so we
+	// verify each independently instead of only their combined total (which could hide, e.g., the
+	// Sharding-Control header being ignored). Only the direction of the change is checked, so this doesn't
+	// assume a fixed number of rewrites per query (e.g. it tolerates query splitting).
+	runQuery := func(t *testing.T, expectSharded bool, do func() (*http.Response, []byte, error)) []byte {
+		t.Helper()
+		const rewritesMetric = "cortex_frontend_query_sharding_rewrites_succeeded_total"
+
+		before, err := queryFrontend.SumMetrics([]string{rewritesMetric})
+		require.NoError(t, err)
+
+		res, body, reqErr := do()
+		resp := requireSuccessfulQueryResponse(t, res, body, reqErr)
+
+		if expectSharded {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(before[0]), rewritesMetric))
+		} else {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(before[0]), rewritesMetric))
+		}
+		return resp
+	}
+
 	for _, tc := range queries {
 		t.Run(tc.name+"/instant", func(t *testing.T) {
-			unshardedRes, unshardedBody, unshardedErr := unshardedClient.QueryRawAt(tc.query, queryEnd)
-			unshardedResp := requireSuccessfulQueryResponse(t, unshardedRes, unshardedBody, unshardedErr)
-
-			shardedRes, shardedBody, shardedErr := shardedClient.QueryRawAt(tc.query, queryEnd)
-			shardedResp := requireSuccessfulQueryResponse(t, shardedRes, shardedBody, shardedErr)
+			unshardedResp := runQuery(t, false, func() (*http.Response, []byte, error) { return unshardedClient.QueryRawAt(tc.query, queryEnd) })
+			shardedResp := runQuery(t, true, func() (*http.Response, []byte, error) { return shardedClient.QueryRawAt(tc.query, queryEnd) })
 
 			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
 			require.NoError(t, err)
@@ -369,22 +390,18 @@ overrides:
 		})
 
 		t.Run(tc.name+"/range", func(t *testing.T) {
-			unshardedRes, unshardedBody, unshardedErr := unshardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
-			unshardedResp := requireSuccessfulQueryResponse(t, unshardedRes, unshardedBody, unshardedErr)
-
-			shardedRes, shardedBody, shardedErr := shardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
-			shardedResp := requireSuccessfulQueryResponse(t, shardedRes, shardedBody, shardedErr)
+			unshardedResp := runQuery(t, false, func() (*http.Response, []byte, error) {
+				return unshardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			})
+			shardedResp := runQuery(t, true, func() (*http.Response, []byte, error) {
+				return shardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			})
 
 			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
 			require.NoError(t, err)
 			requireSingleInfoAnnotation(t, unshardedResp)
 		})
 	}
-
-	// Ensure the sharded path was actually exercised. Without this, the test would still pass if sharding
-	// silently no-opped (e.g. misconfigured shard count), since both paths would then return identical
-	// unsharded results.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
 }
 
 // requireSuccessfulQueryResponse asserts a raw query response was returned with HTTP 200 and returns its body
