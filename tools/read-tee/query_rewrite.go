@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -90,7 +91,7 @@ func rewriteSelector(sel string, replica int, opts rewriteOptions) (string, erro
 	// printer would emit the equivalent {__name__="name",...} form.
 	vs := &parser.VectorSelector{LabelMatchers: m}
 	for _, mm := range m {
-		if mm.Name == labels.MetricName && mm.Type == labels.MatchEqual {
+		if mm.Name == model.MetricNameLabel && mm.Type == labels.MatchEqual {
 			vs.Name = mm.Value
 			break
 		}
@@ -130,7 +131,7 @@ func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*
 	out := make([]*labels.Matcher, len(ms))
 	for i, mm := range ms {
 		// Never suffix metric names or empty-value (absence/presence) matchers.
-		if mm.Name == labels.MetricName || mm.Value == "" {
+		if mm.Name == model.MetricNameLabel || mm.Value == "" {
 			out[i] = mm
 			continue
 		}

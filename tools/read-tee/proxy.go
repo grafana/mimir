@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/common/model"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 )
 
@@ -178,7 +178,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	// Validate the amp replica label (empty = disabled).
-	if cfg.AmpReplicaLabel != "" && !model.LabelName(cfg.AmpReplicaLabel).IsValid() {
+	if cfg.AmpReplicaLabel != "" && !model.LegacyValidation.IsValidLabelName(cfg.AmpReplicaLabel) {
 		return nil, errors.New("backend.amp-replica-label must be a valid Prometheus label name")
 	}
 
