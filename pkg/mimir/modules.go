@@ -961,6 +961,13 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	opts := t.createQueryFrontendPromQLEngineOptions()
 
+	// When sharding and splitting/caching run inside MQE with cardinality-based sharding, store the
+	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
+	// createQueryFrontendQueryPlanner) can use it to size shards for future queries.
+	if middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.ShardedQueries && middlewareCfg.UseMQEForSharding && middlewareCfg.CardinalityBasedShardingEnabled() {
+		opts.QueryPostProcessors = append(opts.QueryPostProcessors, querymiddleware.NewCardinalityStoringPostProcessor(t.QueryFrontendCacheClient, util_log.Logger))
+	}
+
 	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
 		return nil, err
 	}

@@ -68,6 +68,9 @@ type EngineOpts struct {
 	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
 	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
 	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
+
+	// QueryPostProcessors are invoked after each query executes successfully.
+	QueryPostProcessors []QueryPostProcessor `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.

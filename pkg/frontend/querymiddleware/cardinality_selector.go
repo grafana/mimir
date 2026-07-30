@@ -18,7 +18,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -233,6 +235,109 @@ type cardinalitySelectorMatcher struct {
 	typ   labels.MatchType
 	name  string
 	value string
+}
+
+// cardinalityStoringPostProcessor is a streamingpromql.QueryPostProcessor that stores the cardinality
+// of each selector evaluated by a successful query in the per-selector cardinality cache, so that the
+// cache-backed CardinalityEstimator can use it to estimate the cardinality of future queries.
+type cardinalityStoringPostProcessor struct {
+	cache  cache.Cache
+	logger log.Logger
+}
+
+// NewCardinalityStoringPostProcessor returns a query post-processor that stores per-selector
+// cardinality in the given cache.
+func NewCardinalityStoringPostProcessor(cache cache.Cache, logger log.Logger) streamingpromql.QueryPostProcessor {
+	return &cardinalityStoringPostProcessor{
+		cache:  cache,
+		logger: logger,
+	}
+}
+
+func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error {
+	if p.cache == nil {
+		return nil
+	}
+
+	queryStats := stats.FromContext(ctx)
+	cardinalities := queryStats.LoadSelectorCardinalities()
+	if len(cardinalities) == 0 {
+		return nil
+	}
+
+	tenants, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil
+	}
+	userID := tenant.JoinTenantIDs(tenants)
+
+	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and time range,
+	// then aggregate within each group. Different shards of the same logical selector each report a
+	// disjoint subset of the series, so their cardinalities are summed. A selector that is reported
+	// more than once with the same shard (for example the same selector appearing twice in a query
+	// without common-subexpression elimination) is counted once, using the maximum reported value.
+	type groupKey struct {
+		selector   string
+		minT, maxT int64
+	}
+	groups := make(map[groupKey]map[string]uint64)
+
+	for _, c := range cardinalities {
+		selector := canonicalSelectorString(cardinalitySelectorMatchersFromStatsMatchers(c.Matchers))
+		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
+
+		byShard := groups[gk]
+		if byShard == nil {
+			byShard = make(map[string]uint64)
+			groups[gk] = byShard
+		}
+		shard := shardLabelValue(c.Matchers)
+		byShard[shard] = max(byShard[shard], c.SeriesCount)
+	}
+
+	entries := make(map[string][]byte)
+
+	for gk, byShard := range groups {
+		var total uint64
+		for _, count := range byShard {
+			total += count
+		}
+
+		entry := &SelectorCardinalityStatistics{Selector: gk.selector, Cardinality: total}
+		data, err := entry.Marshal()
+		if err != nil {
+			level.Warn(p.logger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
+			continue
+		}
+
+		for _, k := range selectorCardinalityCacheKeys(userID, gk.selector, gk.minT, gk.maxT, p.logger) {
+			entries[k] = data
+		}
+	}
+
+	if len(entries) > 0 {
+		p.cache.SetMultiAsync(entries, selectorCardinalityTTL)
+	}
+
+	return nil
+}
+
+// shardLabelValue returns the value of the query-shard matcher in matchers, or "" if there is none.
+func shardLabelValue(matchers []stats.LabelMatcher) string {
+	for _, m := range matchers {
+		if m.Name == sharding.ShardLabel {
+			return m.Value
+		}
+	}
+	return ""
+}
+
+func cardinalitySelectorMatchersFromStatsMatchers(matchers []stats.LabelMatcher) []cardinalitySelectorMatcher {
+	out := make([]cardinalitySelectorMatcher, 0, len(matchers))
+	for _, m := range matchers {
+		out = append(out, cardinalitySelectorMatcher{typ: labels.MatchType(m.Type), name: m.Name, value: m.Value})
+	}
+	return out
 }
 
 func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []cardinalitySelectorMatcher {

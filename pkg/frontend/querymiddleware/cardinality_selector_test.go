@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -200,6 +201,90 @@ func TestRequestHintsCardinalityEstimator(t *testing.T) {
 		result := estimator.EstimateSeriesCount(ctx, expr, timeRange)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(100), result.EstimatedSeriesCount)
+	})
+}
+
+func TestCardinalityStoringPostProcessor(t *testing.T) {
+	const userID = "user-1"
+	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
+	end := start.Add(time.Hour)
+	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
+	lookbackDelta := 5 * time.Minute
+	minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+	fooMatchers := func(extra ...stats.LabelMatcher) []stats.LabelMatcher {
+		m := []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}}
+		return append(m, extra...)
+	}
+	shardMatcher := func(value string) stats.LabelMatcher {
+		return stats.LabelMatcher{Type: int32(labels.MatchEqual), Name: sharding.ShardLabel, Value: value}
+	}
+
+	// estimateFoo runs the cache-backed estimator for the query "foo" against the given cache.
+	estimateFoo := func(t *testing.T, c cache.Cache) *EstimatedSeriesCount {
+		t.Helper()
+		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		require.NoError(t, err)
+		ctx := user.InjectOrgID(context.Background(), userID)
+		return NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange)
+	}
+
+	newCtxWithStats := func() (context.Context, *stats.SafeStats) {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		qs, ctx := stats.ContextWithEmptyStats(ctx)
+		return ctx, qs
+	}
+
+	t.Run("writes nothing when there are no reported cardinalities", func(t *testing.T) {
+		c := cache.NewMockCache()
+		ctx, _ := newCtxWithStats()
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(c, log.NewNopLogger()).PostProcess(ctx))
+		require.Nil(t, estimateFoo(t, c))
+	})
+
+	t.Run("stores a single selector's cardinality", func(t *testing.T) {
+		c := cache.NewMockCache()
+		ctx, qs := newCtxWithStats()
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(c, log.NewNopLogger()).PostProcess(ctx))
+
+		result := estimateFoo(t, c)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
+	})
+
+	t.Run("sums the cardinality across shards of the same selector", func(t *testing.T) {
+		c := cache.NewMockCache()
+		ctx, qs := newCtxWithStats()
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 30})
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 40})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(c, log.NewNopLogger()).PostProcess(ctx))
+
+		result := estimateFoo(t, c)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(70), result.EstimatedSeriesCount)
+	})
+
+	t.Run("does not double-count the same selector reported more than once without sharding", func(t *testing.T) {
+		c := cache.NewMockCache()
+		ctx, qs := newCtxWithStats()
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(c, log.NewNopLogger()).PostProcess(ctx))
+
+		result := estimateFoo(t, c)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(50), result.EstimatedSeriesCount)
+	})
+
+	t.Run("nil cache does nothing", func(t *testing.T) {
+		ctx, qs := newCtxWithStats()
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
+		require.NoError(t, NewCardinalityStoringPostProcessor(nil, log.NewNopLogger()).PostProcess(ctx))
 	})
 }
 

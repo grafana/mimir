@@ -95,6 +95,12 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 		result.Value = types.GetMatrix(0)
 	}
 
+	for _, pp := range q.engine.queryPostProcessors {
+		if err := pp.PostProcess(ctx); err != nil {
+			return &promql.Result{Err: fmt.Errorf("post-processing query failed: %w", err)}
+		}
+	}
+
 	q.succeeded = true
 	return result
 }
