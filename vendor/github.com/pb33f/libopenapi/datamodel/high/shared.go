@@ -15,6 +15,7 @@ package high
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -61,7 +62,7 @@ func RenderInlineWithContext(high, low, ctx any) (interface{}, error) {
 	nb := NewNodeBuilder(high, low)
 	nb.Resolve = true
 	nb.RenderContext = ctx
-	return nb.Render(), nil
+	return nb.Render(), errors.Join(nb.Errors...)
 }
 
 // UnpackExtensions is a convenience function that makes it easy and simple to unpack an objects extensions

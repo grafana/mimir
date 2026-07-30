@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -65,22 +66,23 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval                    time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCache                              ResultsCacheConfig `yaml:"results_cache"`
-	CacheResults                              bool               `yaml:"cache_results"`
-	UseMQEForSplittingAndCachingResults       bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
-	CacheErrors                               bool               `yaml:"cache_errors"`
-	MaxRetries                                int                `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                         time.Duration      `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                            bool               `yaml:"parallelize_shardable_queries"`
-	EnableRemoteExecution                     bool               `yaml:"enable_remote_execution" category:"experimental"`
-	EnableMultipleNodeRemoteExecutionRequests bool               `yaml:"enable_multiple_node_remote_execution_requests" category:"experimental"`
-	UseMQEForSharding                         bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
-	RewriteQueriesHistogram                   bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
-	RewriteQueriesPropagateMatchers           bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
-	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
-	ActiveSeriesFramedResponses               bool               `yaml:"active_series_framed_responses" category:"experimental"`
+	SplitQueriesByInterval              time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache                        ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults                        bool               `yaml:"cache_results"`
+	UseMQEForSplittingAndCachingResults bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
+	CacheErrors                         bool               `yaml:"cache_errors"`
+	MaxRetries                          int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                   time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                      bool               `yaml:"parallelize_shardable_queries"`
+	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
+	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
+	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
+	RewriteQueriesPropagateMatchers     bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
+	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
+	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
+
+	SubquerySpinOff subqueryspinoff.Options `yaml:",inline"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -114,15 +116,16 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, cacheResultsFlag, false, "Cache query results.")
 	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -%v=true, -%v=true or -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag, validation.SubquerySpinOffEnabledFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
-	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, false, "True to enable query sharding.")
-	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
-	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.")
-	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.")
+	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, true, "True to enable query sharding.")
+	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
+	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, true, fmt.Sprintf("Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -%s=true", ShardedQueriesFlag))
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.IntVar(&cfg.ActiveSeriesMaxShardConcurrency, "query-frontend.active-series-max-shard-concurrency", 0, "Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.")
 	f.BoolVar(&cfg.ActiveSeriesFramedResponses, "query-frontend.active-series-framed-responses", false, "Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.")
+	f.BoolVar(&cfg.SubquerySpinOff.SpinOffSimpleSubqueries, "query-frontend.subquery-spin-off-simple-subqueries", false, fmt.Sprintf("Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
+	f.BoolVar(&cfg.SubquerySpinOff.SpinOffWithExcessDownstreamQueries, "query-frontend.subquery-spin-off-with-excess-downstream-queries", false, fmt.Sprintf("Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
@@ -547,7 +550,7 @@ func newQueryMiddlewares(
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
 			newInstrumentMiddleware("spin_off_subqueries", metrics),
-			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn),
+			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn, cfg.SubquerySpinOff),
 		)
 	}
 

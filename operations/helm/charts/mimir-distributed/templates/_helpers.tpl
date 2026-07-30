@@ -585,6 +585,7 @@ which allows us to keep generating everything for the default zone.
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
+  "volumeAttributesClassName" $rolloutZone.volumeAttributesClassName
   "noDownscale"  $rolloutZone.noDownscale
   "downscaleLeader" $downscaleLeader
   "prepareDownscale" $rolloutZone.prepareDownscale
@@ -741,4 +742,60 @@ fallback:
   behavior: {{ . | quote }}
   {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Resolve the volumeAttributesClassName to set on a PVC.
+Params:
+  ctx = root context
+  persistentVolume = persistentVolume or persistence values dict
+  rolloutZone = zone rollout dict (optional)
+*/}}
+{{- define "mimir.volumeAttributesClassName" -}}
+{{- if semverCompare ">= 1.31-0" (include "mimir.kubeVersion" .ctx) -}}
+{{- $rolloutZone := .rolloutZone | default dict -}}
+{{- $requestedName := default .persistentVolume.volumeAttributesClassName $rolloutZone.volumeAttributesClassName -}}
+{{- if $requestedName -}}{{- $requestedName -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Render the spec block for a PersistentVolumeClaim in volumeClaimTemplates.
+Params:
+  ctx = root context
+  component = component name
+  persistentVolume = persistentVolume or persistence values dict
+  rolloutZone = zone rollout dict (optional)
+  storageClassKey = field name for storage class (default: storageClass)
+  storageSizeKey = field name for storage size (default: size)
+  accessModes = list of access modes (optional, defaults to persistentVolume.accessModes)
+*/}}
+{{- define "mimir.persistentVolumeClaimSpec" -}}
+{{- $pv := .persistentVolume -}}
+{{- $storageClassKey := .storageClassKey | default "storageClass" -}}
+{{- $storageSizeKey := .storageSizeKey | default "size" -}}
+{{- $storageClass := index $pv $storageClassKey -}}
+{{- if .rolloutZone -}}
+{{- $storageClass = default $storageClass (index .rolloutZone $storageClassKey) -}}
+{{- end -}}
+{{- if $storageClass }}
+{{- if (eq "-" $storageClass) }}
+storageClassName: ""
+{{- else }}
+storageClassName: {{ $storageClass }}
+{{- end }}
+{{- end }}
+{{- $vacName := include "mimir.volumeAttributesClassName" (dict "ctx" .ctx "component" .component "persistentVolume" $pv "rolloutZone" (.rolloutZone | default dict)) }}
+{{- if $vacName }}
+volumeAttributesClassName: {{ $vacName }}
+{{- end }}
+accessModes:
+{{- if .accessModes }}
+  {{- toYaml .accessModes | nindent 2 }}
+{{- else }}
+  {{- toYaml $pv.accessModes | nindent 2 }}
+{{- end }}
+resources:
+  requests:
+    storage: "{{ index $pv $storageSizeKey }}"
 {{- end -}}

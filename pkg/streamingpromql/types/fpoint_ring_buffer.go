@@ -27,6 +27,7 @@ type FPointRingBuffer struct {
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
+	generation               int // Incremented when views of this buffer are invalidated.
 }
 
 func NewFPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *FPointRingBuffer {
@@ -34,13 +35,12 @@ func NewFPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTrac
 }
 
 // resizeIfRequired resizes the underlying buffer if required to hold additionalPoints and returns
-// a boolean indicating if the underlying buffer was resized or an error if the buffer could not be
-// resized.
-func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtStart bool) (bool, error) {
+// an error if the buffer could not be resized.
+func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtStart bool) error {
 	newRequestedSize := b.size + additionalPoints
 
 	if newRequestedSize <= len(b.points) {
-		return false, nil
+		return nil
 	}
 
 	newSize := math.NextPowerTwo(newRequestedSize)
@@ -48,14 +48,14 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 	// We create a new slice, and we will copy the elements from the current slice to the new slice
 	newSlice, err := getFPointSliceForRingBuffer(newSize, b.memoryConsumptionTracker)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if !pool.IsPowerOfTwo(cap(newSlice)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 		// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
 		// Note that the capacity of newSlice is guaranteed to be at least 2 due to the implementation in math.NextPowerTwo()
-		return false, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
+		return fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 	}
 
 	newSlice = newSlice[:cap(newSlice)]
@@ -80,13 +80,16 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = newSlice
 	b.pointsIndexMask = cap(newSlice) - 1
-	return true, nil
+	b.generation++
+
+	return nil
 }
 
 // DiscardPointsAtOrBefore discards all points in this buffer with timestamp less than or equal to the given timestamp.
 // Note that the actual underlying points buffer is not reduced in size.
 func (b *FPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	for b.size > 0 && b.points[b.firstIndex].T <= t {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -104,12 +107,14 @@ func (b *FPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 // It is safe to call this function on an empty buffer.
 func (b *FPointRingBuffer) RemoveLast() {
 	if b.size > 0 {
+		b.generation++
 		b.size--
 	}
 }
 
 func (b *FPointRingBuffer) RemoveFirst() {
 	if b.size > 0 {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -127,6 +132,7 @@ func (b *FPointRingBuffer) ReplaceLast(point promql.FPoint) error {
 		return errors.New("unable to replace point to the tail of the buffer - current buffer is empty")
 	}
 
+	// No generation change since we aren't changing the buffer size.
 	position := b.size - 1
 	b.points[(b.firstIndex+position)&b.pointsIndexMask] = point
 	return nil
@@ -140,44 +146,45 @@ func (b *FPointRingBuffer) ReplaceFirst(point promql.FPoint) error {
 		return errors.New("unable to replace point to the head of the buffer - current buffer is empty")
 	}
 
+	// No generation change since we aren't changing the buffer size.
 	b.points[b.firstIndex] = point
 	return nil
 }
 
 // AppendAtStart will insert the given point into the head of this buffer, expanding if required.
-// A boolean is returned indicating if the underlying buffer had to be resized. Subsequently calling
-// PointAt(0) will return this point. It is the responsibility of the caller to ensure that inserting
-// this point maintains chronological order of the buffer.
-func (b *FPointRingBuffer) AppendAtStart(point promql.FPoint) (bool, error) {
-	resized, err := b.resizeIfRequired(1, true)
-	if err != nil {
-		return resized, err
+// Subsequently, calling PointAt(0) will return this point. It is the responsibility of the caller
+// to ensure that inserting this point maintains chronological order of the buffer.
+func (b *FPointRingBuffer) AppendAtStart(point promql.FPoint) error {
+	if err := b.resizeIfRequired(1, true); err != nil {
+		return err
 	}
 
+	// Explicitly increase the generation here even if the underlying buffer was not
+	// resized since appending at the start of the buffer changes what the "first" item
+	// in the buffer and views are.
+	b.generation++
 	b.firstIndex = (b.firstIndex - 1) & b.pointsIndexMask
 	b.points[b.firstIndex] = point
 	b.size++
 
-	return resized, nil
+	return nil
 }
 
 // Append adds p to this buffer, expanding it if required.
-// A boolean is returned indicating if the underlying buffer had to be resized.
 // It is the responsibility of the caller to ensure that inserting this point maintains chronological order of the buffer.
-func (b *FPointRingBuffer) Append(p promql.FPoint) (bool, error) {
-	resized, err := b.resizeIfRequired(1, false)
-	if err != nil {
-		return resized, err
+func (b *FPointRingBuffer) Append(p promql.FPoint) error {
+	// resizeIfRequired increases the generation if the slice was resized.
+	if err := b.resizeIfRequired(1, false); err != nil {
+		return err
 	}
 
 	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.points[nextIndex] = p
 	b.size++
-	return resized, nil
+	return nil
 }
 
-// AppendSlice will append all the given points to the buffer returning a boolean if
-// the underlying buffer had to be resized.
+// AppendSlice will append all the given points to the buffer.
 //
 // It is more efficient to call this for a collection of points then to call Append()
 // for each individual point. In this function the underlying buffer will only be grown once based
@@ -185,14 +192,14 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) (bool, error) {
 //
 // It is the caller's responsibility to ensure that the given points are in chronological order
 // and that the points chronologically follow any existing points in the buffer.
-func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) (bool, error) {
+func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) error {
 	if len(points) == 0 {
-		return false, nil
+		return nil
 	}
 
-	resized, err := b.resizeIfRequired(len(points), false)
-	if err != nil {
-		return resized, err
+	// resizeIfRequired increases the generation if the slice was resized.
+	if err := b.resizeIfRequired(len(points), false); err != nil {
+		return err
 	}
 
 	for _, pt := range points {
@@ -201,7 +208,18 @@ func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) (bool, error) {
 		b.size++
 	}
 
-	return resized, nil
+	return nil
+}
+
+// EmptyView returns an empty view associated with this buffer that is marked as dirty. This
+// view cannot be used directly and instead must be recreated (using "existing") before being
+// used by a caller. This differs from creating an empty FPointRingBufferView directly since
+// this instance will be "dirty" while the struct created directly is not.
+func (b *FPointRingBuffer) EmptyView() *FPointRingBufferView {
+	return &FPointRingBufferView{
+		buffer:     b,
+		generation: -1,
+	}
 }
 
 // ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
@@ -209,7 +227,7 @@ func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) (bool, error) {
 // ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
 // earlier timestamps.
 // existing is an existing view instance for this buffer that is reused if provided. It can be nil.
-// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned view is no longer valid if the buffer is modified in a way that causes FPointRingBufferView.IsDirty() to return true.
 func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
@@ -221,17 +239,20 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 		size++
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = size
 	return existing
 }
 
 // ViewAll returns a view which includes all points in the ring buffer.
-// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned view is no longer valid if the buffer is modified in a way that causes FPointRingBufferView.IsDirty() to return true.
 func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
 	}
+
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = b.size
 	return existing
@@ -239,6 +260,7 @@ func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBu
 
 // ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
+// The returned view is no longer valid if the buffer is modified in a way that causes FPointRingBufferView.IsDirty() to return true.
 func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
@@ -250,6 +272,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		nextPositionToCheck--
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
@@ -257,6 +280,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 
 // ViewBetweenSearchingBackwards returns a view into this buffer including only points with timestamps
 // greater than minT and less than or equal to maxT. The method panics if minT is greater than maxT.
+// The returned view is no longer valid if the buffer is modified in a way that causes FPointRingBufferView.IsDirty() to return true.
 func (b *FPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
@@ -269,6 +293,8 @@ func (b *FPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, exist
 		})
 		panic(fmt.Sprintf("attempted to create an FPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
 	}
+
+	existing.generation = b.generation
 
 	// If the buffer is empty or min time is beyond the last point in this buffer,
 	// return a zero-sized view since there are no points or no matching points.
@@ -348,6 +374,7 @@ func (b *FPointRingBuffer) CountBetween(minT, maxT int64) int {
 
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *FPointRingBuffer) Reset() {
+	b.generation++
 	b.firstIndex = 0
 	b.size = 0
 }
@@ -374,6 +401,7 @@ func (b *FPointRingBuffer) Use(s []promql.FPoint) error {
 
 	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
+	b.generation++
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
 	b.size = len(s)
@@ -388,9 +416,22 @@ func (b *FPointRingBuffer) Close() {
 }
 
 type FPointRingBufferView struct {
-	buffer *FPointRingBuffer
-	offset int // Offset from buffer's firstIndex where this view starts
-	size   int
+	buffer     *FPointRingBuffer
+	offset     int // Offset from buffer's firstIndex where this view starts
+	size       int
+	generation int // Generation of the buffer when this view was created
+}
+
+// IsDirty returns true if this view is associated with a buffer and the buffer
+// has been modified in a way that invalidates the view. Not all changes to the
+// buffer invalidate the view. When it is the case that the view has been
+// invalidated, the view must be recreated before being used by callers.
+func (v *FPointRingBufferView) IsDirty() bool {
+	if v.buffer == nil {
+		return false
+	}
+
+	return v.generation != v.buffer.generation
 }
 
 // UnsafePoints returns slices of the points in this buffer view.
@@ -506,60 +547,12 @@ func (v *FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer
 		return nil, nil, err
 	}
 
-	view := &FPointRingBufferView{
-		buffer: buffer,
-		size:   v.size,
-	}
+	// Ensure that the newly created buffer (and hence view) has the same generation
+	// as this view so they will compare as equal to this view (some tests rely on this).
+	buffer.generation = v.generation
+	view := buffer.ViewAll(nil)
 
 	return view, buffer, nil
-}
-
-// SubView returns a view with only points in range (minT, maxT].
-// If previousSubView is provided, it will be reused to create the new subview. previousSubView must be a previous
-// subview for the same parent view and the next subview is assumed to cover a later range (we only start searching from
-// after the samples of the previous subview).
-func (v *FPointRingBufferView) SubView(minT int64, maxT int64, previousSubView *FPointRingBufferView) *FPointRingBufferView {
-	if v.size == 0 {
-		if previousSubView == nil {
-			return &FPointRingBufferView{}
-		}
-		previousSubView.offset = v.offset
-		previousSubView.size = 0
-		return previousSubView
-	}
-
-	var startIdx int
-	if previousSubView == nil {
-		startIdx = v.offset
-		previousSubView = &FPointRingBufferView{buffer: v.buffer}
-	} else {
-		startIdx = previousSubView.offset + previousSubView.size
-	}
-
-	endIdx := v.offset + v.size
-	if startIdx >= endIdx {
-		previousSubView.offset = endIdx
-		previousSubView.size = 0
-		return previousSubView
-	}
-
-	// Find start idx for subview
-	currentIdx := startIdx
-	// PointAt expects relative index for parent view so we adjust by subtracting the parent offset
-	for currentIdx < endIdx && v.PointAt(currentIdx-v.offset).T <= minT {
-		currentIdx++
-	}
-	previousSubView.offset = currentIdx
-
-	// Find size for subview
-	size := 0
-	for currentIdx < endIdx && v.PointAt(currentIdx-v.offset).T <= maxT {
-		size++
-		currentIdx++
-	}
-
-	previousSubView.size = size
-	return previousSubView
 }
 
 // These hooks exist so we can override them during unit tests.

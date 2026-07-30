@@ -89,12 +89,25 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 }
 
 func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {
+	if req.Limit == 0 {
+		return nil
+	}
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
+
 	rCap := int32(len(mm.metricToMetadata))
+	if len(req.MetricNames) > 0 {
+		// A MetricNames request returns only the requested subset, so size to it.
+		// We assume one metadata record per metric (the common case), so we don't
+		// take in account LimitPerMetric. Moreover, sizing by LimitPerMetric would
+		// badly over-allocate, since that cap rarely reflects the actual number of
+		// per-metric metadata.
+		rCap = int32(len(req.MetricNames))
+	}
 	if req.Limit >= 0 && req.Limit < rCap {
 		rCap = req.Limit
 	}
+
 	r := make([]*mimirpb.MetricMetadata, 0, rCap)
 	addMetricMetadataSet := func(set metricMetadataSet) {
 		var lengthPerMetric int32
@@ -106,14 +119,34 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 			lengthPerMetric++
 		}
 	}
-	if req.Limit == 0 {
+
+	// MetricNames takes precedence over the single-name Metric filter: return
+	// metadata for each requested name we hold.
+	if len(req.MetricNames) > 0 {
+		var numMetrics int32
+		for _, name := range req.MetricNames {
+			if req.Limit > 0 && numMetrics >= req.Limit {
+				break
+			}
+			set, ok := mm.metricToMetadata[name]
+			if !ok {
+				continue
+			}
+			addMetricMetadataSet(set)
+			numMetrics++
+		}
 		return r
 	}
-	if req.Metric != "" {
-		set := mm.metricToMetadata[req.Metric]
+
+	// Fallback to the deprecated single-name Metric filter, still honored for the
+	// classic /api/v1/metadata?metric= endpoint.
+	if metric := req.Metric; metric != "" { //nolint:staticcheck // req.Metric is deprecated but still supported here.
+		set := mm.metricToMetadata[metric]
 		addMetricMetadataSet(set)
 		return r
 	}
+
+	// Otherwise return all metric names, up to the limit.
 	var numMetrics int32
 	for _, set := range mm.metricToMetadata {
 		if req.Limit > 0 && numMetrics >= req.Limit {

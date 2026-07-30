@@ -80,6 +80,11 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 		labels.MustNewMatcher(labels.MatchEqual, "name", "querier-query-scheduler-client"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	// Compute which is the expected in-use query-scheduler.
 	schedulers := []*e2emimir.MimirService{queryScheduler1, queryScheduler2}
 	slices.SortFunc(schedulers, func(a, b *e2emimir.MimirService) int {

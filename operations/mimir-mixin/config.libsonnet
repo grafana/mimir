@@ -1,4 +1,7 @@
 {
+  assert $._config.compactor_standalone_enabled || $._config.compactor_scheduler_enabled
+         : 'at least one of compactor_standalone_enabled and compactor_scheduler_enabled must be enabled',
+
   grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
 
@@ -24,6 +27,10 @@
 
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
+
+    // If Mimir deployments has compartments enabled, set to true to enable
+    // specific dropdowns and job selectors.
+    compartments_enabled: false,
 
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,
@@ -124,6 +131,32 @@
       backend: ['ruler|ruler-zone-.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
+    } + (
+      // When compartments are enabled, override the job names of the
+      // compartmentalized components so that dashboards select only
+      // the jobs belonging to the currently selected read compartment.
+      if $._config.compartments_enabled then $._config.compartmentalized_job_names else {}
+    ),
+
+    // These are overrides for the job names for matching a specific compartment.
+    compartmentalized_job_names: {
+      ingester: ['ingester.*$read_compartment', 'cortex', 'mimir'],
+      block_builder: ['block-builder.*$read_compartment'],
+      block_builder_scheduler: ['block-builder-scheduler.*$read_compartment'],
+      compactor: ['compactor.*$read_compartment', 'cortex', 'mimir'],
+      compactor_scheduler: ['compactor-scheduler.*$read_compartment'],
+      store_gateway: ['store-gateway.*$read_compartment', 'cortex', 'mimir'],
+    },
+
+    // Unlike the job_names above, these are format strings, expanded with the zone suffix (e.g.
+    // 'distributor-zone-%(zone)s.*' becomes 'distributor-zone-a.*') to match one zone's deployments
+    // of a component. Used to build the per-zone panels, e.g. when
+    // show_multi_zone_write_path_panels is enabled.
+    // The expanded job names must also be matched by the component's job_names regexes above,
+    // otherwise the per-zone deployments would be missing from the aggregate panels.
+    multi_zone_job_name_formats: {
+      distributor: ['distributor-zone-%(zone)s.*'],
+      gateway: ['cortex-gw.*-zone-%(zone)s'],
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -216,6 +249,8 @@
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
+      read_compartments_query: 'cortex_build_info{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
+      read_compartments_query_regex: '/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g',  // match "-rc-XX" but shown as "rc-XX" in the UI
     },
 
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
@@ -259,6 +294,9 @@
 
     // Whether mimir compactor scheduler is enabled (experimental)
     compactor_scheduler_enabled: false,
+
+    // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
+    compactor_standalone_enabled: true,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
@@ -795,6 +833,17 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: true,
+
+    // Show optional panels on the Writes dashboard breaking down the traffic of write path components
+    // deployed per availability zone (e.g. distributor-zone-a), to help spotting a degradation only
+    // affecting a single zone. Disabled by default, because it only applies to deployments where the
+    // gateway and the distributor are deployed per zone (see multi_zone_write_path_enabled in the
+    // Mimir jsonnet).
+    show_multi_zone_write_path_panels: false,
+
+    // The zone suffixes of multi-zone write path deployments. Used to build the per-zone panels when
+    // show_multi_zone_write_path_panels is enabled.
+    multi_zone_write_path_zones: ['a', 'b', 'c'],
 
     // External Grafana URL prefix for dashboard links in alerts.
     // This is used to generate absolute URLs in alert annotations that link to dashboards.

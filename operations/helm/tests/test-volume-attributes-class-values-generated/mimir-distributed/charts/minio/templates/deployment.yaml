@@ -1,0 +1,86 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-volume-attributes-class-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-volume-attributes-class-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-volume-attributes-class-values
+  template:
+    metadata:
+      name: test-volume-attributes-class-values-minio
+      labels:
+        app: minio
+        release: test-volume-attributes-class-values
+      annotations:
+        checksum/secrets: d31aa88c8fc10e8d8cad0a4c7f6f5387acc41fba063397c908362f639a55df5e
+        checksum/config: f239f1e6006a85368384285a08792a295b58d78494643412c581fd886e11107d
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-volume-attributes-class-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-volume-attributes-class-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-volume-attributes-class-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-volume-attributes-class-values-minio        
+

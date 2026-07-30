@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -36,8 +37,8 @@ var (
 // where <constant> is a NumberLiteral (possibly wrapped in transparent nodes) that is before the start of the possible
 // timestamps that could be returned given the query's time range.
 //
-// For simplicity, the optimization pass does not descend into Subquery nodes, because the effective time range for
-// expressions inside a subquery differs from the outer query time range.
+// It also descends into subqueries. An empty subquery is replaced with a matrix NoOp, since a subquery produces a range
+// vector.
 //
 // It detects the following pattern in vector and matrix selectors:
 //
@@ -121,16 +122,11 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Con
 // with a NoOp node or simplified equivalent. It returns the replacement node (non-nil if this
 // node should be replaced), whether any modification was made, and any error.
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.Node, params *planning.QueryParameters) (planning.Node, bool, error) {
-	// Do not descend into subqueries for simplicity: their children are evaluated over a different time range
-	// (shifted backwards by the subquery range), so params.TimeRange does not apply there.
-	// FIXME: we could handle this case
-	if _, isSubquery := node.(*core.Subquery); isSubquery {
-		return nil, false, nil
-	}
-
+	childParams := childParameters(node, params)
 	modified := false
+
 	for idx := range node.ChildCount() {
-		replacement, modifiedInChild, err := s.apply(node.Child(idx), params)
+		replacement, modifiedInChild, err := s.apply(node.Child(idx), childParams)
 		if err != nil {
 			return nil, false, err
 		}
@@ -152,7 +148,11 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	if empty, err := isAlwaysEmpty(node, params); err != nil {
 		return nil, false, err
 	} else if empty {
-		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
+		noOp, err := s.createNoOpReplacement(node)
+		if err != nil {
+			return nil, false, err
+		}
+
 		return noOp, true, nil
 	}
 
@@ -161,6 +161,34 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	}
 
 	return nil, modified, nil
+}
+
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) createNoOpReplacement(node planning.Node) (planning.Node, error) {
+	resultType, err := node.ResultType()
+	if err != nil {
+		return nil, err
+	}
+
+	noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
+	switch resultType {
+	case parser.ValueTypeVector:
+		// Nothing to do, default for a NoOp is a vector value.
+	case parser.ValueTypeMatrix:
+		noOp.MatrixSelector = true
+	default:
+		return nil, fmt.Errorf("unsupported result type %s for NoOp", resultType)
+	}
+
+	return noOp, nil
+}
+
+// childParameters returns a copy of params adjusted for evaluating the children of a node.
+// While most nodes use the same time range as their parent, some (such as subqueries) use
+// a shifted time range.
+func childParameters(parent planning.Node, params *planning.QueryParameters) *planning.QueryParameters {
+	childParams := *params
+	childParams.TimeRange = parent.ChildrenTimeRange(params.TimeRange)
+	return &childParams
 }
 
 // isAlwaysEmptySelector returns true if a node is a selector and has matchers that can be
@@ -183,18 +211,21 @@ func isAlwaysEmptySelector(node planning.Node) (bool, bool) {
 // vector for the entire query time range described by params.
 func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, error) {
 	node = unwrap(node)
+	childParams := childParameters(node, params)
 
 	switch node := node.(type) {
 	case *core.NoOp:
 		return true, nil
 	case *core.AggregateExpression:
-		return isAlwaysEmpty(node.Inner, params)
+		return isAlwaysEmpty(node.Inner, childParams)
 	case *core.BinaryExpression:
 		return isAlwaysEmptyBinaryExpression(node, params)
 	case *core.FunctionCall:
 		return IsAlwaysEmptyFunctionCall(node, params)
 	case *core.UnaryExpression:
-		return isAlwaysEmpty(node.Inner, params)
+		return isAlwaysEmpty(node.Inner, childParams)
+	case *core.Subquery:
+		return isAlwaysEmpty(node.Inner, childParams)
 	default:
 		return false, nil
 	}
@@ -203,6 +234,9 @@ func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, 
 func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryParameters) (bool, error) {
 	// This function is exported because there's no easy way to test it without calling
 	// it directly and the tests are in a different package to avoid import cycles.
+
+	childParams := childParameters(node, params)
+
 	switch node.Function {
 	case
 		functions.FUNCTION_ABS,
@@ -281,7 +315,7 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 			return false, fmt.Errorf("%w: expected at least one argument in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
-		return isAlwaysEmpty(node.Args[0], params)
+		return isAlwaysEmpty(node.Args[0], childParams)
 	case functions.FUNCTION_HISTOGRAM_QUANTILE,
 		functions.FUNCTION_QUANTILE_OVER_TIME:
 		if len(node.Args) < 2 {
@@ -292,7 +326,7 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 			return false, fmt.Errorf("%w: expected at least two arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
-		return isAlwaysEmpty(node.Args[1], params)
+		return isAlwaysEmpty(node.Args[1], childParams)
 	case functions.FUNCTION_HISTOGRAM_FRACTION:
 		if len(node.Args) < 3 {
 			assert.Unreachable("expected at least three arguments in call", map[string]any{
@@ -302,7 +336,7 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
-		return isAlwaysEmpty(node.Args[2], params)
+		return isAlwaysEmpty(node.Args[2], childParams)
 	case functions.FUNCTION_HISTOGRAM_QUANTILES:
 		// histogram_quantiles takes the instant vector as its first argument, followed by the
 		// quantile label name and one or more quantiles.
@@ -314,10 +348,10 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
-		return isAlwaysEmpty(node.Args[0], params)
+		return isAlwaysEmpty(node.Args[0], childParams)
 	case functions.FUNCTION_SHARDING_CONCAT:
 		for i := range node.ChildCount() {
-			empty, err := isAlwaysEmpty(node.Child(i), params)
+			empty, err := isAlwaysEmpty(node.Child(i), childParams)
 			if err != nil {
 				return false, err
 			} else if !empty {
@@ -377,6 +411,8 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		return false, nil
 	}
 
+	childParams := childParameters(node, params)
+
 	switch node.Op {
 	case core.BINARY_ADD,
 		core.BINARY_ATAN2,
@@ -394,7 +430,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_LOR:
 		// A or B is empty only when both sides are empty.
-		lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+		lhsEmpty, err := isAlwaysEmpty(node.LHS, childParams)
 		if err != nil {
 			return false, err
 		}
@@ -403,11 +439,11 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return false, nil
 		}
 
-		return isAlwaysEmpty(node.RHS, params)
+		return isAlwaysEmpty(node.RHS, childParams)
 
 	case core.BINARY_LUNLESS:
 		// A unless B is empty whenever A is empty, regardless of B.
-		return isAlwaysEmpty(node.LHS, params)
+		return isAlwaysEmpty(node.LHS, childParams)
 
 	case core.BINARY_EQLC:
 		// Check for a constant comparison such as vector(0) == 1 that can never match.
@@ -423,7 +459,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
-		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, childParams)
 		if err != nil {
 			return false, err
 		}
@@ -436,7 +472,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_LTE:
 		// Check for timestamp(v) <= C.
-		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, true, childParams)
 		if err != nil {
 			return false, err
 		}
@@ -449,7 +485,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_GTR:
 		// Check for C > timestamp(v), equivalent to timestamp(v) < C.
-		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, false, childParams)
 		if err != nil {
 			return false, err
 		}
@@ -462,7 +498,7 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_GTE:
 		// Check for C >= timestamp(v), equivalent to timestamp(v) <= C.
-		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, params)
+		empty, err := isAlwaysEmptyTimestampComparison(node.RHS, node.LHS, true, childParams)
 		if err != nil {
 			return false, err
 		}
@@ -480,7 +516,8 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 // isEitherBinaryExpressionSideEmpty returns true if either side of a binary expression is
 // empty by recursively calling isAlwaysEmpty.
 func isEitherBinaryExpressionSideEmpty(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {
-	lhsEmpty, err := isAlwaysEmpty(node.LHS, params)
+	childParams := childParameters(node, params)
+	lhsEmpty, err := isAlwaysEmpty(node.LHS, childParams)
 	if err != nil {
 		return false, err
 	}
@@ -489,7 +526,7 @@ func isEitherBinaryExpressionSideEmpty(node *core.BinaryExpression, params *plan
 		return true, nil
 	}
 
-	return isAlwaysEmpty(node.RHS, params)
+	return isAlwaysEmpty(node.RHS, childParams)
 }
 
 // isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent

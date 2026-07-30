@@ -18,13 +18,10 @@ import (
 
 // OptimizationPass identifies subplans of the provided query plan that can be executed remotely.
 type OptimizationPass struct {
-	enableMultipleNodeRequests bool
 }
 
-func NewOptimizationPass(enableMultipleNodeRequests bool) *OptimizationPass {
-	return &OptimizationPass{
-		enableMultipleNodeRequests: enableMultipleNodeRequests,
-	}
+func NewOptimizationPass() *OptimizationPass {
+	return &OptimizationPass{}
 }
 
 func (o *OptimizationPass) Name() string {
@@ -37,7 +34,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
-	multiNodeGroupsEnabled := o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3
+	multiNodeGroupsEnabled := maximumSupportedQueryPlanVersion >= planning.QueryPlanV3
 
 	var groups remoteExecutionGroupSet
 

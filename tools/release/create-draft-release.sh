@@ -60,8 +60,6 @@ else
   fi
 fi
 
-RELEASE_TITLE="Mimir ${LAST_RELEASE_VERSION}"
-
 # Generate the release notes.
 RELEASE_NOTES_FILE="$(mktemp)"
 trap 'rm -f "${RELEASE_NOTES_FILE}"' EXIT
@@ -94,14 +92,14 @@ else
     gh release edit "${LAST_RELEASE_TAG}" \
       --draft \
       --prerelease="${PRERELEASE}" \
-      --title "${RELEASE_TITLE}" \
+      --title "${LAST_RELEASE_VERSION}" \
       --notes-file "${RELEASE_NOTES_FILE}" > /dev/stderr
   else
     echo "Creating the draft release ${LAST_RELEASE_TAG}..." > /dev/stderr
     gh release create "${LAST_RELEASE_TAG}" \
       --draft \
       --prerelease="${PRERELEASE}" \
-      --title "${RELEASE_TITLE}" \
+      --title "${LAST_RELEASE_VERSION}" \
       --notes-file "${RELEASE_NOTES_FILE}" > /dev/stderr
   fi
 
@@ -113,7 +111,7 @@ fi
 
 jq -nc \
   --arg tag "${LAST_RELEASE_TAG}" \
-  --arg title "${RELEASE_TITLE}" \
+  --arg title "${LAST_RELEASE_VERSION}" \
   --argjson prerelease "${PRERELEASE}" \
   --argjson latest "${LATEST}" \
   '{tag: $tag, title: $title, prerelease: $prerelease, latest: $latest}'

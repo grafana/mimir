@@ -281,11 +281,10 @@
     "ports":
       - "11211:11211"
   "minio":
-    "command":
-      - "server"
-      - "--console-address"
-      - ":9001"
-      - "/data"
+    "entrypoint":
+      - "sh"
+      - "-c"
+      - "mkdir -p /data/mimir-tsdb /data/mimir-ruler /data/mimir-alertmanager && exec minio server --console-address :9001 /data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"

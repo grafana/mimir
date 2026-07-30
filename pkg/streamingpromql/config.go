@@ -42,6 +42,12 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
+	// EnableDelayedNameRemovalPrometheusEngine applies only when constructing the Prometheus engine
+	// (primary or fallback) from these options via PrometheusEngineOpts. MQE controls delayed name
+	// removal per-tenant via Limits, and rejects CommonOpts.EnableDelayedNameRemoval so that enabling
+	// the feature the Prometheus way fails loudly instead of being silently ignored.
+	EnableDelayedNameRemovalPrometheusEngine bool `yaml:"-"`
+
 	// TimeNow returns the current time. It is used when materializing range vector splitting operators to compute
 	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
 	TimeNow func() time.Time `yaml:"-"`
@@ -106,7 +112,7 @@ type RangeQuerySplittingAndCachingConfig struct {
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
-	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
+	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", true, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableScalarCommonSubexpressionElimination, "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination", false, "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
@@ -131,6 +137,16 @@ func (c *RangeQuerySplittingAndCachingConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (o *EngineOpts) Validate() error {
 	return o.RangeVectorSplitting.Validate()
+}
+
+// PrometheusEngineOpts returns the options for constructing the Prometheus engine, whether it is
+// used as the primary engine or as MQE's fallback. It applies delayed name removal to a copy of
+// CommonOpts, which is deliberately never set on CommonOpts itself: MQE rejects that option because
+// it controls the feature per-tenant via Limits instead.
+func (o *EngineOpts) PrometheusEngineOpts() promql.EngineOpts {
+	commonOpts := o.CommonOpts
+	commonOpts.EnableDelayedNameRemoval = o.EnableDelayedNameRemovalPrometheusEngine
+	return commonOpts
 }
 
 func (c *RangeVectorSplittingConfig) Validate() error {

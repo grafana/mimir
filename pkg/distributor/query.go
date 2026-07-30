@@ -140,17 +140,31 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
 
+		// Cap the inactive-partition lookback at query-ingesters-within:
+		//   - past that window, a partition's data isn't queried from ingesters, and its owners may be
+		//     gone; an ownerless partition would otherwise fail the query.
+		//   - 0 means unbounded, so it only tightens the bound when set and below the lookback period.
+		lookbackPeriod := d.cfg.IngestersLookbackPeriod
+		if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
+			lookbackPeriod = queryIngestersWithin
+		}
+
+		now := time.Now()
+
 		// When compartments are enabled, try to restrict the pool of compartments that need to be queried.
 		if d.cfg.Compartments.Enabled {
 			targets := d.compartmentRouter.CompartmentsForMatchers(userID, matchers)
 			var replicationSets []ring.ReplicationSet
 
 			for _, c := range targets {
-				r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+				r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
 				if err != nil {
 					return nil, err
 				}
 
+				// If the lookback cap filters out every partition in a targeted compartment,
+				// GetReplicationSetsForOperation returns ring.ErrEmptyRing and the query fails. Skipping
+				// empty compartments (serving that data from storage instead) is left to a follow-up.
 				sets, err := r.GetReplicationSetsForOperation(readNoExtend)
 				if err != nil {
 					return nil, err
@@ -163,7 +177,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 		}
 
 		// Compartments are disabled.
-		r, err := d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+		r, err := d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
 		if err != nil {
 			return nil, err
 		}

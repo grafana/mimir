@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -557,9 +558,12 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
+	// The compartmentsEnabled variants put all partitions in a single read compartment, so the topology
+	// matches the single-ring case and the per-scenario expectations below hold for both query paths.
 	shardingConfigs := map[string]struct {
 		shuffleShardingEnabled bool
 		tenantShardSize        int
+		compartmentsEnabled    bool
 	}{
 		"shuffle sharding disabled": {
 			shuffleShardingEnabled: false,
@@ -573,30 +577,53 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 			shuffleShardingEnabled: true,
 			tenantShardSize:        10, // Larger than partition count, so all partitions are included.
 		},
+		"compartments enabled": {
+			shuffleShardingEnabled: false,
+			tenantShardSize:        0,
+			compartmentsEnabled:    true,
+		},
 	}
 
 	scenarios := map[string]struct {
+		queryIngestersWithin    time.Duration // Per-tenant -querier.query-ingesters-within. 0 means no additional bound.
 		partition3InactiveSince time.Duration // How long ago partition 3 became inactive.
 		partition3Healthy       bool          // Whether the ingester owning partition 3 is healthy.
 		expectedPartitionIDs    []int         // Expected partition IDs returned by getIngesterReplicationSetsForQuery.
 		expectQueryError        bool          // Whether the query should fail.
 	}{
 		"partition outside lookback with unhealthy ingester": {
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
 			partition3InactiveSince: 24 * time.Hour, // Outside lookback (12h).
 			partition3Healthy:       false,
 			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to lookback.
 			expectQueryError:        false,          // Query succeeds because partition 3 is not queried.
 		},
 		"partition outside lookback with healthy ingester": {
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
 			partition3InactiveSince: 24 * time.Hour, // Outside lookback (12h).
 			partition3Healthy:       true,
 			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to lookback.
 			expectQueryError:        false,          // Query succeeds, partition 3 is not queried anyway.
 		},
 		"partition within lookback with unhealthy ingester": {
-			partition3InactiveSince: 1 * time.Hour, // Within lookback (12h).
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
+			partition3InactiveSince: 1 * time.Hour,  // Within lookback (12h).
 			partition3Healthy:       false,
 			expectedPartitionIDs:    []int{0, 1, 2, 3}, // Partition 3 included because within lookback.
+			expectQueryError:        true,              // Query fails because partition 3 must be queried but ingester is unhealthy.
+		},
+		"partition within lookback but outside query-ingesters-within with unhealthy ingester": {
+			queryIngestersWithin:    2 * time.Hour, // Smaller than lookback (12h), so it is the binding bound.
+			partition3InactiveSince: 6 * time.Hour, // Within lookback (12h) but outside query-ingesters-within (2h).
+			partition3Healthy:       false,
+			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to query-ingesters-within.
+			expectQueryError:        false,          // Query succeeds because partition 3 is not queried.
+		},
+		"partition within query-ingesters-within with unhealthy ingester": {
+			queryIngestersWithin:    2 * time.Hour, // Smaller than lookback (12h), so it is the binding bound.
+			partition3InactiveSince: 1 * time.Hour, // Within query-ingesters-within (2h).
+			partition3Healthy:       false,
+			expectedPartitionIDs:    []int{0, 1, 2, 3}, // Partition 3 included because within query-ingesters-within.
 			expectQueryError:        true,              // Query fails because partition 3 must be queried but ingester is unhealthy.
 		},
 	}
@@ -613,6 +640,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				limits := prepareDefaultLimits()
 				limits.IngestionPartitionsTenantShardSize = shardingCfg.tenantShardSize
+				limits.QueryIngestersWithin = model.Duration(scenario.queryIngestersWithin)
 
 				ingester3State := ingesterStateFailed
 				var ingester3Data *mimirpb.WriteRequest
@@ -621,10 +649,22 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 					ingester3Data = makeWriteRequest(0, 1, 0, false, false, "foo3")
 				}
 
+				// When compartments are enabled, put all 4 partitions in a single read compartment so the
+				// topology matches the single-ring case and the same scenarios and expectations apply to
+				// both query paths.
+				numCompartments := 0
+				var compartmentActivePartitions map[int][]int32
+				if shardingCfg.compartmentsEnabled {
+					numCompartments = 1
+					compartmentActivePartitions = map[int][]int32{0: {0, 1, 2, 3}}
+				}
+
 				cfg := prepConfig{
-					numDistributors:         1,
-					ingestStorageEnabled:    true,
-					ingestStoragePartitions: 4,
+					numDistributors:             1,
+					ingestStorageEnabled:        true,
+					ingestStoragePartitions:     4,
+					numCompartments:             numCompartments,
+					compartmentActivePartitions: compartmentActivePartitions,
 					ingesterStateByZone: map[string]ingesterZoneState{
 						"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingester3State}},
 					},
@@ -642,6 +682,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 					configure: func(config *Config) {
 						config.ShuffleShardingEnabled = shardingCfg.shuffleShardingEnabled
 						config.IngestersLookbackPeriod = lookbackPeriod
+						if shardingCfg.compartmentsEnabled {
+							config.Compartments.Enabled = true
+							config.Compartments.Read.NumCompartments = 1
+							config.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
+						}
 					},
 				}
 
@@ -660,7 +705,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				// - Partition 3: Inactive since scenario.partition3InactiveSince
 				now := time.Now()
 				partitionsStore := d.cfg.DistributorRing.Common.KVStore.Mock.(*consul.Client).WithCodec(ring.GetPartitionRingCodec())
-				err := partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (interface{}, bool, error) {
+				ringKey := ingester.PartitionRingKey
+				if shardingCfg.compartmentsEnabled {
+					ringKey = compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, 0)
+				}
+				err := partitionsStore.CAS(ctx, ringKey, func(in interface{}) (interface{}, bool, error) {
 					desc := ring.GetOrCreatePartitionRingDesc(in)
 					if _, err := desc.UpdatePartitionState(2, ring.PartitionInactive, now.Add(-1*time.Hour)); err != nil {
 						return nil, false, err

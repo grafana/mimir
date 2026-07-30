@@ -8,7 +8,7 @@ should_be_namespaced(contents) {
 }
 
 should_be_namespaced(contents) {
-	not contents.kind in ["ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "MutatingWebhookConfiguration", "Namespace", "PodSecurityPolicy", "ValidatingWebhookConfiguration"]
+	not contents.kind in ["ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "MutatingWebhookConfiguration", "Namespace", "PodSecurityPolicy", "ValidatingWebhookConfiguration", "VolumeAttributesClass"]
 }
 
 metadata_has_namespace(metadata) {
@@ -66,7 +66,15 @@ is_mimir_or_gem_image(image) {
 }
 
 is_mimir_or_gem_image(image) {
+	startswith(image, "docker.io/grafana/mimir")
+}
+
+is_mimir_or_gem_image(image) {
 	startswith(image, "grafana/enterprise-metrics")
+}
+
+is_mimir_or_gem_image(image) {
+	startswith(image, "docker.io/grafana/enterprise-metrics")
 }
 
 is_openshift(x) {

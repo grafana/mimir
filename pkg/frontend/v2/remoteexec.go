@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -308,7 +309,7 @@ func (g *RemoteExecutionGroupEvaluator) getNodeStreamState(resp *querierpb.Evalu
 func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	msg, err := g.stream.Next(ctx)
 	if err != nil {
-		return nil, err
+		return nil, translateReadError(err)
 	}
 
 	if msg == nil {
@@ -316,6 +317,19 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 	}
 
 	return msg, nil
+}
+
+// translateReadError translates errors received from queriers so that they surface as the appropriate error to callers.
+func translateReadError(err error) error {
+	// A "not acceptable" error indicates that the querier received a query plan version it doesn't understand. This is a
+	// bug or misconfiguration in the query-frontend rather than a problem with the request, so translate it to an internal
+	// server error (HTTP 500) rather than propagating the "not acceptable" status (HTTP 406) back to the caller.
+	var apiErr *apierror.APIError
+	if errors.As(err, &apiErr) && apiErr.Type == apierror.TypeNotAcceptable {
+		return apierror.New(apierror.TypeInternal, "querier rejected request as not acceptable: "+apiErr.Message)
+	}
+
+	return err
 }
 
 func (g *RemoteExecutionGroupEvaluator) finishedReadingStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (stats.Stats, error) {

@@ -16,6 +16,7 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -178,6 +179,11 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// Wait until the querier has updated the ring. The querier will also watch
 			// the store-gateway ring if blocks sharding is enabled.
 			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
+
+			// Wait until the query-frontend has updated the querier ring.
+			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't known which store-gateway instance will synch the blocks, so we need to wait on

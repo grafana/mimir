@@ -797,6 +797,38 @@ func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 	})
 }
 
+func TestRemoteExecutionGroupEvaluator_TranslatesNotAcceptableErrorToInternal(t *testing.T) {
+	testCases := map[string]func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error{
+		"while reading messages": func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error {
+			_, err := resp.GetValues(ctx)
+			return err
+		},
+		"while finishing reading a stream": func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error {
+			_, err := resp.FinishedReading(ctx)
+			return err
+		},
+	}
+
+	notAcceptableErr := apierror.New(apierror.TypeNotAcceptable, "query plan has version 123, but the maximum supported query plan version is 1")
+	expectedError := apierror.New(apierror.TypeInternal, "querier rejected request as not acceptable: query plan has version 123, but the maximum supported query plan version is 1")
+
+	for name, fn := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			stream := &mockResponseStream{responses: []mockResponse{{err: notAcceptableErr}}}
+			frontend := &mockFrontend{stream: stream}
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
+			response, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			require.NoError(t, err)
+			require.NoError(t, response.Start(ctx))
+
+			err = fn(ctx, response)
+			require.Equal(t, expectedError, err)
+		})
+	}
+}
+
 type mockResponseStream struct {
 	release   chan struct{}
 	responses []mockResponse
@@ -2277,7 +2309,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	if enableMQESharding {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))

@@ -117,6 +117,9 @@ At a high level:
   compartments by metric name, and then to a partition within the compartment using the existing
   series label-hash sharding. See [Sharding](./sharding.md).
 - **Read path.** Each read compartment runs its storage components against a dedicated topic.
+- **Ruler.** Rulers remain in the global query layer. They evaluate rules through the compartment-aware
+  query path and write generated series through distributors spread across the write compartments. See
+  [Ruler](./ruler.md).
 
 Each write compartment has its own Kafka cluster (`kafka-wc-<id>`), and every cluster contains one
 topic per read compartment (`ingest-rc-<id>`); a read compartment's ingesters consume their topic from
@@ -136,6 +139,7 @@ components (both write and read compartments) across availability zones.
   metric name is used as the segmentation label.
 - [Write compartments](./write-compartments.md) — the write-compartment design.
 - [Read compartments](./read-compartments.md) — the read-compartment design.
+- [Ruler](./ruler.md) — how global rulers evaluate rules and write generated series with compartments.
 - [Naming conventions](./naming.md) — the names used for compartments and their per-compartment
   resources.
 - [Configuration](./configuration.md) — the rationale behind where compartments configuration lives.

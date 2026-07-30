@@ -259,6 +259,9 @@ func handler(
 				if code/100 == 4 {
 					msgs = append(msgs, "insight", true)
 				}
+				if retryAttempt, err := strconv.Atoi(r.Header.Get("Retry-Attempt")); err == nil && retryAttempt > 0 {
+					msgs = append(msgs, "retryAttempt", retryAttempt)
+				}
 				level.Error(logger).Log(msgs...)
 			}
 			addErrorHeaders(w, err, r, code, retryCfg)

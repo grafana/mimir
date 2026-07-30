@@ -242,14 +242,14 @@ The following features are currently experimental:
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
-  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
+  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit, as well as `-query-frontend.subquery-spin-off-simple-subqueries` and `-query-frontend.subquery-spin-off-with-excess-downstream-queries`)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - Separate query sharding limit for cardinality API requests (active series and active native histogram metrics): `-query-frontend.cardinality-sharding-max-sharded-queries`
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
-  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`

@@ -190,7 +190,7 @@ func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats)
+	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats, false)
 	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err

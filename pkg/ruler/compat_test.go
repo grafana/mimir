@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -50,6 +51,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+// newTestActiveQueryTracker builds a promql.ActiveQueryTracker for tests, asserting that
+// creation succeeds. NewActiveQueryTracker now returns an error, so this keeps the call sites
+// (several of which live inside var blocks) concise.
+func newTestActiveQueryTracker(t *testing.T, logger *slog.Logger) *promql.ActiveQueryTracker {
+	t.Helper()
+	tracker, err := promql.NewActiveQueryTracker(t.TempDir(), 20, logger)
+	require.NoError(t, err)
+	return tracker
+}
 
 type fakePusher struct {
 	request  *mimirpb.WriteRequest
@@ -554,7 +565,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
-			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
+			tracker := newTestActiveQueryTracker(t, promslog.NewNopLogger())
 			eng := promql.NewEngine(promql.EngineOpts{
 				MaxSamples:         1e6,
 				ActiveQueryTracker: tracker,
@@ -624,7 +635,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 				fs        = afero.NewMemMapFs()
 				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
 				queryable = newMockQueryable()
-				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng       = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -712,7 +723,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				notifierManager = notifier.NewManager(&notifier.Options{
 					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				tracker = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
+				tracker = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(options.logger))
 				eng     = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -794,7 +805,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 		notifierManager = notifier.NewManager(&notifier.Options{
 			Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 		}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-		tracker = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
+		tracker = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(options.logger))
 		eng     = promql.NewEngine(promql.EngineOpts{
 			MaxSamples:         1e6,
 			ActiveQueryTracker: tracker,
@@ -1207,7 +1218,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
 				fs        = afero.NewMemMapFs()
 				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng       = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,

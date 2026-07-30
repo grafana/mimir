@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -81,6 +82,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
 		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
 		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+		"start_timestamp(vector(0))":                                       "'start_timestamp' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -88,6 +90,21 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 			requireQueryIsUnsupported(t, expression, expectedError)
 		})
 	}
+}
+
+// TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected verifies that MQE fails loudly when
+// delayed name removal is enabled the Prometheus way (via CommonOpts) rather than being silently
+// ignored, since MQE only honours the per-tenant limits setting.
+func TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.EqualError(t, err, "enabling delayed name removal via the Prometheus engine option is not supported by the Mimir query engine; enable it per-tenant via the enable_delayed_name_removal setting (-querier.enable-delayed-name-removal flag) instead")
+	require.Nil(t, engine)
 }
 
 func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
@@ -202,9 +219,9 @@ func TestRangeVectorSelectors(t *testing.T) {
 	delayedLimits.EnableDelayedNameRemoval = true
 	delayedOpts := NewTestEngineOpts()
 	delayedOpts.Limits = delayedLimits
-	delayedOpts.CommonOpts.EnableDelayedNameRemoval = true
+	delayedOpts.EnableDelayedNameRemovalPrometheusEngine = true
 
-	delayedPrometheusEngine := promql.NewEngine(delayedOpts.CommonOpts)
+	delayedPrometheusEngine := promql.NewEngine(delayedOpts.PrometheusEngineOpts())
 	delayedPlanner, err := NewQueryPlanner(delayedOpts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	delayedMimirEngine, err := NewEngine(delayedOpts, stats.NewQueryMetrics(nil), delayedPlanner)
@@ -2404,13 +2421,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 		limits := NewStaticQueryLimitsProvider()
 		limits.EnableDelayedNameRemoval = delayedNameRemovalEnabled
 		opts.Limits = limits
-		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+		opts.EnableDelayedNameRemovalPrometheusEngine = delayedNameRemovalEnabled
 
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
-		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		prometheusEngine := promql.NewEngine(opts.PrometheusEngineOpts())
 
 		engineSets = append(engineSets, struct {
 			mimirEngine               promql.QueryEngine
@@ -5969,4 +5986,75 @@ type dummyMaterializer struct{}
 
 func (d dummyMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	panic("not implemented")
+}
+
+// TestNarrowSelectorsOnEmptyGroupLeftBoundary is an end-to-end regression test for the
+// narrow-binary-selectors optimization (-querier.mimir-query-engine.enable-narrow-binary-selectors).
+//
+// For "prediction + prediction * on() group_left threshold_margin", the optimization pushed
+// matchers built from the outer "+" LHS through the inner "on()" join into the one-side
+// ("threshold_margin") selector, which doesn't carry those labels, filtering it to empty. The test
+// uses a disjoint one-side label set and asserts the Mimir engine (pass enabled) matches both the
+// Mimir engine with the pass disabled and the Prometheus reference engine.
+func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
+	// "prediction" has rich labels; "threshold_margin" is a single cross-metric series with a
+	// disjoint label set, forcing the rule to use "on() group_left".
+	data := `
+		load 1m
+			prediction{asserts_source="model-builder", job="asserts/latency", service="checkout"} 10+0x5
+			prediction{asserts_source="model-builder", job="asserts/latency", service="cart"}     20+0x5
+			threshold_margin 0.25+0x5
+	`
+
+	// The failing rule shape, plus the inner subexpression on its own (which must keep working).
+	testCases := map[string]string{
+		"inner on() group_left only":                    `prediction * on() group_left threshold_margin`,
+		"outer binop over inner on() group_left (rule)": `prediction + prediction * on() group_left threshold_margin`,
+	}
+
+	store := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	ctx := context.Background()
+	queryTime := timestamp.Time(0).Add(5 * time.Minute)
+
+	// newMimirEngine registers only the narrow-selectors pass (when enabled) to isolate it.
+	newMimirEngine := func(t *testing.T, narrowSelectorsEnabled bool) promql.QueryEngine {
+		opts := NewTestEngineOpts()
+		planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		if narrowSelectorsEnabled {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+		engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		return engine
+	}
+
+	exec := func(t *testing.T, engine promql.QueryEngine, expr string) *promql.Result {
+		q, err := engine.NewInstantQuery(ctx, store, nil, expr, queryTime)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		return res
+	}
+
+	prometheusEngine := promql.NewEngine(NewTestEngineOpts().CommonOpts)
+
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Source of truth: the Prometheus reference engine.
+			expected := exec(t, prometheusEngine, expr)
+			require.NotEmpty(t, expected.String(), "test setup error: reference result should not be empty")
+
+			// Mimir without the pass must match the reference.
+			withoutPass := exec(t, newMimirEngine(t, false), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withoutPass, false)
+
+			// Mimir with the pass must also match (previously dropped all series).
+			withPass := exec(t, newMimirEngine(t, true), expr)
+			mqetest.RequireEqualResults(t, expr, expected, withPass, false)
+		})
+	}
 }

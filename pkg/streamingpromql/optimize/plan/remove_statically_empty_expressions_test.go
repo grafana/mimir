@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -35,9 +36,9 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	nonSelectorThresholdMs := (constant * time.Second).Milliseconds()
 
 	testCases := map[string]struct {
-		expr       string
-		queryStart time.Time // instant query time
-
+		expr            string
+		queryStart      time.Time
+		useInstantQuery bool
 		// expectedPlan is the expected plan, rendered as a tree. Exactly one of expectedPlan,
 		// generateExpectedPlanFromExpr or expectUnchanged should be set.
 		expectedPlan string
@@ -231,15 +232,39 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-		"timestamp condition inside subquery: should not optimize": {
-			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is ignored.
-			expr:            "avg_over_time((metric and timestamp(metric) < CONSTANT)[2h:1m])",
-			queryStart:      time.Unix(10000, 0),
+		"timestamp condition inside subquery: should optimize": {
+			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is evaluated over the
+			// subquery's shifted time range. queryStart is far enough after the threshold that even the
+			// subquery's extended (earlier) time range is entirely after it, so the whole thing is empty.
+			expr:       "avg_over_time((timestamp(metric) < CONSTANT)[2h:1m])",
+			queryStart: time.Unix(10000, 0),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp condition inside subquery, but not empty over the subquery's time range: should not optimize": {
+			// timestamp(metric) < CONSTANT would be empty over the outer query time range, but the subquery's
+			// time range extends further back (before the threshold), so it can still return results and must
+			// not be optimized away.
+			expr:            "avg_over_time((timestamp(metric) < CONSTANT)[2h:1m])",
+			queryStart:      time.Unix(5000, 0),
 			expectUnchanged: true,
 		},
-		"function over subquery with empty results: should not optimize": {
-			// We short-circuit on subqueries now for simplicity
-			expr:            `max_over_time(EMPTY_RESULT[1d:5m])`,
+		"function over subquery with empty results: should optimize": {
+			expr: `max_over_time(EMPTY_RESULT[1d:5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"subquery with empty results: should optimize": {
+			expr: `(EMPTY_RESULT[1d:5m])`,
+			expectedPlan: `
+				- NoOp: matrix
+			`,
+			useInstantQuery: true,
+		},
+		"non-empty subquery: should not optimize": {
+			expr:            `avg_over_time(metric[5m:1m])`,
 			expectUnchanged: true,
 		},
 		"function over subquery binary operation with empty results: should optimize": {
@@ -579,7 +604,13 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
 			testCase.expr = strings.ReplaceAll(testCase.expr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
 
-			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
+			var timeRange types.QueryTimeRange
+			if testCase.useInstantQuery {
+				timeRange = types.NewInstantQueryTimeRange(testCase.queryStart)
+			} else {
+				timeRange = types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
+			}
+
 			expectedModified := 1
 
 			if testCase.expectUnchanged {
@@ -614,13 +645,22 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 	// This test confirms that expressions rewritten by Adaptive Metrics are correctly optimised away.
 	// Expressions like timestamp(foo) < C are rewritten to wrapper(timestamp(foo)) < C.
 
+	// These functions aren't registered in open source Mimir, so register dummy instances now.
+	require.NotContains(t, functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, "unexpected test environment: expected Adaptive Metrics functions not to be registered")
+	require.NotContains(t, functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2, "unexpected test environment: expected Adaptive Metrics functions not to be registered")
+	require.NoError(t, functions.RegisterFunction(functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, "adaptive_metrics_function_1", parser.ValueTypeVector, nil))
+	require.NoError(t, functions.RegisterFunction(functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2, "adaptive_metrics_function_2", parser.ValueTypeVector, nil))
+
+	t.Cleanup(func() {
+		delete(functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1)
+		delete(functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2)
+	})
+
 	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()
 	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger)
 
 	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
-		// We have to manually create the query plan instead of parsing it from an expression because the Adaptive Metrics wrapper
-		// functions aren't registered in open source Mimir.
 		selector := &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
 				Matchers: []*core.LabelMatcher{

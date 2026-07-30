@@ -4,6 +4,7 @@
 package v3
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/pb33f/libopenapi/datamodel"
@@ -195,6 +196,17 @@ func (c *Components) MarshalYAMLInline() (interface{}, error) {
 	rendered := nb.Render()
 	c.preserveInvalidComponentMapRefs(rendered)
 	return rendered, nil
+}
+
+// MarshalYAMLInlineWithContext renders components with a shared inline render context.
+func (c *Components) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
+	c.warnPreservedComponentMapRefs()
+	nb := high.NewNodeBuilder(c, c.low)
+	nb.Resolve = true
+	nb.RenderContext = ctx
+	rendered := nb.Render()
+	c.preserveInvalidComponentMapRefs(rendered)
+	return rendered, errors.Join(nb.Errors...)
 }
 
 func (c *Components) warnPreservedComponentMapRefs() {

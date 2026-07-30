@@ -71,6 +71,16 @@ var AggregationGroupFactories = map[parser.ItemType]*AggregationGroupFactory{
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
 
+// removeSentinelValue removes any sentinel histograms from the provided slice. This must be called
+// before slices are returned to shared pools.
+func removeSentinelValue(s []*histogram.FloatHistogram) {
+	for i, h := range s {
+		if h == invalidCombinationOfHistograms {
+			s[i] = nil
+		}
+	}
+}
+
 // SeriesToGroupLabelsBytesFunc is a function that computes a string-like representation of the output group labels for the given input series.
 //
 // It returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.

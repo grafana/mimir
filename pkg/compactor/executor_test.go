@@ -380,14 +380,14 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectGrowingDelay: true,
 		},
-		"leased_compaction_job_should_not_backoff": {
+		"leased_compaction_job_that_fails_should_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
 						Key: &compactorschedulerpb.JobKey{Id: "compaction-job"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
-							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs},
+							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs}, // blocks are missing
 							JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 						},
 					}, nil
@@ -396,7 +396,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
 				}
 			},
-			expectGrowingDelay: false,
+			expectGrowingDelay: true,
 		},
 		"leased_planning_job_should_not_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -405,7 +405,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 						Key: &compactorschedulerpb.JobKey{Id: "user-1"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
-							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}},
 							JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
 						},
 					}, nil

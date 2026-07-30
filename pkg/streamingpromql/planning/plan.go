@@ -451,7 +451,7 @@ func NodeTypeName(n Node) string {
 // DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
 func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 	if p.Version > MaximumSupportedQueryPlanVersion {
-		return nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+		return nil, apierror.Newf(apierror.TypeNotAcceptable, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
