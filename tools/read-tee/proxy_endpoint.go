@@ -325,7 +325,7 @@ func (p *ProxyEndpoint) rewriteFailed(replica int, logger *spanlogger.SpanLogger
 // Replica 0 is the base series (used by write-amplification-factor wrapping): the params are
 // returned verbatim, so the copy re-reads exactly what the original request read.
 func rewriteParams(values url.Values, replica int, opts rewriteOptions) (url.Values, error) {
-	if replica == 0 && !opts.matchAllReplicas {
+	if replica == 0 && !opts.matchAllReplicas && opts.ampReplicaLabel == "" {
 		return values, nil
 	}
 	out := make(url.Values, len(values))
