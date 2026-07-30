@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"math"
+	"slices"
 	"sort"
 	"strings"
 
@@ -40,35 +42,88 @@ import (
 // │                    . . .                   │
 // The sampled table offsets do _not_ capture the last "offset" value in the entry, which points to the Postings list.
 // They only capture an offset pointing _into_ the Postings Offsets table itself to quickly reach the table entries.
+//
+// To keep the resident memory footprint and the number of live heap objects low,
+// the sampled entries are stored in a pointer-free, columnar layout:
+// all sampled values are concatenated into a single byte blob,
+// and per-entry data is limited to two uint32s (value end and table offset).
+// Both fit in uint32 because the postings offset table size is bounded by its 4-byte length field.
 type SparseTableOffsetsForLabel struct {
-	SparseTableOffsets []tableOffsetForLabelValue
+	// valueBlob holds all sampled label values concatenated in sorted order.
+	valueBlob []byte
+	// valueEnds holds the end of each sampled value within valueBlob;
+	// each value starts where the previous one ends.
+	valueEnds []uint32
+	// tableOffsets holds, for each sampled entry, its offset within the postings offset table.
+	tableOffsets []uint32
 
 	lastValOffset int64
 }
 
-type tableOffsetForLabelValue struct {
-	// label value.
-	Value string
-	// offset of this entry in posting offset table in index-header file.
-	Offset int
-}
-
 func (e *SparseTableOffsetsForLabel) numOffsets() int {
-	return len(e.SparseTableOffsets)
+	return len(e.tableOffsets)
 }
 
 // value returns the sampled label value at index i.
+// The returned string references memory shared with valueBlob and is valid as long as e is alive:
+// it's meant for comparisons, callers should copy it (e.g. with strings.Clone) before retaining it.
 func (e *SparseTableOffsetsForLabel) value(i int) string {
-	return e.SparseTableOffsets[i].Value
+	start := uint32(0)
+	if i > 0 {
+		start = e.valueEnds[i-1]
+	}
+	return yoloString(e.valueBlob[start:e.valueEnds[i]])
 }
 
 func (e *SparseTableOffsetsForLabel) tableOffset(i int) int {
-	return e.SparseTableOffsets[i].Offset
+	return int(e.tableOffsets[i])
+}
+
+// tableOffsetToUint32 converts a table offset to its in-memory uint32 representation.
+// Offsets are bounded by the table's 4-byte length field, so this only fails on corrupt data.
+func tableOffsetToUint32(offset int64, table string) (uint32, error) {
+	if offset < 0 || offset > math.MaxUint32 {
+		return 0, fmt.Errorf("sparse index-header %s table offset %d out of bounds", table, offset)
+	}
+	return uint32(offset), nil
 }
 
 func (e *SparseTableOffsetsForLabel) appendOffset(value string, tableOff int64) error {
-	e.SparseTableOffsets = append(e.SparseTableOffsets, tableOffsetForLabelValue{Value: value, Offset: int(tableOff)})
+	off, err := tableOffsetToUint32(tableOff, "postings offset")
+	if err != nil {
+		return err
+	}
+	end := len(e.valueBlob) + len(value)
+	if end > math.MaxUint32 {
+		return fmt.Errorf("sparse index-header postings offset table values for a label exceed %d bytes", math.MaxUint32)
+	}
+	e.valueBlob = append(e.valueBlob, value...)
+	e.valueEnds = append(e.valueEnds, uint32(end))
+	e.tableOffsets = append(e.tableOffsets, off)
 	return nil
+}
+
+// grow pre-allocates space for numOffsets sampled entries totalling valueBytes of label values.
+func (e *SparseTableOffsetsForLabel) grow(numOffsets, valueBytes int) {
+	e.valueBlob = make([]byte, 0, valueBytes)
+	e.valueEnds = make([]uint32, 0, numOffsets)
+	e.tableOffsets = make([]uint32, 0, numOffsets)
+}
+
+// compact re-allocates the underlying storage to exactly fit the appended entries,
+// releasing any extra capacity accumulated while growing through appendOffset.
+func (e *SparseTableOffsetsForLabel) compact() {
+	e.valueBlob = clipExact(e.valueBlob)
+	e.valueEnds = clipExact(e.valueEnds)
+	e.tableOffsets = clipExact(e.tableOffsets)
+}
+
+// clipExact returns s re-allocated to exactly fit its elements, or s itself if it has no extra capacity.
+func clipExact[E any](s []E) []E {
+	if cap(s) == len(s) {
+		return s
+	}
+	return slices.Clone(s)
 }
 
 // labelValuePrefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
@@ -243,6 +298,11 @@ func SparseValuesFromPostingsOffsetsTable(
 		sparsePostingsOffsets[currentName].lastValOffset = int64(postingsListEnd) - crc32.Size
 	}
 
+	// Trim any extra space in the slices.
+	for _, v := range sparsePostingsOffsets {
+		v.compact()
+	}
+
 	return sparsePostingsOffsets, nil
 }
 
@@ -261,7 +321,7 @@ func SparsePostingsOffsetsTableToProto(
 		postingOffsets := make([]*indexheaderpb.PostingOffset, offsets.numOffsets())
 
 		for i := range postingOffsets {
-			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: offsets.value(i), TableOff: int64(offsets.tableOffset(i))}
+			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: strings.Clone(offsets.value(i)), TableOff: int64(offsets.tableOffset(i))}
 		}
 		proto.Postings[labelName].Offsets = postingOffsets
 		proto.Postings[labelName].LastValOffset = offsets.lastValOffset
@@ -313,7 +373,12 @@ func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable
 			return k * step
 		}
 
-		offsets.SparseTableOffsets = make([]tableOffsetForLabelValue, 0, downsampledLen)
+		valueBytes := 0
+		for k := 0; k < downsampledLen; k++ {
+			valueBytes += len(sOffsets.Offsets[srcIdx(k)].Value)
+		}
+		offsets.grow(downsampledLen, valueBytes)
+
 		for k := 0; k < downsampledLen; k++ {
 			sPostingOff := sOffsets.Offsets[srcIdx(k)]
 			if err := offsets.appendOffset(sPostingOff.Value, sPostingOff.TableOff); err != nil {

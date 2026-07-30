@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
@@ -118,7 +119,7 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, testCase.expectedLen, len(sparseTable["__name__"].SparseTableOffsets))
+				assert.Equal(t, testCase.expectedLen, sparseTable["__name__"].numOffsets())
 			}
 
 		})
@@ -135,89 +136,60 @@ func createPostingsOffsetsProto(n int) []*indexheaderpb.PostingOffset {
 
 func TestSparsePostingsOffsetsForLabelValuePrefix(t *testing.T) {
 	testCases := map[string]struct {
-		existingOffsets []tableOffsetForLabelValue
-		prefix          string
-		expectedFound   bool
-		expectedStart   int
-		expectedEnd     int
+		existingValues []string
+		prefix         string
+		expectedFound  bool
+		expectedStart  int
+		expectedEnd    int
 	}{
 		"prefix not found": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "a",
-			expectedFound: false,
+			existingValues: []string{"010", "019", "030", "031"},
+			prefix:         "a",
+			expectedFound:  false,
 		},
 		"prefix matches only one sampled offset": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "02",
-			expectedFound: true,
-			expectedStart: 1,
-			expectedEnd:   2,
+			existingValues: []string{"010", "019", "030", "031"},
+			prefix:         "02",
+			expectedFound:  true,
+			expectedStart:  1,
+			expectedEnd:    2,
 		},
 		"prefix matches all SparseTableOffsets": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "0",
-			expectedFound: true,
-			expectedStart: 0,
-			expectedEnd:   4,
+			existingValues: []string{"010", "019", "030", "031"},
+			prefix:         "0",
+			expectedFound:  true,
+			expectedStart:  0,
+			expectedEnd:    4,
 		},
 		"prefix matches only last offset": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "031",
-			expectedFound: true,
-			expectedStart: 3,
-			expectedEnd:   4,
+			existingValues: []string{"010", "019", "030", "031"},
+			prefix:         "031",
+			expectedFound:  true,
+			expectedStart:  3,
+			expectedEnd:    4,
 		},
 		"prefix matches multiple SparseTableOffsets": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "020"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "02",
-			expectedFound: true,
-			expectedStart: 1,
-			expectedEnd:   3,
+			existingValues: []string{"010", "019", "020", "030", "031"},
+			prefix:         "02",
+			expectedFound:  true,
+			expectedStart:  1,
+			expectedEnd:    3,
 		},
 		"prefix matches only first offset": {
-			existingOffsets: []tableOffsetForLabelValue{
-				{Value: "010"},
-				{Value: "019"},
-				{Value: "020"},
-				{Value: "030"},
-				{Value: "031"},
-			},
-			prefix:        "015",
-			expectedFound: true,
-			expectedStart: 0,
-			expectedEnd:   1,
+			existingValues: []string{"010", "019", "020", "030", "031"},
+			prefix:         "015",
+			expectedFound:  true,
+			expectedStart:  0,
+			expectedEnd:    1,
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			offsets := SparseTableOffsetsForLabel{SparseTableOffsets: testCase.existingOffsets}
+			offsets := SparseTableOffsetsForLabel{}
+			for _, value := range testCase.existingValues {
+				require.NoError(t, offsets.appendOffset(value, 0))
+			}
 			start, end, found := offsets.labelValuePrefixOffsets(testCase.prefix)
 			assert.Equal(t, testCase.expectedStart, start)
 			assert.Equal(t, testCase.expectedEnd, end)
