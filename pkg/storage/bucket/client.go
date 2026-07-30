@@ -250,9 +250,10 @@ func bucketWithMetrics(bucketClient objstore.Bucket, component string, reg prome
 	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
 
+	// The "bucket" label lets one component register these metrics once per bucket it accesses.
 	return objstore.WrapWithMetrics(
 		bucketClient,
 		reg,
-		"", // bucket label value
+		bucketClient.Name(),
 	)
 }

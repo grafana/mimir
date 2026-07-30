@@ -388,7 +388,7 @@ local filename = 'mimir-reads.json';
       $.thanosMemcachedCache(
         'Memcached – metadata cache (querier accesses)',
         $._config.job_names.querier,
-        'querier|querier-rc-.*',
+        'querier',
         'metadata-cache'
       )
     )
@@ -398,7 +398,7 @@ local filename = 'mimir-reads.json';
     )
     // Object store metrics for the querier.
     .addRows(
-      $.getObjectStoreRows('Blocks object store (querier accesses)', 'querier|querier-rc.*')
+      $.getObjectStoreRows('Blocks object store (querier accesses)', 'querier')
     )
     .addRowIf(
       $._config.show_reactive_limiter_panels,

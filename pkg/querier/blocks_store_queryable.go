@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
@@ -295,11 +296,17 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
 	}
 
+	// Shared by every read compartment: their cache keys are already scoped by cacheBucketID below.
+	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
+	metadataCache, err := mimir_tsdb.NewMetadataCacheClient(storageCfg.BucketStore.MetadataCache.BackendConfig, logger, componentReg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create metadata cache client")
+	}
+
 	finders := make([]BlocksFinder, numCompartments)
 	storesRings := make([]*ring.Ring, numCompartments)
 	for idx := 0; idx < numCompartments; idx++ {
 		var (
-			component = "querier"
 			bucketCfg = storageCfg.Bucket
 			ringName  = storegateway.RingNameForClient
 			ringKey   = storegateway.RingKey
@@ -315,21 +322,16 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		cacheBucketID := ""
 
 		if compartmentsCfg.Enabled {
-			// Each read compartment has its own bucket, store-gateway ring and metadata cache within this
-			// single process.
-			//
-			// In the metrics, we identify them by a "-rc-<id>" suffix on each subsystem's own identity — the
-			// metrics "component" label and the ring name/key — rather than an extra label which would change
-			// a metric's label set and panic on collision with the same metric registered by another component
-			//(e.g. the usage-stats reporter's bucket client, or the ingester ring).
-			component = compartments.WithReadCompartmentSuffix(component, idx)
+			// Each read compartment has its own bucket and store-gateway ring within this single process.
+			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
+			// name/key have no such scope and are suffixed instead.
 			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
 			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
 			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
 		}
 
-		finder, err := newBlocksStoreQueryableFinder(component, cacheBucketID, bucketCfg, storageCfg, limits, logger, reg)
+		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)
 		if err != nil {
 			return nil, err
 		}
@@ -370,17 +372,20 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
-// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config.
-func newBlocksStoreQueryableFinder(component, cacheBucketID string, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, component, logger, reg)
+// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its
+// metrics are scoped by bucket, so one finder per read compartment can share a registry.
+func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
 
-	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
+	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
 
 	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
 		cacheBucketID,
+		bucketCfg.BucketName(),
+		metadataCache,
 		storageCfg.BucketStore.MetadataCache,
 		bucketClient,
 		logger,
@@ -389,6 +394,9 @@ func newBlocksStoreQueryableFinder(component, cacheBucketID string, bucketCfg bu
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create caching bucket")
 	}
+
+	// The bucket index loader metrics have no bucket label of their own.
+	loaderReg := prometheus.WrapRegistererWith(prometheus.Labels{"bucket": bucketCfg.BucketName()}, componentReg)
 
 	return NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
 		IndexLoader: bucketindex.LoaderConfig{
@@ -399,7 +407,7 @@ func newBlocksStoreQueryableFinder(component, cacheBucketID string, bucketCfg bu
 		},
 		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
 		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
-	}, cachingBucket, limits, logger, componentReg), nil
+	}, cachingBucket, limits, logger, loaderReg), nil
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
