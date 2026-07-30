@@ -12,9 +12,10 @@ import (
 
 func TestDecodeOptions(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		input    *http.Request
-		expected Options
+		name              string
+		input             *http.Request
+		propagatedHeaders []string
+		expected          Options
 	}{
 		{
 			name: "default",
@@ -22,6 +23,30 @@ func TestDecodeOptions(t *testing.T) {
 				Header: http.Header{},
 			},
 			expected: Options{},
+		},
+		{
+			name: "propagated header captured when allow-listed",
+			input: &http.Request{
+				Header: http.Header{
+					"X-Test-Header": []string{"true"},
+				},
+			},
+			propagatedHeaders: []string{"X-Test-Header"},
+			expected: Options{
+				PropagatedHeaders: http.Header{
+					"X-Test-Header": []string{"true"},
+				},
+			},
+		},
+		{
+			name: "non-allow-listed header ignored",
+			input: &http.Request{
+				Header: http.Header{
+					"X-Test-Header": []string{"true"},
+				},
+			},
+			propagatedHeaders: nil,
+			expected:          Options{},
 		},
 		{
 			name: "disable cache",
@@ -81,21 +106,29 @@ func TestDecodeOptions(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.expected, DecodeOptions(tt.input))
+			require.Equal(t, tt.expected, DecodeOptions(tt.input, tt.propagatedHeaders))
 		})
 	}
 }
 
 func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 	for _, tt := range []struct {
-		name string
-		in   Options
+		name              string
+		in                Options
+		propagatedHeaders []string
 	}{
 		{name: "zero value", in: Options{}},
 		{name: "cache disabled", in: Options{CacheDisabled: true}},
 		{name: "sharding disabled", in: Options{ShardingDisabled: true}},
 		{name: "total shards set", in: Options{TotalShards: 128}},
 		{name: "all set", in: Options{CacheDisabled: true, TotalShards: 32}},
+		{
+			name: "propagated headers",
+			in: Options{
+				PropagatedHeaders: http.Header{"X-Test-Header": []string{"true"}},
+			},
+			propagatedHeaders: []string{"X-Test-Header"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -104,7 +137,7 @@ func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			EncodeOptions(req, tt.in)
 
-			require.Equal(t, tt.in, DecodeOptions(req))
+			require.Equal(t, tt.in, DecodeOptions(req, tt.propagatedHeaders))
 		})
 	}
 }

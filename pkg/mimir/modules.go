@@ -1103,6 +1103,9 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// allow anything this version of Mimir supports.
 	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 
+	opts.ExtraASTOptimizationPasses = t.ExtraASTOptimizationPasses
+	opts.ExtraQueryPlanOptimizationPasses = t.ExtraQueryPlanOptimizationPasses
+
 	var err error
 	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
@@ -1112,7 +1115,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -1149,6 +1152,9 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		versionProvider = streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 	}
 
+	opts.ExtraASTOptimizationPasses = t.ExtraASTOptimizationPasses
+	opts.ExtraQueryPlanOptimizationPasses = t.ExtraQueryPlanOptimizationPasses
+
 	var err error
 	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
@@ -1176,7 +1182,7 @@ func (t *Mimir) registerQueryFrontendAnalysisEndpoint(opts streamingpromql.Engin
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 }
 

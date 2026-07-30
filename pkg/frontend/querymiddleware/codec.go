@@ -388,7 +388,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := requestoptions.DecodeOptions(r, c.propagateHeadersMetrics)
 
 	stats := reqValues.Get("stats")
 
@@ -420,7 +420,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := requestoptions.DecodeOptions(r, c.propagateHeadersMetrics)
 
 	stats := reqValues.Get("stats")
 

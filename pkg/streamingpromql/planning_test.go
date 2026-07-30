@@ -1975,6 +1975,78 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	require.Equal(t, expectedPlanningActivities, tracker.queries)
 }
 
+// TestQueryPlanner_ExtraOptimizationPasses verifies the EngineOpts extension point: extra passes are
+// registered after the built-in passes, are actually applied during planning, and surface through the
+// planning observer (and therefore the analysis endpoint).
+func TestQueryPlanner_ExtraOptimizationPasses(t *testing.T) {
+	opts := NewTestEngineOpts()
+
+	astApplied, planApplied := false, false
+	astPass := &recordingASTPass{name: "test AST pass", applied: &astApplied}
+	planPass := &recordingPlanPass{name: "test plan pass", applied: &planApplied}
+	opts.ExtraASTOptimizationPasses = append(opts.ExtraASTOptimizationPasses, astPass)
+	opts.ExtraQueryPlanOptimizationPasses = append(opts.ExtraQueryPlanOptimizationPasses, planPass)
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	// Extra passes must be registered after all built-in passes.
+	require.True(t, planner.astOptimizationPasses[len(planner.astOptimizationPasses)-1] == astPass, "extra AST pass should be registered last")
+	require.True(t, planner.planOptimizationPasses[len(planner.planOptimizationPasses)-1] == planPass, "extra plan pass should be registered last")
+
+	observer := &recordingObserver{}
+	_, err = planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, observer)
+	require.NoError(t, err)
+
+	require.True(t, astApplied, "extra AST pass should have been applied")
+	require.True(t, planApplied, "extra plan pass should have been applied")
+	require.Contains(t, observer.astStages, "test AST pass", "extra AST pass should surface as an analysis stage")
+	require.Contains(t, observer.planStages, "test plan pass", "extra plan pass should surface as an analysis stage")
+}
+
+type recordingASTPass struct {
+	name    string
+	applied *bool
+}
+
+func (p *recordingASTPass) Name() string { return p.name }
+
+func (p *recordingASTPass) Apply(_ context.Context, expr parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
+	*p.applied = true
+	return expr, nil
+}
+
+type recordingPlanPass struct {
+	name    string
+	applied *bool
+}
+
+func (p *recordingPlanPass) Name() string { return p.name }
+
+func (p *recordingPlanPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	*p.applied = true
+	return plan, nil
+}
+
+type recordingObserver struct {
+	astStages  []string
+	planStages []string
+}
+
+func (o *recordingObserver) OnASTStageComplete(stageName string, _ parser.Expr, _ time.Duration) error {
+	o.astStages = append(o.astStages, stageName)
+	return nil
+}
+
+func (o *recordingObserver) OnAllASTStagesComplete(parser.Expr) error { return nil }
+
+func (o *recordingObserver) OnPlanningStageComplete(stageName string, _ *planning.QueryPlan, _ time.Duration) error {
+	o.planStages = append(o.planStages, stageName)
+	return nil
+}
+
+func (o *recordingObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) error { return nil }
+
 func TestDecodingInvalidPlan(t *testing.T) {
 	testCases := map[string]struct {
 		input         *planning.EncodedQueryPlan
