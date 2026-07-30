@@ -335,20 +335,30 @@ func writeSparseHeaderProtoToDisk(path string, sparseHeaders *indexheaderpb.Spar
 	}()
 	level.Info(l).Log("msg", "writing sparse index-header to disk in protobuf format")
 
+	gzipped, err := gzipSparseHeaderProto(sparseHeaders)
+	if err != nil {
+		return err
+	}
+
+	return atomicfs.CreateFile(path, gzipped)
+}
+
+// gzipSparseHeaderProto serializes the sparse index-header proto the way it is stored on disk.
+func gzipSparseHeaderProto(sparseHeaders *indexheaderpb.Sparse) (*bytes.Buffer, error) {
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
-		return fmt.Errorf("failed to marshall sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to marshall sparse index-header: %w", err)
 	}
 
 	gzipped := &bytes.Buffer{}
 	gzipWriter := gzip.NewWriter(gzipped)
 
 	if _, err := gzipWriter.Write(out); err != nil {
-		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
+		return nil, fmt.Errorf("failed to gzip sparse index-header: %w", err)
 	}
 	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close sparse index-header gzip writer: %w", err)
+		return nil, fmt.Errorf("failed to close sparse index-header gzip writer: %w", err)
 	}
 
-	return atomicfs.CreateFile(path, gzipped)
+	return gzipped, nil
 }

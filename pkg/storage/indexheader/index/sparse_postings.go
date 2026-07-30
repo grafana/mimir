@@ -47,14 +47,17 @@ import (
 // the sampled entries are stored in a pointer-free, columnar layout:
 // all sampled values are concatenated into a single byte blob,
 // and per-entry data is limited to two uint32s (value end and table offset).
-// Both fit in uint32 because the postings offset table size is bounded by its 4-byte length field.
+// Both fit in uint32 because the table's content is bounded by its 4-byte length field:
+// like SparseSymbols, table offsets are stored relative to the start of the table's content
+// (after the leading length field), internally to appendOffset and tableOffset.
 type SparseTableOffsetsForLabel struct {
 	// valueBlob holds all sampled label values concatenated in sorted order.
 	valueBlob []byte
 	// valueEnds holds the end of each sampled value within valueBlob;
 	// each value starts where the previous one ends.
 	valueEnds []uint32
-	// tableOffsets holds, for each sampled entry, its offset within the postings offset table.
+	// tableOffsets holds, for each sampled entry, its offset within the postings offset table,
+	// relative to the start of the table's content.
 	tableOffsets []uint32
 
 	lastValOffset int64
@@ -76,8 +79,13 @@ func (e *SparseTableOffsetsForLabel) value(i int) string {
 }
 
 func (e *SparseTableOffsetsForLabel) tableOffset(i int) int {
-	return int(e.tableOffsets[i])
+	return int(e.tableOffsets[i]) + tableLengthFieldSize
 }
+
+// tableLengthFieldSize is the size of the length field leading each index table:
+// a 4-byte big-endian uint32 holding the byte length of the table's content.
+// In-memory table offsets are stored relative to the end of this field so that they always fit in uint32.
+const tableLengthFieldSize = 4
 
 // tableOffsetToUint32 converts a table offset to its in-memory uint32 representation.
 // Offsets are bounded by the table's 4-byte length field, so this only fails on corrupt data.
@@ -89,7 +97,7 @@ func tableOffsetToUint32(offset int64, table string) (uint32, error) {
 }
 
 func (e *SparseTableOffsetsForLabel) appendOffset(value string, tableOff int64) error {
-	off, err := tableOffsetToUint32(tableOff, "postings offset")
+	off, err := tableOffsetToUint32(tableOff-tableLengthFieldSize, "postings offset")
 	if err != nil {
 		return err
 	}
@@ -233,7 +241,8 @@ func SparseValuesFromPostingsOffsetsTable(
 				decbuf.ResetAt(lastEntryOffsetInTable)
 				decbuf.Uvarint()          // Skip the key count
 				decbuf.SkipUvarintBytes() // Skip the name
-				value := decbuf.UvarintStr()
+				// The unsafe value is only valid until the next read from decbuf; appendOffset copies it.
+				value := yoloString(decbuf.UnsafeUvarintBytes())
 				if err := sparsePostingsOffsets[lastName].appendOffset(value, int64(lastEntryOffsetInTable)); err != nil {
 					return nil, err
 				}
@@ -249,11 +258,12 @@ func SparseValuesFromPostingsOffsetsTable(
 
 		// Retain every 1-in-sparseSampleFactor entries, starting with the first one.
 		if valuesForCurrentKey%sparseSampleFactor == 0 {
-			value := decbuf.UvarintStr()
-			off := decbuf.Uvarint64()
+			// The unsafe value is only valid until the next read from decbuf; appendOffset copies it.
+			value := yoloString(decbuf.UnsafeUvarintBytes())
 			if err := sparsePostingsOffsets[currentName].appendOffset(value, int64(offsetInTable)); err != nil {
 				return nil, err
 			}
+			off := decbuf.Uvarint64()
 
 			if lastName != currentName {
 				sparsePostingsOffsets[lastName].lastValOffset = int64(off - crc32.Size)
@@ -281,7 +291,8 @@ func SparseValuesFromPostingsOffsetsTable(
 		decbuf.ResetAt(lastEntryOffsetInTable)
 		decbuf.Uvarint()          // Skip the key count
 		decbuf.SkipUvarintBytes() // Skip the key
-		value := decbuf.UvarintStr()
+		// The unsafe value is only valid until the next read from decbuf; appendOffset copies it.
+		value := yoloString(decbuf.UnsafeUvarintBytes())
 		if err := sparsePostingsOffsets[currentName].appendOffset(value, int64(lastEntryOffsetInTable)); err != nil {
 			return nil, err
 		}

@@ -40,7 +40,8 @@ type SymbolsTable struct {
 	sparseSymbols SparseSymbols
 }
 
-const symbolFactor = 32
+// SymbolFactor is the sampling rate of the symbols table: every SymbolFactor-th symbol is retained in memory.
+const SymbolFactor = 32
 
 func NewSymbolsTableReader(
 	indexVersion int,
@@ -76,9 +77,9 @@ func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
 	if int(o) >= s.sparseSymbols.Count() {
 		return "", fmt.Errorf("%w: symbol offset %d", ErrSymbolNotFound, o)
 	}
-	d.ResetAt(s.sparseSymbols.tableOffset(int(o / symbolFactor)))
+	d.ResetAt(s.sparseSymbols.tableOffset(int(o / SymbolFactor)))
 	// Walk until we find the one we want.
-	for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+	for i := o - (o / SymbolFactor * SymbolFactor); i > 0; i-- {
 		d.SkipUvarintBytes()
 	}
 
@@ -148,7 +149,7 @@ func (s *SymbolsTable) reverseLookup(sym string, d streamencoding.Decbuf) (uint3
 	}
 
 	d.ResetAt(s.sparseSymbols.tableOffset(i))
-	res := i * symbolFactor
+	res := i * SymbolFactor
 	var lastSymbol string
 	for d.Err() == nil && res <= s.sparseSymbols.Count() {
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
@@ -187,7 +188,6 @@ func (s *SymbolsTable) Reader() SymbolsReader {
 	return &SymbolsTableReaderV2{
 		d:             &d,
 		sparseSymbols: s.sparseSymbols,
-		lastSymbolRef: uint32(s.sparseSymbols.Count() - 1),
 	}
 }
 
@@ -197,7 +197,6 @@ type SymbolsTableReaderV2 struct {
 	d *streamencoding.Decbuf
 	// atSymbol is the index the symbol currently pointed by the Decbuf head
 	atSymbol      uint32
-	lastSymbolRef uint32
 	sparseSymbols SparseSymbols
 }
 
@@ -214,17 +213,17 @@ func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
 	if o < r.atSymbol {
 		return "", fmt.Errorf("%w: at %d requesting %d", errReverseSymbolsReader, r.atSymbol, o)
 	}
-	if o > r.lastSymbolRef {
+	if int(o) >= r.sparseSymbols.Count() {
 		return "", fmt.Errorf("%w: %d", ErrSymbolNotFound, o)
 	}
 
-	if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
+	if targetOffsetIdx, currentOffsetIdx := o/SymbolFactor, r.atSymbol/SymbolFactor; targetOffsetIdx > currentOffsetIdx {
 		// Only ResetAt a bigger offset than the current one.
 		// We don't want to ResetAt an offset we've gone past: that will reverse the file reader, and we will do unnecessary reads.
 		d.ResetAt(r.sparseSymbols.tableOffset(int(targetOffsetIdx)))
-		r.atSymbol = targetOffsetIdx * symbolFactor
+		r.atSymbol = targetOffsetIdx * SymbolFactor
 	}
-	// We've offset to the right group of symbolFactor symbols. Now skip until the requested symbol within that group.
+	// We've offset to the right group of SymbolFactor symbols. Now skip until the requested symbol within that group.
 	for i := o - r.atSymbol; i > 0; i-- {
 		d.SkipUvarintBytes()
 		r.atSymbol++

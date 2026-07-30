@@ -3,8 +3,6 @@
 package indexheader
 
 import (
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"math/rand"
 	"runtime"
@@ -107,12 +105,11 @@ func buildBenchmarkGzippedSparseHeader(b *testing.B, sparseSampleFactor int) []b
 		addLabel(fmt.Sprintf("low_cardinality_%03d", i), 3)
 	}
 
-	// symbolFactor mirrors the constant of the same name in the index package.
-	const symbolFactor = 32
 	symbolsCount := totalSampledEntries * sparseSampleFactor
-	symbolsOffsets := make([]int64, 0, symbolsCount/symbolFactor+1)
-	for off := int64(8); len(symbolsOffsets)*symbolFactor < symbolsCount; off += int64(symbolFactor) * 30 {
-		symbolsOffsets = append(symbolsOffsets, off)
+	numSymbolsOffsets := (symbolsCount + streamindex.SymbolFactor - 1) / streamindex.SymbolFactor
+	symbolsOffsets := make([]int64, 0, numSymbolsOffsets)
+	for i := 0; i < numSymbolsOffsets; i++ {
+		symbolsOffsets = append(symbolsOffsets, 8+int64(i)*streamindex.SymbolFactor*30)
 	}
 
 	sparseHeaderProto := &indexheaderpb.Sparse{
@@ -126,17 +123,11 @@ func buildBenchmarkGzippedSparseHeader(b *testing.B, sparseSampleFactor int) []b
 		},
 	}
 
-	marshalled, err := sparseHeaderProto.Marshal()
+	gzipped, err := gzipSparseHeaderProto(sparseHeaderProto)
 	require.NoError(b, err)
 
-	gzipped := &bytes.Buffer{}
-	gzipWriter := gzip.NewWriter(gzipped)
-	_, err = gzipWriter.Write(marshalled)
-	require.NoError(b, err)
-	require.NoError(b, gzipWriter.Close())
-
-	b.Logf("sparse header fixture: %d labels, %d sampled entries, proto %d bytes, gzipped %d bytes",
-		len(postings), totalSampledEntries, len(marshalled), gzipped.Len())
+	b.Logf("sparse header fixture: %d labels, %d sampled entries, gzipped %d bytes",
+		len(postings), totalSampledEntries, gzipped.Len())
 
 	return gzipped.Bytes()
 }
