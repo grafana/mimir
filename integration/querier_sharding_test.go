@@ -6,7 +6,9 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -19,11 +21,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/util/almost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/tools/querytee"
 )
 
 type querierShardingTestConfig struct {
@@ -344,35 +346,38 @@ overrides:
 	queryEnd := now.Add(-1 * time.Minute)
 	queryStep := time.Minute
 
+	// Reuse query-tee's response comparator (the same logic query-tee uses to compare two backends) rather
+	// than hand-rolling one. It compares the raw JSON responses of both paths: sample values (with float
+	// tolerance and NaN/Inf/StaleNaN handling), result type, and warning/info annotations. Skip options are
+	// left at zero so no samples are excluded from the comparison.
+	comparator := querytee.NewSamplesComparator(querytee.SampleComparisonOptions{
+		Tolerance:        1e-6, // Matches promqltest's defaultEpsilon.
+		UseRelativeError: true,
+	})
+
 	for _, tc := range queries {
 		t.Run(tc.name+"/instant", func(t *testing.T) {
-			unshardedResult, unshardedResultWarnings, unshardedResultInfos, err := unshardedClient.Query(tc.query, queryEnd)
-			require.NoError(t, err)
-			require.NotNil(t, unshardedResult)
+			unshardedRes, unshardedBody, unshardedErr := unshardedClient.QueryRawAt(tc.query, queryEnd)
+			unshardedResp := requireSuccessfulQueryResponse(t, unshardedRes, unshardedBody, unshardedErr)
 
-			shardedResult, shardedResultWarnings, shardedResultInfos, err := shardedClient.Query(tc.query, queryEnd)
-			require.NoError(t, err)
-			require.NotNil(t, shardedResult)
+			shardedRes, shardedBody, shardedErr := shardedClient.QueryRawAt(tc.query, queryEnd)
+			shardedResp := requireSuccessfulQueryResponse(t, shardedRes, shardedBody, shardedErr)
 
-			requireModelValueApproxEqual(t, unshardedResult, shardedResult)
-			require.Equal(t, unshardedResultWarnings, shardedResultWarnings)
-			require.Equal(t, unshardedResultInfos, shardedResultInfos)
-			require.Equal(t, 1, len(unshardedResultInfos))
+			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
+			require.NoError(t, err)
+			requireSingleInfoAnnotation(t, unshardedResp)
 		})
 
 		t.Run(tc.name+"/range", func(t *testing.T) {
-			unshardedResult, unshardedResultWarnings, unshardedResultInfos, err := unshardedClient.QueryRange(tc.query, queryStart, queryEnd, queryStep)
-			require.NoError(t, err)
-			require.NotNil(t, unshardedResult)
+			unshardedRes, unshardedBody, unshardedErr := unshardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			unshardedResp := requireSuccessfulQueryResponse(t, unshardedRes, unshardedBody, unshardedErr)
 
-			shardedResult, shardedResultWarnings, shardedResultInfos, err := shardedClient.QueryRange(tc.query, queryStart, queryEnd, queryStep)
-			require.NoError(t, err)
-			require.NotNil(t, shardedResult)
+			shardedRes, shardedBody, shardedErr := shardedClient.QueryRangeRaw(tc.query, queryStart, queryEnd, queryStep)
+			shardedResp := requireSuccessfulQueryResponse(t, shardedRes, shardedBody, shardedErr)
 
-			requireModelValueApproxEqual(t, unshardedResult, shardedResult)
-			require.Equal(t, unshardedResultWarnings, shardedResultWarnings)
-			require.Equal(t, unshardedResultInfos, shardedResultInfos)
-			require.Equal(t, 1, len(unshardedResultInfos))
+			_, err := comparator.Compare(unshardedResp, shardedResp, queryEnd)
+			require.NoError(t, err)
+			requireSingleInfoAnnotation(t, unshardedResp)
 		})
 	}
 
@@ -382,52 +387,21 @@ overrides:
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
 }
 
-// requireModelValueApproxEqual compares two model.Value results allowing for small
-// floating-point precision differences that can arise from sharded vs unsharded evaluation.
-func requireModelValueApproxEqual(t *testing.T, expected, actual model.Value) {
+// requireSuccessfulQueryResponse asserts a raw query response was returned with HTTP 200 and returns its body
+// for further comparison.
+func requireSuccessfulQueryResponse(t *testing.T, res *http.Response, body []byte, err error) []byte {
 	t.Helper()
-	require.Equal(t, expected.Type(), actual.Type(), "result types differ")
-
-	switch exp := expected.(type) {
-	case model.Vector:
-		act := actual.(model.Vector)
-		require.Equal(t, len(exp), len(act), "vector lengths differ")
-		for i := range exp {
-			require.Equal(t, exp[i].Metric, act[i].Metric, "sample %d: metric labels differ", i)
-			require.Equal(t, exp[i].Timestamp, act[i].Timestamp, "sample %d: timestamps differ", i)
-			requireSampleValueApproxEqual(t, exp[i].Value, act[i].Value, "sample %d: values differ beyond tolerance", i)
-		}
-	case *model.Scalar:
-		act := actual.(*model.Scalar)
-		require.Equal(t, exp.Timestamp, act.Timestamp)
-		requireSampleValueApproxEqual(t, exp.Value, act.Value, "scalar values differ beyond tolerance")
-	case model.Matrix:
-		act := actual.(model.Matrix)
-		require.Equal(t, len(exp), len(act), "matrix series count differs")
-		for i := range exp {
-			require.Equal(t, exp[i].Metric, act[i].Metric, "series %d: metric labels differ", i)
-			require.Equal(t, len(exp[i].Values), len(act[i].Values), "series %d: sample count differs", i)
-			for j := range exp[i].Values {
-				require.Equal(t, exp[i].Values[j].Timestamp, act[i].Values[j].Timestamp,
-					"series %d sample %d: timestamps differ", i, j)
-				requireSampleValueApproxEqual(t, exp[i].Values[j].Value, act[i].Values[j].Value,
-					"series %d sample %d: values differ beyond tolerance", i, j)
-			}
-		}
-	default:
-		require.Equal(t, expected, actual, "unsupported model.Value type")
-	}
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode, "unexpected status code, body: %s", body)
+	return body
 }
 
-// requireSampleValueApproxEqual compares two sample values allowing for small floating-point precision
-// differences that can arise from sharded vs unsharded evaluation. It delegates to Prometheus' almost.Equal,
-// which handles NaN, StaleNaN, ±Inf, and zero (a plain relative-epsilon check rejects a zero expected value
-// and can't compare infinities). The epsilon matches promqltest's default.
-func requireSampleValueApproxEqual(t *testing.T, expected, actual model.SampleValue, msg string, args ...any) {
+// requireSingleInfoAnnotation asserts the raw query response carries exactly one info-level annotation. The
+// comparator only checks that both responses' annotations match each other, so this guards that annotations
+// are actually present (rate() over the counter data emits one info annotation).
+func requireSingleInfoAnnotation(t *testing.T, body []byte) {
 	t.Helper()
-
-	const epsilon = 1e-6 // Matches promqltest's defaultEpsilon.
-
-	require.Truef(t, almost.Equal(float64(expected), float64(actual), epsilon),
-		msg+" (expected %v, got %v)", append(args, expected, actual)...)
+	var resp querytee.SamplesResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Infos, 1)
 }
