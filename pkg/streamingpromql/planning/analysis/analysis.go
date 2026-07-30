@@ -26,18 +26,18 @@ import (
 // same per-request toggles the real query path would see.
 func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider, opts streamingpromql.EngineOpts, propagatedHeaders []string) http.Handler {
 	return &handler{
-		planner:           planner,
-		limitsProvider:    limitsProvider,
-		lookbackDelta:     streamingpromql.DetermineLookbackDelta(opts.CommonOpts),
-		propagatedHeaders: propagatedHeaders,
+		planner:        planner,
+		limitsProvider: limitsProvider,
+		lookbackDelta:  streamingpromql.DetermineLookbackDelta(opts.CommonOpts),
+		optionDecoder:  requestoptions.OptionDecoder{PropagatedHeaders: propagatedHeaders},
 	}
 }
 
 type handler struct {
-	planner           *streamingpromql.QueryPlanner
-	limitsProvider    streamingpromql.QueryLimitsProvider
-	lookbackDelta     time.Duration
-	propagatedHeaders []string
+	planner        *streamingpromql.QueryPlanner
+	limitsProvider streamingpromql.QueryLimitsProvider
+	lookbackDelta  time.Duration
+	optionDecoder  requestoptions.OptionDecoder
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 	}
 
 	ctx := r.Context()
-	ctx = requestoptions.ContextWithOptions(ctx, requestoptions.DecodeOptions(r, h.propagatedHeaders)) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
+	ctx = requestoptions.ContextWithOptions(ctx, h.optionDecoder.DecodeOptions(r)) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
 
 	result, err := Analyze(ctx, h.planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {

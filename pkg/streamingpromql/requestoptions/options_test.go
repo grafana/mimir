@@ -106,7 +106,7 @@ func TestDecodeOptions(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.expected, DecodeOptions(tt.input, tt.propagatedHeaders))
+			require.Equal(t, tt.expected, OptionDecoder{PropagatedHeaders: tt.propagatedHeaders}.DecodeOptions(tt.input))
 		})
 	}
 }
@@ -132,7 +132,7 @@ func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			EncodeOptions(req, tt.in)
 
-			require.Equal(t, tt.in, DecodeOptions(req, nil))
+			require.Equal(t, tt.in, OptionDecoder{}.DecodeOptions(req))
 		})
 	}
 }
