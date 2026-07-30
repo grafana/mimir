@@ -65,4 +65,28 @@ message Stats {
   // processing this request.
   // 0 means all requests succeeded on the first attempt.
   uint32 retries = 18;
+  // SelectorCardinalities records the number of series selected by each selector evaluated while
+  // processing this request, keyed by the selector's matchers and queried time range.
+  repeated SelectorCardinality selector_cardinalities = 19 [(gogoproto.nullable) = false];
+}
+
+// SelectorCardinality records the number of series selected by a single selector over a time range.
+message SelectorCardinality {
+  // The matchers of the selector. This is the full set of matchers, including any matchers added by
+  // query sharding (for example, __query_shard__).
+  repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
+  // The inclusive start of the time range that was queried, in milliseconds since the Unix epoch.
+  int64 min_t = 2;
+  // The inclusive end of the time range that was queried, in milliseconds since the Unix epoch.
+  int64 max_t = 3;
+  // The number of series selected.
+  uint64 series_count = 4;
+}
+
+// LabelMatcher is a single label matcher.
+message LabelMatcher {
+  // Type is the matcher type, corresponding to Prometheus' labels.MatchType.
+  int32 type = 1;
+  string name = 2;
+  string value = 3;
 }
