@@ -1,0 +1,291 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package querymiddleware
+
+import (
+	"context"
+	"fmt"
+	"hash/fnv"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
+)
+
+const (
+	// selectorCardinalityCacheKeyPrefix is the prefix used for per-selector cardinality cache keys.
+	// It is deliberately different from the "QS" prefix used by the cardinality-estimation middleware
+	// so that the two sets of cache entries do not conflict.
+	selectorCardinalityCacheKeyPrefix = "SC"
+
+	// selectorCardinalityBucketSize is the width of the time buckets that a selector's queried time
+	// range is split into. Each bucket gets its own cache entry.
+	selectorCardinalityBucketSize = 4 * time.Hour
+
+	// selectorCardinalityTTL is how long a per-selector cardinality cache entry lives without being
+	// written to.
+	selectorCardinalityTTL = 7 * 24 * time.Hour
+
+	// maxSelectorCardinalityBuckets caps the number of cache entries generated for a single selector,
+	// to bound the size of the GetMulti / SetMultiAsync calls for very long time ranges.
+	maxSelectorCardinalityBuckets = 168 // 168 * 4h = 28 days.
+)
+
+// CardinalityEstimator estimates the number of series that will be selected by a query, so that the
+// sharding optimization pass can limit the number of shards accordingly.
+type CardinalityEstimator interface {
+	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange,
+	// or nil if no estimate is available.
+	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) *EstimatedSeriesCount
+}
+
+// requestHintsCardinalityEstimator returns the cardinality estimate carried on the request hints,
+// which are populated by the cardinality-estimation middleware.
+type requestHintsCardinalityEstimator struct{}
+
+// NewRequestHintsCardinalityEstimator returns a CardinalityEstimator that reads the estimate from
+// the request hints (as populated by the cardinality-estimation middleware).
+func NewRequestHintsCardinalityEstimator() CardinalityEstimator {
+	return requestHintsCardinalityEstimator{}
+}
+
+func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange) *EstimatedSeriesCount {
+	if hints := RequestHintsFromContext(ctx); hints != nil {
+		return hints.GetCardinalityEstimate()
+	}
+
+	return nil
+}
+
+// cacheCardinalityEstimator estimates a query's cardinality from the per-selector cardinality cache
+// entries written by the cardinality-storing query post-processor.
+type cacheCardinalityEstimator struct {
+	cache         cache.Cache
+	lookbackDelta time.Duration
+	logger        log.Logger
+}
+
+// NewCacheCardinalityEstimator returns a CardinalityEstimator that estimates a query's cardinality
+// from the per-selector cardinality cache. lookbackDelta must match the value used by the engine so
+// that the queried time ranges (and therefore the cache keys) line up with those used when writing
+// the cache entries.
+func NewCacheCardinalityEstimator(cache cache.Cache, lookbackDelta time.Duration, logger log.Logger) CardinalityEstimator {
+	return &cacheCardinalityEstimator{
+		cache:         cache,
+		lookbackDelta: lookbackDelta,
+		logger:        logger,
+	}
+}
+
+func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) *EstimatedSeriesCount {
+	if e.cache == nil {
+		return nil
+	}
+
+	tenants, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil
+	}
+	userID := tenant.JoinTenantIDs(tenants)
+
+	selectorRanges := collectSelectorTimeRanges(expr, timeRange, e.lookbackDelta)
+	if len(selectorRanges) == 0 {
+		return nil
+	}
+
+	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
+	// that we can take the maximum per selector afterwards.
+	type selectorLookup struct {
+		canonical string
+		keys      []string
+	}
+	lookups := make([]selectorLookup, 0, len(selectorRanges))
+	seen := make(map[string]struct{})
+	allKeys := make([]string, 0, len(selectorRanges))
+
+	for _, sr := range selectorRanges {
+		canonical := canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(sr.matchers))
+		keys := selectorCardinalityCacheKeys(userID, canonical, sr.minT, sr.maxT, e.logger)
+		lookups = append(lookups, selectorLookup{canonical: canonical, keys: keys})
+
+		for _, k := range keys {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			allKeys = append(allKeys, k)
+		}
+	}
+
+	if len(allKeys) == 0 {
+		return nil
+	}
+
+	// Fetch all cache entries in a single request.
+	res := e.cache.GetMulti(ctx, allKeys)
+	if len(res) == 0 {
+		return nil
+	}
+
+	decoded := make(map[string]*SelectorCardinalityStatistics, len(res))
+	for k, v := range res {
+		entry := &SelectorCardinalityStatistics{}
+		if err := proto.Unmarshal(v, entry); err != nil {
+			level.Warn(e.logger).Log("msg", "failed to unmarshal selector cardinality cache entry", "err", err)
+			continue
+		}
+		decoded[k] = entry
+	}
+
+	// The estimate for the whole expression is the maximum cardinality across its selectors, and the
+	// cardinality of a single selector is the maximum across the buckets it spans.
+	var estimate uint64
+	found := false
+
+	for _, lookup := range lookups {
+		selectorFound := false
+		var selectorMax uint64
+
+		for _, k := range lookup.keys {
+			entry, ok := decoded[k]
+			if !ok {
+				continue
+			}
+			// Guard against hashed key collisions.
+			if entry.Selector != lookup.canonical {
+				continue
+			}
+			selectorFound = true
+			selectorMax = max(selectorMax, entry.Cardinality)
+		}
+
+		if selectorFound {
+			found = true
+			estimate = max(estimate, selectorMax)
+		}
+	}
+
+	if !found {
+		return nil
+	}
+
+	return &EstimatedSeriesCount{EstimatedSeriesCount: estimate}
+}
+
+// selectorTimeRange is a selector's matchers together with the time range it queries from storage.
+type selectorTimeRange struct {
+	matchers   []*labels.Matcher
+	minT, maxT int64
+}
+
+// collectSelectorTimeRanges returns the selectors in expr, each with the time range it queries from
+// storage. The time range accounts for the selector's range, offset, @ modifier and (for instant
+// vector selectors) the lookback delta, matching the computation done by the selectors when they
+// report their cardinality.
+func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) []selectorTimeRange {
+	var out []selectorTimeRange
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.MatrixSelector:
+			vs, ok := n.VectorSelector.(*parser.VectorSelector)
+			if !ok {
+				return nil
+			}
+
+			// Range vector selectors don't apply the lookback delta.
+			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, vs.Timestamp, n.Range, vs.OriginalOffset.Milliseconds(), 0, false, false)
+			out = append(out, selectorTimeRange{matchers: vs.LabelMatchers, minT: minT, maxT: maxT})
+
+		case *parser.VectorSelector:
+			// Skip the inner vector selector of a matrix selector, which is handled above.
+			if len(path) > 0 {
+				if _, ok := path[len(path)-1].(*parser.MatrixSelector); ok {
+					return nil
+				}
+			}
+
+			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, n.Timestamp, 0, n.OriginalOffset.Milliseconds(), lookbackDelta, false, false)
+			out = append(out, selectorTimeRange{matchers: n.LabelMatchers, minT: minT, maxT: maxT})
+		}
+
+		return nil
+	})
+
+	return out
+}
+
+// cardinalitySelectorMatcher is a label matcher in a form suitable for producing a canonical selector
+// string. It avoids compiling regular expressions, so that the same canonicalization can be used on
+// both the read and write paths regardless of the matcher representation available there.
+type cardinalitySelectorMatcher struct {
+	typ   labels.MatchType
+	name  string
+	value string
+}
+
+func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []cardinalitySelectorMatcher {
+	out := make([]cardinalitySelectorMatcher, 0, len(matchers))
+	for _, m := range matchers {
+		out = append(out, cardinalitySelectorMatcher{typ: m.Type, name: m.Name, value: m.Value})
+	}
+	return out
+}
+
+// canonicalSelectorString returns a stable string representation of the given matchers, excluding any
+// query-shard matcher so that all shards of the same logical selector map to the same string. The
+// format matches labels.Matcher.String() so that the read and write paths agree.
+func canonicalSelectorString(matchers []cardinalitySelectorMatcher) string {
+	strs := make([]string, 0, len(matchers))
+	for _, m := range matchers {
+		if m.name == sharding.ShardLabel {
+			continue
+		}
+		strs = append(strs, fmt.Sprintf("%s%s%q", m.name, m.typ, m.value))
+	}
+	slices.Sort(strs)
+	return "{" + strings.Join(strs, ",") + "}"
+}
+
+// selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
+// per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
+// applied so that entries for different selectors don't all expire at the same bucket boundary.
+func selectorCardinalityCacheKeys(userID, canonicalSelector string, minT, maxT int64, logger log.Logger) []string {
+	bucketMs := selectorCardinalityBucketSize.Milliseconds()
+
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(canonicalSelector))
+	offset := int64(hasher.Sum64() % uint64(bucketMs))
+
+	firstBucket := (minT + offset) / bucketMs
+	lastBucket := (maxT + offset) / bucketMs
+	if lastBucket < firstBucket {
+		return nil
+	}
+
+	if lastBucket-firstBucket+1 > maxSelectorCardinalityBuckets {
+		level.Debug(logger).Log("msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used", "max_buckets", maxSelectorCardinalityBuckets, "selector", canonicalSelector)
+		lastBucket = firstBucket + maxSelectorCardinalityBuckets - 1
+	}
+
+	userIDHash := hashCacheKey(userID)
+	selectorHash := hashCacheKey(canonicalSelector)
+
+	keys := make([]string, 0, lastBucket-firstBucket+1)
+	for b := firstBucket; b <= lastBucket; b++ {
+		keys = append(keys, fmt.Sprintf("%s:%s:%s:%d", selectorCardinalityCacheKeyPrefix, userIDHash, selectorHash, b))
+	}
+
+	return keys
+}

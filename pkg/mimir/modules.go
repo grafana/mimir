@@ -1203,7 +1203,17 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
+		// When splitting and caching run inside MQE, the cardinality-estimation middleware is not in
+		// the chain, so estimate cardinality from the per-selector cardinality cache. Otherwise, use
+		// the estimate provided by the cardinality-estimation middleware via the request hints.
+		var estimator querymiddleware.CardinalityEstimator
+		if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+			estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, streamingpromql.DetermineLookbackDelta(opts.CommonOpts), util_log.Logger)
+		} else {
+			estimator = querymiddleware.NewRequestHintsCardinalityEstimator()
+		}
+
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, estimator, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	return nil

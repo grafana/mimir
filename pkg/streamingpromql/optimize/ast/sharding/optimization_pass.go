@@ -20,15 +20,18 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type OptimizationPass struct {
-	sharder *querymiddleware.QuerySharder
+	sharder   *querymiddleware.QuerySharder
+	estimator querymiddleware.CardinalityEstimator
 }
 
-func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
+func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator querymiddleware.CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
-		sharder: querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		sharder:   querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		estimator: estimator,
 	}
 }
 
@@ -36,7 +39,7 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil
 	}
@@ -57,7 +60,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ *plann
 	// are sharded and the rest is left unchanged.
 	if roots := collectEvaluationRoots(expr); len(roots) > 0 {
 		for _, root := range roots {
-			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], options)
+			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], params.TimeRange, options)
 			if err != nil {
 				return nil, err
 			}
@@ -68,18 +71,20 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ *plann
 		return expr, nil
 	}
 
-	return o.shard(ctx, tenantIDs, expr, options)
+	return o.shard(ctx, tenantIDs, expr, params.TimeRange, options)
 }
 
 // shard shards expr, returning the sharded expression, or expr unchanged if it cannot be sharded.
-func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, options requestoptions.Options) (parser.Expr, error) {
+func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, timeRange types.QueryTimeRange, options requestoptions.Options) (parser.Expr, error) {
 	requestedShardCount := int(options.TotalShards)
 	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
 
-	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
-		seriesCount = hints.GetCardinalityEstimate()
+	if o.estimator != nil {
+		seriesCount = o.estimator.EstimateSeriesCount(ctx, expr, timeRange)
+	}
 
+	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
 		if hints.TotalQueries > 0 {
 			// If splitting and caching inside MQE is enabled, this will be 1, and that is OK:
 			// the impact of this is that the -query-frontend.query-sharding-max-sharded-queries limit will apply per time-split

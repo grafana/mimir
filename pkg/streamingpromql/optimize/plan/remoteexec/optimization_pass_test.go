@@ -790,7 +790,7 @@ func TestOptimizationPass(t *testing.T) {
 			expr, err = rewriteForQuerySharding(ctx, expr)
 			require.NoError(t, err)
 		} else {
-			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, opts.Logger))
 		}
 
 		// And do the same for queries eligible for subquery spin-off.
@@ -1101,7 +1101,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			require.NoError(t, err)
 
 			if !testCase.disableSharding {
-				planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
+				planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, opts.Logger))
 			}
 
 			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, opts.CommonOpts.Reg, opts.Logger))
