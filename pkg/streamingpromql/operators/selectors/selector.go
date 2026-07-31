@@ -61,6 +61,9 @@ type Selector struct {
 	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
 
 	seriesIdx int
+
+	// The time range queried from storage, computed and used by loadSeriesSet and reused by reportCardinality.
+	queriedStartT, queriedEndT int64
 }
 
 type Subset struct {
@@ -134,7 +137,8 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 		return
 	}
 
-	minT, maxT := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
+	// Use the time range computed for the Select call in loadSeriesSet, rather than recomputing it.
+	minT, maxT := s.queriedStartT, s.queriedEndT
 
 	queryStats.AddSelectorCardinality(stats.SelectorCardinality{
 		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
@@ -236,6 +240,8 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	}
 
 	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
+	s.queriedStartT = startTimestamp
+	s.queriedEndT = endTimestamp
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
