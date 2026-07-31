@@ -53,8 +53,8 @@ message RateIntermediate {
   bool is_histogram = 2;
 
   // For floats
-  cortexpb.Sample first_sample = 3;
-  cortexpb.Sample last_sample = 4;
+  cortexpb.FloatSample first_sample = 3;
+  cortexpb.FloatSample last_sample = 4;
   double delta = 5;
 
   // For histograms
