@@ -321,7 +321,7 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 			factor:      5.0,
 			writeFactor: 2,
 			expectedQueries: map[string]int{
-				originalQuery:       3, // original + copies k=2, k=4 (variant 0 = base series)
+				originalQuery:        3, // original + copies k=2, k=4 (variant 0 = base series)
 				`up{job="api_amp1"}`: 2, // copies k=1, k=3
 			},
 		},
@@ -331,7 +331,7 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 			factor:      3.0,
 			writeFactor: 3,
 			expectedQueries: map[string]int{
-				originalQuery:       1,
+				originalQuery:        1,
 				`up{job="api_amp1"}`: 1,
 				`up{job="api_amp2"}`: 1,
 			},

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -34,6 +35,12 @@ type rewriteOptions struct {
 	// across the base series and all _amp{N} variants at once, ignoring the replica index. Used for
 	// the amp.*-mode heavy copy that targets all replicas in a single query.
 	matchAllReplicas bool
+	// ampReplicaLabel, when non-empty, appends an equality matcher <label>=<replica> to every
+	// rewritten selector (<label>="" for the base variant, replica 0). Write-tee stamps the same
+	// label on its replicas, so this scopes every copy to exactly one replica's series regardless
+	// of query shape - including selectors with no label-value matchers, which otherwise match the
+	// base plus every replica at once.
+	ampReplicaLabel string
 }
 
 // ampSuffix returns the label-value suffix for amplification replica k. It must match exactly the
@@ -84,7 +91,7 @@ func rewriteSelector(sel string, replica int, opts rewriteOptions) (string, erro
 	// printer would emit the equivalent {__name__="name",...} form.
 	vs := &parser.VectorSelector{LabelMatchers: m}
 	for _, mm := range m {
-		if mm.Name == labels.MetricName && mm.Type == labels.MatchEqual {
+		if mm.Name == model.MetricNameLabel && mm.Type == labels.MatchEqual {
 			vs.Name = mm.Value
 			break
 		}
@@ -111,11 +118,20 @@ func rewriteSelector(sel string, replica int, opts rewriteOptions) (string, erro
 // mutating Matcher.Value in place would leave a stale compiled regex. For consistency we rebuild
 // every changed matcher via NewMatcher.
 func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*labels.Matcher {
+	// Base variant (replica 0, produced by write-amplification-factor wrapping): the original
+	// matchers are kept verbatim; the amp replica label matcher below (value "") is what scopes
+	// the copy to the unlabeled base series.
+	if replica == 0 && !opts.matchAllReplicas {
+		out := make([]*labels.Matcher, len(ms), len(ms)+1)
+		copy(out, ms)
+		return appendAmpReplicaLabelMatcher(out, replica, opts)
+	}
+
 	suffix := ampSuffix(replica)
 	out := make([]*labels.Matcher, len(ms))
 	for i, mm := range ms {
 		// Never suffix metric names or empty-value (absence/presence) matchers.
-		if mm.Name == labels.MetricName || mm.Value == "" {
+		if mm.Name == model.MetricNameLabel || mm.Value == "" {
 			out[i] = mm
 			continue
 		}
@@ -168,5 +184,22 @@ func rewriteMatchers(ms []*labels.Matcher, replica int, opts rewriteOptions) []*
 		}
 		out[i] = nm
 	}
-	return out
+	return appendAmpReplicaLabelMatcher(out, replica, opts)
+}
+
+// appendAmpReplicaLabelMatcher appends the <ampReplicaLabel>=<replica> equality matcher when the
+// option is set. It is skipped for matchAllReplicas copies, which deliberately span every variant.
+func appendAmpReplicaLabelMatcher(ms []*labels.Matcher, replica int, opts rewriteOptions) []*labels.Matcher {
+	if opts.ampReplicaLabel == "" || opts.matchAllReplicas {
+		return ms
+	}
+	value := ""
+	if replica > 0 {
+		value = strconv.Itoa(replica)
+	}
+	nm, err := labels.NewMatcher(labels.MatchEqual, opts.ampReplicaLabel, value)
+	if err != nil {
+		return ms
+	}
+	return append(ms, nm)
 }

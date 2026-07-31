@@ -339,3 +339,28 @@ func TestRewriteQuery_MatchAllReplicasSemantics(t *testing.T) {
 	require.False(t, m.Matches("apix"), "must not match unrelated values sharing the prefix")
 	require.False(t, m.Matches("other"))
 }
+
+// TestRewriteQuery_AmpReplicaLabel verifies the <label>=<replica> matcher is appended to every
+// copy: name-only selectors get scoped to a single replica (the class that otherwise matches the
+// base plus every replica), replica 0 selects the unlabeled base series, and matchAllReplicas
+// copies are left unscoped.
+func TestRewriteQuery_AmpReplicaLabel(t *testing.T) {
+	opts := rewriteOptions{ampReplicaLabel: "__amp__"}
+
+	got, err := rewriteQuery(`sum(rate(nodepool_node[5m]))`, 3, opts)
+	require.NoError(t, err)
+	require.Equal(t, `sum(rate(nodepool_node{__amp__="3"}[5m]))`, got)
+
+	got, err = rewriteQuery(`up{job="api"}`, 2, opts)
+	require.NoError(t, err)
+	require.Equal(t, `up{__amp__="2",job="api_amp2"}`, got)
+
+	got, err = rewriteQuery(`up{job="api"}`, 0, opts)
+	require.NoError(t, err)
+	require.Equal(t, `up{__amp__="",job="api"}`, got)
+
+	allOpts := rewriteOptions{ampReplicaLabel: "__amp__", matchAllReplicas: true}
+	got, err = rewriteQuery(`up`, 1, allOpts)
+	require.NoError(t, err)
+	require.Equal(t, `up`, got)
+}

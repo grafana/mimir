@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 )
 
@@ -36,6 +37,7 @@ type ProxyConfig struct {
 	BackendEndpoint                     string
 	AmplificationFactor                 float64
 	WriteAmplificationFactor            int
+	AmpReplicaLabel                     string
 	NegativeMatchersExcludeAllAmpValues bool
 	AmplifyAllReplicasFraction          float64
 	StrongConsistencyInstantFraction    float64
@@ -98,6 +100,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"When set (>= 1), the read amplification factor may exceed W: read copy k wraps around the existing variants (k mod W), where variant 0 is the base series (the copy is sent with the original, unrewritten query). "+
 			"This lets read load scale beyond write load by re-reading the same series in distinct queries, instead of querying _amp variants that were never written. "+
 			"0 (default) disables wrapping: copy k always targets _amp{k}, so the read factor must not exceed the write factor.",
+	)
+	f.StringVar(&cfg.AmpReplicaLabel, "backend.amp-replica-label", "",
+		"When set (e.g. __amp__), every amplified copy additionally gets an equality matcher <name>=<replica number> appended to its selectors, and base-variant copies get <name>=\"\" (label absent). "+
+			"Requires write-tee to stamp the same label on its replicas (-backend.amp-replica-label there). "+
+			"This scopes every copy to exactly one replica's series regardless of query shape - including queries with no label matchers, which otherwise match the base plus every replica at once. Empty disables it.",
 	)
 	f.BoolVar(&cfg.NegativeMatchersExcludeAllAmpValues, "backend.negative-matchers-exclude-all-amp-values", true,
 		"When rewriting a query copy, make negative matchers (!=, !~) exclude the value in all its forms - the base value and every _amp{N} variant (value plus the optional _amp{N} suffix) - instead of only the single _amp{replica} form. A != becomes a !~ with its value regex-quoted, since a single != can only exclude one exact string. "+
@@ -168,6 +175,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	// Validate the write amplification factor (0 = wrapping disabled).
 	if cfg.WriteAmplificationFactor < 0 {
 		return nil, errors.New("backend.write-amplification-factor must be >= 0")
+	}
+
+	// Validate the amp replica label (empty = disabled).
+	if cfg.AmpReplicaLabel != "" && !model.LegacyValidation.IsValidLabelName(cfg.AmpReplicaLabel) {
+		return nil, errors.New("backend.amp-replica-label must be a valid Prometheus label name")
 	}
 
 	// Validate async max in-flight.
@@ -246,6 +258,7 @@ func (p *Proxy) Start() error {
 
 	rewriteOpts := rewriteOptions{
 		excludeAmplifiedNegative: p.cfg.NegativeMatchersExcludeAllAmpValues,
+		ampReplicaLabel:          p.cfg.AmpReplicaLabel,
 	}
 
 	// register fan-out routes (explicit endpoints we want to amplify)
