@@ -541,7 +541,7 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
 				NodeIndex: nodeIndex,
 
-				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
+				// The method below does an unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
 				// serializing the message and sending it before the deferred return to the pool occurs above.
 				Values: mimirpb.FromFPointsToFloatSamples(data.Samples),
 			},
