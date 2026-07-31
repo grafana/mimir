@@ -241,7 +241,7 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 			visit(n.Expr, childTimeRange)
 
 		default:
-			for _, child := range parser.Children(node) {
+			for child := range parser.ChildrenIter(node) {
 				visit(child, tr)
 			}
 		}
