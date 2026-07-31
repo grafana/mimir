@@ -138,9 +138,9 @@ func (c protobufCodec) encodeMatrix(m promql.Matrix) mimirpb.MatrixData {
 }
 
 func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries {
-	samples := make([]mimirpb.Sample, 0, len(s.Floats))
+	samples := make([]mimirpb.FloatSample, 0, len(s.Floats))
 	for _, p := range s.Floats {
-		samples = append(samples, mimirpb.Sample{
+		samples = append(samples, mimirpb.FloatSample{
 			TimestampMs: p.T,
 			Value:       p.F,
 		})

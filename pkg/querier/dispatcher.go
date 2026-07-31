@@ -498,7 +498,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 
 				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
 				// serializing the message and sending it before returning (and therefore before anything else can modify the slices).
-				Floats:     mimirpb.FromFPointsToSamples(floats),
+				Floats:     mimirpb.FromFPointsToFloatSamples(floats),
 				Histograms: mimirpb.FromHPointsToHistograms(histograms),
 			},
 		},
@@ -543,7 +543,7 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 
 				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
 				// serializing the message and sending it before the deferred return to the pool occurs above.
-				Values: mimirpb.FromFPointsToSamples(data.Samples),
+				Values: mimirpb.FromFPointsToFloatSamples(data.Samples),
 			},
 		},
 	})

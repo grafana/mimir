@@ -256,7 +256,7 @@ func (f ProtobufFormatter) decodeStringData(data *mimirpb.StringData) *Prometheu
 		Result: []SampleStream{
 			{
 				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: data.Value}},
-				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMs}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: data.TimestampMs}},
 			},
 		},
 	}
@@ -267,7 +267,7 @@ func (f ProtobufFormatter) decodeScalarData(data *mimirpb.ScalarData) *Prometheu
 		ResultType: model.ValScalar.String(),
 		Result: []SampleStream{
 			{
-				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMs, Value: data.Value}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: data.TimestampMs, Value: data.Value}},
 			},
 		},
 	}
@@ -284,7 +284,7 @@ func (f ProtobufFormatter) decodeVectorData(data *mimirpb.VectorData) (*Promethe
 
 		streams[i] = SampleStream{
 			Labels: l,
-			Samples: []mimirpb.Sample{
+			Samples: []mimirpb.FloatSample{
 				{TimestampMs: sample.TimestampMs, Value: sample.Value},
 			},
 		}

@@ -1350,7 +1350,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 // return a sub slice whose first element's is the smallest timestamp that is strictly
 // bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
 // timestamps in samples
-func sliceFloatSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+func sliceFloatSamples(samples []mimirpb.FloatSample, minTs int64) []mimirpb.FloatSample {
 	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
 		return samples
 	}

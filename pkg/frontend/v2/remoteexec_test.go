@@ -57,9 +57,9 @@ func TestScalarExecutionResponse(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newScalarValue(
-					mimirpb.Sample{TimestampMs: 1000, Value: 1.01},
-					mimirpb.Sample{TimestampMs: 2000, Value: 2.01},
-					mimirpb.Sample{TimestampMs: 3000, Value: 3.01},
+					mimirpb.FloatSample{TimestampMs: 1000, Value: 1.01},
+					mimirpb.FloatSample{TimestampMs: 2000, Value: 2.01},
+					mimirpb.FloatSample{TimestampMs: 3000, Value: 3.01},
 				),
 			},
 		},
@@ -173,11 +173,11 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 			{
 				msg: newBatchedInstantVectorSeriesData(
 					querierpb.InstantVectorSeriesData{
-						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 0)),
+						Floats:     mimirpb.FromFPointsToFloatSamples(generateFPoints(1000, 2, 0)),
 						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 0)),
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 1)),
+						Floats:     mimirpb.FromFPointsToFloatSamples(generateFPoints(1000, 2, 1)),
 						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 1)),
 					},
 				),
@@ -185,7 +185,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 			{
 				msg: newBatchedInstantVectorSeriesData(
 					querierpb.InstantVectorSeriesData{
-						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 2)),
+						Floats:     mimirpb.FromFPointsToFloatSamples(generateFPoints(1000, 2, 2)),
 						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 2)),
 					},
 				),
@@ -779,8 +779,8 @@ func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 			t,
 			true,
 			true,
-			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 1000, Value: 2})},
-			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 4000, Value: 2})},
+			mockResponse{msg: newScalarValue(mimirpb.FloatSample{TimestampMs: 1000, Value: 2})},
+			mockResponse{msg: newScalarValue(mimirpb.FloatSample{TimestampMs: 4000, Value: 2})},
 			mockResponse{msg: newEvaluationCompletedWithPerNodeStats(expectedTotalSamples, expectedWarnings, expectedInfos, expectedNodeStats)},
 		)
 	})
@@ -790,8 +790,8 @@ func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 			t,
 			false,
 			false,
-			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 1000, Value: 2})},
-			mockResponse{msg: newScalarValue(mimirpb.Sample{TimestampMs: 4000, Value: 2})},
+			mockResponse{msg: newScalarValue(mimirpb.FloatSample{TimestampMs: 1000, Value: 2})},
+			mockResponse{msg: newScalarValue(mimirpb.FloatSample{TimestampMs: 4000, Value: 2})},
 			mockResponse{err: expectedError},
 		)
 	})
@@ -902,7 +902,7 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 	require.Empty(t, perNodeAnnotations)
 }
 
-func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
+func newScalarValue(samples ...mimirpb.FloatSample) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -953,7 +953,7 @@ func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histogr
 						NodeIndex: nodeIndex,
 						Series: []querierpb.InstantVectorSeriesData{
 							{
-								Floats:     mimirpb.FromFPointsToSamples(floats),
+								Floats:     mimirpb.FromFPointsToFloatSamples(floats),
 								Histograms: mimirpb.FromHPointsToHistograms(histograms),
 							},
 						},
@@ -988,7 +988,7 @@ func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, ra
 						StepT:       stepT,
 						RangeStart:  rangeStart,
 						RangeEnd:    rangeEnd,
-						Floats:      mimirpb.FromFPointsToSamples(floats),
+						Floats:      mimirpb.FromFPointsToFloatSamples(floats),
 						Histograms:  mimirpb.FromHPointsToHistograms(histograms),
 					},
 				},
@@ -2501,10 +2501,10 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 	}
 
 	for seriesIdx := range seriesCount {
-		floats := make([]mimirpb.Sample, 0, pointCount)
+		floats := make([]mimirpb.FloatSample, 0, pointCount)
 
 		for pointIdx := range pointCount {
-			floats = append(floats, mimirpb.Sample{
+			floats = append(floats, mimirpb.FloatSample{
 				TimestampMs: int64(pointIdx),
 				Value:       float64(seriesIdx*100000 + pointIdx),
 			})

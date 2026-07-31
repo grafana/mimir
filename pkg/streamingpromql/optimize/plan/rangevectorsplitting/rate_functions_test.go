@@ -17,11 +17,11 @@ func TestRateCombineFloat_WithEmptySplits(t *testing.T) {
 	splits := []RateIntermediate{
 		// Split 0: has samples
 		{
-			FirstSample: &mimirpb.Sample{
+			FirstSample: &mimirpb.FloatSample{
 				TimestampMs: 1000,
 				Value:       100.0,
 			},
-			LastSample: &mimirpb.Sample{
+			LastSample: &mimirpb.FloatSample{
 				TimestampMs: 2000,
 				Value:       110.0,
 			},
@@ -39,11 +39,11 @@ func TestRateCombineFloat_WithEmptySplits(t *testing.T) {
 		},
 		// Split 2: has samples
 		{
-			FirstSample: &mimirpb.Sample{
+			FirstSample: &mimirpb.FloatSample{
 				TimestampMs: 6000,
 				Value:       120.0,
 			},
-			LastSample: &mimirpb.Sample{
+			LastSample: &mimirpb.FloatSample{
 				TimestampMs: 7000,
 				Value:       130.0,
 			},

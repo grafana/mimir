@@ -84,9 +84,9 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 }
 
 func mkAPIResponse(start, end, step int64) *PrometheusResponse {
-	var samples []mimirpb.Sample
+	var samples []mimirpb.FloatSample
 	for i := start; i <= end; i += step {
-		samples = append(samples, mimirpb.Sample{
+		samples = append(samples, mimirpb.FloatSample{
 			TimestampMs: i,
 			Value:       float64(i),
 		})

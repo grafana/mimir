@@ -27,39 +27,39 @@ import (
 
 // This test verifies that jsoninter uses our custom method for marshalling.
 // We do that by using "test sample" recognized by marshal function when in testing mode.
-func TestJsoniterMarshalForSample(t *testing.T) {
+func TestJsoniterMarshalForFloatSample(t *testing.T) {
 	testMarshalling(t, jsoniter.Marshal, "test sample")
 }
 
-func TestStdlibJsonMarshalForSample(t *testing.T) {
-	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type mimirpb.Sample: test sample")
+func TestStdlibJsonMarshalForFloatSample(t *testing.T) {
+	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type mimirpb.FloatSample: test sample")
 }
 
 func testMarshalling(t *testing.T, marshalFn func(v interface{}) ([]byte, error), expectedError string) {
 	isTesting = true
 	defer func() { isTesting = false }()
 
-	out, err := marshalFn(Sample{Value: 12345, TimestampMs: 98765})
+	out, err := marshalFn(FloatSample{Value: 12345, TimestampMs: 98765})
 	require.NoError(t, err)
 	require.Equal(t, `[98.765,"12345"]`, string(out))
 
-	_, err = marshalFn(Sample{Value: math.NaN(), TimestampMs: 0})
+	_, err = marshalFn(FloatSample{Value: math.NaN(), TimestampMs: 0})
 	require.EqualError(t, err, expectedError)
 
 	// If not testing, we get normal output.
 	isTesting = false
-	out, err = marshalFn(Sample{Value: math.NaN(), TimestampMs: 0})
+	out, err = marshalFn(FloatSample{Value: math.NaN(), TimestampMs: 0})
 	require.NoError(t, err)
 	require.Equal(t, `[0,"NaN"]`, string(out))
 }
 
-// This test verifies that jsoninter uses our custom method for unmarshalling Sample.
+// This test verifies that jsoninter uses our custom method for unmarshalling FloatSample.
 // As with Marshal, we rely on testing mode and special value that reports error.
-func TestJsoniterUnmarshalForSample(t *testing.T) {
+func TestJsoniterUnmarshalForFloatSample(t *testing.T) {
 	testUnmarshalling(t, jsoniter.Unmarshal, "test sample")
 }
 
-func TestStdlibJsonUnmarshalForSample(t *testing.T) {
+func TestStdlibJsonUnmarshalForFloatSample(t *testing.T) {
 	testUnmarshalling(t, stdlibjson.Unmarshal, "test sample")
 }
 
@@ -67,11 +67,11 @@ func testUnmarshalling(t *testing.T, unmarshalFn func(data []byte, v interface{}
 	isTesting = true
 	defer func() { isTesting = false }()
 
-	sample := Sample{}
+	sample := FloatSample{}
 
 	err := unmarshalFn([]byte(`[98.765,"12345"]`), &sample)
 	require.NoError(t, err)
-	require.Equal(t, Sample{Value: 12345, TimestampMs: 98765}, sample)
+	require.Equal(t, FloatSample{Value: 12345, TimestampMs: 98765}, sample)
 
 	err = unmarshalFn([]byte(`[0.0,"NaN"]`), &sample)
 	require.EqualError(t, err, expectedError)
@@ -246,27 +246,27 @@ func BenchmarkFromLabelAdaptersToLabels(b *testing.B) {
 	}
 }
 
-func TestFromFPointsToSamples(t *testing.T) {
+func TestFromFPointsToFloatSamples(t *testing.T) {
 	input := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
-	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+	expected := []FloatSample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 
-	assert.Equal(t, expected, FromFPointsToSamples(input))
+	assert.Equal(t, expected, FromFPointsToFloatSamples(input))
 }
 
-func TestFromSamplesToFPoints(t *testing.T) {
-	input := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+func TestFromFloatSamplesToFPoints(t *testing.T) {
+	input := []FloatSample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 	expected := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
 
-	assert.Equal(t, expected, FromSamplesToFPoints(input))
+	assert.Equal(t, expected, FromFloatSamplesToFPoints(input))
 }
 
-// Check that Prometheus FPoint and Mimir Sample types converted
+// Check that Prometheus FPoint and Mimir FloatSample types converted
 // into each other with unsafe.Pointer are compatible
-func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
-	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true, false)
+func TestPrometheusFPointInSyncWithMimirPbFloatSample(t *testing.T) {
+	test.RequireSameShape(t, promql.FPoint{}, FloatSample{}, true, false)
 }
 
-func BenchmarkFromFPointsToSamples(b *testing.B) {
+func BenchmarkFromFPointsToFloatSamples(b *testing.B) {
 	n := 100
 	input := make([]promql.FPoint, n)
 	for i := 0; i < n; i++ {
@@ -274,7 +274,7 @@ func BenchmarkFromFPointsToSamples(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		FromFPointsToSamples(input)
+		FromFPointsToFloatSamples(input)
 	}
 }
 

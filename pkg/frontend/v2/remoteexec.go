@@ -561,7 +561,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 	}
 
 	v := types.ScalarData{
-		Samples: mimirpb.FromSamplesToFPoints(scalar.Values),
+		Samples: mimirpb.FromFloatSamplesToFPoints(scalar.Values),
 	}
 
 	if err := accountForFPointMemoryConsumption(v.Samples, r.memoryConsumptionTracker); err != nil {
@@ -633,9 +633,9 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 		r.currentBatch = data.Series
 
 		for _, series := range r.currentBatch {
-			// This isn't as expensive as it looks: FromSamplesToFPoints and FromHistogramsToHPoints directly cast the slices,
+			// This isn't as expensive as it looks: FromFloatSamplesToFPoints and FromHistogramsToHPoints directly cast the slices,
 			// they don't create new slices.
-			if err := accountForFPointMemoryConsumption(mimirpb.FromSamplesToFPoints(series.Floats), r.memoryConsumptionTracker); err != nil {
+			if err := accountForFPointMemoryConsumption(mimirpb.FromFloatSamplesToFPoints(series.Floats), r.memoryConsumptionTracker); err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 
@@ -736,7 +736,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 		return nil, fmt.Errorf("expected data for series index %v, but got data for series index %v", r.currentSeriesIndex, data.SeriesIndex)
 	}
 
-	fPoints := mimirpb.FromSamplesToFPoints(data.Floats)
+	fPoints := mimirpb.FromFloatSamplesToFPoints(data.Floats)
 	hPoints := mimirpb.FromHistogramsToHPoints(data.Histograms)
 
 	if err := accountForFPointMemoryConsumption(fPoints, r.memoryConsumptionTracker); err != nil {

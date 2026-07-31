@@ -42,7 +42,7 @@ func EncodeInstantVectorSeriesData(d types.InstantVectorSeriesData) InstantVecto
 	// If you're making a change below to add a new field, you likely also need to update DecodeInstantVectorSeriesData below.
 	return InstantVectorSeriesData{
 		// The methods below do unsafe casts and do not copy the data from the slices.
-		mimirpb.FromFPointsToSamples(d.Floats),
+		mimirpb.FromFPointsToFloatSamples(d.Floats),
 		mimirpb.FromHPointsToHistograms(d.Histograms),
 	}
 }
@@ -54,7 +54,7 @@ func DecodeInstantVectorSeriesData(d InstantVectorSeriesData) types.InstantVecto
 	// If you're making a change below to add a new field, you likely also need to update EncodeInstantVectorSeriesData above.
 	return types.InstantVectorSeriesData{ //nolint:govet
 		// The methods below do unsafe casts and do not copy the data from the slices.
-		mimirpb.FromSamplesToFPoints(d.Floats),
+		mimirpb.FromFloatSamplesToFPoints(d.Floats),
 		mimirpb.FromHistogramsToHPoints(d.Histograms),
 	}
 }

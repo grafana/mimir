@@ -355,13 +355,13 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	return *(*[]BucketSpan)(unsafe.Pointer(&s))
 }
 
-// FromFPointsToSamples casts []promql.FPoint to []Sample. It uses unsafe.
-func FromFPointsToSamples(points []promql.FPoint) []Sample {
-	return *(*[]Sample)(unsafe.Pointer(&points))
+// FromFPointsToFloatSamples casts []promql.FPoint to []FloatSample. It uses unsafe.
+func FromFPointsToFloatSamples(points []promql.FPoint) []FloatSample {
+	return *(*[]FloatSample)(unsafe.Pointer(&points))
 }
 
-// FromSamplesToFPoints casts []Sample to []promql.FPoint. It uses unsafe.
-func FromSamplesToFPoints(samples []Sample) []promql.FPoint {
+// FromFloatSamplesToFPoints casts []FloatSample to []promql.FPoint. It uses unsafe.
+func FromFloatSamplesToFPoints(samples []FloatSample) []promql.FPoint {
 	return *(*[]promql.FPoint)(unsafe.Pointer(&samples))
 }
 
@@ -441,7 +441,7 @@ func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) model.Me
 var isTesting = false
 
 // MarshalJSON implements json.Marshaler.
-func (s Sample) MarshalJSON() ([]byte, error) {
+func (s FloatSample) MarshalJSON() ([]byte, error) {
 	if isTesting && math.IsNaN(s.Value) {
 		return nil, fmt.Errorf("test sample")
 	}
@@ -458,7 +458,7 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (s *Sample) UnmarshalJSON(b []byte) error {
+func (s *FloatSample) UnmarshalJSON(b []byte) error {
 	var t model.Time
 	var v model.SampleValue
 	vs := [...]stdjson.Unmarshaler{&t, &v}
@@ -474,17 +474,17 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func unsafeSampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	sample := (*Sample)(ptr)
+func unsafeFloatSampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	sample := (*FloatSample)(ptr)
 
 	if isTesting && math.IsNaN(sample.Value) {
 		stream.Error = fmt.Errorf("test sample")
 		return
 	}
-	SampleJsoniterEncode(*sample, stream)
+	FloatSampleJsoniterEncode(*sample, stream)
 }
 
-func SampleJsoniterEncode(sample Sample, stream *jsoniter.Stream) {
+func FloatSampleJsoniterEncode(sample FloatSample, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
@@ -492,16 +492,16 @@ func SampleJsoniterEncode(sample Sample, stream *jsoniter.Stream) {
 	stream.WriteArrayEnd()
 }
 
-func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+func FloatSampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	if !iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected [")
+		iter.ReportError("mimirpb.FloatSample", "expected [")
 		return
 	}
 
 	t := model.Time(iter.ReadFloat64() * float64(time.Second/time.Millisecond))
 
 	if !iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected ,")
+		iter.ReportError("mimirpb.FloatSample", "expected ,")
 		return
 	}
 
@@ -509,7 +509,7 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	ss := *(*string)(unsafe.Pointer(&bs))
 	v, err := strconv.ParseFloat(ss, 64)
 	if err != nil {
-		iter.ReportError("mimirpb.Sample", err.Error())
+		iter.ReportError("mimirpb.FloatSample", err.Error())
 		return
 	}
 
@@ -519,10 +519,10 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 
 	if iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected ]")
+		iter.ReportError("mimirpb.FloatSample", "expected ]")
 	}
 
-	*(*Sample)(ptr) = Sample{
+	*(*FloatSample)(ptr) = FloatSample{
 		TimestampMs: int64(t),
 		Value:       v,
 	}
@@ -640,8 +640,8 @@ func decodeLabelAdapters(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 }
 
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", unsafeSampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
-	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.FloatSample", unsafeFloatSampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("mimirpb.FloatSample", FloatSampleJsoniterDecode)
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.FloatHistogramPair", unsafeHistogramJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeEncoderFunc("[]mimirpb.LabelAdapter", unsafeMarshalLabelAdapters, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("[]mimirpb.LabelAdapter", decodeLabelAdapters)
