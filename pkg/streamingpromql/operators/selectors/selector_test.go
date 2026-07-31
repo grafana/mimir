@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -223,16 +224,17 @@ func TestSelector_QueryRanges(t *testing.T) {
 }
 
 func TestSelector_ReportsCardinality(t *testing.T) {
-	start := time.Date(2024, 12, 11, 3, 12, 45, 0, time.UTC)
-	end := start.Add(time.Hour)
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			foo{env="prod", instance="a"} 0 1 2 3 4 5
+			foo{env="prod", instance="b"} 0 1 2 3 4 5
+			foo{env="dev", instance="c"}  0 1 2 3 4 5
+	`)
+
+	start := timestamp.Time(0)
+	end := start.Add(5 * time.Minute)
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
 	lookbackDelta := 5 * time.Minute
-
-	series := []labels.Labels{
-		labels.FromStrings("__name__", "foo", "env", "prod", "instance", "a"),
-		labels.FromStrings("__name__", "foo", "env", "prod", "instance", "b"),
-		labels.FromStrings("__name__", "foo", "env", "dev", "instance", "c"),
-	}
 
 	baseMatchers := types.Matchers{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
 	expectedMinT, expectedMaxT := ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -240,7 +242,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 	t.Run("without subsets", func(t *testing.T) {
 		qs, ctx := stats.ContextWithEmptyStats(context.Background())
 		s := &Selector{
-			Queryable:                &sliceQueryable{series: series},
+			Queryable:                storage,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 baseMatchers,
@@ -263,7 +265,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 	t.Run("with subsets", func(t *testing.T) {
 		qs, ctx := stats.ContextWithEmptyStats(context.Background())
 		s := &Selector{
-			Queryable:     &sliceQueryable{series: series},
+			Queryable:     storage,
 			TimeRange:     timeRange,
 			LookbackDelta: lookbackDelta,
 			Matchers:      baseMatchers,
@@ -302,7 +304,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 	t.Run("no stats in context", func(t *testing.T) {
 		s := &Selector{
-			Queryable:                &sliceQueryable{series: series},
+			Queryable:                storage,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 baseMatchers,
@@ -370,54 +372,3 @@ func (m *mockQuerier) LabelNames(context.Context, *storage.LabelHints, ...*label
 func (m *mockQuerier) Close() error {
 	panic("not supported")
 }
-
-// sliceQueryable is a storage.Queryable that returns a fixed set of series (identified by their labels).
-type sliceQueryable struct {
-	series []labels.Labels
-}
-
-func (q *sliceQueryable) Querier(int64, int64) (storage.Querier, error) {
-	return &sliceQuerier{series: q.series}, nil
-}
-
-type sliceQuerier struct {
-	series []labels.Labels
-}
-
-func (q *sliceQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-	s := make([]storage.Series, 0, len(q.series))
-	for _, l := range q.series {
-		s = append(s, mockSeries{l})
-	}
-
-	return &sliceSeriesSet{series: s}
-}
-
-func (q *sliceQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("not supported")
-}
-
-func (q *sliceQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("not supported")
-}
-
-func (q *sliceQuerier) Close() error {
-	return nil
-}
-
-type sliceSeriesSet struct {
-	series []storage.Series
-	idx    int
-}
-
-func (s *sliceSeriesSet) Next() bool {
-	if s.idx >= len(s.series) {
-		return false
-	}
-	s.idx++
-	return true
-}
-
-func (s *sliceSeriesSet) At() storage.Series                { return s.series[s.idx-1] }
-func (s *sliceSeriesSet) Err() error                        { return nil }
-func (s *sliceSeriesSet) Warnings() annotations.Annotations { return nil }
