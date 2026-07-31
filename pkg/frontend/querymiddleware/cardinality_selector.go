@@ -234,12 +234,6 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 			// Subquery.ChildrenTimeRange) so that the cache keys line up with the write path.
 			step := n.Step
 			if step == 0 {
-				if noStepSubqueryIntervalFn == nil {
-					// We can't determine the subquery's step, so we can't compute the time range its
-					// selectors query. Skip them: a missing estimate is safe, it just falls back to the
-					// default shard count.
-					return
-				}
 				step = time.Duration(noStepSubqueryIntervalFn(n.Range.Milliseconds())) * time.Millisecond
 			}
 
