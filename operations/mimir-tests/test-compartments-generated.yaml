@@ -8260,6 +8260,7 @@ metadata:
   name: ingester-rollout-rc-0
   namespace: default
 spec:
+  crossZoneEvictionDelay: 20m
   maxUnavailable: 1
   podNamePartitionRegex: '[a-z\-]+-zone-[a-z]-rc-[0-9]+-([0-9]+)'
   podNameRegexGroup: 1
@@ -8276,6 +8277,7 @@ metadata:
   name: ingester-rollout-rc-1
   namespace: default
 spec:
+  crossZoneEvictionDelay: 20m
   maxUnavailable: 1
   podNamePartitionRegex: '[a-z\-]+-zone-[a-z]-rc-[0-9]+-([0-9]+)'
   podNameRegexGroup: 1
