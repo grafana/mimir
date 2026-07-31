@@ -51,6 +51,7 @@
 * [BUGFIX] Mimir: Exit with status 0, and stop logging `module failed` at error level, when a `SIGTERM` or `SIGINT` arrives before all modules finished starting. Cancelling the start context leaves those modules in a failed state, which was reported as `failed services` and exited 1, making an ordinary rolling restart or node drain of a slow-starting component indistinguishable from a crash. #16524
 * [BUGFIX] Build: Use `#!/usr/bin/env bash`/`#!/usr/bin/env sh` instead of hardcoded interpreter paths in development and CI scripts, fixing failures on systems where those interpreters aren't at that exact path, such as NixOS. #16425
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
+* [BUGFIX] Distributor: Deduplicate samples across timeseries objects with identical labels in the same write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to ingesters without incrementing `cortex_discarded_samples_total`. #15589
 
 ### Mixin
 
