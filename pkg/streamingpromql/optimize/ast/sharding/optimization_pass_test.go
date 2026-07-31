@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -27,6 +28,7 @@ func TestOptimizationPass(t *testing.T) {
 		input          string
 		options        requestoptions.Options
 		hints          *querymiddleware.Hints
+		readcacheRoute string
 		expectedOutput string
 	}{
 		"unshardable expression": {
@@ -42,6 +44,12 @@ func TestOptimizationPass(t *testing.T) {
 			options: requestoptions.Options{
 				ShardingDisabled: true,
 			},
+			expectedOutput: `sum(foo)`,
+		},
+		"shardable expression with readcache routing": {
+			input:          `sum(foo)`,
+			options:        requestoptions.Options{TotalShards: 128},
+			readcacheRoute: validation.ReadcacheReadRoutingNautilus,
 			expectedOutput: `sum(foo)`,
 		},
 		"shardable expression with specific requested shard count": {
@@ -83,6 +91,7 @@ func TestOptimizationPass(t *testing.T) {
 				totalShards:         4,
 				maxShardedQueries:   6,
 				splitAndMergeShards: 1,
+				readcacheRoute:      testCase.readcacheRoute,
 			}
 			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
 
@@ -169,6 +178,7 @@ type mockLimits struct {
 	regexpSizeBytes     int
 	maxShardedQueries   int
 	splitAndMergeShards int
+	readcacheRoute      string
 }
 
 func (m *mockLimits) QueryShardingTotalShards(userID string) int {
@@ -181,6 +191,10 @@ func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
 
 func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int {
 	return m.maxShardedQueries
+}
+
+func (m *mockLimits) ReadcacheReadRouting(userID string) string {
+	return m.readcacheRoute
 }
 
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {

@@ -264,6 +264,7 @@ type ShardingLimits interface {
 	QueryShardingTotalShards(userID string) int
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 	QueryShardingMaxShardedQueries(userID string) int
+	ReadcacheReadRouting(userID string) string
 }
 
 func NewQuerySharder(
@@ -351,6 +352,13 @@ func (s *QuerySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
 func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) (int, error) {
+	for _, tenantID := range tenantIDs {
+		if s.limit.ReadcacheReadRouting(tenantID) == validation.ReadcacheReadRoutingNautilus {
+			spanLog.DebugLog("msg", "query sharding has been disabled because the tenant routes reads through readcache")
+			return 1, nil
+		}
+	}
+
 	// Check the default number of shards configured for the given tenant.
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {

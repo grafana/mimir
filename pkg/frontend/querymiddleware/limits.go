@@ -71,6 +71,9 @@ type Limits interface {
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 
+	// ReadcacheReadRouting returns the read routing mode for a given tenant.
+	ReadcacheReadRouting(userID string) string
+
 	// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
 	// be run for a cardinality (active series and active native histogram metrics) request.
 	// 0 to fall back to QueryShardingMaxShardedQueries.

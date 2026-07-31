@@ -2408,6 +2408,10 @@ func (m mockLimitedParallelismLimits) QueryShardingMaxShardedQueries(_ string) i
 	return 0
 }
 
+func (m mockLimitedParallelismLimits) ReadcacheReadRouting(_ string) string {
+	return ""
+}
+
 func (m mockLimitedParallelismLimits) CardinalityShardingMaxShardedQueries(_ string) int {
 	return 0
 }

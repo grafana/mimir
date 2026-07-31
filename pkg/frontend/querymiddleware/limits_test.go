@@ -713,6 +713,10 @@ func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) in
 	return m.byTenant[userID].maxRegexpSizeBytes
 }
 
+func (m multiTenantMockLimits) ReadcacheReadRouting(userID string) string {
+	return m.byTenant[userID].readcacheReadRouting
+}
+
 func (m multiTenantMockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.byTenant[userID].compactorShards
 }
@@ -835,6 +839,7 @@ type mockLimits struct {
 	ingestStorageReadConsistency          string
 	subquerySpinOffEnabled                bool
 	labelsQueryOptimizerEnabled           bool
+	readcacheReadRouting                  string
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -877,6 +882,10 @@ func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 
 func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
 	return m.maxRegexpSizeBytes
+}
+
+func (m mockLimits) ReadcacheReadRouting(string) string {
+	return m.readcacheReadRouting
 }
 
 func (m mockLimits) CardinalityShardingMaxShardedQueries(string) int {
