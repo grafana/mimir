@@ -125,7 +125,7 @@ func collectEvaluationRoots(expr parser.Expr, rootTimeRange types.QueryTimeRange
 
 		childrenTimeRange := timeRange
 		if subquery, isSubquery := node.(*parser.SubqueryExpr); isSubquery {
-			childrenTimeRange = core.SubqueryChildrenTimeRange(timeRange, subquery.Range, subquery.Step, subquery.Offset, core.TimeFromTimestamp(subquery.Timestamp))
+			childrenTimeRange = core.SubqueryChildrenTimeRange(timeRange, subquery.Range, subquery.Step, subquery.OriginalOffset, core.TimeFromTimestamp(subquery.Timestamp))
 		}
 
 		for _, child := range parser.Children(node) {
