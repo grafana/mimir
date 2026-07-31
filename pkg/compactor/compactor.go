@@ -65,7 +65,6 @@ var (
 	errInvalidMaxClosingBlocksConcurrency         = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
-	errInvalidBlockHealthValidationConcurrency    = fmt.Errorf("invalid block-health-validation-concurrency value, must be positive")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	// compactionIgnoredLabels defines the external labels that compactor will
@@ -165,7 +164,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.")
-	f.IntVar(&cfg.BlockHealthValidationConcurrency, "compactor.block-health-validation-concurrency", 8, "Number of blocks whose health can be validated concurrently during compaction. Health validation reads the block index and is CPU intensive, so setting this lower than -compactor.block-sync-concurrency makes CPU usage more uniform over the course of a compaction.")
+	f.IntVar(&cfg.BlockHealthValidationConcurrency, "compactor.block-health-validation-concurrency", 0, "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
@@ -223,9 +222,6 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config, logger log.Logg
 	}
 	if cfg.MaxBlockUploadValidationConcurrency < 0 {
 		return errInvalidMaxBlockUploadValidationConcurrency
-	}
-	if cfg.BlockHealthValidationConcurrency < 1 {
-		return errInvalidBlockHealthValidationConcurrency
 	}
 	if !slices.Contains(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder

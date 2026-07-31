@@ -6619,11 +6619,9 @@ The `compactor` block configures the compactor component.
 [block_sync_concurrency: <int> | default = 8]
 
 # (experimental) Number of blocks whose health can be validated concurrently
-# during compaction. Health validation reads the block index and is CPU
-# intensive, so setting this lower than -compactor.block-sync-concurrency makes
-# CPU usage more uniform over the course of a compaction.
+# during a compaction job. A nonpositive value means no limit.
 # CLI flag: -compactor.block-health-validation-concurrency
-[block_health_validation_concurrency: <int> | default = 8]
+[block_health_validation_concurrency: <int> | default = 0]
 
 # (advanced) Number of goroutines to use when syncing block meta files from the
 # long term storage.

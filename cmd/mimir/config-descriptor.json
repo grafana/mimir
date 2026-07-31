@@ -13205,9 +13205,9 @@
           "kind": "field",
           "name": "block_health_validation_concurrency",
           "required": false,
-          "desc": "Number of blocks whose health can be validated concurrently during compaction. Health validation reads the block index and is CPU intensive, so setting this lower than -compactor.block-sync-concurrency makes CPU usage more uniform over the course of a compaction.",
+          "desc": "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 8,
+          "fieldDefaultValue": 0,
           "fieldFlag": "compactor.block-health-validation-concurrency",
           "fieldType": "int",
           "fieldCategory": "experimental"

@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
@@ -32,7 +33,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -316,7 +316,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
-	healthValidationSem := semaphore.NewWeighted(int64(c.blockHealthValidationConcurrency))
+	healthValidationGate := newBlockHealthValidationGate(c.blockHealthValidationConcurrency)
 
 	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		meta := toCompact[idx]
@@ -329,7 +329,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		// Ensure all source blocks are valid.
-		stats, err := gatherBlockHealthStats(ctx, healthValidationSem, jobLogger, bdir, meta.MinTime, meta.MaxTime)
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, meta.MinTime, meta.MaxTime)
 		if err != nil {
 			return fmt.Errorf("gather index issues for block %s: %w", bdir, err)
 		}
@@ -447,7 +447,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("remove tombstones: %w", err)
 		}
 
-		if err := verifyBlock(ctx, healthValidationSem, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
+		if err := verifyBlock(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
 		return nil
@@ -555,17 +555,25 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func gatherBlockHealthStats(ctx context.Context, sem *semaphore.Weighted, logger log.Logger, bdir string, minTime, maxTime int64) (block.HealthStats, error) {
-	if err := sem.Acquire(ctx, 1); err != nil {
+func newBlockHealthValidationGate(maxConcurrency int) gate.Gate {
+	if maxConcurrency <= 0 {
+		return gate.NewNoop()
+	}
+
+	return gate.NewBlocking(maxConcurrency)
+}
+
+func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) (block.HealthStats, error) {
+	if err := g.Start(ctx); err != nil {
 		return block.HealthStats{}, err
 	}
-	defer sem.Release(1)
+	defer g.Done()
 
 	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
 }
 
-func verifyBlock(ctx context.Context, sem *semaphore.Weighted, logger log.Logger, bdir string, minTime, maxTime int64) error {
-	stats, err := gatherBlockHealthStats(ctx, sem, logger, bdir, minTime, maxTime)
+func verifyBlock(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) error {
+	stats, err := gatherBlockHealthStats(ctx, g, logger, bdir, minTime, maxTime)
 	if err != nil {
 		return err
 	}
@@ -947,10 +955,6 @@ func NewBucketCompactor(
 
 	if maxPerBlockUploadConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid per block upload concurrency level (%d), concurrency must be > 0", maxPerBlockUploadConcurrency)
-	}
-
-	if blockHealthValidationConcurrency <= 0 {
-		return nil, fmt.Errorf("invalid block health validation concurrency level (%d), concurrency level must be > 0", blockHealthValidationConcurrency)
 	}
 
 	return &BucketCompactor{

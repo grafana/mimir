@@ -130,10 +130,6 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
 		},
-		"should fail on invalid value of block-health-validation-concurrency": {
-			setup:    func(cfg *Config) { cfg.BlockHealthValidationConcurrency = 0 },
-			expected: errInvalidBlockHealthValidationConcurrency.Error(),
-		},
 		"should pass with scheduler client disabled": {
 			setup: func(cfg *Config) {
 				cfg.SchedulerClientConfig.Enabled = false
