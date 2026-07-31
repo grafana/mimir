@@ -228,27 +228,27 @@ type PlanningObserver interface {
 // ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
 // an expression and any error encountered. This is separated into its own method to allow testing of
 // AST optimization passes.
-func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
-	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return p.parser.ParseExpr(qs) })
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, params *planning.QueryParameters, observer PlanningObserver) (parser.Expr, error) {
+	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return p.parser.ParseExpr(params.OriginalExpression) })
 	if err != nil {
 		return nil, err
 	}
 
-	if !timeRange.IsInstant {
+	if !params.TimeRange.IsInstant {
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 			return nil, apierror.Newf(apierror.TypeBadData, "query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+		step := time.Duration(params.TimeRange.IntervalMilliseconds) * time.Millisecond
 
-		if timeRange.IsInstant {
-			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
+		if params.TimeRange.IsInstant {
+			// params.TimeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
 			step = 0
 		}
 
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
+		return promql.PreprocessExpr(expr, timestamp.Time(params.TimeRange.StartT), timestamp.Time(params.TimeRange.EndT), step)
 	})
 
 	if err != nil {
@@ -256,7 +256,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, timeRange) })
+		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, params) })
 
 		if err != nil {
 			return nil, err
@@ -288,8 +288,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
+	params := &planning.QueryParameters{
+		TimeRange:                timeRange,
+		OriginalExpression:       qs,
+		EnableDelayedNameRemoval: enableDelayedNameRemoval,
+		LookbackDelta:            lookbackDelta,
+	}
 
-	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
 	if err != nil {
 		return nil, err
 	}
@@ -311,13 +317,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		plan := &planning.QueryPlan{
-			Root: root,
-			Parameters: &planning.QueryParameters{
-				TimeRange:                timeRange,
-				OriginalExpression:       qs,
-				EnableDelayedNameRemoval: enableDelayedNameRemoval,
-				LookbackDelta:            lookbackDelta,
-			},
+			Root:       root,
+			Parameters: params,
 		}
 
 		return plan, nil
