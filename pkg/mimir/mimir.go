@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -996,6 +997,14 @@ type Mimir struct {
 	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
 	// including when running in monolithic and read/write modes.
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
+
+	// ExtraASTOptimizationPasses and ExtraQueryPlanOptimizationPasses are registered on both the querier
+	// and query-frontend planners by the planner module init (after the built-in passes, before
+	// sharding/subquery-spinoff). They let downstream builds run query-mutating logic as MQE optimisation
+	// passes whose effect is visible via the analysis endpoint. They must be set before the query planner
+	// modules initialise.
+	ExtraASTOptimizationPasses       []optimize.ASTOptimizationPass
+	ExtraQueryPlanOptimizationPasses []optimize.QueryPlanOptimizationPass
 }
 
 // New makes a new Mimir.
