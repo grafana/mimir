@@ -190,6 +190,18 @@ message Histogram {
   repeated double custom_values = 16;
 }
 
+//
+// Types related to the read path, never used on the write path.
+//
+
+// FloatSample is based on promql.FPoint
+// https://github.com/prometheus/prometheus/blob/bf5a9810e60d5f4cdbb4035119fd61668790b1b7/promql/value.go#L92
+message FloatSample {
+  // Fields order MUST match promql.FPoint so that we can cast types between them.
+  int64 timestamp_ms = 2;
+  double value = 1;
+}
+
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
 // The fields below must be the same types and in the same order as Prometheus' histogram.FloatHistogram type so we can cast between
 // them safely.
@@ -330,7 +342,7 @@ message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated string metric = 1;
 
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated FloatSample samples = 2 [(gogoproto.nullable) = false];
   repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }
 
