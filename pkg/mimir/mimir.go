@@ -339,8 +339,8 @@ func (c *Config) Validate(log log.Logger) error {
 		// don't need it. The ruler queries blocks only through remote rule evaluation (required with
 		// compartments), so it doesn't build a local compartment-aware queryable.
 		if c.isQuerierEnabled() {
-			if !strings.Contains(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
-				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must contain the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
+			if !strings.HasSuffix(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must end with the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -688,37 +689,86 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 	})
 }
 
-func TestNewBlocksStoreQueryableFinder_MetricsAreScopedToComponent(t *testing.T) {
-	// Every metric the finder registers (bucket client, metadata cache, bucket-index loader) must carry
-	// the given component label, so per-read-compartment finders sharing a registry don't collide.
-	const component = "querier-rc-7"
+func TestNewBlocksStoreQueryableFinder_MetricsAreScopedToReadCompartment(t *testing.T) {
+	// One finder per read compartment on a shared registry: every metric must be scoped by bucket, or
+	// registration panics.
+	const numCompartments = 3
 
 	var storageCfg mimir_tsdb.BlocksStorageConfig
 	flagext.DefaultValues(&storageCfg)
-	storageCfg.Bucket.Backend = bucket.Filesystem
-	storageCfg.Bucket.Filesystem.Directory = t.TempDir()
+	storageCfg.Bucket.Backend = bucket.S3
+	storageCfg.Bucket.S3.Endpoint = "localhost"
+	storageCfg.Bucket.S3.BucketName = "blocks-rc-" + compartments.ReadCompartmentIDPlaceholder
 
+	// Shared across compartments, like NewBlocksStoreQueryableFromConfig does.
 	reg := prometheus.NewPedanticRegistry()
-	_, err := newBlocksStoreQueryableFinder(component, "blocks-rc-7", storageCfg.Bucket, storageCfg, &blocksStoreLimitsMock{}, log.NewNopLogger(), reg)
-	require.NoError(t, err)
+	metadataCache := cache.NewMockCache()
+
+	for idx := 0; idx < numCompartments; idx++ {
+		_, err := newBlocksStoreQueryableFinder(
+			compartments.WithReadCompartmentSuffix("blocks", idx),
+			metadataCache,
+			storageCfg.Bucket.ReadCompartmentConfig(idx),
+			storageCfg,
+			&blocksStoreLimitsMock{},
+			log.NewNopLogger(),
+			reg,
+		)
+		require.NoError(t, err, "read compartment %d", idx)
+	}
 
 	mfs, err := reg.Gather()
 	require.NoError(t, err)
 	require.NotEmpty(t, mfs, "the finder should register at least one metric")
 
+	// The shared metadata cache client is the exception: registered once, for all compartments.
 	for _, mf := range mfs {
+		scopes := map[string]struct{}{}
+
 		for _, m := range mf.GetMetric() {
-			value, found := "", false
+			labels := map[string]string{}
 			for _, l := range m.GetLabel() {
-				if l.GetName() == "component" {
-					value, found = l.GetValue(), true
-					break
-				}
+				labels[l.GetName()] = l.GetValue()
 			}
-			require.Truef(t, found, "metric %q is missing the component label", mf.GetName())
-			require.Equalf(t, component, value, "metric %q has an unexpected component label", mf.GetName())
+
+			require.Equalf(t, "querier", labels["component"], "metric %q is not reported by the plain component", mf.GetName())
+			scopes[labels["bucket"]] = struct{}{}
 		}
+
+		if _, shared := scopes[""]; shared {
+			require.Lenf(t, scopes, 1, "metric %q mixes compartment-scoped and shared series", mf.GetName())
+			continue
+		}
+
+		require.Lenf(t, scopes, numCompartments, "metric %q is not scoped to one read compartment per series: %v", mf.GetName(), scopes)
 	}
+
+	// Make sure the loop above actually covered all three families.
+	for _, metricName := range []string{
+		"thanos_objstore_bucket_last_successful_upload_time",
+		"thanos_store_bucket_cache_operation_requests_total",
+		"cortex_bucket_index_loads_total",
+	} {
+		count, err := testutil.GatherAndCount(reg, metricName)
+		require.NoError(t, err)
+		require.NotZerof(t, count, "metric %q is not registered", metricName)
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP thanos_objstore_bucket_last_successful_upload_time Second timestamp of the last successful upload to the bucket.
+		# TYPE thanos_objstore_bucket_last_successful_upload_time gauge
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-0",component="querier"} 0
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-1",component="querier"} 0
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-2",component="querier"} 0
+	`), "thanos_objstore_bucket_last_successful_upload_time"))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_index_loads_total Total number of bucket index loading attempts.
+		# TYPE cortex_bucket_index_loads_total counter
+		cortex_bucket_index_loads_total{bucket="blocks-rc-0",component="querier"} 0
+		cortex_bucket_index_loads_total{bucket="blocks-rc-1",component="querier"} 0
+		cortex_bucket_index_loads_total{bucket="blocks-rc-2",component="querier"} 0
+	`), "cortex_bucket_index_loads_total"))
 }
 
 // metricNameForCompartment returns a metric name that the router maps to the given read compartment.

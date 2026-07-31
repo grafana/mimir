@@ -152,7 +152,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 // is checked, as the placeholder is invalid as an actual bucket name.
 func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger) error {
 	bucketCfg := cfg.BlocksStorage.Bucket
-	if !cfg.Compartments.Enabled || !strings.Contains(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+	if !cfg.Compartments.Enabled || !strings.HasSuffix(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
 		return checkObjectStoreConfig(ctx, bucketCfg, logger)
 	}
 
