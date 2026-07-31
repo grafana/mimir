@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -73,20 +74,22 @@ func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context,
 // cacheCardinalityEstimator estimates a query's cardinality from the per-selector cardinality cache
 // entries written by the cardinality-storing query post-processor.
 type cacheCardinalityEstimator struct {
-	cache         cache.Cache
-	lookbackDelta time.Duration
-	logger        log.Logger
+	cache                    cache.Cache
+	lookbackDelta            time.Duration
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	logger                   log.Logger
 }
 
 // NewCacheCardinalityEstimator returns a CardinalityEstimator that estimates a query's cardinality
-// from the per-selector cardinality cache. lookbackDelta must match the value used by the engine so
-// that the queried time ranges (and therefore the cache keys) line up with those used when writing
-// the cache entries.
-func NewCacheCardinalityEstimator(cache cache.Cache, lookbackDelta time.Duration, logger log.Logger) CardinalityEstimator {
+// from the per-selector cardinality cache. lookbackDelta and noStepSubqueryIntervalFn must match the
+// values used by the engine so that the queried time ranges (and therefore the cache keys) line up
+// with those used when writing the cache entries.
+func NewCacheCardinalityEstimator(cache cache.Cache, lookbackDelta time.Duration, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
 	return &cacheCardinalityEstimator{
-		cache:         cache,
-		lookbackDelta: lookbackDelta,
-		logger:        logger,
+		cache:                    cache,
+		lookbackDelta:            lookbackDelta,
+		noStepSubqueryIntervalFn: noStepSubqueryIntervalFn,
+		logger:                   logger,
 	}
 }
 
@@ -101,7 +104,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	}
 	userID := tenant.JoinTenantIDs(tenants)
 
-	selectorRanges := collectSelectorTimeRanges(expr, timeRange, e.lookbackDelta)
+	selectorRanges := collectSelectorTimeRanges(expr, timeRange, e.lookbackDelta, e.noStepSubqueryIntervalFn)
 	if len(selectorRanges) == 0 {
 		return nil
 	}
@@ -192,18 +195,21 @@ type selectorTimeRange struct {
 }
 
 // collectSelectorTimeRanges returns the selectors in expr, each with the time range it queries from
-// storage. The time range accounts for the selector's range, offset, @ modifier and (for instant
-// vector selectors) the lookback delta, matching the computation done by the selectors when they
-// report their cardinality.
-func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) []selectorTimeRange {
+// storage. The time range accounts for the selector's range, offset, @ modifier, the lookback delta
+// (for instant vector selectors and anchored/smoothed range selectors) and any enclosing subqueries,
+// matching the computation done by the selectors when they report their cardinality.
+func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, noStepSubqueryIntervalFn func(rangeMillis int64) int64) []selectorTimeRange {
 	var out []selectorTimeRange
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	// visit descends the expression carrying the time range that applies at the current node, which is
+	// widened whenever we enter a subquery.
+	var visit func(node parser.Node, tr types.QueryTimeRange)
+	visit = func(node parser.Node, tr types.QueryTimeRange) {
 		switch n := node.(type) {
 		case *parser.MatrixSelector:
 			vs, ok := n.VectorSelector.(*parser.VectorSelector)
 			if !ok {
-				return nil
+				return
 			}
 
 			// Range vector selectors only apply the lookback delta when they use the anchored or
@@ -215,23 +221,48 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 				lookback = lookbackDelta
 			}
 
-			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, vs.Timestamp, n.Range, vs.OriginalOffset.Milliseconds(), lookback, vs.Anchored, vs.Smoothed)
+			minT, maxT := selectors.ComputeQueriedTimeRange(tr, vs.Timestamp, n.Range, vs.OriginalOffset.Milliseconds(), lookback, vs.Anchored, vs.Smoothed)
 			out = append(out, selectorTimeRange{matchers: vs.LabelMatchers, minT: minT, maxT: maxT})
+			// Don't descend into the inner vector selector, which is handled here.
 
 		case *parser.VectorSelector:
-			// Skip the inner vector selector of a matrix selector, which is handled above.
-			if len(path) > 0 {
-				if _, ok := path[len(path)-1].(*parser.MatrixSelector); ok {
-					return nil
+			minT, maxT := selectors.ComputeQueriedTimeRange(tr, n.Timestamp, 0, n.OriginalOffset.Milliseconds(), lookbackDelta, false, false)
+			out = append(out, selectorTimeRange{matchers: n.LabelMatchers, minT: minT, maxT: maxT})
+
+		case *parser.SubqueryExpr:
+			// Selectors inside a subquery are evaluated over a widened time range. Compute it exactly
+			// as the planner does (see the SubqueryExpr case in QueryPlanner.nodeFromExpr and
+			// Subquery.ChildrenTimeRange) so that the cache keys line up with the write path.
+			step := n.Step
+			if step == 0 {
+				if noStepSubqueryIntervalFn == nil {
+					// We can't determine the subquery's step, so we can't compute the time range its
+					// selectors query. Skip them: a missing estimate is safe, it just falls back to the
+					// default shard count.
+					return
 				}
+				step = time.Duration(noStepSubqueryIntervalFn(n.Range.Milliseconds())) * time.Millisecond
 			}
 
-			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, n.Timestamp, 0, n.OriginalOffset.Milliseconds(), lookbackDelta, false, false)
-			out = append(out, selectorTimeRange{matchers: n.LabelMatchers, minT: minT, maxT: maxT})
-		}
+			subquery := &core.Subquery{
+				SubqueryDetails: &core.SubqueryDetails{
+					Timestamp: core.TimeFromTimestamp(n.Timestamp),
+					Offset:    n.OriginalOffset,
+					Range:     n.Range,
+					Step:      step,
+				},
+			}
 
-		return nil
-	})
+			visit(n.Expr, subquery.ChildrenTimeRange(tr))
+
+		default:
+			for _, child := range parser.Children(node) {
+				visit(child, tr)
+			}
+		}
+	}
+
+	visit(expr, timeRange)
 
 	return out
 }

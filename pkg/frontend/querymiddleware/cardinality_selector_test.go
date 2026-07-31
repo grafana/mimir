@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -53,7 +54,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 
-		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
 		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -66,7 +67,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("rate(bar[10m])")
 		require.NoError(t, err)
 
-		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
 		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 10*time.Minute, 0, 0, false, false)
@@ -79,7 +80,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo + rate(bar[10m])")
 		require.NoError(t, err)
 
-		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 2)
 	})
 
@@ -92,7 +93,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		}
 		expr := &parser.MatrixSelector{VectorSelector: vs, Range: 10 * time.Minute}
 
-		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
 		// The selector operator sets LookbackDelta for smoothed selectors, so the queried range must
@@ -101,6 +102,30 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		require.Equal(t, expectedMinT, ranges[0].minT)
 		require.Equal(t, expectedMaxT, ranges[0].maxT)
 	})
+
+	t.Run("selector inside a subquery uses the subquery's expanded time range", func(t *testing.T) {
+		expr, err := promqlext.NewPromQLParser().ParseExpr("max_over_time(rate(foo[5m])[1h:1m])")
+		require.NoError(t, err)
+
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
+		require.Len(t, ranges, 1)
+
+		// The inner selector is evaluated over the subquery's expanded range, so the queried range must
+		// be computed from the subquery's child time range (as the planner does), not the outer range.
+		subquery := &core.Subquery{SubqueryDetails: &core.SubqueryDetails{Range: time.Hour, Step: time.Minute}}
+		childTimeRange := subquery.ChildrenTimeRange(timeRange)
+		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(childTimeRange, nil, 5*time.Minute, 0, 0, false, false)
+		require.Equal(t, expectedMinT, ranges[0].minT)
+		require.Equal(t, expectedMaxT, ranges[0].maxT)
+
+		// Sanity check: this differs from the naive computation against the outer time range.
+		naiveMinT, naiveMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 5*time.Minute, 0, 0, false, false)
+		require.NotEqual(t, [2]int64{naiveMinT, naiveMaxT}, [2]int64{ranges[0].minT, ranges[0].maxT})
+	})
+}
+
+func testNoStepSubqueryInterval(int64) int64 {
+	return time.Minute.Milliseconds()
 }
 
 func TestCacheCardinalityEstimator(t *testing.T) {
@@ -119,7 +144,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
 	})
 
@@ -132,7 +157,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 		writeSelectorCardinalityToAllBuckets(t, c, userID, canonical, minT, maxT, 1234)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
@@ -147,7 +172,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="foo"}`, minT, maxT, 100)
 		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="bar"}`, minT, maxT, 500)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(500), result.EstimatedSeriesCount)
@@ -174,7 +199,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			writeSelectorCardinalityEntry(t, c, k, canonical, cardinality)
 		}
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(newCtx(), expr, wideTimeRange)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(9999), result.EstimatedSeriesCount)
@@ -193,7 +218,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			writeSelectorCardinalityEntry(t, c, k, `{__name__="something-else"}`, 4321)
 		}
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
 	})
 
@@ -201,7 +226,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 
-		estimator := NewCacheCardinalityEstimator(nil, lookbackDelta, log.NewNopLogger())
+		estimator := NewCacheCardinalityEstimator(nil, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
 		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
 	})
 }
@@ -246,7 +271,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 		ctx := user.InjectOrgID(context.Background(), userID)
-		return NewCacheCardinalityEstimator(c, lookbackDelta, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange)
+		return NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange)
 	}
 
 	newCtxWithStats := func() (context.Context, *stats.SafeStats) {
