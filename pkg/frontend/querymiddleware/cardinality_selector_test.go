@@ -11,13 +11,13 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -45,9 +45,13 @@ func TestCanonicalSelectorString(t *testing.T) {
 }
 
 func TestCollectSelectorTimeRanges(t *testing.T) {
-	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
-	end := start.Add(time.Hour)
-	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
+	// Use a query time range that starts and ends on clean millisecond boundaries so the expected
+	// queried time ranges below can be given as explicit values: start at 2h and end at 3h after the
+	// Unix epoch, with a 1m step and a 5m lookback delta.
+	startT := (2 * time.Hour).Milliseconds()
+	endT := (3 * time.Hour).Milliseconds()
+
+	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(startT), timestamp.Time(endT), time.Minute)
 	lookbackDelta := 5 * time.Minute
 
 	t.Run("instant vector selector applies the lookback delta", func(t *testing.T) {
@@ -57,22 +61,22 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
-		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		require.Equal(t, expectedMinT, ranges[0].minT)
-		require.Equal(t, expectedMaxT, ranges[0].maxT)
+		// start - 5m lookback + 1ms .. end.
+		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
+		require.Equal(t, endT, ranges[0].maxT)
 		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
 	})
 
-	t.Run("matrix selector uses its range and does not double-count the inner vector selector", func(t *testing.T) {
+	t.Run("matrix selector uses its range", func(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("rate(bar[10m])")
 		require.NoError(t, err)
 
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
-		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 10*time.Minute, 0, 0, false, false)
-		require.Equal(t, expectedMinT, ranges[0].minT)
-		require.Equal(t, expectedMaxT, ranges[0].maxT)
+		// Range vector selectors don't apply the lookback delta: start - 10m range + 1ms .. end.
+		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[0].minT)
+		require.Equal(t, endT, ranges[0].maxT)
 		require.Equal(t, `{__name__="bar"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
 	})
 
@@ -82,9 +86,19 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 2)
+
+		// foo is an instant vector selector: start - 5m lookback + 1ms .. end.
+		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
+		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
+		require.Equal(t, endT, ranges[0].maxT)
+
+		// bar is a range vector selector and doesn't apply the lookback delta: start - 10m range + 1ms .. end.
+		require.Equal(t, `{__name__="bar"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[1].matchers)))
+		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[1].minT)
+		require.Equal(t, endT, ranges[1].maxT)
 	})
 
-	t.Run("smoothed range vector selector applies the lookback delta, matching the selector operator", func(t *testing.T) {
+	t.Run("smoothed range vector selector", func(t *testing.T) {
 		// Build the AST directly so we don't need to enable experimental range modifiers in the parser.
 		vs := &parser.VectorSelector{
 			Name:          "foo",
@@ -96,31 +110,26 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
-		// The selector operator sets LookbackDelta for smoothed selectors, so the queried range must
-		// account for the lookback delta and the smoothed modifier.
-		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 10*time.Minute, 0, lookbackDelta, false, true)
-		require.Equal(t, expectedMinT, ranges[0].minT)
-		require.Equal(t, expectedMaxT, ranges[0].maxT)
+		// The selector operator sets LookbackDelta for smoothed selectors, so the queried range accounts
+		// for the lookback delta: start - 5m lookback - 10m range + 1ms .. end + 5m lookback.
+		require.Equal(t, startT-lookbackDelta.Milliseconds()-(10*time.Minute).Milliseconds()+1, ranges[0].minT)
+		require.Equal(t, endT+lookbackDelta.Milliseconds(), ranges[0].maxT)
 	})
 
-	t.Run("selector inside a subquery uses the subquery's expanded time range", func(t *testing.T) {
-		expr, err := promqlext.NewPromQLParser().ParseExpr("max_over_time(rate(foo[5m])[1h:1m])")
+	t.Run("selector inside a subquery uses the subquery's time range", func(t *testing.T) {
+		expr, err := promqlext.NewPromQLParser().ParseExpr("max_over_time(rate(foo[7m])[1h:1m])")
 		require.NoError(t, err)
 
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, testNoStepSubqueryInterval)
 		require.Len(t, ranges, 1)
 
-		// The inner selector is evaluated over the subquery's expanded range, so the queried range must
-		// be computed from the subquery's child time range (as the planner does), not the outer range.
-		subquery := &core.Subquery{SubqueryDetails: &core.SubqueryDetails{Range: time.Hour, Step: time.Minute}}
-		childTimeRange := subquery.ChildrenTimeRange(timeRange)
-		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(childTimeRange, nil, 5*time.Minute, 0, 0, false, false)
-		require.Equal(t, expectedMinT, ranges[0].minT)
-		require.Equal(t, expectedMaxT, ranges[0].maxT)
-
-		// Sanity check: this differs from the naive computation against the outer time range.
-		naiveMinT, naiveMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 5*time.Minute, 0, 0, false, false)
-		require.NotEqual(t, [2]int64{naiveMinT, naiveMaxT}, [2]int64{ranges[0].minT, ranges[0].maxT})
+		// The inner selector is evaluated over the subquery's expanded, step-aligned range
+		// ([3_660_000, 10_800_000]), then the 5m range vector selector widens the start further. This is
+		// materially different from the ~6_900_001 start a naive computation against the outer range
+		// would produce.
+		// Note that the left boundary is open in a subquery.
+		require.Equal(t, startT-(time.Hour-time.Minute+7*time.Minute).Milliseconds()+1, ranges[0].minT)
+		require.Equal(t, endT, ranges[0].maxT)
 	})
 }
 
