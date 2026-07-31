@@ -6,6 +6,7 @@
 package mimirpb
 
 import (
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -70,6 +71,16 @@ func ShardByMetricNameLocalityLabels(userID string, metricName string, ls labels
 	metricHash := ShardByMetricName(userID, metricName)
 	labelsHash := ShardByAllLabels(userID, ls)
 	return (metricHash & MetricNameMask) | (labelsHash & LabelBitsMask)
+}
+
+// ShardByMetricNameLocalityLabelsFunc returns a TSDB secondary hash
+// function for a single tenant. Series labels are immutable, so TSDB
+// can compute this hash once when a series is created and reuse it for
+// later ownership and load-stat walks.
+func ShardByMetricNameLocalityLabelsFunc(userID string) func(labels.Labels) uint32 {
+	return func(ls labels.Labels) uint32 {
+		return ShardByMetricNameLocalityLabels(userID, ls.Get(model.MetricNameLabel), ls)
+	}
 }
 
 // MetricNameHashRange returns the inclusive hash range [lo, hi] that covers all possible

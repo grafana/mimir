@@ -131,6 +131,14 @@ func TestRangeDiff(t *testing.T) {
 }
 
 func TestPartitionRangesSetRanges_TransitionsTracked(t *testing.T) {
+	t.Run("reports only material assignment changes", func(t *testing.T) {
+		pr := newPartitionRanges()
+		require.True(t, pr.setRanges([]assignment.HashRange{hr(200, 299), hr(0, 99)}))
+		assert.False(t, pr.setRanges([]assignment.HashRange{hr(0, 99), hr(200, 299)}),
+			"the same canonical assignment should not request another series walk")
+		assert.True(t, pr.setRanges([]assignment.HashRange{hr(0, 49), hr(50, 99), hr(200, 299)}))
+	})
+
 	t.Run("initial assignment populates current with no historical", func(t *testing.T) {
 		pr := newPartitionRanges()
 		pr.setRanges([]assignment.HashRange{hr(0, 99), hr(200, 299)})

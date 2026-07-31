@@ -15,9 +15,7 @@ import (
 )
 
 // TickInterval is how often the per-partition and unnamed EWMA rates
-// are advanced from accumulated counts to per-second rates. Aligned
-// with WalkInterval so the two background signals progress on the same
-// cadence.
+// are advanced from accumulated counts to per-second rates.
 const TickInterval = 15 * time.Second
 
 // Alpha is the smoothing factor applied at each tick.

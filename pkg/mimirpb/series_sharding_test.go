@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,4 +27,16 @@ func TestShardByAllLabelAdaptersReturnsWrongResultsForUnsortedLabels(t *testing.
 	})
 
 	assert.NotEqual(t, val1, val2)
+}
+
+func TestShardByMetricNameLocalityLabelsFunc(t *testing.T) {
+	const userID = "user-1"
+	ls := labels.FromStrings(
+		"__name__", "http_requests_total",
+		"instance", "host-1",
+		"job", "api",
+	)
+
+	expected := ShardByMetricNameLocalityLabels(userID, "http_requests_total", ls)
+	assert.Equal(t, expected, ShardByMetricNameLocalityLabelsFunc(userID)(ls))
 }

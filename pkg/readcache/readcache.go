@@ -123,9 +123,18 @@ type Readcache struct {
 	// the two histograms compare directly.
 	queriedSamples prometheus.Histogram
 
-	// seriesWalkMu prevents overlapping background series walks when a
-	// single tick takes longer than loadstats.TickInterval.
+	// seriesWalkMu prevents overlapping background series walks. The
+	// refresh worker is single-threaded, but the mutex also protects
+	// direct test/debug invocations.
 	seriesWalkMu sync.Mutex
+	// seriesStatsRefreshRequested coalesces event-driven requests while
+	// a series walk is already running. The worker consumes at most one
+	// pending request after the current walk finishes.
+	seriesStatsRefreshRequested chan struct{}
+	// seriesStatsRefreshInterval is the fallback cadence for a full
+	// per-range series walk. It is a field so scheduling tests can use a
+	// short duration without changing production configuration.
+	seriesStatsRefreshInterval time.Duration
 
 	// seriesHashCache and postings-for-matchers cache factories mirror
 	// the ingester: shared across partition TSDBs on this process.
@@ -280,17 +289,19 @@ func New(
 
 	tsdbCfg := cfg.BlocksStorage.TSDB
 	r := &Readcache{
-		cfg:                cfg,
-		limits:             limits,
-		logger:             logger,
-		reg:                reg,
-		partitions:         make(map[int32]*partitionState),
-		frozen:             make(map[int32][]*frozenEpoch),
-		epochSeq:           make(map[int32]int),
-		instanceLifecycler: instanceLifecycler,
-		queryLoad:          loadstats.NewTracker("cortex_readcache"),
-		partitionSeries:    loadstats.NewPartitionSeries(),
-		spotlights:         newReadcacheSpotlightTracker(),
+		cfg:                         cfg,
+		limits:                      limits,
+		logger:                      logger,
+		reg:                         reg,
+		partitions:                  make(map[int32]*partitionState),
+		frozen:                      make(map[int32][]*frozenEpoch),
+		epochSeq:                    make(map[int32]int),
+		instanceLifecycler:          instanceLifecycler,
+		queryLoad:                   loadstats.NewTracker("cortex_readcache"),
+		partitionSeries:             loadstats.NewPartitionSeries(),
+		spotlights:                  newReadcacheSpotlightTracker(),
+		seriesStatsRefreshRequested: make(chan struct{}, 1),
+		seriesStatsRefreshInterval:  seriesStatsRefreshInterval,
 	}
 
 	r.seriesHashCache = hashcache.NewSeriesHashCache(tsdbCfg.SeriesHashCacheMaxBytes)
@@ -484,9 +495,10 @@ func (r *Readcache) running(ctx context.Context) error {
 		go r.runSpotlightLoop(ctx)
 	}
 
-	// Prime partition/hash-range snapshots so the first HashRangeStats
-	// RPC does not return zeros while waiting for the first tick.
-	go r.refreshSeriesStats(ctx)
+	// Prime the cheap partition totals immediately and run the slower
+	// per-range refresh in its coalescing worker.
+	r.refreshPartitionSeriesCounts()
+	go r.runSeriesStatsRefreshLoop(ctx)
 
 	for {
 		select {
@@ -499,10 +511,58 @@ func (r *Readcache) running(ctx context.Context) error {
 		case <-loadStatsTickT.C:
 			r.queryLoad.Tick()
 			r.tickSampleRates()
-			go r.refreshSeriesStats(ctx)
+			r.refreshPartitionSeriesCounts()
 		case <-reapT.C:
 			r.reapFrozenEpochs(time.Now())
 		}
+	}
+}
+
+const seriesStatsRefreshInterval = 5 * time.Minute
+
+// requestSeriesStatsRefresh schedules a per-range series walk without
+// blocking the caller. Multiple requests coalesce while a walk is in
+// progress.
+func (r *Readcache) requestSeriesStatsRefresh() {
+	select {
+	case r.seriesStatsRefreshRequested <- struct{}{}:
+	default:
+	}
+}
+
+// runSeriesStatsRefreshLoop runs one full per-range walk at startup,
+// after each coalesced event request, and as a five-minute fallback.
+// The fallback timer is reset after every attempted walk so an
+// event-driven refresh doesn't get followed immediately by a periodic
+// duplicate.
+func (r *Readcache) runSeriesStatsRefreshLoop(ctx context.Context) {
+	// A request queued before the worker starts is already represented
+	// in the startup walk's snapshot.
+	select {
+	case <-r.seriesStatsRefreshRequested:
+	default:
+	}
+	r.refreshSeriesStats(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+
+	timer := time.NewTimer(r.seriesStatsRefreshInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		case <-r.seriesStatsRefreshRequested:
+		}
+
+		r.refreshSeriesStats(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		timer.Reset(r.seriesStatsRefreshInterval)
 	}
 }
 
@@ -928,6 +988,7 @@ func (r *Readcache) compactHeads() {
 			}
 		}
 	}
+	r.requestSeriesStatsRefresh()
 }
 
 // OwnedPartitions returns a snapshot of currently-owned partition IDs.

@@ -12,9 +12,8 @@ import (
 
 // tickSampleRates advances every per-(partition, range)
 // samples-per-second EwmaRate by one tick. Must be called every
-// loadstats.TickInterval; running() drives this off the same ticker
-// that fires refreshSeriesStats so the two background signals
-// progress on the same cadence.
+// loadstats.TickInterval so the EWMA's configured half-life remains
+// accurate.
 //
 // This runs synchronously on the running() goroutine because each
 // EwmaRate.Tick is a single atomic Swap + a short mutex acquire;
@@ -34,10 +33,37 @@ func (r *Readcache) tickSampleRates() {
 	}
 }
 
+// refreshPartitionSeriesCounts updates the cheap per-partition head
+// series totals used by HashRangeStats. These totals stay on the
+// load-stats cadence because the rebalancer uses them to distinguish a
+// genuinely idle partition from a non-empty partition whose sample-rate
+// EWMA is temporarily zero.
+func (r *Readcache) refreshPartitionSeriesCounts() {
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	partitionCounts := make(map[int32]int64, len(parts))
+	for _, p := range parts {
+		var partitionTotal int64
+		p.tenantsMu.RLock()
+		for _, db := range p.tenants {
+			partitionTotal += int64(db.Head().NumSeries())
+		}
+		p.tenantsMu.RUnlock()
+		partitionCounts[p.partitionID] = partitionTotal
+	}
+	r.partitionSeries.SetCounts(partitionCounts)
+}
+
 // refreshSeriesStats walks owned partition TSDB heads and updates the
-// per-partition series and per-(partition, hash range) counts used by
-// HashRangeStats. It runs on the load-stats ticker, not on the RPC
-// path, so rebalancer polls cannot block ingest behind partitionMu.
+// per-(partition, hash range) counts used by HashRangeStats. The walk
+// runs on a slower fallback cadence and after events that can change
+// range attribution or residue; it is deliberately decoupled from the
+// 15-second EWMA tick.
 //
 // Per-partition bucketing is important for residue accounting: when a
 // hash range moves from partition P_old to partition P_new, P_old's
@@ -59,8 +85,6 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 		parts = append(parts, p)
 	}
 	r.partitionMu.RUnlock()
-
-	partitionCounts := make(map[int32]int64, len(parts))
 
 	for _, p := range parts {
 		if err := ctx.Err(); err != nil {
@@ -86,24 +110,20 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 			db       *partitionTSDB
 		}
 		var dbs []tenantDB
-		var partitionTotal int64
 
 		p.tenantsMu.RLock()
 		for tenantID, db := range p.tenants {
-			partitionTotal += int64(db.Head().NumSeries())
 			if len(bucketRanges) > 0 {
 				dbs = append(dbs, tenantDB{tenantID: tenantID, db: db})
 			}
 		}
 		p.tenantsMu.RUnlock()
 
-		partitionCounts[p.partitionID] = partitionTotal
-
 		for _, td := range dbs {
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			if _, err := loadstats.CountSeriesByHashRange(ctx, td.tenantID, td.db.Head(), bucketRanges, counts, examples); err != nil {
+			if _, err := loadstats.CountSeriesByHashRange(ctx, td.db.Head(), bucketRanges, counts, examples); err != nil {
 				level.Warn(r.logger).Log(
 					"msg", "hash range series walk failed",
 					"partition", p.partitionID,
@@ -122,6 +142,4 @@ func (r *Readcache) refreshSeriesStats(ctx context.Context) {
 			}
 		}
 	}
-
-	r.partitionSeries.SetCounts(partitionCounts)
 }

@@ -4,8 +4,10 @@ package loadstats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -13,7 +15,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,11 +26,12 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
-func newTestHead(t *testing.T) *tsdb.Head {
+func newTestHead(t testing.TB) *tsdb.Head {
 	t.Helper()
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkDirRoot = t.TempDir()
 	opts.IsolationDisabled = true
+	opts.SecondaryHashFunction = mimirpb.ShardByMetricNameLocalityLabelsFunc("user-1")
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = head.Close() })
@@ -216,7 +222,7 @@ func TestCountSeriesByHashRange_EmptyRanges(t *testing.T) {
 	head := newTestHead(t)
 
 	counts := []int64{}
-	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, nil, counts, nil)
+	n, err := CountSeriesByHashRange(context.Background(), head, nil, counts, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
 }
@@ -226,7 +232,7 @@ func TestCountSeriesByHashRange_EmptyHead(t *testing.T) {
 
 	ranges := []assignment.HashRange{{Lo: 0, Hi: math.MaxUint32}}
 	counts := make([]int64, len(ranges))
-	n, err := CountSeriesByHashRange(context.Background(), "user-1", head, ranges, counts, nil)
+	n, err := CountSeriesByHashRange(context.Background(), head, ranges, counts, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
 	assert.Equal(t, int64(0), counts[0])
@@ -268,7 +274,7 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 		}
 		counts := make([]int64, len(ranges))
 		examples := make([]string, len(ranges))
-		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts, examples)
+		n, err := CountSeriesByHashRange(context.Background(), head, ranges, counts, examples)
 		require.NoError(t, err)
 		assert.Equal(t, int64(totalSeries), n)
 		assert.Equal(t, int64(totalSeries), counts[0]+counts[1])
@@ -319,7 +325,7 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 
 		ranges := []assignment.HashRange{{Lo: lo, Hi: hi}}
 		counts := make([]int64, len(ranges))
-		n, err := CountSeriesByHashRange(context.Background(), userID, head, ranges, counts, nil)
+		n, err := CountSeriesByHashRange(context.Background(), head, ranges, counts, nil)
 		require.NoError(t, err)
 		assert.Equal(t, int64(totalSeries), n)
 		assert.Equal(t, want, counts[0])
@@ -340,8 +346,116 @@ func TestCountSeriesByHashRange_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	_, err = CountSeriesByHashRange(ctx, "user-1", head, ranges, counts, nil)
-	if err != nil {
-		assert.ErrorIs(t, err, context.Canceled)
+	_, err = CountSeriesByHashRange(ctx, head, ranges, counts, nil)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestLoadSeriesExamples_ToleratesDeletedSeries(t *testing.T) {
+	head := newTestHead(t)
+	examples := []string{""}
+
+	err := loadSeriesExamples(
+		t.Context(),
+		head,
+		[]chunks.HeadSeriesRef{chunks.HeadSeriesRef(math.MaxUint64)},
+		[]bool{true},
+		examples,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, examples[0])
+}
+
+func BenchmarkCountSeriesByHashRange(b *testing.B) {
+	const (
+		userID     = "user-1"
+		numSeries  = 100_000
+		numRanges  = 128
+		numMetrics = 1_000
+	)
+
+	head := newTestHead(b)
+	app := head.Appender(context.Background())
+	for i := 0; i < numSeries; i++ {
+		ls := labels.FromStrings(
+			model.MetricNameLabel, fmt.Sprintf("metric_%d", i%numMetrics),
+			"instance", fmt.Sprintf("host-%d", i),
+			"job", "benchmark",
+		)
+		_, err := app.Append(0, ls, int64(i), float64(i))
+		require.NoError(b, err)
 	}
+	require.NoError(b, app.Commit())
+
+	ranges := make([]assignment.HashRange, numRanges)
+	rangeWidth := (uint64(math.MaxUint32) + 1) / numRanges
+	for i := range ranges {
+		lo := uint64(i) * rangeWidth
+		hi := lo + rangeWidth - 1
+		if i == len(ranges)-1 {
+			hi = math.MaxUint32
+		}
+		ranges[i] = assignment.HashRange{Lo: uint32(lo), Hi: uint32(hi)}
+	}
+
+	b.Run("postings-and-rehash", func(b *testing.B) {
+		counts := make([]int64, len(ranges))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			clear(counts)
+			_, err := countSeriesByHashRangeWithRehash(context.Background(), userID, head, ranges, counts)
+			require.NoError(b, err)
+		}
+	})
+
+	b.Run("secondary-hash", func(b *testing.B) {
+		counts := make([]int64, len(ranges))
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			clear(counts)
+			_, err := CountSeriesByHashRange(context.Background(), head, ranges, counts, nil)
+			require.NoError(b, err)
+		}
+	})
+}
+
+// countSeriesByHashRangeWithRehash preserves the pre-optimization
+// algorithm as a benchmark baseline.
+func countSeriesByHashRangeWithRehash(ctx context.Context, userID string, head *tsdb.Head, ranges []assignment.HashRange, counts []int64) (int64, error) {
+	idx, err := head.Index()
+	if err != nil {
+		return 0, err
+	}
+	defer idx.Close()
+
+	name, value := index.AllPostingsKey()
+	postings, err := idx.Postings(ctx, name, value)
+	if err != nil {
+		return 0, err
+	}
+
+	builder := labels.NewScratchBuilder(16)
+	var walked int64
+	for postings.Next() {
+		ref := postings.At()
+		builder.Reset()
+		if err := idx.Series(ref, &builder, nil); err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				continue
+			}
+			return walked, err
+		}
+		walked++
+
+		lset := builder.Labels()
+		hash := mimirpb.ShardByMetricNameLocalityLabels(userID, lset.Get(model.MetricNameLabel), lset)
+		ri := sort.Search(len(ranges), func(i int) bool {
+			return ranges[i].Lo > hash
+		}) - 1
+		if ri >= 0 && ranges[ri].Contains(hash) {
+			counts[ri]++
+		}
+	}
+	return walked, postings.Err()
 }

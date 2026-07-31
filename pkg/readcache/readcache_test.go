@@ -15,10 +15,13 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -299,6 +302,111 @@ func TestReadcache_SetAndGetHashRanges_PerPartition(t *testing.T) {
 	}, getResp.Ranges)
 }
 
+func TestReadcache_SetHashRangesRequestsSeriesRefreshOnlyForChanges(t *testing.T) {
+	p := newPartitionState(0)
+	r := &Readcache{
+		cfg:                         Config{InstanceID: "test"},
+		logger:                      log.NewNopLogger(),
+		partitions:                  map[int32]*partitionState{0: p},
+		seriesStatsRefreshRequested: make(chan struct{}, 1),
+	}
+	ctx := t.Context()
+
+	req := &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{{Lo: 0, Hi: 99, PartitionId: 0}},
+	}
+	_, err := r.setHashRanges(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, r.seriesStatsRefreshRequested, 1)
+	<-r.seriesStatsRefreshRequested
+
+	_, err = r.setHashRanges(ctx, req)
+	require.NoError(t, err)
+	assert.Empty(t, r.seriesStatsRefreshRequested, "an unchanged assignment should not request another full walk")
+
+	_, err = r.setHashRanges(ctx, &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{{Lo: 100, Hi: 199, PartitionId: 0}},
+	})
+	require.NoError(t, err)
+	require.Len(t, r.seriesStatsRefreshRequested, 1)
+}
+
+func TestReadcache_SeriesStatsRefreshRequestsCoalesce(t *testing.T) {
+	r := &Readcache{seriesStatsRefreshRequested: make(chan struct{}, 1)}
+	r.requestSeriesStatsRefresh()
+	r.requestSeriesStatsRefresh()
+	r.requestSeriesStatsRefresh()
+	assert.Len(t, r.seriesStatsRefreshRequested, 1)
+}
+
+func TestReadcache_SeriesStatsRefreshLoopFallback(t *testing.T) {
+	rng := assignment.HashRange{Lo: 0, Hi: 99}
+	p := newPartitionState(0)
+	p.ranges.setRanges([]assignment.HashRange{rng})
+	r := &Readcache{
+		partitions:                  map[int32]*partitionState{0: p},
+		seriesStatsRefreshRequested: make(chan struct{}, 1),
+		seriesStatsRefreshInterval:  10 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go r.runSeriesStatsRefreshLoop(ctx)
+
+	require.Eventually(t, func() bool {
+		p.ranges.mu.RLock()
+		defer p.ranges.mu.RUnlock()
+		_, ok := p.ranges.rangeCounts[rng]
+		return ok
+	}, time.Second, time.Millisecond, "startup refresh did not populate range counts")
+
+	p.ranges.mu.Lock()
+	delete(p.ranges.rangeCounts, rng)
+	p.ranges.mu.Unlock()
+
+	require.Eventually(t, func() bool {
+		p.ranges.mu.RLock()
+		defer p.ranges.mu.RUnlock()
+		_, ok := p.ranges.rangeCounts[rng]
+		return ok
+	}, time.Second, time.Millisecond, "fallback refresh did not repopulate range counts")
+}
+
+func TestReadcache_CompactHeadsRequestsSeriesRefresh(t *testing.T) {
+	r := &Readcache{
+		partitions:                  map[int32]*partitionState{},
+		seriesStatsRefreshRequested: make(chan struct{}, 1),
+	}
+	r.compactHeads()
+	assert.Len(t, r.seriesStatsRefreshRequested, 1)
+}
+
+func TestReadcache_RefreshPartitionSeriesCounts(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Minute, r.seriesStatsRefreshInterval)
+
+	r.partitions[7] = newPartitionState(7)
+	db, err := r.getOrOpenTSDB("tenant-1", 7)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	app := db.Appender(t.Context())
+	_, err = app.Append(0, labels.FromStrings("__name__", "up", "instance", "host-1"), 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	r.refreshPartitionSeriesCounts()
+	snapshot := r.partitionSeries.Snapshot()
+	require.Len(t, snapshot.Partitions, 1)
+	assert.Equal(t, int32(7), snapshot.Partitions[0].PartitionID)
+	assert.Equal(t, int64(1), snapshot.Partitions[0].ActiveSeries)
+	assert.Equal(t, int64(1), snapshot.Total)
+}
+
 // TestReadcache_HashRangeStats_ResidueOnFormerOwner verifies the
 // design goal of this commit: after a hash range moves from one
 // partition to another, the previous owner's TSDB head still has the
@@ -414,6 +522,20 @@ func TestReadcache_GetOrOpenTSDB(t *testing.T) {
 	db, err = r.getOrOpenTSDB("user-1", 0)
 	require.NoError(t, err)
 	require.NotNil(t, db)
+
+	seriesLabels := labels.FromStrings("__name__", "up", "instance", "host-1")
+	app := db.Appender(ctx)
+	_, err = app.Append(0, seriesLabels, 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	var secondaryHashes []uint32
+	db.Head().ForEachSecondaryHash(func(_ []chunks.HeadSeriesRef, hashes []uint32) {
+		secondaryHashes = append(secondaryHashes, hashes...)
+	})
+	require.Equal(t, []uint32{
+		mimirpb.ShardByMetricNameLocalityLabels("user-1", "up", seriesLabels),
+	}, secondaryHashes)
 
 	// Second call returns the same instance.
 	db2, err := r.getOrOpenTSDB("user-1", 0)

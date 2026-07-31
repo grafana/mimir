@@ -859,10 +859,13 @@ func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRe
 	owned := make(map[int32]struct{}, len(parts))
 	var updatedPartitions, clearedPartitions []int32
 	var ignoredUnowned []int32
+	rangesChanged := false
 	for _, p := range parts {
 		owned[p.partitionID] = struct{}{}
 		ranges := byPartition[p.partitionID]
-		p.ranges.setRanges(ranges)
+		if p.ranges.setRanges(ranges) {
+			rangesChanged = true
+		}
 		if len(ranges) > 0 {
 			updatedPartitions = append(updatedPartitions, p.partitionID)
 		} else {
@@ -897,6 +900,9 @@ func (r *Readcache) setHashRanges(_ context.Context, req *client.SetHashRangesRe
 		"cleared_partition_ids", formatPartitionIDs(clearedPartitions, 20),
 		"ignored_unowned_ids", formatPartitionIDs(ignoredUnowned, 20),
 	)
+	if rangesChanged {
+		r.requestSeriesStatsRefresh()
+	}
 	return &client.SetHashRangesResponse{}, nil
 }
 

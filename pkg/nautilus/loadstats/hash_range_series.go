@@ -9,34 +9,26 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
-
-// WalkInterval is how often a producer is expected to walk each
-// tenant's TSDB head to recount active series per owned hash range.
-const WalkInterval = 15 * time.Second
 
 // RangeSeries tracks per-hash-range active-series counts for the hash
 // ranges this instance has been told it owns (via SetRanges).
 //
 // Counts are not maintained incrementally on the write path. Instead
 // the producer periodically walks the TSDB head of each tenant,
-// computes mimirpb.ShardByMetricNameLocalityLabels for every series,
-// tallies the hits per owned range, and pushes the result via
-// SetCountsFor. This avoids the atomic-op hot path on every series
-// creation/deletion, avoids the 512 KB fixed histogram, and self-
-// corrects any accumulated drift from missed/duplicated lifecycle
+// tallies the cached secondary hashes per owned range, and pushes the
+// result via SetCountsFor. This avoids the atomic-op hot path on every
+// series creation/deletion, avoids the 512 KB fixed histogram, and
+// self-corrects any accumulated drift from missed/duplicated lifecycle
 // callbacks.
 //
 // The rebalancer fetches counts via Snapshot (through the
@@ -162,11 +154,13 @@ func (h *RangeSeries) LogSummary(logger log.Logger) {
 	)
 }
 
-// CountSeriesByHashRange walks all series in head, computes the
-// locality hash for each, looks up which of the provided sorted, non-
-// overlapping ranges (if any) contains it, and increments counts at
-// that index. counts must be the same length as ranges and is mutated
-// in place.
+// CountSeriesByHashRange walks all series in head using the secondary
+// hash cached on each TSDB series, looks up which of the provided
+// sorted, non-overlapping ranges (if any) contains it, and increments
+// counts at that index. The head must have been opened with a
+// SecondaryHashFunction that computes the metric-name-locality hash
+// for the head's tenant. counts must be the same length as ranges and
+// is mutated in place.
 //
 // If examples is non-nil it must be the same length as ranges. The
 // labels of the FIRST series found in each range are written via
@@ -179,59 +173,79 @@ func (h *RangeSeries) LogSummary(logger log.Logger) {
 //
 // Returns the number of series it observed (regardless of whether they
 // landed in an owned range).
-func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head, ranges []assignment.HashRange, counts []int64, examples []string) (int64, error) {
+func CountSeriesByHashRange(ctx context.Context, head *tsdb.Head, ranges []assignment.HashRange, counts []int64, examples []string) (int64, error) {
+	wantExamples := examples != nil && len(examples) == len(ranges)
+	exampleRefs := make([]chunks.HeadSeriesRef, len(ranges))
+	exampleRefsSet := make([]bool, len(ranges))
+	var walked int64
+	var walkErr error
+
+	head.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, hashes []uint32) {
+		if walkErr != nil {
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			walkErr = err
+			return
+		}
+		for i, hash := range hashes {
+			walked++
+
+			// Binary search: find largest i such that ranges[i].Lo <= hash.
+			ri := sort.Search(len(ranges), func(i int) bool {
+				return ranges[i].Lo > hash
+			}) - 1
+			if ri >= 0 && ranges[ri].Contains(hash) {
+				counts[ri]++
+				if wantExamples && examples[ri] == "" && !exampleRefsSet[ri] {
+					exampleRefs[ri] = refs[i]
+					exampleRefsSet[ri] = true
+				}
+			}
+		}
+	})
+	if walkErr != nil {
+		return walked, walkErr
+	}
+
+	if !wantExamples {
+		return walked, nil
+	}
+
+	if err := loadSeriesExamples(ctx, head, exampleRefs, exampleRefsSet, examples); err != nil {
+		return walked, err
+	}
+	return walked, nil
+}
+
+func loadSeriesExamples(ctx context.Context, head *tsdb.Head, exampleRefs []chunks.HeadSeriesRef, exampleRefsSet []bool, examples []string) error {
 	idx, err := head.Index()
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer idx.Close()
 
-	name, value := index.AllPostingsKey()
-	postings, err := idx.Postings(ctx, name, value)
-	if err != nil {
-		return 0, err
-	}
-
-	wantExamples := examples != nil && len(examples) == len(ranges)
 	builder := labels.NewScratchBuilder(16)
-	var walked int64
-
-	for postings.Next() {
-		if walked&0xffff == 0 && ctx.Err() != nil {
-			return walked, ctx.Err()
+	for i, ref := range exampleRefs {
+		if !exampleRefsSet[i] || examples[i] != "" {
+			continue
 		}
-
-		ref := postings.At()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		builder.Reset()
-		if err := idx.Series(ref, &builder, nil); err != nil {
-			// Series may be deleted between Postings() and Series();
-			// treat as absent.
+		if err := idx.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
+			// Series may be deleted between the secondary-hash walk and
+			// this bounded example lookup; treat it as absent.
 			if errors.Is(err, storage.ErrNotFound) {
 				continue
 			}
-			return walked, err
+			return err
 		}
-		walked++
-
-		lset := builder.Labels()
-		metricName := lset.Get(model.MetricNameLabel)
-		hash := mimirpb.ShardByMetricNameLocalityLabels(userID, metricName, lset)
-
-		// Binary search: find largest i such that ranges[i].Lo <= hash.
-		ri := sort.Search(len(ranges), func(i int) bool {
-			return ranges[i].Lo > hash
-		}) - 1
-		if ri >= 0 && ranges[ri].Contains(hash) {
-			counts[ri]++
-			if wantExamples && examples[ri] == "" {
-				// labels.Labels.String() allocates a fresh Go string,
-				// detaching us from the TSDB intern pool. Capturing
-				// once per range bounds the allocation to one per
-				// owned range per walk, even on heads with millions
-				// of series.
-				examples[ri] = lset.String()
-			}
-		}
+		// labels.Labels.String() allocates a fresh Go string, detaching
+		// the example from the TSDB intern pool. At most one lookup and
+		// allocation is performed per range.
+		examples[i] = builder.Labels().String()
 	}
-	return walked, postings.Err()
+	return nil
 }
