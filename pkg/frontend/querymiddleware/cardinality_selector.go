@@ -151,11 +151,11 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	// The estimate for the whole expression is the maximum cardinality across its selectors, and the
 	// cardinality of a single selector is the maximum across the buckets it spans.
 	// If there is no information available for a selector, then we return no estimate at all.
-	var estimate uint64
+	var overallEstimate uint64
 
 	for _, lookup := range lookups {
 		hitCount := 0
-		var selectorMax uint64
+		var selectorEstimate uint64
 
 		for _, k := range lookup.keys {
 			entry, ok := decoded[k]
@@ -167,7 +167,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 				continue
 			}
 			hitCount++
-			selectorMax = max(selectorMax, entry.Cardinality)
+			selectorEstimate = max(selectorEstimate, entry.Cardinality)
 		}
 
 		if hitCount == 0 {
@@ -184,15 +184,15 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 			"selector", lookup.canonical,
 			"requested_cache_entries_count", len(lookup.keys),
 			"hit_count", hitCount,
-			"estimate", estimate,
+			"estimate", selectorEstimate,
 		)
 
-		estimate = max(estimate, selectorMax)
+		overallEstimate = max(overallEstimate, selectorEstimate)
 	}
 
-	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", estimate)
+	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
 
-	return &EstimatedSeriesCount{EstimatedSeriesCount: estimate}
+	return &EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}
 }
 
 // selectorTimeRange is a selector's matchers together with the time range it queries from storage.
