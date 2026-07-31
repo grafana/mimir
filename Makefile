@@ -654,7 +654,8 @@ build-mixin: check-mixin-jb
 	@# Empty the compiled mixin directories content, without removing the directories itself,
 	@# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
 	@# If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
-	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+	@set -e; \
+	for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
 		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
