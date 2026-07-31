@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 
+	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ballast"
 	"github.com/grafana/dskit/flagext"
