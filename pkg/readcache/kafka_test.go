@@ -272,6 +272,9 @@ func TestReadcache_FreshAcquisitionIgnoresStaleOffsetFile(t *testing.T) {
 	cfg := newTestConfigNoKafka(t)
 	cfg.KafkaTopic = topic
 	cfg.OwnedPartitions = "0"
+	// This test covers the zero-period compatibility path: ignore the
+	// stale offset and adopt at the live edge.
+	cfg.AdoptCatchUpPeriod = 0
 
 	var kafkaCfg ingest.KafkaConfig
 	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
@@ -326,6 +329,17 @@ func TestReadcache_FreshAcquisitionIgnoresStaleOffsetFile(t *testing.T) {
 	assert.NoFileExists(t, staleOffsetFile,
 		"a fresh acquisition must delete the stale offset file instead of resuming from it")
 
+	// Live-edge adoption must become warm without waiting for a new
+	// produce: WaitReadConsistencyUntilLastProducedOffset would hang
+	// forever on an idle end-position consumer.
+	require.Eventually(t, func() bool {
+		rc.partitionMu.RLock()
+		p := rc.partitions[1]
+		rc.partitionMu.RUnlock()
+		return p != nil && p.joinedAtLiveEdge && p.warm.Load()
+	}, 5*time.Second, 10*time.Millisecond,
+		"live-edge acquisition with existing Kafka data must warm without a follow-up produce")
+
 	// Only records produced from now on are consumed.
 	writeSample("fresh_series", 3000)
 	require.Eventually(t, func() bool {
@@ -338,6 +352,116 @@ func TestReadcache_FreshAcquisitionIgnoresStaleOffsetFile(t *testing.T) {
 	require.NotNil(t, db)
 	assert.Equal(t, uint64(1), db.Head().NumSeries(),
 		"records produced before the fresh acquisition must not be replayed from the stale offset")
+}
+
+func TestReadcache_FreshAcquisitionReplaysConfiguredCatchUpPeriod(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 2, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+	cfg.AdoptCatchUpPeriod = 15 * time.Minute
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	reg := prometheus.NewPedanticRegistry()
+	writer := makeKafkaWriter(t, kafkaCfg, prometheus.NewPedanticRegistry())
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	writeSample := func(name string) {
+		req := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: mimirpb.FromLabelsToLabelAdapters(
+						labels.FromStrings("__name__", name, "job", "test")),
+					Samples: []mimirpb.Sample{{TimestampMs: time.Now().UnixMilli(), Value: 1}},
+				},
+			}},
+		}
+		require.NoError(t, writer.WriteSync(user.InjectOrgID(ctx, tenantID), topic, 1, tenantID, req))
+	}
+
+	// This record predates the ownership move but lies inside the
+	// configured replay window.
+	writeSample("series_before_acquisition")
+
+	rc, err := New(cfg, validation.NewOverrides(validation.Limits{}, nil), nil, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	require.NoError(t, rc.addPartition(ctx, 1))
+	require.Eventually(t, func() bool {
+		rc.partitionMu.RLock()
+		p := rc.partitions[1]
+		rc.partitionMu.RUnlock()
+		if p == nil || !p.warm.Load() {
+			return false
+		}
+		db, err := rc.getOrOpenTSDB(tenantID, 1)
+		return err == nil && db != nil && db.Head().NumSeries() == 1
+	}, 20*time.Second, 100*time.Millisecond,
+		"fresh acquisition should replay recent Kafka history before becoming warm")
+
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+	var sawWarmupDuration bool
+	for _, family := range metricFamilies {
+		if family.GetName() == "cortex_readcache_partition_warmup_duration_seconds" {
+			sawWarmupDuration = family.GetMetric()[0].GetHistogram().GetSampleCount() > 0
+		}
+	}
+	assert.True(t, sawWarmupDuration, "successful warm-up should be observed")
+}
+
+func TestReadcache_RemovePartitionCancelsWarmup(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 2, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+	// Catch-up waits for the live edge asynchronously; remove must
+	// cancel that waiter instead of leaving a goroutine stuck.
+	cfg.AdoptCatchUpPeriod = 15 * time.Minute
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	rc, err := New(cfg, validation.NewOverrides(validation.Limits{}, nil), nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	require.NoError(t, rc.addPartition(ctx, 1))
+	require.NoError(t, rc.removePartition(1))
+
+	rc.partitionMu.RLock()
+	_, stillOwned := rc.partitions[1]
+	rc.partitionMu.RUnlock()
+	assert.False(t, stillOwned, "removed partition must leave the owned map")
 }
 
 // makeKafkaWriter is a small helper that constructs an ingest writer

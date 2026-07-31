@@ -70,6 +70,13 @@ type Config struct {
 	// store-gateway (fed by blockbuilder) is the canonical source.
 	LocalBlockRetention time.Duration `yaml:"local_block_retention" category:"experimental"`
 
+	// AdoptCatchUpPeriod controls how much Kafka history a partition
+	// replays when this running process acquires it from another
+	// readcache. Replay is asynchronous: the partition stays non-warm
+	// until it reaches the live edge, so queries fall back to the
+	// previous lease owner. Zero preserves legacy live-edge adoption.
+	AdoptCatchUpPeriod time.Duration `yaml:"adopt_catch_up_period" category:"experimental"`
+
 	// MaxExemplarsPerPartitionTSDB caps the exemplar-storage capacity of
 	// each per-(tenant, partition) TSDB. The tenant limit
 	// (-ingester.max-global-exemplars-per-user) is a GLOBAL limit that the
@@ -115,6 +122,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often each partitionTSDB head is considered for compaction.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "readcache.tsdb-config-update-period", 15*time.Second, "Period with which readcache updates per-tenant TSDB configuration from runtime limits (e.g. out-of-order samples window, exemplars), mirroring the ingester.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
+	f.DurationVar(&cfg.AdoptCatchUpPeriod, "readcache.adopt-catch-up-period", 15*time.Minute, "How much Kafka history to replay asynchronously when a running readcache freshly acquires a partition. The partition remains non-warm until it catches up to the live edge. 0 starts at the live edge without replay.")
 	f.IntVar(&cfg.MaxExemplarsPerPartitionTSDB, "readcache.max-exemplars-per-partition-tsdb", 100000, "Upper bound on the exemplar-storage capacity of each per-(tenant, partition) TSDB. The effective capacity is min(tenant's max-global-exemplars-per-user, this cap); the circular exemplar storage preallocates its full capacity per TSDB, so an uncapped global limit multiplies across every open (tenant, partition) TSDB. 0 or negative disables the cap.")
 	cfg.InstanceRing.RegisterFlags(f, logger)
 }
@@ -138,6 +146,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.LocalBlockRetention < 0 {
 		return fmt.Errorf("local-block-retention must be non-negative")
+	}
+	if cfg.AdoptCatchUpPeriod < 0 {
+		return fmt.Errorf("adopt-catch-up-period must be non-negative")
 	}
 	if _, err := cfg.ParseOwnedPartitions(); err != nil {
 		return fmt.Errorf("owned-partitions: %w", err)

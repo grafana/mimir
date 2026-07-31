@@ -123,6 +123,11 @@ type Readcache struct {
 	// the two histograms compare directly.
 	queriedSamples prometheus.Histogram
 
+	// partitionWarmupDuration records successful asynchronous Kafka
+	// catch-up time after acquiring a partition. The current number of
+	// warming partitions is exported by a GaugeFunc over partitions.
+	partitionWarmupDuration prometheus.Histogram
+
 	// seriesWalkMu prevents overlapping background series walks when a
 	// single tick takes longer than loadstats.TickInterval.
 	seriesWalkMu sync.Mutex
@@ -210,20 +215,31 @@ type partitionState struct {
 	// Registry instead of registering it directly.
 	readerMetrics prometheus.Collector
 
-	// warm flips to true once the Kafka reader has caught up to the
-	// starting fetch offset enough that read RPCs can be served
-	// without misleadingly partial results. Until then, the read
-	// handlers return errStillWarming so the distributor can fall
-	// back to the previous lease owner. Phase 2A flips warm to true
-	// immediately after addPartition returns; a future patch hooks
-	// this into the reader's first-fetch-completed signal.
+	// warm flips to true once the Kafka reader has consumed through a
+	// live-edge offset observed after startup (or immediately when the
+	// reader joined at the live edge). Until then, read RPCs return
+	// errStillWarming so the distributor can fall back to the previous
+	// lease owner.
 	warm atomic.Bool
 
+	// joinedAtLiveEdge is set by startKafkaReader when consumption
+	// starts at Kafka "end". That position never consumes the current
+	// last-produced offset, so WaitReadConsistencyUntilLastProducedOffset
+	// would hang until the next produce. Live-edge acquisitions are
+	// already at the tip and become warm immediately.
+	joinedAtLiveEdge bool
+
+	// warmupCancel stops the asynchronous live-edge waiter when this
+	// acquisition loses ownership. The mutex makes cancellation safe
+	// against concurrent shutdown while addPartition is finishing.
+	warmupMu     sync.Mutex
+	warmupCancel context.CancelFunc
+
 	// startOffset is the Kafka offset this pod began consuming the
-	// partition from, captured once the reader is running. Readcache
-	// always joins at the live edge (ConsumeFromPositionAtStartup =
-	// "end"), so this is the partition's high-water offset at
-	// acquisition time. -1 until the reader has started. Stored
+	// partition from, captured once the reader is running. Fresh
+	// acquisitions normally resolve this from AdoptCatchUpPeriod;
+	// zero-period adoption resolves it at the live edge. -1 until the
+	// reader has started. Stored
 	// atomically because the admin page reads it concurrently with
 	// startKafkaReader. The current end offset is read live from the
 	// reader (LastSeenOffsets); the two together give the offset span
@@ -304,8 +320,19 @@ func New(
 		headPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
 		blockPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
 	}
+	// Head postings MUST NOT be shared across partition TSDBs.
+	//
+	// Ingesters share one head per tenant, so Shared=true keyed by
+	// tenant is safe there. Readcache opens one TSDB per
+	// (tenant, partition, epoch); every head uses the same synthetic
+	// ULID (0000000000XXXXXXXXXXXXHEAD), so a shared cache keyed only
+	// by tenant reuses series refs from partition A's head when
+	// querying partition B. Those refs are meaningless in B and
+	// surface as Select returning series that violate the query
+	// matchers (query-tee foreign-series contamination on mimir-dev-30).
+	// Force Shared=false regardless of the inherited ingester TSDB flag.
 	r.headPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
-		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
+		Shared:                false,
 		KeyFunc:               tenant.TenantID,
 		Invalidation:          tsdbCfg.HeadPostingsForMatchersCacheInvalidation,
 		CacheVersions:         tsdbCfg.HeadPostingsForMatchersCacheVersions,
@@ -316,6 +343,8 @@ func New(
 		Metrics:               headPostingsMetrics,
 		PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 	})
+	// Block postings may stay shared: compacted block ULIDs are unique,
+	// so cache keys do not collide across partitions.
 	r.blockPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
 		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
 		KeyFunc:               tenant.TenantID,
@@ -354,6 +383,27 @@ func New(
 		// Match cortex_ingester_queried_samples exactly so the two
 		// histograms compare directly: 10*(8^(8-1)) = 20.9m.
 		Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+	})
+
+	promauto.With(metricReg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_readcache_partitions_warming",
+		Help: "Number of currently owned Kafka partitions whose readers have not yet caught up to the live edge.",
+	}, func() float64 {
+		r.partitionMu.RLock()
+		defer r.partitionMu.RUnlock()
+
+		var warming float64
+		for _, p := range r.partitions {
+			if !p.warm.Load() {
+				warming++
+			}
+		}
+		return warming
+	})
+	r.partitionWarmupDuration = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_readcache_partition_warmup_duration_seconds",
+		Help:    "Time from starting a partition's Kafka reader until it catches up to the live edge and becomes queryable.",
+		Buckets: prometheus.ExponentialBuckets(0.1, 2, 16),
 	})
 
 	if reg != nil {
@@ -620,12 +670,12 @@ type partitionEntry struct {
 // initializes the per-tenant TSDB map. Idempotent: a second call for
 // the same partition ID is a no-op.
 //
-// startKafkaReader uses services.StartAndAwaitRunning which blocks
-// until the reader has caught up to its target lag. During catch-up
-// the reader calls back into partitionPusher.PushToStorageAndReleaseRequest,
-// which calls getOrOpenTSDB and therefore RLocks partitionMu. So we
-// must NOT hold partitionMu while the reader catches up, or we
-// deadlock the very first time a non-empty partition is added.
+// startKafkaReader disables startup lag enforcement, but the reader
+// still calls back into partitionPusher.PushToStorageAndReleaseRequest
+// while starting (and while catching up asynchronously). That path
+// calls getOrOpenTSDB and therefore RLocks partitionMu. So we must
+// NOT hold partitionMu while the reader starts, or we deadlock the
+// first time a non-empty partition is added.
 //
 // The fix is to publish the partitionState into r.partitions under
 // the write lock, drop the lock, then start the reader. Concurrent
@@ -659,16 +709,77 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 		return err
 	}
 
-	// Phase 2A: the reader does not yet expose a "caught up to the
-	// starting fetch offset" signal, so we mark the partition warm
-	// immediately. A follow-up patch wires p.warm into the reader's
-	// initial-fetch-completed event so distributors see the "still
-	// warming" gRPC error during the genuine cold-start window
-	// after a partition move.
-	p.warm.Store(true)
+	r.startPartitionWarmup(p)
 
 	level.Info(r.logger).Log("msg", "readcache: partition added", "partition", partitionID)
 	return nil
+}
+
+// startPartitionWarmup keeps a newly started partition out of query
+// service until its reader has consumed through a live-edge offset
+// observed after startup. Catch-up itself remains asynchronous, so
+// assignment reconciliation is not serialized on Kafka lag.
+//
+// Readers that joined at Kafka "end" are already at the tip: the
+// consistency waiter cannot observe that (it waits for the current
+// last-produced offset, which an end-position consumer never reads),
+// so those partitions become warm immediately.
+func (r *Readcache) startPartitionWarmup(p *partitionState) {
+	if p.joinedAtLiveEdge {
+		p.warm.Store(true)
+		level.Info(r.logger).Log("msg", "readcache: partition joined at Kafka live edge; marked warm", "partition", p.partitionID)
+		return
+	}
+
+	warmupCtx, cancel := context.WithCancel(context.Background())
+	p.warmupMu.Lock()
+	p.warmupCancel = cancel
+	p.warmupMu.Unlock()
+
+	reader := p.reader
+	startedAt := time.Now()
+	go func() {
+		defer cancel()
+
+		for {
+			err := reader.WaitReadConsistencyUntilLastProducedOffset(warmupCtx)
+			if err == nil {
+				break
+			}
+			if warmupCtx.Err() != nil {
+				return
+			}
+
+			level.Warn(r.logger).Log("msg", "readcache: partition warm-up attempt failed; retrying", "partition", p.partitionID, "err", err)
+			select {
+			case <-warmupCtx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+
+		if warmupCtx.Err() != nil {
+			return
+		}
+
+		p.warm.Store(true)
+		r.partitionWarmupDuration.Observe(time.Since(startedAt).Seconds())
+		level.Info(r.logger).Log(
+			"msg", "readcache: partition warmed to Kafka live edge",
+			"partition", p.partitionID,
+			"duration", time.Since(startedAt),
+		)
+	}()
+}
+
+func (p *partitionState) cancelWarmup() {
+	p.warmupMu.Lock()
+	cancel := p.warmupCancel
+	p.warmupCancel = nil
+	p.warmupMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // removePartition stops actively owning a partition: it shuts down
@@ -717,6 +828,7 @@ func (r *Readcache) stopPartition(partitionID int32, p *partitionState) error {
 		hook(partitionID)
 	}
 	var firstErr error
+	p.cancelWarmup()
 	if err := r.stopKafkaReaderLocked(p); err != nil {
 		firstErr = err
 		level.Warn(r.logger).Log("msg", "stopping partition reader", "partition", partitionID, "err", err)

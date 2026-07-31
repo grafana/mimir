@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,6 +70,7 @@ func TestConfig_Validate(t *testing.T) {
 	t.Run("defaults are valid", func(t *testing.T) {
 		cfg := newTestConfig(t, false, 0)
 		require.NoError(t, cfg.Validate())
+		assert.Equal(t, 15*time.Minute, cfg.AdoptCatchUpPeriod)
 	})
 
 	t.Run("missing instance id is rejected", func(t *testing.T) {
@@ -86,6 +89,12 @@ func TestConfig_Validate(t *testing.T) {
 		cfg := newTestConfig(t, false, 0)
 		cfg.KafkaTopic = ""
 		assert.Error(t, cfg.Validate())
+	})
+
+	t.Run("negative adopt catch-up period is rejected", func(t *testing.T) {
+		cfg := newTestConfig(t, false, 0)
+		cfg.AdoptCatchUpPeriod = -time.Second
+		assert.ErrorContains(t, cfg.Validate(), "adopt-catch-up-period must be non-negative")
 	})
 }
 
@@ -503,10 +512,9 @@ func TestReadcache_Stopping_TearsDownPartitionsInParallel(t *testing.T) {
 // SIGKILL could resolve.
 //
 // We verify the fix by installing a stopPartitionHook that, the
-// moment a stop is in flight, races a writer-lock probe. If the
-// writer is held, TryLock returns false; we want it to succeed,
-// proving the lock has already been released by the time
-// stopPartition runs.
+// moment a stop is in flight, probes whether another goroutine can
+// take a read lock. That succeeds while unrelated readers are active
+// but blocks if the stop path itself still holds the writer lock.
 func TestReadcache_Stopping_DoesNotHoldPartitionMuDuringStopPartition(t *testing.T) {
 	cfg := newTestConfig(t, true, 4)
 	cfg.OwnedPartitions = "0,1,2,3"
@@ -519,23 +527,20 @@ func TestReadcache_Stopping_DoesNotHoldPartitionMuDuringStopPartition(t *testing
 	defer startCancel()
 	require.NoError(t, services.StartAndAwaitRunning(startCtx, r))
 
-	var probedHeld bool
-	var probedFree bool
+	var probedHeld atomic.Bool
+	var probedFree atomic.Bool
 	r.stopPartitionHook = func(_ int32) {
-		// If stopping() is still holding partitionMu (the bug we
-		// fixed), TryLock will fail because the writer is held.
-		if r.partitionMu.TryLock() {
-			probedFree = true
-			r.partitionMu.Unlock()
+		if rwMutexAllowsConcurrentReader(&r.partitionMu) {
+			probedFree.Store(true)
 		} else {
-			probedHeld = true
+			probedHeld.Store(true)
 		}
 	}
 
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
 
-	assert.True(t, probedFree, "partitionMu must be released before stopPartition runs")
-	assert.False(t, probedHeld, "partitionMu was held while stopPartition ran (deadlock bug regression)")
+	assert.True(t, probedFree.Load(), "partitionMu must be released before stopPartition runs")
+	assert.False(t, probedHeld.Load(), "partitionMu was held while stopPartition ran (deadlock bug regression)")
 }
 
 // TestReadcache_RemovePartition_DoesNotHoldPartitionMuDuringStop is
@@ -563,9 +568,8 @@ func TestReadcache_RemovePartition_DoesNotHoldPartitionMuDuringStop(t *testing.T
 		if pid != 0 {
 			return
 		}
-		if r.partitionMu.TryLock() {
+		if rwMutexAllowsConcurrentReader(&r.partitionMu) {
 			probedFree = true
-			r.partitionMu.Unlock()
 		} else {
 			probedHeld = true
 		}
@@ -575,4 +579,26 @@ func TestReadcache_RemovePartition_DoesNotHoldPartitionMuDuringStop(t *testing.T
 
 	assert.True(t, probedFree, "partitionMu must be released before stopPartition runs from removePartition")
 	assert.False(t, probedHeld, "partitionMu held by removePartition during stop (deadlock bug regression)")
+}
+
+func rwMutexAllowsConcurrentReader(mu *sync.RWMutex) bool {
+	acquired := make(chan struct{})
+	release := make(chan struct{})
+	go func() {
+		mu.RLock()
+		close(acquired)
+		<-release
+		mu.RUnlock()
+	}()
+
+	select {
+	case <-acquired:
+		close(release)
+		return true
+	case <-time.After(time.Second):
+		// Let the probe goroutine exit after the writer releases the
+		// lock and the hook returns.
+		close(release)
+		return false
+	}
 }

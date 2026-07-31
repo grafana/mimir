@@ -149,6 +149,7 @@ func (r *Readcache) freezePartitionWithOffsetPolicy(partitionID int32, p *partit
 	if hook := r.stopPartitionHook; hook != nil {
 		hook(partitionID)
 	}
+	p.cancelWarmup()
 
 	// Capture the Kafka offset span before tearing down the reader:
 	// stopKafkaReaderLocked nils out p.reader, after which the

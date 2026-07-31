@@ -48,6 +48,20 @@ func (m *mockQueryStreamServer) Send(r *ingester_client.QueryStreamResponse) err
 	return nil
 }
 
+func requireReadcachePartitionsWarm(t *testing.T, rc *Readcache) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		rc.partitionMu.RLock()
+		defer rc.partitionMu.RUnlock()
+		for _, p := range rc.partitions {
+			if !p.warm.Load() {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "readcache partitions should finish asynchronous warm-up")
+}
+
 // TestReadcache_SamplesIngestedTotal_PerPartition produces sample
 // batches with distinct counts to two partitions and asserts that
 // cortex_readcache_samples_ingested_total attributes them to the
@@ -83,6 +97,7 @@ func TestReadcache_SamplesIngestedTotal_PerPartition(t *testing.T) {
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+	requireReadcachePartitionsWarm(t, rc)
 
 	writer := makeKafkaWriter(t, kafkaCfg, reg)
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
@@ -165,6 +180,7 @@ func TestReadcache_QueryStream_QueryLoadAttribution(t *testing.T) {
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+	requireReadcachePartitionsWarm(t, rc)
 
 	writer := makeKafkaWriter(t, kafkaCfg, reg)
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
@@ -308,6 +324,7 @@ func TestReadcache_QueryStream_GlobalSortsAndDeduplicatesLabelsAcrossPartitions(
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+	requireReadcachePartitionsWarm(t, rc)
 
 	writer := makeKafkaWriter(t, kafkaCfg, reg)
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
@@ -402,6 +419,7 @@ func TestReadcache_QueryStream_NoInRangeSamples(t *testing.T) {
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+	requireReadcachePartitionsWarm(t, rc)
 
 	writer := makeKafkaWriter(t, kafkaCfg, reg)
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
@@ -502,6 +520,7 @@ func TestReadcache_QueryStream_AppliesQueryShard(t *testing.T) {
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+	requireReadcachePartitionsWarm(t, rc)
 
 	writer := makeKafkaWriter(t, kafkaCfg, reg)
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()

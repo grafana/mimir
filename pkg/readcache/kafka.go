@@ -189,24 +189,20 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	if r.cfg.KafkaTopic != "" {
 		kafkaCfg.Topic = r.cfg.KafkaTopic
 	}
-	// Adopt NEW partitions at the live edge: skip PartitionReader's
-	// startup catch-up loop entirely. addPartition is on the critical
-	// path of every readcache assignment change (see
-	// Readcache.applyAssignment), and the rebalancer serializes adds
-	// within one snapshot; if start() blocks for catch-up on each
-	// partition, a pod that just received N partitions takes
-	// O(N * MaxConsumerLagAtStartup) wall-clock to finish
-	// reconciling. By forcing the consume position to the partition
-	// end, getStartOffset returns kafkaOffsetEnd, which
-	// PartitionReader.start() uses to short-circuit
-	// processNextFetchesUntilTargetOrMaxLagHonored.
+	// Warm-up is a background lifecycle operation, not a request. Let
+	// it wait until ownership is canceled instead of inheriting the
+	// request-oriented strong-consistency timeout (20s by default).
+	kafkaCfg.WaitStrongReadConsistencyTimeout = 0
+	// Freshly acquired partitions replay a configurable window from a
+	// timestamp. Startup lag enforcement stays disabled so
+	// addPartition does not block: the reader catches up
+	// asynchronously and partitionState.warm gates queries until it
+	// reaches a live-edge offset observed after startup.
 	//
-	// What we trade for it: any records produced before the reader
-	// joins are not consumed by this readcache. That's acceptable
-	// because readcache is a query-locality optimisation, not a
-	// durability path; the head will refill from the produce stream
-	// over the following minutes, and ingester/blockbuilder remain
-	// the canonical sources for anything older.
+	// A zero AdoptCatchUpPeriod preserves the legacy live-edge
+	// behavior. Live-edge joins are marked warm immediately: the
+	// consistency waiter cannot observe "already at tip" for an
+	// end-position consumer.
 	//
 	// RESUMED partitions are different. If the offset file exists on
 	// this volume AND the partition arrived with the initial startup
@@ -250,8 +246,26 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// freezePartition), which keeps the restart-resume path above
 	// honest: a file present at startup reconciliation can only have
 	// been written by this pod's own previous ownership stint.
+	joinedAtLiveEdge := false
 	if r.startupReconcileDone.Load() {
-		kafkaCfg.ConsumeFromPositionAtStartup = "end"
+		catchUpPeriod := r.cfg.AdoptCatchUpPeriod
+		if kafkaCfg.MaxReplayPeriod > 0 && catchUpPeriod > kafkaCfg.MaxReplayPeriod {
+			level.Info(r.logger).Log("msg", "readcache: clamping adopt catch-up period to MaxReplayPeriod",
+				"partition", p.partitionID,
+				"configured", r.cfg.AdoptCatchUpPeriod,
+				"clamped", kafkaCfg.MaxReplayPeriod)
+			catchUpPeriod = kafkaCfg.MaxReplayPeriod
+		}
+		if catchUpPeriod > 0 {
+			kafkaCfg.ConsumeFromPositionAtStartup = "timestamp"
+			kafkaCfg.ConsumeFromTimestampAtStartup = time.Now().Add(-catchUpPeriod).UnixMilli()
+		} else {
+			kafkaCfg.ConsumeFromPositionAtStartup = "end"
+			kafkaCfg.ConsumeFromTimestampAtStartup = 0
+			joinedAtLiveEdge = true
+		}
+		kafkaCfg.TargetConsumerLagAtStartup = 0
+		kafkaCfg.MaxConsumerLagAtStartup = 0
 		if err := os.Remove(offsetFilePath); err == nil {
 			level.Info(r.logger).Log("msg", "readcache: deleted stale offset file on fresh partition acquisition",
 				"partition", p.partitionID, "offset_file", offsetFilePath)
@@ -271,7 +285,10 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 			"partition", p.partitionID, "offset_file", offsetFilePath)
 	} else {
 		kafkaCfg.ConsumeFromPositionAtStartup = "end"
+		kafkaCfg.ConsumeFromTimestampAtStartup = 0
+		joinedAtLiveEdge = true
 	}
+	p.joinedAtLiveEdge = joinedAtLiveEdge
 
 	pusher := &partitionPusher{rc: r, partitionID: p.partitionID, ranges: p.ranges}
 	if r.samplesIngestedTotal != nil {
@@ -368,12 +385,10 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 
 	p.reader = reader
 	p.readerMetrics = partitionCollector
-	// Capture the offset we joined at and when. For live-edge
-	// adoption ("end") LastSeenOffsets is the partition's high-water
-	// offset at acquisition; for an offset-file resume it's the
-	// stored offset we're resuming from. Both are kept for the admin
-	// page's TSDB listing; the current end offset is read live from
-	// the reader.
+	// Capture the offset we joined at and when. This is the timestamp-
+	// resolved offset for fresh catch-up, the partition high-water
+	// mark for live-edge adoption, or the stored offset for resume.
+	// Both are kept for the admin page's TSDB listing.
 	p.startOffset.Store(reader.LastSeenOffsets().ForKafkaCluster(0))
 	p.startedConsumingAt.Store(time.Now().UnixMilli())
 	return nil
