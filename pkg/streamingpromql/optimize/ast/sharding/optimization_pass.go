@@ -59,14 +59,14 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *
 	// separate query that must be sharded independently. Some of these subtrees may be shardable and
 	// others not; that's fine, just like for top-level range queries today, where the shardable parts
 	// are sharded and the rest is left unchanged.
-	if roots := collectEvaluationRoots(expr); len(roots) > 0 {
+	if roots := collectEvaluationRoots(expr, params.TimeRange); len(roots) > 0 {
 		for _, root := range roots {
-			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], params.TimeRange, params.LookbackDelta, options)
+			shardedChild, err := o.shard(ctx, tenantIDs, root.call.Args[0], root.timeRange, params.LookbackDelta, options)
 			if err != nil {
 				return nil, err
 			}
 
-			root.Args[0] = shardedChild
+			root.call.Args[0] = shardedChild
 		}
 
 		return expr, nil
@@ -113,24 +113,34 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr p
 //
 // Markers are never nested inside one another (the subquery spin-off mapper does not recurse into a
 // query once it has spun it off), so this does not descend into a marker once found.
-func collectEvaluationRoots(expr parser.Expr) []*parser.Call {
-	var roots []*parser.Call
+func collectEvaluationRoots(expr parser.Expr, rootTimeRange types.QueryTimeRange) []evaluationRoot {
+	var roots []evaluationRoot
 
-	var visit func(node parser.Node)
-	visit = func(node parser.Node) {
+	var visit func(node parser.Node, timeRange types.QueryTimeRange)
+	visit = func(node parser.Node, timeRange types.QueryTimeRange) {
 		if call, ok := node.(*parser.Call); ok && core.IsEvaluationRootFunctionCall(call) {
-			roots = append(roots, call)
+			roots = append(roots, evaluationRoot{call: call, timeRange: timeRange})
 			return
 		}
 
+		childrenTimeRange := timeRange
+		if subquery, isSubquery := node.(*parser.SubqueryExpr); isSubquery {
+			childrenTimeRange = core.SubqueryChildrenTimeRange(timeRange, subquery.Range, subquery.Step, subquery.Offset, core.TimeFromTimestamp(subquery.Timestamp))
+		}
+
 		for _, child := range parser.Children(node) {
-			visit(child)
+			visit(child, childrenTimeRange)
 		}
 	}
 
-	visit(expr)
+	visit(expr, rootTimeRange)
 
 	return roots
+}
+
+type evaluationRoot struct {
+	call      *parser.Call
+	timeRange types.QueryTimeRange
 }
 
 var ConcatSquasher astmapper.Squasher = &concatSquasher{}
