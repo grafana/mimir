@@ -162,7 +162,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		canonical := `{__name__="foo"}`
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, c, userID, canonical, minT, maxT, 1234)
+		writeSelectorCardinalityToAllBuckets(t, c, ctx, canonical, minT, maxT, 1234)
 
 		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
@@ -176,8 +176,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NoError(t, err)
 
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="foo"}`, minT, maxT, 100)
-		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="bar"}`, minT, maxT, 500)
+		writeSelectorCardinalityToAllBuckets(t, c, ctx, `{__name__="foo"}`, minT, maxT, 100)
+		writeSelectorCardinalityToAllBuckets(t, c, ctx, `{__name__="bar"}`, minT, maxT, 500)
 
 		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
@@ -192,7 +192,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		// Only foo has an entry in the cache; bar has none.
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="foo"}`, minT, maxT, 100)
+		writeSelectorCardinalityToAllBuckets(t, c, ctx, `{__name__="foo"}`, minT, maxT, 100)
 
 		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
 		require.Nil(t, estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta))
@@ -207,7 +207,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		canonical := `{__name__="foo"}`
 		minT, maxT := selectors.ComputeQueriedTimeRange(wideTimeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys := selectorCardinalityCacheKeys(userID, canonical, minT, maxT, log.NewNopLogger())
+		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
 		require.Greater(t, len(keys), 1, "expected the wide range to span multiple buckets")
 
 		// Write a different cardinality to each bucket; the estimate should be the maximum.
@@ -232,7 +232,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		canonical := `{__name__="foo"}`
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys := selectorCardinalityCacheKeys(userID, canonical, minT, maxT, log.NewNopLogger())
+		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
 		for _, k := range keys {
 			// Store an entry with a different selector at the same key.
 			writeSelectorCardinalityEntry(t, c, k, `{__name__="something-else"}`, 4321)
@@ -353,9 +353,9 @@ func writeSelectorCardinalityEntry(t *testing.T, c cache.Cache, key, canonical s
 	c.SetMultiAsync(map[string][]byte{key: data}, selectorCardinalityTTL)
 }
 
-func writeSelectorCardinalityToAllBuckets(t *testing.T, c cache.Cache, userID, canonical string, minT, maxT int64, cardinality uint64) {
+func writeSelectorCardinalityToAllBuckets(t *testing.T, c cache.Cache, ctx context.Context, canonical string, minT, maxT int64, cardinality uint64) {
 	t.Helper()
-	keys := selectorCardinalityCacheKeys(userID, canonical, minT, maxT, log.NewNopLogger())
+	keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
 	for _, k := range keys {
 		writeSelectorCardinalityEntry(t, c, k, canonical, cardinality)
 	}

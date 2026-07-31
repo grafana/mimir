@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -93,11 +94,10 @@ func NewCacheCardinalityEstimator(cache cache.Cache, noStepSubqueryIntervalFn fu
 }
 
 func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount {
-	tenants, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil
-	}
-	userID := tenant.JoinTenantIDs(tenants)
+	spanLogger, ctx := spanlogger.New(ctx, e.logger, tracer, "EstimateSeriesCount")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("timeRange", timeRange)
+	spanLogger.SetTag("lookbackDelta", lookbackDelta)
 
 	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, e.noStepSubqueryIntervalFn)
 	if len(selectorRanges) == 0 {
@@ -116,7 +116,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	for _, sr := range selectorRanges {
 		canonical := canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(sr.matchers))
-		keys := selectorCardinalityCacheKeys(userID, canonical, sr.minT, sr.maxT, e.logger)
+		keys := selectorCardinalityCacheKeys(ctx, canonical, sr.minT, sr.maxT, spanLogger)
 		lookups = append(lookups, selectorLookup{canonical: canonical, keys: keys})
 
 		for _, k := range keys {
@@ -142,7 +142,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	for k, v := range res {
 		entry := &SelectorCardinalityStatistics{}
 		if err := proto.Unmarshal(v, entry); err != nil {
-			level.Warn(e.logger).Log("msg", "failed to unmarshal selector cardinality cache entry", "err", err)
+			level.Warn(spanLogger).Log("msg", "failed to unmarshal selector cardinality cache entry", "err", err, "key", k)
 			continue
 		}
 		decoded[k] = entry
@@ -150,11 +150,11 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	// The estimate for the whole expression is the maximum cardinality across its selectors, and the
 	// cardinality of a single selector is the maximum across the buckets it spans.
-	// If there is no information available for a selector, then return no estimate at all.
+	// If there is no information available for a selector, then we return no estimate at all.
 	var estimate uint64
 
 	for _, lookup := range lookups {
-		selectorFound := false
+		hitCount := 0
 		var selectorMax uint64
 
 		for _, k := range lookup.keys {
@@ -166,16 +166,31 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 			if entry.Selector != lookup.canonical {
 				continue
 			}
-			selectorFound = true
+			hitCount++
 			selectorMax = max(selectorMax, entry.Cardinality)
 		}
 
-		if !selectorFound {
+		if hitCount == 0 {
+			spanLogger.DebugLog(
+				"msg", "could not find cached cardinality estimate for selector",
+				"selector", lookup.canonical,
+				"requested_cache_entries_count", len(lookup.keys),
+			)
 			return nil
 		}
 
+		spanLogger.DebugLog(
+			"msg", "computed cardinality estimate for selector",
+			"selector", lookup.canonical,
+			"requested_cache_entries_count", len(lookup.keys),
+			"hit_count", hitCount,
+			"estimate", estimate,
+		)
+
 		estimate = max(estimate, selectorMax)
 	}
+
+	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", estimate)
 
 	return &EstimatedSeriesCount{EstimatedSeriesCount: estimate}
 }
@@ -190,6 +205,9 @@ type selectorTimeRange struct {
 // storage. The time range accounts for the selector's range, offset, @ modifier, the lookback delta
 // (for instant vector selectors and anchored/smoothed range selectors) and any enclosing subqueries,
 // matching the computation done by the selectors when they report their cardinality.
+//
+// FIXME: ideally we'd run sharding over the query plan (rather than AST) and therefore be able to
+// reuse the existing QueriedTimeRange method rather than implementing it again here.
 func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, noStepSubqueryIntervalFn func(rangeMillis int64) int64) []selectorTimeRange {
 	var out []selectorTimeRange
 
@@ -282,12 +300,6 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 		return nil
 	}
 
-	tenants, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil
-	}
-	userID := tenant.JoinTenantIDs(tenants)
-
 	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and time range,
 	// then aggregate within each group. Different shards of the same logical selector each report a
 	// disjoint subset of the series, so their cardinalities are summed. A selector that is reported
@@ -327,7 +339,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			continue
 		}
 
-		for _, k := range selectorCardinalityCacheKeys(userID, gk.selector, gk.minT, gk.maxT, p.logger) {
+		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, p.logger) {
 			entries[k] = data
 		}
 	}
@@ -383,7 +395,13 @@ func canonicalSelectorString(matchers []cardinalitySelectorMatcher) string {
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
 // per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
 // applied so that entries for different selectors don't all expire at the same bucket boundary.
-func selectorCardinalityCacheKeys(userID, canonicalSelector string, minT, maxT int64, logger log.Logger) []string {
+func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, logger log.Logger) []string {
+	tenants, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil
+	}
+	userID := tenant.JoinTenantIDs(tenants)
+
 	bucketMs := selectorCardinalityBucketSize.Milliseconds()
 
 	hasher := fnv.New64a()
