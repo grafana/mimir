@@ -29,6 +29,7 @@ func TestOptimizationPass(t *testing.T) {
 		options        requestoptions.Options
 		hints          *querymiddleware.Hints
 		readcacheRoute string
+		readcacheMax   int
 		expectedOutput string
 	}{
 		"unshardable expression": {
@@ -50,7 +51,8 @@ func TestOptimizationPass(t *testing.T) {
 			input:          `sum(foo)`,
 			options:        requestoptions.Options{TotalShards: 128},
 			readcacheRoute: validation.ReadcacheReadRoutingNautilus,
-			expectedOutput: `sum(foo)`,
+			readcacheMax:   2,
+			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_2"}), sum(foo{__query_shard__="2_of_2"})))`,
 		},
 		"shardable expression with specific requested shard count": {
 			input: `sum(foo)`,
@@ -93,7 +95,7 @@ func TestOptimizationPass(t *testing.T) {
 				splitAndMergeShards: 1,
 				readcacheRoute:      testCase.readcacheRoute,
 			}
-			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
+			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger, querymiddleware.WithReadcacheMaxQueryShards(testCase.readcacheMax))
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)

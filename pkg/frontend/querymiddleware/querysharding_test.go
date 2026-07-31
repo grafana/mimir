@@ -496,7 +496,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	})
 }
 
-func TestQuerySharding_ShouldSkipShardingForReadcacheRoutedTenant(t *testing.T) {
+func TestQuerySharding_ShouldCapShardingForReadcacheRoutedTenant(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		path:      "/query_range",
 		start:     util.TimeToMillis(start),
@@ -510,17 +510,19 @@ func TestQuerySharding_ShouldSkipShardingForReadcacheRoutedTenant(t *testing.T) 
 		shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{
 			totalShards:          16,
 			readcacheReadRouting: validation.ReadcacheReadRoutingNautilus,
-		}, 0, nil)
+		}, 0, nil, WithReadcacheMaxQueryShards(4))
 		downstream := &mockHandler{}
-		downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
+		downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+			Status: statusSuccess,
+			Data:   &PrometheusData{ResultType: string(parser.ValueTypeVector)},
+		}, nil)
 
 		res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 		require.NoError(t, err)
 		prometheusRes, ok := res.GetPrometheusResponse()
 		require.True(t, ok)
 		assert.Equal(t, statusSuccess, prometheusRes.GetStatus())
-		downstream.AssertCalled(t, "Do", mock.Anything, req)
-		downstream.AssertNumberOfCalls(t, "Do", 1)
+		downstream.AssertNumberOfCalls(t, "Do", 4)
 	})
 }
 

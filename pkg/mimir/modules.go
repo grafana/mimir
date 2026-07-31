@@ -1190,7 +1190,13 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(
+			t.Overrides,
+			t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard,
+			opts.CommonOpts.Reg,
+			util_log.Logger,
+			querymiddleware.WithReadcacheMaxQueryShards(t.Cfg.Frontend.QueryMiddleware.ReadcacheMaxQueryShards),
+		))
 	}
 
 	return nil

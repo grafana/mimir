@@ -83,8 +83,9 @@ func newQueryShardingMiddleware(
 	limit Limits,
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
+	options ...QuerySharderOption,
 ) MetricsQueryMiddleware {
-	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limit, maxSeriesPerShard, reg, logger)
+	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limit, maxSeriesPerShard, reg, logger, options...)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
@@ -253,11 +254,12 @@ func mapEngineError(err error) error {
 }
 
 type QuerySharder struct {
-	squasher          astmapper.Squasher
-	limit             ShardingLimits
-	maxSeriesPerShard uint64
-	logger            log.Logger
-	metrics           queryShardingMetrics
+	squasher           astmapper.Squasher
+	limit              ShardingLimits
+	maxSeriesPerShard  uint64
+	readcacheMaxShards int
+	logger             log.Logger
+	metrics            queryShardingMetrics
 }
 
 type ShardingLimits interface {
@@ -267,20 +269,33 @@ type ShardingLimits interface {
 	ReadcacheReadRouting(userID string) string
 }
 
+type QuerySharderOption func(*QuerySharder)
+
+func WithReadcacheMaxQueryShards(maxShards int) QuerySharderOption {
+	return func(s *QuerySharder) {
+		s.readcacheMaxShards = maxShards
+	}
+}
+
 func NewQuerySharder(
 	squasher astmapper.Squasher,
 	limit ShardingLimits,
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 	logger log.Logger,
+	options ...QuerySharderOption,
 ) *QuerySharder {
-	return &QuerySharder{
+	s := &QuerySharder{
 		squasher:          squasher,
 		limit:             limit,
 		maxSeriesPerShard: maxSeriesPerShard,
 		metrics:           newQueryShardingMetrics(reg),
 		logger:            logger,
 	}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 // Shard attempts to rewrite expr in a sharded way.
@@ -352,11 +367,18 @@ func (s *QuerySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
 func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) (int, error) {
-	for _, tenantID := range tenantIDs {
-		if s.limit.ReadcacheReadRouting(tenantID) == validation.ReadcacheReadRoutingNautilus {
-			spanLog.DebugLog("msg", "query sharding has been disabled because the tenant routes reads through readcache")
-			return 1, nil
+	readcacheMaxShards := 0
+	if s.readcacheMaxShards > 0 {
+		for _, tenantID := range tenantIDs {
+			if s.limit.ReadcacheReadRouting(tenantID) == validation.ReadcacheReadRoutingNautilus {
+				readcacheMaxShards = s.readcacheMaxShards
+				break
+			}
 		}
+	}
+	if readcacheMaxShards == 1 {
+		spanLog.DebugLog("msg", "query sharding has been disabled by the readcache shard limit")
+		return 1, nil
 	}
 
 	// Check the default number of shards configured for the given tenant.
@@ -439,6 +461,15 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 				"shardable legs", numShardableLegs,
 				"total queries", totalQueries)
 		}
+	}
+
+	if readcacheMaxShards > 0 && totalShards > readcacheMaxShards {
+		spanLog.DebugLog(
+			"msg", "number of shards has been capped for readcache routing",
+			"previous total shards", totalShards,
+			"updated total shards", readcacheMaxShards,
+		)
+		totalShards = readcacheMaxShards
 	}
 
 	// Round the final shard count up to the next power of two so it always meshes with

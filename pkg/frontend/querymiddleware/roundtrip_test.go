@@ -722,6 +722,13 @@ func TestConfig_Validate(t *testing.T) {
 			config:        Config{QueryResultResponseFormat: "something-else"},
 			expectedError: errors.New("unknown query result response format 'something-else'. Supported values: json, protobuf"),
 		},
+		"readcache shard limit is a power of two": {
+			config: Config{QueryResultResponseFormat: formatJSON, ReadcacheMaxQueryShards: 4},
+		},
+		"readcache shard limit is not a power of two": {
+			config:        Config{QueryResultResponseFormat: formatJSON, ReadcacheMaxQueryShards: 3},
+			expectedError: errors.New("-query-frontend.query-sharding-readcache-max-shards must be 0 or a positive power of two"),
+		},
 	}
 
 	for name, test := range tests {

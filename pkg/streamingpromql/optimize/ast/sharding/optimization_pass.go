@@ -26,9 +26,9 @@ type OptimizationPass struct {
 	sharder *querymiddleware.QuerySharder
 }
 
-func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
+func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, reg prometheus.Registerer, logger log.Logger, options ...querymiddleware.QuerySharderOption) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
-		sharder: querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		sharder: querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger, options...),
 	}
 }
 

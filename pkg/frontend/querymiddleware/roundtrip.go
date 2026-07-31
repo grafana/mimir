@@ -79,6 +79,7 @@ type Config struct {
 	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	RewriteQueriesPropagateMatchers     bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ReadcacheMaxQueryShards             int                `yaml:"query_sharding_readcache_max_shards" category:"experimental"`
 	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
 	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
 
@@ -122,6 +123,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
+	f.IntVar(&cfg.ReadcacheMaxQueryShards, "query-frontend.query-sharding-readcache-max-shards", 0, "Maximum number of query shards for tenants whose reads are routed through readcache. Must be a power of two. 0 disables the limit.")
 	f.IntVar(&cfg.ActiveSeriesMaxShardConcurrency, "query-frontend.active-series-max-shard-concurrency", 0, "Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.")
 	f.BoolVar(&cfg.ActiveSeriesFramedResponses, "query-frontend.active-series-framed-responses", false, "Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.")
 	f.BoolVar(&cfg.SubquerySpinOff.SpinOffSimpleSubqueries, "query-frontend.subquery-spin-off-simple-subqueries", false, fmt.Sprintf("Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
@@ -151,6 +153,9 @@ func (cfg *Config) Validate() error {
 
 	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
+	}
+	if cfg.ReadcacheMaxQueryShards < 0 || (cfg.ReadcacheMaxQueryShards > 0 && cfg.ReadcacheMaxQueryShards&(cfg.ReadcacheMaxQueryShards-1) != 0) {
+		return fmt.Errorf("-query-frontend.query-sharding-readcache-max-shards must be 0 or a positive power of two")
 	}
 	return nil
 }
@@ -579,6 +584,7 @@ func newQueryMiddlewares(
 				limits,
 				cfg.TargetSeriesPerShard,
 				registerer,
+				WithReadcacheMaxQueryShards(cfg.ReadcacheMaxQueryShards),
 			)
 
 			queryRangeMiddleware = append(
