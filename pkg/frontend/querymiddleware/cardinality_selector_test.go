@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -80,6 +81,25 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 
 		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
 		require.Len(t, ranges, 2)
+	})
+
+	t.Run("smoothed range vector selector applies the lookback delta, matching the selector operator", func(t *testing.T) {
+		// Build the AST directly so we don't need to enable experimental range modifiers in the parser.
+		vs := &parser.VectorSelector{
+			Name:          "foo",
+			LabelMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "foo")},
+			Smoothed:      true,
+		}
+		expr := &parser.MatrixSelector{VectorSelector: vs, Range: 10 * time.Minute}
+
+		ranges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+		require.Len(t, ranges, 1)
+
+		// The selector operator sets LookbackDelta for smoothed selectors, so the queried range must
+		// account for the lookback delta and the smoothed modifier.
+		expectedMinT, expectedMaxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 10*time.Minute, 0, lookbackDelta, false, true)
+		require.Equal(t, expectedMinT, ranges[0].minT)
+		require.Equal(t, expectedMaxT, ranges[0].maxT)
 	})
 }
 

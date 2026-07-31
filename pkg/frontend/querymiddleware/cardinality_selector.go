@@ -206,8 +206,16 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 				return nil
 			}
 
-			// Range vector selectors don't apply the lookback delta.
-			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, vs.Timestamp, n.Range, vs.OriginalOffset.Milliseconds(), 0, false, false)
+			// Range vector selectors only apply the lookback delta when they use the anchored or
+			// smoothed range modifiers, matching the selector operator (see MatrixSelector
+			// materialization) so that the queried time range (and therefore the cache keys) line up
+			// with those used when the cardinality was written.
+			lookback := time.Duration(0)
+			if vs.Anchored || vs.Smoothed {
+				lookback = lookbackDelta
+			}
+
+			minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, vs.Timestamp, n.Range, vs.OriginalOffset.Milliseconds(), lookback, vs.Anchored, vs.Smoothed)
 			out = append(out, selectorTimeRange{matchers: vs.LabelMatchers, minT: minT, maxT: maxT})
 
 		case *parser.VectorSelector:
