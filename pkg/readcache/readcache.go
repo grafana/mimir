@@ -320,19 +320,8 @@ func New(
 		headPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
 		blockPostingsMetrics = tsdb.NewPostingsForMatchersCacheMetrics(nil)
 	}
-	// Head postings MUST NOT be shared across partition TSDBs.
-	//
-	// Ingesters share one head per tenant, so Shared=true keyed by
-	// tenant is safe there. Readcache opens one TSDB per
-	// (tenant, partition, epoch); every head uses the same synthetic
-	// ULID (0000000000XXXXXXXXXXXXHEAD), so a shared cache keyed only
-	// by tenant reuses series refs from partition A's head when
-	// querying partition B. Those refs are meaningless in B and
-	// surface as Select returning series that violate the query
-	// matchers (query-tee foreign-series contamination on mimir-dev-30).
-	// Force Shared=false regardless of the inherited ingester TSDB flag.
 	r.headPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
-		Shared:                false,
+		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
 		KeyFunc:               tenant.TenantID,
 		Invalidation:          tsdbCfg.HeadPostingsForMatchersCacheInvalidation,
 		CacheVersions:         tsdbCfg.HeadPostingsForMatchersCacheVersions,
@@ -343,8 +332,6 @@ func New(
 		Metrics:               headPostingsMetrics,
 		PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 	})
-	// Block postings may stay shared: compacted block ULIDs are unique,
-	// so cache keys do not collide across partitions.
 	r.blockPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
 		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
 		KeyFunc:               tenant.TenantID,
