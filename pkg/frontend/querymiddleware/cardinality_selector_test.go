@@ -24,20 +24,20 @@ import (
 
 func TestCanonicalSelectorString(t *testing.T) {
 	t.Run("sorts matchers and formats like labels.Matcher", func(t *testing.T) {
-		matchers := []cardinalitySelectorMatcher{
-			{typ: labels.MatchRegexp, name: "env", value: "prod"},
-			{typ: labels.MatchEqual, name: "__name__", value: "foo"},
+		matchers := []stats.LabelMatcher{
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 		}
 		require.Equal(t, `{__name__="foo",env=~"prod"}`, canonicalSelectorString(matchers))
 	})
 
 	t.Run("excludes the query-shard matcher so all shards map to the same string", func(t *testing.T) {
-		withShard := []cardinalitySelectorMatcher{
-			{typ: labels.MatchEqual, name: "__name__", value: "foo"},
-			{typ: labels.MatchEqual, name: sharding.ShardLabel, value: "1_of_4"},
+		withShard := []stats.LabelMatcher{
+			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+			{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: "1_of_4"},
 		}
-		withoutShard := []cardinalitySelectorMatcher{
-			{typ: labels.MatchEqual, name: "__name__", value: "foo"},
+		withoutShard := []stats.LabelMatcher{
+			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 		}
 		require.Equal(t, canonicalSelectorString(withoutShard), canonicalSelectorString(withShard))
 		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(withShard))
@@ -138,13 +138,12 @@ func testNoStepSubqueryInterval(int64) int64 {
 }
 
 func TestCacheCardinalityEstimator(t *testing.T) {
-	const userID = "user-1"
 	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
 	lookbackDelta := 5 * time.Minute
 
-	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx := user.InjectOrgID(context.Background(), "user-1")
 
 	t.Run("returns nil when nothing is cached", func(t *testing.T) {
 		c := cache.NewMockCache()

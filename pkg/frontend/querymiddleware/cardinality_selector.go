@@ -263,15 +263,6 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 	return out
 }
 
-// cardinalitySelectorMatcher is a label matcher in a form suitable for producing a canonical selector
-// string. It avoids compiling regular expressions, so that the same canonicalization can be used on
-// both the read and write paths regardless of the matcher representation available there.
-type cardinalitySelectorMatcher struct {
-	typ   labels.MatchType
-	name  string
-	value string
-}
-
 // cardinalityStoringPostProcessor is a streamingpromql.QueryPostProcessor that stores the cardinality
 // of each selector evaluated by a successful query in the per-selector cardinality cache, so that the
 // cache-backed CardinalityEstimator can use it to estimate the cardinality of future queries.
@@ -312,7 +303,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 	groups := make(map[groupKey]map[string]uint64)
 
 	for _, c := range cardinalities {
-		selector := canonicalSelectorString(cardinalitySelectorMatchersFromStatsMatchers(c.Matchers))
+		selector := canonicalSelectorString(c.Matchers)
 		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
 
 		byShard := groups[gk]
@@ -361,18 +352,10 @@ func shardLabelValue(matchers []stats.LabelMatcher) string {
 	return ""
 }
 
-func cardinalitySelectorMatchersFromStatsMatchers(matchers []stats.LabelMatcher) []cardinalitySelectorMatcher {
-	out := make([]cardinalitySelectorMatcher, 0, len(matchers))
+func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
 	for _, m := range matchers {
-		out = append(out, cardinalitySelectorMatcher{typ: m.Type, name: m.Name, value: m.Value})
-	}
-	return out
-}
-
-func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []cardinalitySelectorMatcher {
-	out := make([]cardinalitySelectorMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		out = append(out, cardinalitySelectorMatcher{typ: m.Type, name: m.Name, value: m.Value})
+		out = append(out, stats.LabelMatcher{Type: m.Type, Name: m.Name, Value: m.Value})
 	}
 	return out
 }
@@ -380,13 +363,13 @@ func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []
 // canonicalSelectorString returns a stable string representation of the given matchers, excluding any
 // query-shard matcher so that all shards of the same logical selector map to the same string. The
 // format matches labels.Matcher.String() so that the read and write paths agree.
-func canonicalSelectorString(matchers []cardinalitySelectorMatcher) string {
+func canonicalSelectorString(matchers []stats.LabelMatcher) string {
 	strs := make([]string, 0, len(matchers))
 	for _, m := range matchers {
-		if m.name == sharding.ShardLabel {
+		if m.Name == sharding.ShardLabel {
 			continue
 		}
-		strs = append(strs, fmt.Sprintf("%s%s%q", m.name, m.typ, m.value))
+		strs = append(strs, fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value))
 	}
 	slices.Sort(strs)
 	return "{" + strings.Join(strs, ",") + "}"
