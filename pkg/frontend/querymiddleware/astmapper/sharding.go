@@ -139,6 +139,21 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 			return e, !analysis.WillShardAllSelectors, nil
 		}
 
+		// info() performs a many-to-one join between its first argument (the vector to
+		// enrich) and the target_info series. When sharding, we shard only the first
+		// argument: each shard must see the full set of target_info series to correctly
+		// enrich its subset of the inner series, so the target_info (data label) selector
+		// must not be sharded. For the single-argument form of info(), the target_info
+		// selector is injected later by the query engine and is likewise never sharded.
+		if isInfoCall(e) && len(e.Args) > 0 {
+			mappedArg, err := NewASTExprMapper(summer).Map(ctx, e.Args[0])
+			if err != nil {
+				return nil, true, err
+			}
+			e.Args[0] = mappedArg
+			return e, true, nil
+		}
+
 		return e, false, nil
 
 	case *parser.BinaryExpr:
@@ -727,6 +742,11 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	)
 
 	return shardedSelector, nil
+}
+
+// isInfoCall returns true if the given function call expression is a call to info().
+func isInfoCall(n *parser.Call) bool {
+	return n.Func != nil && n.Func.Name == "info"
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,

@@ -27,7 +27,6 @@ var NonParallelFuncs = []string{
 	// The following functions are not safe to parallelize.
 	"absent",
 	"absent_over_time",
-	"info", // TODO: Find out whether can be parallelizable.
 	"histogram_quantile",
 	"histogram_quantiles",
 	"limitk",
