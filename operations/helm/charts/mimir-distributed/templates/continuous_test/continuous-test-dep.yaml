@@ -48,7 +48,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.continuous_test.command }}
           command:
-            - {{ . | quote }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           args:
             - "-target=continuous-test"

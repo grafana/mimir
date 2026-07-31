@@ -48,7 +48,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.overrides_exporter.command }}
           command:
-            - {{ . | quote }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           args:
             - "-target=overrides-exporter"

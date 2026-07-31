@@ -50,7 +50,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.ruler.command }}
           command:
-            - {{ . | quote }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           args:
             - "-target=ruler"

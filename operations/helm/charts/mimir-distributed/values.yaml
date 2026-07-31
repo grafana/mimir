@@ -526,7 +526,8 @@ alertmanager:
         receiver: default-receiver
 
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -850,7 +851,8 @@ distributor:
 
   # Additional distributor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -959,7 +961,8 @@ ingester:
 
   # Additional ingester container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
   # Pod Labels
   podLabels: {}
 
@@ -1281,7 +1284,8 @@ overrides_exporter:
       drop: [ALL]
 
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   persistence:
     subPath:
@@ -1377,8 +1381,9 @@ ruler:
 
   # Additional ruler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
     # log.level: debug
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # -- Size in bytes of the memory ballast (-mem-ballast-size-bytes). The ballast reduces GC frequency
   # and CPU usage around ruler start and rollouts. It must be smaller than any GOMEMLIMIT set on the
@@ -1510,7 +1515,8 @@ ruler_querier:
 
   # Additional ruler-querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -1632,7 +1638,8 @@ ruler_query_frontend:
 
   # Additional ruler-query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -1725,7 +1732,8 @@ ruler_query_scheduler:
 
   # Additional ruler-query-scheduler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -1866,7 +1874,8 @@ querier:
 
   # Additional querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -1992,7 +2001,8 @@ query_frontend:
 
   # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -2088,7 +2098,8 @@ query_scheduler:
 
   # Additional query-scheduler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -2193,7 +2204,8 @@ store_gateway:
 
   # Additional store-gateway container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -2472,7 +2484,8 @@ compactor:
 
   # Additional compactor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
 
   # Pod Labels
   podLabels: {}
@@ -3996,7 +4009,8 @@ continuous_test:
   env: []
   # -- Extra command line arguments for the continuous test container
   extraArgs: {}
-  command: null
+  # -- Overrides the default container entrypoint. Must be a list of strings, e.g. ["/bin/sh", "-c", "..."].
+  command: []
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
   # -- Extra volumes for the continuous test container

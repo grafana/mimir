@@ -53,7 +53,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.distributor.command }}
           command:
-            - {{ . | quote }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           args:
             - "-target=distributor"
