@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-// This test verifies that jsoninter uses our custom method for marshalling.
+// This test verifies that jsoniter uses our custom method for marshalling.
 // We do that by using "test sample" recognized by marshal function when in testing mode.
 func TestJsoniterMarshalForFloatSample(t *testing.T) {
 	testMarshalling(t, jsoniter.Marshal, "test sample")

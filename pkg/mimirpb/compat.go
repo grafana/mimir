@@ -436,8 +436,8 @@ func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) model.Me
 	}
 }
 
-// isTesting is only set from tests to get special behaviour to verify that custom sample encode and decode is used,
-// both when using jsonitor or standard json package.
+// isTesting is only set from tests to get special behavior to verify that custom sample encode and decode is used,
+// both when using jsoniter or standard json package.
 var isTesting = false
 
 // MarshalJSON implements json.Marshaler.
