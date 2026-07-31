@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -45,7 +45,7 @@ func (c *ReduceMatchers) Name() string {
 	return "Reduce matchers"
 }
 
-func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
+func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	spanlog := spanlogger.FromContext(ctx, c.logger)
 	c.attempts.Inc()
 

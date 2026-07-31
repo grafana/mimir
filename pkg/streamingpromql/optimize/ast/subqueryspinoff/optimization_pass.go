@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -63,9 +63,9 @@ func (o *OptimizationPass) Name() string {
 	return "Subquery spin-off"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	// Subquery spin-off only applies to instant queries: range queries are left unchanged.
-	if !timeRange.IsInstant {
+	if !params.TimeRange.IsInstant {
 		return expr, nil
 	}
 
