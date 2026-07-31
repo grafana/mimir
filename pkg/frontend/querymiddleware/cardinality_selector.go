@@ -237,16 +237,8 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 				step = time.Duration(noStepSubqueryIntervalFn(n.Range.Milliseconds())) * time.Millisecond
 			}
 
-			subquery := &core.Subquery{
-				SubqueryDetails: &core.SubqueryDetails{
-					Timestamp: core.TimeFromTimestamp(n.Timestamp),
-					Offset:    n.OriginalOffset,
-					Range:     n.Range,
-					Step:      step,
-				},
-			}
-
-			visit(n.Expr, subquery.ChildrenTimeRange(tr))
+			childTimeRange := core.SubqueryChildrenTimeRange(tr, n.Range, step, n.OriginalOffset, core.TimeFromTimestamp(n.Timestamp))
+			visit(n.Expr, childTimeRange)
 
 		default:
 			for _, child := range parser.Children(node) {
