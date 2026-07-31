@@ -258,11 +258,11 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 
 	fooMatchers := func(extra ...stats.LabelMatcher) []stats.LabelMatcher {
-		m := []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}}
+		m := []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
 		return append(m, extra...)
 	}
 	shardMatcher := func(value string) stats.LabelMatcher {
-		return stats.LabelMatcher{Type: int32(labels.MatchEqual), Name: sharding.ShardLabel, Value: value}
+		return stats.LabelMatcher{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: value}
 	}
 
 	// estimateFoo runs the cache-backed estimator for the query "foo" against the given cache.

@@ -252,7 +252,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 		require.Equal(t, []stats.SelectorCardinality{
 			{
-				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}},
+				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
 				MinT:        expectedMinT,
 				MaxT:        expectedMaxT,
 				SeriesCount: 3,
@@ -280,19 +280,19 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 		require.Equal(t, []stats.SelectorCardinality{
 			{
-				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}},
+				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
 				MinT:        expectedMinT,
 				MaxT:        expectedMaxT,
 				SeriesCount: 3,
 			},
 			{
-				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}, {Type: int32(labels.MatchEqual), Name: "env", Value: "prod"}},
+				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
 				MinT:        expectedMinT,
 				MaxT:        expectedMaxT,
 				SeriesCount: 2,
 			},
 			{
-				Matchers:    []stats.LabelMatcher{{Type: int32(labels.MatchEqual), Name: "__name__", Value: "foo"}, {Type: int32(labels.MatchEqual), Name: "env", Value: "dev"}},
+				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
 				MinT:        expectedMinT,
 				MaxT:        expectedMaxT,
 				SeriesCount: 1,

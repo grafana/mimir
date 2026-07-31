@@ -373,7 +373,7 @@ func shardLabelValue(matchers []stats.LabelMatcher) string {
 func cardinalitySelectorMatchersFromStatsMatchers(matchers []stats.LabelMatcher) []cardinalitySelectorMatcher {
 	out := make([]cardinalitySelectorMatcher, 0, len(matchers))
 	for _, m := range matchers {
-		out = append(out, cardinalitySelectorMatcher{typ: labels.MatchType(m.Type), name: m.Name, value: m.Value})
+		out = append(out, cardinalitySelectorMatcher{typ: m.Type, name: m.Name, value: m.Value})
 	}
 	return out
 }

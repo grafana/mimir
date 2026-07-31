@@ -85,8 +85,7 @@ message SelectorCardinality {
 
 // LabelMatcher is a single label matcher.
 message LabelMatcher {
-  // Type is the matcher type, corresponding to Prometheus' labels.MatchType.
-  int32 type = 1;
+  int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
   string name = 2;
   string value = 3;
 }

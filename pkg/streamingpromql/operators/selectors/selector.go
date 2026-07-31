@@ -167,7 +167,7 @@ func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []
 
 	for _, m := range base {
 		out = append(out, stats.LabelMatcher{
-			Type:  int32(m.Type),
+			Type:  m.Type,
 			Name:  m.Name,
 			Value: m.Value,
 		})
@@ -175,7 +175,7 @@ func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []
 
 	for _, m := range filter {
 		out = append(out, stats.LabelMatcher{
-			Type:  int32(m.Type),
+			Type:  m.Type,
 			Name:  m.Name,
 			Value: m.Value,
 		})
