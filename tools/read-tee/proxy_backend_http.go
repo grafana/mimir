@@ -37,6 +37,7 @@ func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: skipTLSVerify, //nolint:gosec // read-tee is a load-testing tool; skipping TLS verification is an explicit operator opt-in via -backend.skip-tls-verify.
+			MinVersion:         tls.VersionTLS13,
 		},
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
