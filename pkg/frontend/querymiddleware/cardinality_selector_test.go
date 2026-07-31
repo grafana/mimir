@@ -144,8 +144,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
+		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
+		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange, lookbackDelta))
 	})
 
 	t.Run("returns the cardinality of a single selector", func(t *testing.T) {
@@ -157,8 +157,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 		writeSelectorCardinalityToAllBuckets(t, c, userID, canonical, minT, maxT, 1234)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange)
+		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
+		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange, lookbackDelta)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
 	})
@@ -172,8 +172,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="foo"}`, minT, maxT, 100)
 		writeSelectorCardinalityToAllBuckets(t, c, userID, `{__name__="bar"}`, minT, maxT, 500)
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange)
+		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
+		result := estimator.EstimateSeriesCount(newCtx(), expr, timeRange, lookbackDelta)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(500), result.EstimatedSeriesCount)
 	})
@@ -199,8 +199,8 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			writeSelectorCardinalityEntry(t, c, k, canonical, cardinality)
 		}
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		result := estimator.EstimateSeriesCount(newCtx(), expr, wideTimeRange)
+		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
+		result := estimator.EstimateSeriesCount(newCtx(), expr, wideTimeRange, lookbackDelta)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(9999), result.EstimatedSeriesCount)
 	})
@@ -218,16 +218,16 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 			writeSelectorCardinalityEntry(t, c, k, `{__name__="something-else"}`, 4321)
 		}
 
-		estimator := NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
+		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
+		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange, lookbackDelta))
 	})
 
 	t.Run("nil cache returns nil", func(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 
-		estimator := NewCacheCardinalityEstimator(nil, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger())
-		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange))
+		estimator := NewCacheCardinalityEstimator(nil, testNoStepSubqueryInterval, log.NewNopLogger())
+		require.Nil(t, estimator.EstimateSeriesCount(newCtx(), expr, timeRange, lookbackDelta))
 	})
 }
 
@@ -238,12 +238,12 @@ func TestRequestHintsCardinalityEstimator(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	t.Run("no hints", func(t *testing.T) {
-		require.Nil(t, estimator.EstimateSeriesCount(context.Background(), expr, timeRange))
+		require.Nil(t, estimator.EstimateSeriesCount(context.Background(), expr, timeRange, 0))
 	})
 
 	t.Run("hints with estimate", func(t *testing.T) {
 		ctx := ContextWithRequestHints(context.Background(), &Hints{CardinalityEstimate: &EstimatedSeriesCount{EstimatedSeriesCount: 100}})
-		result := estimator.EstimateSeriesCount(ctx, expr, timeRange)
+		result := estimator.EstimateSeriesCount(ctx, expr, timeRange, 0)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(100), result.EstimatedSeriesCount)
 	})
@@ -271,7 +271,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
 		ctx := user.InjectOrgID(context.Background(), userID)
-		return NewCacheCardinalityEstimator(c, lookbackDelta, testNoStepSubqueryInterval, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange)
+		return NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
 	}
 
 	newCtxWithStats := func() (context.Context, *stats.SafeStats) {

@@ -1215,7 +1215,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		// the estimate provided by the cardinality-estimation middleware via the request hints.
 		var estimator querymiddleware.CardinalityEstimator
 		if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-			estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, streamingpromql.DetermineLookbackDelta(opts.CommonOpts), opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
+			estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
 		} else {
 			estimator = querymiddleware.NewRequestHintsCardinalityEstimator()
 		}

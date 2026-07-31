@@ -48,9 +48,9 @@ const (
 // CardinalityEstimator estimates the number of series that will be selected by a query, so that the
 // sharding optimization pass can limit the number of shards accordingly.
 type CardinalityEstimator interface {
-	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange,
-	// or nil if no estimate is available.
-	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) *EstimatedSeriesCount
+	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange
+	// with the given lookback delta, or nil if no estimate is available.
+	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount
 }
 
 // requestHintsCardinalityEstimator returns the cardinality estimate carried on the request hints,
@@ -63,7 +63,7 @@ func NewRequestHintsCardinalityEstimator() CardinalityEstimator {
 	return requestHintsCardinalityEstimator{}
 }
 
-func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange) *EstimatedSeriesCount {
+func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) *EstimatedSeriesCount {
 	if hints := RequestHintsFromContext(ctx); hints != nil {
 		return hints.GetCardinalityEstimate()
 	}
@@ -75,25 +75,24 @@ func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context,
 // entries written by the cardinality-storing query post-processor.
 type cacheCardinalityEstimator struct {
 	cache                    cache.Cache
-	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	logger                   log.Logger
 }
 
 // NewCacheCardinalityEstimator returns a CardinalityEstimator that estimates a query's cardinality
-// from the per-selector cardinality cache. lookbackDelta and noStepSubqueryIntervalFn must match the
-// values used by the engine so that the queried time ranges (and therefore the cache keys) line up
-// with those used when writing the cache entries.
-func NewCacheCardinalityEstimator(cache cache.Cache, lookbackDelta time.Duration, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
+// from the per-selector cardinality cache. noStepSubqueryIntervalFn must match the value used by the
+// engine, and the lookback delta passed to EstimateSeriesCount must be the query's lookback delta, so
+// that the queried time ranges (and therefore the cache keys) line up with those used when writing
+// the cache entries.
+func NewCacheCardinalityEstimator(cache cache.Cache, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
 	return &cacheCardinalityEstimator{
 		cache:                    cache,
-		lookbackDelta:            lookbackDelta,
 		noStepSubqueryIntervalFn: noStepSubqueryIntervalFn,
 		logger:                   logger,
 	}
 }
 
-func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) *EstimatedSeriesCount {
+func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount {
 	if e.cache == nil {
 		return nil
 	}
@@ -104,7 +103,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	}
 	userID := tenant.JoinTenantIDs(tenants)
 
-	selectorRanges := collectSelectorTimeRanges(expr, timeRange, e.lookbackDelta, e.noStepSubqueryIntervalFn)
+	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, e.noStepSubqueryIntervalFn)
 	if len(selectorRanges) == 0 {
 		return nil
 	}

@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -60,7 +61,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *
 	// are sharded and the rest is left unchanged.
 	if roots := collectEvaluationRoots(expr); len(roots) > 0 {
 		for _, root := range roots {
-			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], params.TimeRange, options)
+			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], params.TimeRange, params.LookbackDelta, options)
 			if err != nil {
 				return nil, err
 			}
@@ -71,17 +72,17 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *
 		return expr, nil
 	}
 
-	return o.shard(ctx, tenantIDs, expr, params.TimeRange, options)
+	return o.shard(ctx, tenantIDs, expr, params.TimeRange, params.LookbackDelta, options)
 }
 
 // shard shards expr, returning the sharded expression, or expr unchanged if it cannot be sharded.
-func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, timeRange types.QueryTimeRange, options requestoptions.Options) (parser.Expr, error) {
+func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, options requestoptions.Options) (parser.Expr, error) {
 	requestedShardCount := int(options.TotalShards)
 	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
 
 	if o.estimator != nil {
-		seriesCount = o.estimator.EstimateSeriesCount(ctx, expr, timeRange)
+		seriesCount = o.estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
 	}
 
 	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
