@@ -75,6 +75,8 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
 - [ ] Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md`
+- [ ] Run `make`
+- [ ] You will likely need to install [mixtool](https://github.com/monitoring-mixins/mixtool).
 - [ ] Run `make mixin-screenshots`
   - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
 - [ ] Create new release branch
