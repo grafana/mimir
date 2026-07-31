@@ -362,6 +362,8 @@ func TestStats_Copy(t *testing.T) {
 				},
 			},
 		},
+
+		selectorCardinalitiesMtx: sync.Mutex{},
 	}
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)
