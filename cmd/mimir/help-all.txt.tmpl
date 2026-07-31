@@ -1133,6 +1133,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -compactor-scheduler.tenant-discovery-interval duration
     	[experimental] The duration of time between bucket listings to discover new tenants. (default 10m0s)
+  -compactor.block-health-validation-concurrency int
+    	[experimental] Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
