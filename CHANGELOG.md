@@ -152,7 +152,7 @@
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 * [BUGFIX] Query-frontend: Fix a goroutine leak when a querier's streaming response arrives just as the query is cancelled: the goroutine handling the response could stay blocked forever writing a response body that would never be read. #16151
 * [BUGFIX] MQE: Fix issue where a sentinel value was inadvertently returned to a pool where it could be mutated by multiple threads at once. #16205
-* [BUGFIX] Compactor, Store-gateway: Fix the store-gateway reporting `num_series=0` in its `loaded new block` log message and in the blocks web UI when the bucket index is enabled, by tracking the number of series per block in the bucket index. Blocks already present in the bucket index are not backfilled, so they continue to report 0 until they are compacted into new blocks. #16275
+* [BUGFIX] Compactor, Store-gateway: Fix the store-gateway reporting `num_series=0` in its `loaded new block` log message and in the blocks web UI when the bucket index is enabled, by tracking the number of series per block in the bucket index. Blocks already present in the bucket index are not backfilled, so they continue to report 0 until they are compacted into new blocks. #16276
 
 ### Mixin
 
