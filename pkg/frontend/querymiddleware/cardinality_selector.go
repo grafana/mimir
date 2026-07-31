@@ -369,7 +369,8 @@ func canonicalSelectorString(matchers []stats.LabelMatcher) string {
 		if m.Name == sharding.ShardLabel {
 			continue
 		}
-		strs = append(strs, fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value))
+		matcher := labels.Matcher{Name: m.Name, Value: m.Value, Type: m.Type}
+		strs = append(strs, matcher.String())
 	}
 	slices.Sort(strs)
 	return "{" + strings.Join(strs, ",") + "}"
