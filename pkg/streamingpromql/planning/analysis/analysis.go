@@ -21,15 +21,15 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// NewHandler creates the query analysis HTTP handler. propagatedHeaders is the allow-list of request
-// header names made available to optimization passes via requestoptions, so that analysis reflects the
-// same per-request toggles the real query path would see.
-func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider, opts streamingpromql.EngineOpts, propagatedHeaders []string) http.Handler {
+// NewHandler creates the query analysis HTTP handler. optionDecoder decodes per-request options
+// (including the allow-listed headers made available to optimization passes) so that analysis reflects
+// the same per-request toggles the real query path would see.
+func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider, opts streamingpromql.EngineOpts, optionDecoder requestoptions.OptionDecoder) http.Handler {
 	return &handler{
 		planner:        planner,
 		limitsProvider: limitsProvider,
 		lookbackDelta:  streamingpromql.DetermineLookbackDelta(opts.CommonOpts),
-		optionDecoder:  requestoptions.OptionDecoder{PropagatedHeaders: propagatedHeaders},
+		optionDecoder:  optionDecoder,
 	}
 }
 
