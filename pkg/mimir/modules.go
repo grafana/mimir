@@ -71,6 +71,7 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
+	intermediatecache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
@@ -114,6 +115,7 @@ const (
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
+	QuerierIntermediateCacheClient   string = "querier-intermediate-cache-client"
 	QuerierLifecycler                string = "querier-lifecycler"
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QuerierRing                      string = "querier-ring"
@@ -1128,6 +1130,22 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	return nil, nil
 }
 
+func (t *Mimir) initQuerierIntermediateCacheClient() (services.Service, error) {
+	cfg := t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	client, err := intermediatecache.NewCacheClient(cfg.IntermediateResultsCache, "querier", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting.IntermediateResultsCache.CacheClient = client
+
+	return nil, nil
+}
+
 func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	cfg := t.Cfg.Frontend.QueryMiddleware
 
@@ -1136,7 +1154,6 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	}
 
 	var err error
-
 	t.QueryFrontendCacheClient, err = querymiddleware.NewResultsCache(cfg.ResultsCache, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -1219,6 +1236,10 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+
+	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
+	// used by operators executed in queriers.
+	opts.RangeVectorSplitting.IntermediateResultsCache.CacheClient = nil
 
 	// We can't use the engine to register these metrics, as the same metrics are used by other kinds of caches (eg. the labels query cache)
 	// and the Prometheus client library requires that they each instance of the metric has exactly the same set of label names within this process.
@@ -1700,6 +1721,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QuerierIntermediateCacheClient, t.initQuerierIntermediateCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierLifecycler, t.initQuerierLifecycler, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
@@ -1774,7 +1796,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner, QuerierIntermediateCacheClient},
 		Ruler:                            rulerDeps,
 		RulerDistributorClient:           {Vault},
 		RulerStorage:                     {Overrides},

@@ -52,18 +52,26 @@ func newCacheMetrics(reg prometheus.Registerer) *cacheMetrics {
 	}
 }
 
-func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
-	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
+func NewCacheClient(cfg Config, component string, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+	// Other cache clients (results, chunks, etc.) set a component label so we need to add one as well
+	// to prevent trying to register metrics with the same name but different sets of labels (which panics).
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
+	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, err
 	} else if client == nil {
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	var backend cache.Cache = cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver())
-	backend = cache.NewCompression(cfg.Compression, backend, logger)
+	client = cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver())
+	return cache.NewCompression(cfg.Compression, client, logger), nil
+}
+
+func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
+	// Note that we're relying on this being set on the config struct by the module initialization process.
+	backend := caching.NewAdaptor(cfg.CacheClient)
 	keyGenerator := caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator(cacheItemTypePrefix, resultsCacheVersion), prefixGenerator)
-	return NewCacheFactoryWithBackend(caching.NewAdaptor(backend), ttlProvider, keyGenerator, reg, logger), nil
+	return NewCacheFactoryWithBackend(backend, ttlProvider, keyGenerator, reg, logger), nil
 }
 
 func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, keyGenerator *caching.CacheKeyGenerator, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
