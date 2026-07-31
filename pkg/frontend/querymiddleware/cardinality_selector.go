@@ -93,10 +93,6 @@ func NewCacheCardinalityEstimator(cache cache.Cache, noStepSubqueryIntervalFn fu
 }
 
 func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount {
-	if e.cache == nil {
-		return nil
-	}
-
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil
@@ -154,8 +150,8 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	// The estimate for the whole expression is the maximum cardinality across its selectors, and the
 	// cardinality of a single selector is the maximum across the buckets it spans.
+	// If there is no information available for a selector, then return no estimate at all.
 	var estimate uint64
-	found := false
 
 	for _, lookup := range lookups {
 		selectorFound := false
@@ -174,14 +170,11 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 			selectorMax = max(selectorMax, entry.Cardinality)
 		}
 
-		if selectorFound {
-			found = true
-			estimate = max(estimate, selectorMax)
+		if !selectorFound {
+			return nil
 		}
-	}
 
-	if !found {
-		return nil
+		estimate = max(estimate, selectorMax)
 	}
 
 	return &EstimatedSeriesCount{EstimatedSeriesCount: estimate}
