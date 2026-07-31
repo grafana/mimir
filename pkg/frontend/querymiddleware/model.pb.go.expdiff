@@ -1,8 +1,8 @@
 diff --git a/pkg/frontend/querymiddleware/model.pb.go b/pkg/frontend/querymiddleware/model.pb.go
-index 315ed4eed..47f80838c 100644
+index 289f189efb..0f4174cc54 100644
 --- a/pkg/frontend/querymiddleware/model.pb.go
 +++ b/pkg/frontend/querymiddleware/model.pb.go
-@@ -83,9 +83,6 @@ func (m *PrometheusHeader) GetValues() []string {
+@@ -84,9 +84,6 @@ func (m *PrometheusHeader) GetValues() []string {
  }
  
  type PrometheusResponse struct {
