@@ -1206,6 +1206,96 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_CollisionLeavesRightSeries
 	o.Close()
 }
 
+func TestOneToOneVectorVectorBinaryOperation_FillRight_CollisionKeepsMatchedSeries(t *testing.T) {
+	// This test drives the filled-labels collision path in addUnmatchedLeftSeriesWithFilledRightSides.
+	//
+	// The test uses on(__name__) matching, a name-retaining operator (NEQ without the bool modifier,
+	// so it acts as a filter and keeps the name), and fill_right. The group key keeps only __name__,
+	// so left series with different names go to different match groups. The filled labels drop
+	// __name__ (on(...) keeps only the matching labels, which is empty after removing __name__), so
+	// every left series produces empty output labels.
+	//
+	// One left series ("matched") has a right group of the same name and so becomes a real matched
+	// output series. The other left series ("unmatched") has no right group and takes the fill-right
+	// path. Its filled labels collide with the matched series' empty labels. The operator must keep
+	// the matched series (with its real right side) and skip the unmatched left series, rather than
+	// merging the unmatched left index into the matched series (which would evaluate it against the
+	// wrong right side) or turning the matched series into a filled-right series.
+	//
+	// Both iteration orders are exercised to confirm a matched series always wins the collision.
+	fillZero := 0.0
+
+	testCases := map[string]struct {
+		leftSeries []labels.Labels
+	}{
+		"matched left series first": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "matched"),
+				labels.FromStrings(model.MetricNameLabel, "unmatched"),
+			},
+		},
+		"unmatched left series first": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "unmatched"),
+				labels.FromStrings(model.MetricNameLabel, "matched"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+			rightSeries := []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "matched"),
+			}
+
+			vectorMatching := parser.VectorMatching{
+				Card:           parser.CardOneToOne,
+				On:             true,
+				MatchingLabels: []string{model.MetricNameLabel},
+				FillValues:     parser.VectorMatchFillValues{RHS: &fillZero},
+			}
+
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			// parser.NEQ without the bool modifier keeps the metric name. The operator needs this to
+			// reach the collision branch and not the "this indicates a bug" error.
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			o.leftMetadata, err = left.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			allMetadata, allSeries, _, _, _, _, err := o.computeOutputSeries()
+			require.NoError(t, err)
+
+			// Both left groups fill to the same empty labels, so there is exactly one output series.
+			require.Len(t, allMetadata, 1)
+			require.Equal(t, labels.EmptyLabels(), allMetadata[0].Labels)
+			require.Len(t, allSeries, 1)
+
+			// The surviving output series must be the matched one: it retains its real right side and
+			// is not treated as a filled-right series. Only the matched left series index is present;
+			// the unmatched left series was skipped, not merged in.
+			matchedLeftIndex := slices.IndexFunc(testCase.leftSeries, func(l labels.Labels) bool {
+				return l.Get(model.MetricNameLabel) == "matched"
+			})
+			require.False(t, allSeries[0].fillMissingRight, "output series must keep its real right side, not be treated as filled-right")
+			require.NotNil(t, allSeries[0].rightSide, "output series must have a real right side")
+			require.Equal(t, []int{matchedLeftIndex}, allSeries[0].leftSeriesIndices, "only the matched left series must be attached to the output series")
+
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
+	}
+}
+
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
 	// Verifies that exclude-style matchers are forwarded to the RHS via explicit
 	// exclude hints (set by an up-to-date query-frontend). When hints are nil

@@ -352,6 +352,12 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		matchedRightGroups = make(map[string]struct{}, len(rightSideGroupsMap))
 	}
 
+	// unmatchedLeftSeries records the indices of left series with no matching right group. Only
+	// collected (and only needed) when filling the right side. These are handled in a second pass
+	// after all matched series are registered, so that a matched output series always wins over a
+	// filled-right series whose labels collide with it (see addUnmatchedLeftSeriesWithFilledRightSides).
+	var unmatchedLeftSeries []int
+
 	for leftSeriesIndex, s := range b.leftMetadata {
 		groupKey := groupKeyFunc(s.Labels)
 
@@ -364,16 +370,10 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 				continue
 			}
 
-			// Fill the right side using the same label function as a real match (the result metric is derived from the left operand).
-			if err := b.addLeftSeriesWithFilledRightSide(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc(s.Labels), leftSeriesIndex, leftSeriesUsed); err != nil {
-				return nil, nil, nil, -1, nil, -1, err
-			}
-
-			// leftSeriesUsed is nil only with fillRight. In that case lastLeftSeriesUsedIndex is
-			// already the final index, because the operator uses every left series.
-			if leftSeriesUsed != nil {
-				lastLeftSeriesUsedIndex = leftSeriesIndex
-			}
+			// Defer filling until after every matched series has been registered. This mirrors the
+			// fill-left path (addUnmatchedRightGroupsWithFilledLeftSides) and lets a matched output
+			// series win a labels collision against a filled-right series.
+			unmatchedLeftSeries = append(unmatchedLeftSeries, leftSeriesIndex)
 			continue
 		}
 
@@ -434,6 +434,13 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		}
 	}
 
+	// Fill the right side: emit output driven by the left side alone for any unmatched left group.
+	if fillRight {
+		if err := b.addUnmatchedLeftSeriesWithFilledRightSides(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc, unmatchedLeftSeries); err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+	}
+
 	allMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, -1, nil, -1, err
@@ -451,40 +458,64 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
 }
 
-// addLeftSeriesWithFilledRightSide registers a left-side series into the output series identified by
-// outputSeriesLabels. The right side is synthesised from the RHS fill value at evaluation time.
+// addUnmatchedLeftSeriesWithFilledRightSides emits one filled-right output series for each left-side
+// series that has no matching group on the right side, using the RHS fill value. The right side of
+// each such output series is synthesised at evaluation time.
+//
+// It is called after every matched series has been registered, so an existing output series with the
+// same labels is either a matched series or another filled-right series. Only the fillRight path
+// reaches this function. With fillRight the operator uses every left series, so leftSeriesUsed is not
+// tracked here (the caller leaves it nil and sets lastLeftSeriesUsedIndex to the final index).
+//
 // outputSeriesLabelsBytes is a scratch buffer reused across calls.
-// leftSeriesUsed can be nil. Only the fillRight path reaches this function. With fillRight the
-// operator uses every left series, so the caller leaves leftSeriesUsed nil.
-func (b *OneToOneVectorVectorBinaryOperation) addLeftSeriesWithFilledRightSide(
+func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRightSides(
 	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
 	outputSeriesLabelsBytes *[]byte,
-	outputSeriesLabels labels.Labels,
-	leftSeriesIndex int,
-	leftSeriesUsed []bool,
+	labelsFunc func(labels.Labels) labels.Labels,
+	unmatchedLeftSeries []int,
 ) error {
-	*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
-	outputSeries, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]
+	for _, leftSeriesIndex := range unmatchedLeftSeries {
+		// Use the same label function as a real match: the result metric is derived from the left operand.
+		outputSeriesLabels := labelsFunc(b.leftMetadata[leftSeriesIndex].Labels)
+		*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
+		outputSeries, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]
 
-	// If an output series with these labels already exists, we merge by appending this left series'
-	// index below rather than overwriting (see the matched path in computeOutputSeries).
-	if !exists {
+		if exists {
+			if !outputSeries.series.fillMissingRight {
+				// Collision with a matched (left-derived) output series. We can't merge this filled-right
+				// series into it: the matched series has a real right side, and appending this left index
+				// would evaluate this unmatched left series against the wrong right side. We keep the
+				// matched series and intentionally skip this one.
+				//
+				// This is only legitimately reachable for operators that retain __name__ (comparison
+				// filters used without the bool modifier, or trim operators): a degenerate empty-__name__
+				// case can produce two left-side groups whose filled labels collide, one matched and one
+				// unmatched.
+				//
+				// For operators that do not retain __name__ (arithmetic operators) this collision is
+				// impossible, so reaching it indicates a bug in the query engine.
+				if !promqlext.RetainsMetricName(b.Op, b.ReturnBool) {
+					return fmt.Errorf("unexpected output series collision during right-side fill for operator %v that does not retain __name__; this indicates a bug in the query engine", b.Op)
+				}
+
+				continue
+			}
+
+			// Collision with another filled-right series. Both synthesise their right side from the same
+			// RHS fill value, so we merge by appending this left index and let them compete per-timestep,
+			// exactly as the matched path does for comparison filters.
+			outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
+			continue
+		}
+
 		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
 			return err
 		}
 
-		outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
+		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
-			series: &oneToOneBinaryOperationOutputSeries{fillMissingRight: true},
+			series: &oneToOneBinaryOperationOutputSeries{fillMissingRight: true, leftSeriesIndices: []int{leftSeriesIndex}},
 		}
-
-		outputSeriesMap[string(*outputSeriesLabelsBytes)] = outputSeries
-	}
-
-	outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
-
-	if leftSeriesUsed != nil {
-		leftSeriesUsed[leftSeriesIndex] = true
 	}
 
 	return nil
