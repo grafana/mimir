@@ -11,6 +11,7 @@
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
+* [BUGFIX] Distributor: Deduplicate samples across timeseries objects with identical labels in the same write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to ingesters without incrementing `cortex_discarded_samples_total`. #15589
 
 ### Mixin
 
