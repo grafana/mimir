@@ -5,7 +5,6 @@ package selectors
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -162,24 +161,23 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 }
 
 // labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
-// stats.LabelMatcher representation, deep-copying all strings so the result does not alias any
-// reused request buffer (see the note on unsafe memory tricks in the contributing guide).
+// stats.LabelMatcher representation.
 func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []stats.LabelMatcher {
 	out := make([]stats.LabelMatcher, 0, len(base)+len(filter))
 
 	for _, m := range base {
 		out = append(out, stats.LabelMatcher{
 			Type:  int32(m.Type),
-			Name:  strings.Clone(m.Name),
-			Value: strings.Clone(m.Value),
+			Name:  m.Name,
+			Value: m.Value,
 		})
 	}
 
 	for _, m := range filter {
 		out = append(out, stats.LabelMatcher{
 			Type:  int32(m.Type),
-			Name:  strings.Clone(m.Name),
-			Value: strings.Clone(m.Value),
+			Name:  m.Name,
+			Value: m.Value,
 		})
 	}
 
