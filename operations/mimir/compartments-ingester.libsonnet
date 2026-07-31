@@ -129,6 +129,7 @@
           $._config.multi_zone_ingester_zpdb_max_unavailable,
           $._config.compartments_ingester_zpdb_partition_regex,
           $._config.compartments_ingester_zpdb_partition_group,
+          $._config.multi_zone_ingester_zpdb_cross_zone_eviction_delay,
         )
       else
         podDisruptionBudget.new(name) +
