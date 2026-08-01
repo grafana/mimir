@@ -133,18 +133,22 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Check Mixin
-        run: make BUILD_IN_CONTAINER=false check-mixin
-      - name: Check Mixin Tests
-        run: make BUILD_IN_CONTAINER=false check-mixin-tests
-      - name: Check Mixin with Mimirtool rules check
-        run: make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
-      - name: Check Jsonnet Manifests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
-      - name: Check Jsonnet Getting Started
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
-      - name: Check Jsonnet Tests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-tests
+      # The three groups below don't touch each other's files, so they run concurrently.
+      # Within each group the checks stay sequential because they mutate shared paths:
+      # the mixin checks all write to operations/mimir-mixin(-compiled*), and the two
+      # jsonnet checks both diff operations/mimir-tests.
+      - parallel:
+          - name: Check Mixin
+            run: |
+              make BUILD_IN_CONTAINER=false check-mixin
+              make BUILD_IN_CONTAINER=false check-mixin-tests
+              make BUILD_IN_CONTAINER=false check-mixin-mimirtool-rules
+          - name: Check Jsonnet Manifests and Tests
+            run: |
+              make BUILD_IN_CONTAINER=false check-jsonnet-manifests
+              make BUILD_IN_CONTAINER=false check-jsonnet-tests
+          - name: Check Jsonnet Getting Started
+            run: make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
 
   lint-helm:
     runs-on: ubuntu-latest
