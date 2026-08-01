@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -41,9 +43,10 @@ import (
 //     CompactHead) so Kafka parallel ingestion cannot interleave commits
 //     on the same head; the ingester achieves the same with acquireAppendLock.
 type partitionTSDB struct {
-	tenantID    string
-	partitionID int32
-	dir         string
+	tenantID         string
+	partitionID      int32
+	dir              string
+	postingsCacheKey string
 
 	db *tsdb.DB
 
@@ -59,6 +62,45 @@ type partitionTSDB struct {
 	// race with appends.
 	tsdbMut sync.Mutex
 }
+
+type postingsCacheKeyContextKey struct{}
+
+func newPostingsCacheKey(tenantID string, partitionID int32, epoch int) string {
+	return fmt.Sprintf("%d:%s:%d:%d", len(tenantID), tenantID, partitionID, epoch)
+}
+
+func withPostingsCacheKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, postingsCacheKeyContextKey{}, key)
+}
+
+func postingsCacheKeyFromContext(ctx context.Context) (string, error) {
+	key, ok := ctx.Value(postingsCacheKeyContextKey{}).(string)
+	if !ok {
+		return "", fmt.Errorf("readcache postings cache key is missing from context")
+	}
+	return key, nil
+}
+
+type partitionSeriesLifecycleCallback struct {
+	postingsCache *tsdb.PostingsForMatchersCache
+	key           string
+}
+
+func (c *partitionSeriesLifecycleCallback) PreCreation(labels.Labels) error {
+	return nil
+}
+
+func (c *partitionSeriesLifecycleCallback) PostCreation(metric labels.Labels) {
+	if c.postingsCache == nil {
+		return
+	}
+	metricName := metric.Get(labels.MetricName)
+	if metricName != "" {
+		c.postingsCache.InvalidateMetric(c.key, metricName)
+	}
+}
+
+func (c *partitionSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 // openPartitionTSDB opens (or creates) the on-disk TSDB at
 // <data-dir>/<tenant>/partition-<id>/, with compaction enabled and
@@ -97,6 +139,8 @@ func openPartitionTSDB(
 	logger log.Logger,
 ) (*partitionTSDB, error) {
 	dir := partitionEpochDir(rootDir, tenantID, partitionID, epoch)
+	postingsKey := newPostingsCacheKey(tenantID, partitionID, epoch)
+	seriesLifecycleCallback := &partitionSeriesLifecycleCallback{key: postingsKey}
 
 	userLogger := log.With(logger, "user", tenantID, "partition", partitionID)
 
@@ -141,8 +185,9 @@ func openPartitionTSDB(
 		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),
 		OutOfOrderCapMax:                     int64(cfg.OutOfOrderCapacityMax),
 		TimelyCompaction:                     cfg.TimelyHeadCompaction,
+		SeriesLifecycleCallback:              seriesLifecycleCallback,
 		SharedPostingsForMatchersCache:       cfg.SharedPostingsForMatchersCache,
-		PostingsForMatchersCacheKeyFunc:      tenant.TenantID,
+		PostingsForMatchersCacheKeyFunc:      postingsCacheKeyFromContext,
 		HeadPostingsForMatchersCacheFactory:  headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
@@ -156,12 +201,16 @@ func openPartitionTSDB(
 	// compactions kicked off by Prometheus). The readcache Service
 	// calls CompactHead on its own ticker.
 	db.DisableCompactions()
+	if cfg.SharedPostingsForMatchersCache && cfg.HeadPostingsForMatchersCacheInvalidation {
+		seriesLifecycleCallback.postingsCache = db.Head().PostingsForMatchersCache()
+	}
 
 	return &partitionTSDB{
-		tenantID:    tenantID,
-		partitionID: partitionID,
-		dir:         dir,
-		db:          db,
+		tenantID:         tenantID,
+		partitionID:      partitionID,
+		dir:              dir,
+		postingsCacheKey: postingsKey,
+		db:               db,
 	}, nil
 }
 
@@ -270,17 +319,63 @@ func (p *partitionTSDB) Appender(ctx context.Context) storage.Appender {
 
 // Querier returns a Querier covering [mint, maxt].
 func (p *partitionTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
-	return p.db.Querier(mint, maxt)
+	q, err := p.db.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &partitionQuerier{Querier: q, postingsCacheKey: p.postingsCacheKey}, nil
 }
 
 // ChunkQuerier returns a ChunkQuerier covering [mint, maxt].
 func (p *partitionTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return p.db.ChunkQuerier(mint, maxt)
+	q, err := p.db.ChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &partitionChunkQuerier{ChunkQuerier: q, postingsCacheKey: p.postingsCacheKey}, nil
 }
 
 // UnorderedChunkQuerier returns an unordered ChunkQuerier.
 func (p *partitionTSDB) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	return p.db.UnorderedChunkQuerier(mint, maxt)
+	q, err := p.db.UnorderedChunkQuerier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &partitionChunkQuerier{ChunkQuerier: q, postingsCacheKey: p.postingsCacheKey}, nil
+}
+
+type partitionQuerier struct {
+	storage.Querier
+	postingsCacheKey string
+}
+
+func (q *partitionQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return q.Querier.Select(withPostingsCacheKey(ctx, q.postingsCacheKey), sortSeries, hints, matchers...)
+}
+
+func (q *partitionQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.Querier.LabelValues(withPostingsCacheKey(ctx, q.postingsCacheKey), name, hints, matchers...)
+}
+
+func (q *partitionQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.Querier.LabelNames(withPostingsCacheKey(ctx, q.postingsCacheKey), hints, matchers...)
+}
+
+type partitionChunkQuerier struct {
+	storage.ChunkQuerier
+	postingsCacheKey string
+}
+
+func (q *partitionChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	return q.ChunkQuerier.Select(withPostingsCacheKey(ctx, q.postingsCacheKey), sortSeries, hints, matchers...)
+}
+
+func (q *partitionChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.ChunkQuerier.LabelValues(withPostingsCacheKey(ctx, q.postingsCacheKey), name, hints, matchers...)
+}
+
+func (q *partitionChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.ChunkQuerier.LabelNames(withPostingsCacheKey(ctx, q.postingsCacheKey), hints, matchers...)
 }
 
 // ExemplarQuerier returns an ExemplarQuerier.

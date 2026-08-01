@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
@@ -322,7 +321,7 @@ func New(
 	}
 	r.headPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
 		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
-		KeyFunc:               tenant.TenantID,
+		KeyFunc:               postingsCacheKeyFromContext,
 		Invalidation:          tsdbCfg.HeadPostingsForMatchersCacheInvalidation,
 		CacheVersions:         tsdbCfg.HeadPostingsForMatchersCacheVersions,
 		TTL:                   tsdbCfg.HeadPostingsForMatchersCacheTTL,
@@ -334,7 +333,7 @@ func New(
 	})
 	r.blockPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(tsdb.PostingsForMatchersCacheConfig{
 		Shared:                tsdbCfg.SharedPostingsForMatchersCache,
-		KeyFunc:               tenant.TenantID,
+		KeyFunc:               postingsCacheKeyFromContext,
 		Invalidation:          false,
 		CacheVersions:         0,
 		TTL:                   tsdbCfg.BlockPostingsForMatchersCacheTTL,
