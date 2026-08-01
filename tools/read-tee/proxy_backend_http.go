@@ -43,8 +43,12 @@ func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
+		// Each backend is a single host, and at high amplification factors a pod can hold
+		// thousands of concurrent copies in flight to it. Keep the idle pool larger than the
+		// realistic concurrency so connections are reused instead of churned (opening a fresh
+		// TCP connection per copy exhausts ephemeral ports and surfaces as backend errors).
+		MaxIdleConns:        0,    // no global cap; per-host cap below governs
+		MaxIdleConnsPerHost: 2048, // see https://github.com/golang/go/issues/13801
 		IdleConnTimeout:     90 * time.Second,
 		DisableCompression:  true,
 	}
