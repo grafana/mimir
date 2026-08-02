@@ -444,14 +444,16 @@ type headAppenderBase struct {
 
 	// discardedSampleStats records samples that the most recent Commit dropped
 	// because the series already held a sample at that timestamp. Populated at the
-	// end of Commit and readable via DiscardedSampleStats. PROTOTYPE: floats only.
+	// end of Commit and readable via DiscardedSampleStats. Covers float, histogram
+	// and float-histogram samples.
 	discardedSampleStats DiscardedSampleStats
 }
 
-// DiscardedSampleStats reports float samples that Commit silently dropped because
-// the series already had a sample at that timestamp, split by whether the dropped
-// sample's value differed from the one already stored. Neither category is surfaced
-// as an Append error, so this is the only signal that these samples were not stored.
+// DiscardedSampleStats reports samples (float, histogram or float histogram) that
+// Commit silently dropped because the series already had a sample at that timestamp,
+// split by whether the dropped sample's value differed from the one already stored.
+// Neither category is surfaced as an Append error, so this is the only signal that
+// these samples were not stored.
 type DiscardedSampleStats struct {
 	// SameTimestampDifferentValue counts dropped samples whose value differed from
 	// the sample already stored at that timestamp (a rejected overwrite; the TSDB
@@ -462,9 +464,9 @@ type DiscardedSampleStats struct {
 	SameTimestampSameValue int
 }
 
-// DiscardedSampleStats returns the float samples the most recent Commit dropped
-// because the series already had a sample at that timestamp. It is valid to call
-// after Commit has returned.
+// DiscardedSampleStats returns the samples the most recent Commit dropped because
+// the series already had a sample at that timestamp. It is valid to call after
+// Commit has returned.
 func (a *headAppenderBase) DiscardedSampleStats() DiscardedSampleStats {
 	return a.discardedSampleStats
 }
@@ -1226,24 +1228,25 @@ type appenderCommitContext struct {
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
 	floatOOBRejected int
 	histoOOBRejected int
-	// Number of float samples silently dropped at commit time because the series
-	// already had a sample at that timestamp, split by whether the dropped value
-	// differed from (conflict) or matched (exact duplicate) the stored one.
-	floatsDroppedConflict int
-	floatsDroppedExactDup int
-	inOrderMint           int64
-	inOrderMaxt           int64
-	appendChunkOpts       chunkOpts
-	oooMinT               int64
-	oooMaxT               int64
-	wblSamples            []record.RefSample
-	wblHistograms         []record.RefHistogramSample
-	wblFloatHistograms    []record.RefFloatHistogramSample
-	oooMmapMarkers        map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
-	oooMmapMarkersCount   int
-	oooRecords            [][]byte
-	oooCapMax             int64
-	oooEnc                record.Encoder
+	// Number of samples (float, histogram or float histogram) silently dropped at
+	// commit time because the series already had a sample at that timestamp, split
+	// by whether the dropped value differed from (conflict) or matched (exact
+	// duplicate) the stored one. Accumulated across all sample types in the commit.
+	droppedConflict     int
+	droppedExactDup     int
+	inOrderMint         int64
+	inOrderMaxt         int64
+	appendChunkOpts     chunkOpts
+	oooMinT             int64
+	oooMaxT             int64
+	wblSamples          []record.RefSample
+	wblHistograms       []record.RefHistogramSample
+	wblFloatHistograms  []record.RefFloatHistogramSample
+	oooMmapMarkers      map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
+	oooMmapMarkersCount int
+	oooRecords          [][]byte
+	oooCapMax           int64
+	oooEnc              record.Encoder
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1449,7 +1452,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// handleAppendableError (it maps to no rejection bucket). Track it so
 			// the caller can still account for the silent drop.
 			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				acc.floatsDroppedConflict++
+				acc.droppedConflict++
 			}
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
@@ -1504,7 +1507,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.floatsAppended--
-				acc.floatsDroppedExactDup++
+				acc.droppedExactDup++
 			}
 		default:
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
@@ -1527,7 +1530,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
-				acc.floatsDroppedExactDup++
+				acc.droppedExactDup++
 			}
 		}
 
@@ -1561,6 +1564,11 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 
 		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			// Same-timestamp/different-value: reported as ErrDuplicateSampleForTimestamp
+			// then swallowed by handleAppendableError. Track it for the caller.
+			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				acc.droppedConflict++
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1612,6 +1620,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
+				acc.droppedExactDup++
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1628,8 +1637,13 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// An in-order histogram that is not appendable here is an exact duplicate
+				// of the current sample (a differing value would have returned
+				// ErrDuplicateSampleForTimestamp above). The histoOOORejected bump is
+				// pre-existing behavior; also track it as an exact-duplicate drop.
 				acc.histogramsAppended--
 				acc.histoOOORejected++
+				acc.droppedExactDup++
 			}
 		}
 
@@ -1663,6 +1677,11 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 
 		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			// Same-timestamp/different-value: reported as ErrDuplicateSampleForTimestamp
+			// then swallowed by handleAppendableError. Track it for the caller.
+			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				acc.droppedConflict++
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1714,6 +1733,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
+				acc.droppedExactDup++
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1730,8 +1750,13 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// An in-order histogram that is not appendable here is an exact duplicate
+				// of the current sample (a differing value would have returned
+				// ErrDuplicateSampleForTimestamp above). The histoOOORejected bump is
+				// pre-existing behavior; also track it as an exact-duplicate drop.
 				acc.histogramsAppended--
 				acc.histoOOORejected++
+				acc.droppedExactDup++
 			}
 		}
 
@@ -1853,8 +1878,8 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
 	a.discardedSampleStats = DiscardedSampleStats{
-		SameTimestampDifferentValue: acc.floatsDroppedConflict,
-		SameTimestampSameValue:      acc.floatsDroppedExactDup,
+		SameTimestampDifferentValue: acc.droppedConflict,
+		SameTimestampSameValue:      acc.droppedExactDup,
 	}
 
 	acc.collectOOORecords(a)

@@ -455,8 +455,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// dropped silently at commit time: Append returned no error, so they were
 	// counted as succeeded above, but they were never stored. Reclassify them as
 	// discarded, split by whether their value differed from (new-value-for-timestamp)
-	// or matched (same-value-for-timestamp) the stored sample.
-	// PROTOTYPE: covers float samples only; see tsdb.DiscardedSampleStats.
+	// or matched (same-value-for-timestamp) the stored sample. Covers float,
+	// histogram and float-histogram samples; see tsdb.DiscardedSampleStats.
 	if statsApp, ok := app.(discardedSampleStatsAppender); ok {
 		dropped := statsApp.DiscardedSampleStats()
 		stats.newValueForTimestampCount += dropped.SameTimestampDifferentValue

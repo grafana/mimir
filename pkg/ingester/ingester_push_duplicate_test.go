@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 // writeRequestManySeries builds a single WriteRequest holding one PreallocTimeseries
@@ -35,11 +36,11 @@ func writeRequestManySeries(lbls labels.Labels, samples []mimirpb.Sample) *mimir
 	return req
 }
 
-// tsdbFloatCounter returns the value of the {type="float"} series of the named TSDB
-// counter in the given registry, or 0 if that series is absent. It lets us assert on a
-// single TSDB counter value without having to enumerate the sibling {type="histogram"}
-// series that these vectors also emit.
-func tsdbFloatCounter(t *testing.T, reg *prometheus.Registry, name string) float64 {
+// tsdbSampleCounter returns the value of the {type=<sampleType>} series of the named
+// TSDB counter in the given registry, or 0 if that series is absent. It lets us assert
+// on a single TSDB counter value without enumerating the sibling type series that these
+// vectors also emit.
+func tsdbSampleCounter(t *testing.T, reg *prometheus.Registry, name, sampleType string) float64 {
 	t.Helper()
 	mfs, err := reg.Gather()
 	require.NoError(t, err)
@@ -49,7 +50,7 @@ func tsdbFloatCounter(t *testing.T, reg *prometheus.Registry, name string) float
 		}
 		for _, m := range mf.GetMetric() {
 			for _, l := range m.GetLabel() {
-				if l.GetName() == "type" && l.GetValue() == "float" {
+				if l.GetName() == "type" && l.GetValue() == sampleType {
 					return m.GetCounter().GetValue()
 				}
 			}
@@ -292,8 +293,118 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 			// in the per-tenant TSDB registry, which the ingester does not fully re-export.
 			tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
 			require.NotNil(t, tsdbReg)
-			require.Equal(t, testData.expectedTSDBSamplesAppended, tsdbFloatCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total"), "TSDB in-order float samples appended")
-			require.Equal(t, testData.expectedTSDBOutOfOrder, tsdbFloatCounter(t, tsdbReg, "prometheus_tsdb_out_of_order_samples_total"), "TSDB out-of-order float samples rejected")
+			require.Equal(t, testData.expectedTSDBSamplesAppended, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "float"), "TSDB in-order float samples appended")
+			require.Equal(t, testData.expectedTSDBOutOfOrder, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_out_of_order_samples_total", "float"), "TSDB out-of-order float samples rejected")
+		})
+	}
+}
+
+// histogramPoint is a (timestamp, generator index) pair used to build native
+// histogram samples. Two points with the same index generate equal histograms;
+// different indexes generate different histograms.
+type histogramPoint struct {
+	ts  int64
+	idx int
+}
+
+// writeRequestManyHistogramSeries builds a single WriteRequest holding one
+// PreallocTimeseries per point, each carrying a single native histogram, all sharing
+// the same label set — the native-histogram analog of writeRequestManySeries.
+func writeRequestManyHistogramSeries(lbls labels.Labels, points []histogramPoint) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{Source: mimirpb.API}
+	for _, p := range points {
+		ts := &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
+			Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(p.ts, util_test.GenerateTestHistogram(p.idx))},
+		}
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: ts})
+	}
+	return req
+}
+
+// TestIngester_Push_DuplicateTimestampHistograms is the native-histogram counterpart
+// of TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests, verifying that fix D
+// also reconciles histogram samples the TSDB drops at commit time because a sample
+// already existed at that timestamp. It asserts the ingester and TSDB counters only
+// (querying histogram values back into a model.Matrix is not needed to show the fix).
+func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
+	metricLabels := labels.FromStrings(model.MetricNameLabel, "test")
+	userID := "test"
+
+	sampleMetricNames := []string{
+		"cortex_ingester_ingested_samples_total",
+		"cortex_ingester_ingested_samples_failures_total",
+		"cortex_discarded_samples_total",
+	}
+
+	type testCase struct {
+		points                       []histogramPoint
+		expectedMetrics              string
+		expectedTSDBHistogramsAppend float64
+	}
+
+	tests := map[string]testCase{
+		// Three histogram timeseries with equal labels in one request. The first two carry
+		// the exact same histogram at ts=100; the third a different one at ts=101. The
+		// duplicate is dropped at commit and counted as "same-value-for-timestamp".
+		"exact duplicate histogram within a single request is discarded as same-value-for-timestamp": {
+			points: []histogramPoint{{ts: 100, idx: 1}, {ts: 100, idx: 1}, {ts: 101, idx: 2}},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
+			`,
+			expectedTSDBHistogramsAppend: 2,
+		},
+
+		// Same shape, but the second histogram at ts=100 differs from the first, so it is a
+		// conflict, detected at commit and counted as "new-value-for-timestamp".
+		"conflicting histogram within a single request is discarded as new-value-for-timestamp": {
+			points: []histogramPoint{{ts: 100, idx: 1}, {ts: 100, idx: 2}, {ts: 101, idx: 3}},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+			`,
+			expectedTSDBHistogramsAppend: 2,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			limits := defaultLimitsTestConfig()
+			limits.NativeHistogramsIngestionEnabled = true
+
+			i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			_, err = i.Push(ctx, writeRequestManyHistogramSeries(metricLabels, testData.points))
+			require.NoError(t, err)
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), sampleMetricNames...))
+
+			tsdbReg := i.tsdbMetrics.RegistryForTenant(userID)
+			require.NotNil(t, tsdbReg)
+			require.Equal(t, testData.expectedTSDBHistogramsAppend, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "histogram"), "TSDB in-order histogram samples appended")
 		})
 	}
 }
