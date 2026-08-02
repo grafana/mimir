@@ -60,21 +60,29 @@ func tsdbFloatCounter(t *testing.T, reg *prometheus.Registry, name string) float
 
 // TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests illustrates how the
 // ingester (and, underneath, the Prometheus TSDB head appender) handles multiple
-// samples that share a timestamp for the same series, across four scenarios:
+// samples that share a timestamp for the same series, across four scenarios.
+//
+// PROTOTYPE of fix D: the TSDB appender now reports, via DiscardedSampleStats, the
+// float samples it dropped at commit time because a sample already existed at that
+// timestamp — split by whether the dropped value differed from or matched the stored
+// one. The ingester reconciles its optimistic per-Append accounting with that report:
+// the dropped samples are subtracted from cortex_ingester_ingested_samples_total and
+// added to cortex_discarded_samples_total with reason "new-value-for-timestamp" (value
+// differed) or "same-value-for-timestamp" (value matched).
 //
 //  1. Exact duplicate (same ts + same value) within a single WriteRequest: the extra
-//     sample is silently dropped at commit time, no error, nothing discarded.
+//     sample is dropped at commit time; now counted as discarded "same-value-for-timestamp".
 //  2. Conflicting value (same ts, different value) within a single WriteRequest: the
-//     conflict is only detected at commit time, where the error is swallowed, so the
-//     sample is *still* silently dropped, no error surfaced to the caller.
+//     conflict is detected at commit time (previously swallowed); now counted as
+//     discarded "new-value-for-timestamp".
 //  3. Exact duplicate (same ts + same value) across two separate WriteRequests: the
-//     second request sees the already-committed sample at Append time, but because the
-//     value matches, the TSDB tolerates it and returns no error. It is dropped just like
-//     scenario 1 (no error, nothing discarded) — the across-requests counterpart of it.
+//     second request's sample is tolerated at Append time (value matches) then dropped at
+//     commit; now counted as discarded "same-value-for-timestamp" — the across-requests
+//     counterpart of scenario 1.
 //  4. Conflicting value (same ts, different value) across two separate WriteRequests:
-//     the second request sees the already-committed sample at Append time and the
-//     conflict is surfaced as a soft "new-value-for-timestamp" error — the
-//     across-requests counterpart of scenario 2.
+//     the second request's sample is rejected at *Append* time (not commit), so it takes
+//     the pre-existing soft "new-value-for-timestamp" path and is unaffected by fix D —
+//     the across-requests counterpart of scenario 2.
 func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 	metricLabels := labels.FromStrings(model.MetricNameLabel, "test")
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(metricLabels))
@@ -102,8 +110,9 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 	tests := map[string]testCase{
 		// Scenario 1: three timeseries with equal labels in ONE request. The first two
 		// carry the exact same (ts=100, value=1) sample; the third carries (ts=101, value=2).
-		// The duplicate is silently dropped as an exact duplicate at commit time.
-		"exact duplicate within a single request is silently dropped": {
+		// The duplicate is dropped as an exact duplicate at commit time and, with fix D,
+		// counted as discarded "same-value-for-timestamp".
+		"exact duplicate within a single request is discarded as same-value-for-timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				writeRequestManySeries(metricLabels, []mimirpb.Sample{
 					{TimestampMs: 100, Value: 1},
@@ -115,18 +124,20 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}, {Value: 2, Timestamp: 101}}},
 			},
+			// ingested is now 2, not 3: the exact duplicate is reconciled out and shows up
+			// as a discarded "same-value-for-timestamp" sample instead.
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 3
+				cortex_ingester_ingested_samples_total{user="test"} 2
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
 			`,
-			// The TSDB head only actually appended 2 samples: the duplicate was dropped at
-			// commit time. Note the gap vs the ingester's optimistic count of 3 above. The
-			// drop is not counted as out-of-order (it is an exact duplicate), so that
-			// failure counter stays 0.
+			// The TSDB head appended 2 samples, matching the reconciled ingested count.
 			expectedTSDBSamplesAppended: 2,
 			expectedTSDBOutOfOrder:      0,
 		},
@@ -134,9 +145,10 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 		// Scenario 2: same as scenario 1, but the second timeseries carries a DIFFERENT
 		// value (ts=100, value=2) at the same timestamp as the first (ts=100, value=1).
 		// Because all three samples are appended into the same uncommitted appender, the
-		// conflict is only detected at commit time, where the TSDB swallows the error.
-		// The sample is still silently dropped: no error, nothing discarded.
-		"conflicting value within a single request is silently dropped": {
+		// conflict is only detected at commit time. Previously the error was swallowed and
+		// the sample silently dropped; with fix D it is counted as discarded
+		// "new-value-for-timestamp".
+		"conflicting value within a single request is discarded as new-value-for-timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				writeRequestManySeries(metricLabels, []mimirpb.Sample{
 					{TimestampMs: 100, Value: 1},
@@ -148,19 +160,21 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}, {Value: 3, Timestamp: 101}}},
 			},
+			// ingested is now 2, not 3: the conflicting sample is reconciled out and shows
+			// up as a discarded "new-value-for-timestamp" sample. Note this remains a silent
+			// drop from the client's perspective (no push error) — only the metric changed.
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 3
+				cortex_ingester_ingested_samples_total{user="test"} 2
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 			`,
-			// Same as scenario 1 from the TSDB's point of view: only 2 samples were appended.
-			// The conflicting (ts=100, value=2) sample produced ErrDuplicateSampleForTimestamp
-			// internally at commit time, but that error is swallowed and does not map to any
-			// TSDB failure counter (out-of-order stays 0), so nothing here reflects the drop
-			// beyond the missing appended sample.
+			// The TSDB head appended 2 samples, matching the reconciled ingested count.
 			expectedTSDBSamplesAppended: 2,
 			expectedTSDBOutOfOrder:      0,
 		},
@@ -169,9 +183,10 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 		// requests. Unlike scenario 4, the second request's Append does not error: because
 		// the value matches the already-committed sample, the TSDB tolerates the exact
 		// duplicate (appendable returns no error at Append time) and then drops it at commit
-		// time. So this behaves like scenario 1 across requests: no error, nothing discarded,
-		// only one sample actually stored.
-		"exact duplicate across two requests is silently dropped": {
+		// time. With fix D this drop is reconciled: ingested drops to 1 and the sample is
+		// counted as discarded "same-value-for-timestamp" — the across-requests counterpart
+		// of scenario 1.
+		"exact duplicate across two requests is discarded as same-value-for-timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 1}}),
 				writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 100, Value: 1}}),
@@ -180,17 +195,20 @@ func TestIngester_Push_DuplicateTimestampWithinAndAcrossRequests(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 100}}},
 			},
+			// ingested is now 1, not 2: the second request's exact duplicate is reconciled
+			// out at commit and counted as discarded "same-value-for-timestamp".
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 2
+				cortex_ingester_ingested_samples_total{user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
 			`,
-			// The ingester optimistically counts both requests' samples as ingested (2), but
-			// the TSDB head only appended 1: the second, exact-duplicate sample was dropped at
-			// commit time. Not an out-of-order failure.
+			// The TSDB head appended 1 sample, matching the reconciled ingested count.
 			expectedTSDBSamplesAppended: 1,
 			expectedTSDBOutOfOrder:      0,
 		},

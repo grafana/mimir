@@ -1627,6 +1627,17 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 	return 0, labels.EmptyLabels()
 }
 
+// DiscardedSampleStats forwards to the underlying head appender if it supports
+// reporting samples silently dropped at commit time.
+func (a dbAppender) DiscardedSampleStats() DiscardedSampleStats {
+	if s, ok := a.Appender.(interface {
+		DiscardedSampleStats() DiscardedSampleStats
+	}); ok {
+		return s.DiscardedSampleStats()
+	}
+	return DiscardedSampleStats{}
+}
+
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
 

@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -36,6 +37,15 @@ type extendedAppender interface {
 	storage.GetRef
 }
 
+// discardedSampleStatsAppender is implemented by appenders that can report float
+// samples silently dropped at commit time because the series already had a sample
+// at that timestamp. The TSDB head appender implements it; see
+// tsdb.DiscardedSampleStats. Consulted after Commit to reconcile the ingester's
+// optimistic per-Append accounting with what was actually stored.
+type discardedSampleStatsAppender interface {
+	DiscardedSampleStats() tsdb.DiscardedSampleStats
+}
+
 type pushStats struct {
 	succeededSamplesCount       int
 	failedSamplesCount          int
@@ -46,6 +56,7 @@ type pushStats struct {
 	sampleTooOldCount           int
 	sampleTooFarInFutureCount   int
 	newValueForTimestampCount   int
+	sameValueForTimestampCount  int
 	perUserSeriesLimitCount     int
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
@@ -439,6 +450,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
+	// Reconcile the optimistic per-Append accounting with what the TSDB actually
+	// stored. Samples that shared a timestamp with an already-present sample are
+	// dropped silently at commit time: Append returned no error, so they were
+	// counted as succeeded above, but they were never stored. Reclassify them as
+	// discarded, split by whether their value differed from (new-value-for-timestamp)
+	// or matched (same-value-for-timestamp) the stored sample.
+	// PROTOTYPE: covers float samples only; see tsdb.DiscardedSampleStats.
+	if statsApp, ok := app.(discardedSampleStatsAppender); ok {
+		dropped := statsApp.DiscardedSampleStats()
+		stats.newValueForTimestampCount += dropped.SameTimestampDifferentValue
+		stats.sameValueForTimestampCount += dropped.SameTimestampSameValue
+		stats.succeededSamplesCount -= dropped.SameTimestampDifferentValue + dropped.SameTimestampSameValue
+	}
+
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
@@ -484,6 +509,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if stats.newValueForTimestampCount > 0 {
 		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+	}
+	if stats.sameValueForTimestampCount > 0 {
+		discarded.sameValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.sameValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
 		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))

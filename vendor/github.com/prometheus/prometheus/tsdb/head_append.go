@@ -168,6 +168,18 @@ func (a *initAppender) Rollback() error {
 	return a.app.Rollback()
 }
 
+// DiscardedSampleStats forwards to the underlying appender once it has been
+// initialized (i.e. at least one sample was appended). Returns the zero value if
+// nothing was ever appended through this init appender.
+func (a *initAppender) DiscardedSampleStats() DiscardedSampleStats {
+	if s, ok := a.app.(interface {
+		DiscardedSampleStats() DiscardedSampleStats
+	}); ok {
+		return s.DiscardedSampleStats()
+	}
+	return DiscardedSampleStats{}
+}
+
 // Appender returns a new Appender on the database.
 func (h *Head) Appender(context.Context) storage.Appender {
 	h.metrics.activeAppenders.Inc()
@@ -429,7 +441,34 @@ type headAppenderBase struct {
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
+
+	// discardedSampleStats records samples that the most recent Commit dropped
+	// because the series already held a sample at that timestamp. Populated at the
+	// end of Commit and readable via DiscardedSampleStats. PROTOTYPE: floats only.
+	discardedSampleStats DiscardedSampleStats
 }
+
+// DiscardedSampleStats reports float samples that Commit silently dropped because
+// the series already had a sample at that timestamp, split by whether the dropped
+// sample's value differed from the one already stored. Neither category is surfaced
+// as an Append error, so this is the only signal that these samples were not stored.
+type DiscardedSampleStats struct {
+	// SameTimestampDifferentValue counts dropped samples whose value differed from
+	// the sample already stored at that timestamp (a rejected overwrite; the TSDB
+	// produces ErrDuplicateSampleForTimestamp internally but swallows it at commit).
+	SameTimestampDifferentValue int
+	// SameTimestampSameValue counts dropped samples that exactly duplicated the
+	// sample already stored at that timestamp (an idempotent no-op).
+	SameTimestampSameValue int
+}
+
+// DiscardedSampleStats returns the float samples the most recent Commit dropped
+// because the series already had a sample at that timestamp. It is valid to call
+// after Commit has returned.
+func (a *headAppenderBase) DiscardedSampleStats() DiscardedSampleStats {
+	return a.discardedSampleStats
+}
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -1185,21 +1224,26 @@ type appenderCommitContext struct {
 	floatTooOldRejected int
 	histoTooOldRejected int
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
-	floatOOBRejected    int
-	histoOOBRejected    int
-	inOrderMint         int64
-	inOrderMaxt         int64
-	appendChunkOpts     chunkOpts
-	oooMinT             int64
-	oooMaxT             int64
-	wblSamples          []record.RefSample
-	wblHistograms       []record.RefHistogramSample
-	wblFloatHistograms  []record.RefFloatHistogramSample
-	oooMmapMarkers      map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
-	oooMmapMarkersCount int
-	oooRecords          [][]byte
-	oooCapMax           int64
-	oooEnc              record.Encoder
+	floatOOBRejected int
+	histoOOBRejected int
+	// Number of float samples silently dropped at commit time because the series
+	// already had a sample at that timestamp, split by whether the dropped value
+	// differed from (conflict) or matched (exact duplicate) the stored one.
+	floatsDroppedConflict int
+	floatsDroppedExactDup int
+	inOrderMint           int64
+	inOrderMaxt           int64
+	appendChunkOpts       chunkOpts
+	oooMinT               int64
+	oooMaxT               int64
+	wblSamples            []record.RefSample
+	wblHistograms         []record.RefHistogramSample
+	wblFloatHistograms    []record.RefFloatHistogramSample
+	oooMmapMarkers        map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
+	oooMmapMarkersCount   int
+	oooRecords            [][]byte
+	oooCapMax             int64
+	oooEnc                record.Encoder
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1400,6 +1444,13 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			// A same-timestamp/different-value sample is reported here as
+			// ErrDuplicateSampleForTimestamp but then swallowed by
+			// handleAppendableError (it maps to no rejection bucket). Track it so
+			// the caller can still account for the silent drop.
+			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				acc.floatsDroppedConflict++
+			}
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
@@ -1453,6 +1504,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.floatsAppended--
+				acc.floatsDroppedExactDup++
 			}
 		default:
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
@@ -1475,6 +1527,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
+				acc.floatsDroppedExactDup++
 			}
 		}
 
@@ -1798,6 +1851,11 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
+
+	a.discardedSampleStats = DiscardedSampleStats{
+		SameTimestampDifferentValue: acc.floatsDroppedConflict,
+		SameTimestampSameValue:      acc.floatsDroppedExactDup,
+	}
 
 	acc.collectOOORecords(a)
 	if h.wbl != nil {
