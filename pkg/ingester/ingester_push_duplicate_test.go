@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,9 +16,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // writeRequestManySeries builds a single WriteRequest holding one PreallocTimeseries
@@ -407,4 +411,54 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 			require.Equal(t, testData.expectedTSDBHistogramsAppend, tsdbSampleCounter(t, tsdbReg, "prometheus_tsdb_head_samples_appended_total", "histogram"), "TSDB in-order histogram samples appended")
 		})
 	}
+}
+
+// TestIngester_Push_DuplicateTimestampCostAttribution verifies that samples dropped at
+// commit time are attributed per series to cortex_discarded_attributed_samples_total,
+// with the two commit-time reasons, when cost attribution is configured for the tenant.
+func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
+	const userID = "test"
+	// The series carries a "team" label that cost attribution is configured to track.
+	metricLabels := labels.FromStrings(model.MetricNameLabel, "test", "team", "foo")
+
+	limits := defaultLimitsTestConfig()
+	limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+	}
+	limits.MaxCostAttributionCardinality = 100
+	overrides := validation.NewOverrides(limits, nil)
+
+	registry := prometheus.NewRegistry()
+	caRegistry := prometheus.NewRegistry()
+	cam, err := costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, caRegistry)
+	require.NoError(t, err)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.ReplicationFactor = 1
+	i, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, cfg, overrides, nil, "", "", registry, cam)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// One request for a single series carrying an exact duplicate at ts=100 (same value)
+	// and a conflict at ts=200 (different value). Both extra samples are dropped at commit.
+	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{
+		{TimestampMs: 100, Value: 1},
+		{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
+		{TimestampMs: 101, Value: 2},
+		{TimestampMs: 200, Value: 5},
+		{TimestampMs: 200, Value: 6}, // conflict -> new-value-for-timestamp
+		{TimestampMs: 201, Value: 7},
+	}))
+	require.NoError(t, err)
+
+	// Each drop is attributed to the series' "team" label, split by reason.
+	expected := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+		cortex_discarded_attributed_samples_total{reason="new-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{reason="same-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
+	`
+	require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected), "cortex_discarded_attributed_samples_total"))
 }

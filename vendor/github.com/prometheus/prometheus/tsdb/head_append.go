@@ -462,6 +462,24 @@ type DiscardedSampleStats struct {
 	// SameTimestampSameValue counts dropped samples that exactly duplicated the
 	// sample already stored at that timestamp (an idempotent no-op).
 	SameTimestampSameValue int
+	// Dropped carries one entry per dropped sample, exposing the series labels so
+	// callers can attribute the drop per series (e.g. cost attribution). It is nil
+	// when nothing was dropped. Entry count equals
+	// SameTimestampDifferentValue + SameTimestampSameValue.
+	Dropped []DiscardedSample
+}
+
+// DiscardedSample identifies a single sample dropped at commit time because the
+// series already had a sample at that timestamp.
+type DiscardedSample struct {
+	// Labels is the label set of the series the dropped sample belonged to. It
+	// references the head's interned labels and is valid for the caller to read
+	// synchronously after Commit.
+	Labels labels.Labels
+	// ValueDiffered reports whether the dropped sample's value differed from the
+	// sample already stored at that timestamp: true for a conflict (counts toward
+	// SameTimestampDifferentValue), false for an exact duplicate (SameTimestampSameValue).
+	ValueDiffered bool
 }
 
 // DiscardedSampleStats returns the samples the most recent Commit dropped because
@@ -1232,8 +1250,12 @@ type appenderCommitContext struct {
 	// commit time because the series already had a sample at that timestamp, split
 	// by whether the dropped value differed from (conflict) or matched (exact
 	// duplicate) the stored one. Accumulated across all sample types in the commit.
-	droppedConflict     int
-	droppedExactDup     int
+	droppedConflict int
+	droppedExactDup int
+	// droppedSamples carries one entry per dropped sample (in either category above)
+	// with its series labels, for per-series attribution. Allocated lazily, only
+	// when a drop actually occurs.
+	droppedSamples      []DiscardedSample
 	inOrderMint         int64
 	inOrderMaxt         int64
 	appendChunkOpts     chunkOpts
@@ -1247,6 +1269,20 @@ type appenderCommitContext struct {
 	oooRecords          [][]byte
 	oooCapMax           int64
 	oooEnc              record.Encoder
+}
+
+// recordDroppedConflict records a sample dropped at commit time because the series
+// already held a sample at the same timestamp with a different value.
+func (acc *appenderCommitContext) recordDroppedConflict(s *memSeries) {
+	acc.droppedConflict++
+	acc.droppedSamples = append(acc.droppedSamples, DiscardedSample{Labels: s.labels(), ValueDiffered: true})
+}
+
+// recordDroppedExactDup records a sample dropped at commit time because it exactly
+// duplicated the sample already stored at the same timestamp.
+func (acc *appenderCommitContext) recordDroppedExactDup(s *memSeries) {
+	acc.droppedExactDup++
+	acc.droppedSamples = append(acc.droppedSamples, DiscardedSample{Labels: s.labels(), ValueDiffered: false})
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1452,7 +1488,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// handleAppendableError (it maps to no rejection bucket). Track it so
 			// the caller can still account for the silent drop.
 			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				acc.droppedConflict++
+				acc.recordDroppedConflict(series)
 			}
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
@@ -1507,7 +1543,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.floatsAppended--
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		default:
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
@@ -1530,7 +1566,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		}
 
@@ -1567,7 +1603,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			// Same-timestamp/different-value: reported as ErrDuplicateSampleForTimestamp
 			// then swallowed by handleAppendableError. Track it for the caller.
 			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				acc.droppedConflict++
+				acc.recordDroppedConflict(series)
 			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1620,7 +1656,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1643,7 +1679,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				// pre-existing behavior; also track it as an exact-duplicate drop.
 				acc.histogramsAppended--
 				acc.histoOOORejected++
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		}
 
@@ -1680,7 +1716,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			// Same-timestamp/different-value: reported as ErrDuplicateSampleForTimestamp
 			// then swallowed by handleAppendableError. Track it for the caller.
 			if errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
-				acc.droppedConflict++
+				acc.recordDroppedConflict(series)
 			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1733,7 +1769,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				// not with samples in already flushed OOO chunks.
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				acc.histogramsAppended--
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1756,7 +1792,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				// pre-existing behavior; also track it as an exact-duplicate drop.
 				acc.histogramsAppended--
 				acc.histoOOORejected++
-				acc.droppedExactDup++
+				acc.recordDroppedExactDup(series)
 			}
 		}
 
@@ -1880,6 +1916,7 @@ func (a *headAppenderBase) Commit() (err error) {
 	a.discardedSampleStats = DiscardedSampleStats{
 		SameTimestampDifferentValue: acc.droppedConflict,
 		SameTimestampSameValue:      acc.droppedExactDup,
+		Dropped:                     acc.droppedSamples,
 	}
 
 	acc.collectOOORecords(a)

@@ -462,6 +462,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		stats.newValueForTimestampCount += dropped.SameTimestampDifferentValue
 		stats.sameValueForTimestampCount += dropped.SameTimestampSameValue
 		stats.succeededSamplesCount -= dropped.SameTimestampDifferentValue + dropped.SameTimestampSameValue
+
+		// Attribute each dropped sample to its series for per-series cost attribution.
+		// This targets cortex_discarded_attributed_samples_total, distinct from the
+		// per-user cortex_discarded_samples_total handled via the stats counts above.
+		if len(dropped.Dropped) > 0 {
+			cast := i.costAttributionMgr.SampleTracker(userID)
+			for _, d := range dropped.Dropped {
+				reason := reasonSameValueForTimestamp
+				if d.ValueDiffered {
+					reason = reasonNewValueForTimestamp
+				}
+				cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), 1, reason, startAppend)
+			}
+		}
 	}
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
