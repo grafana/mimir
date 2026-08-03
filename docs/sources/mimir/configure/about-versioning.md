@@ -122,6 +122,7 @@ The following features are currently experimental:
     - `-distributor.otel-translation-strategy`
   - Allow controlling OTLP translation via request headers
     - `-api.otlp-translation-headers-enabled`
+  - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
   - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
