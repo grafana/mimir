@@ -26,7 +26,7 @@ var testBlockIDs = [][]byte{ulid.MustNewDefault(time.Now()).Bytes()}
 func setupBboltManager(t *testing.T) (*BboltJobPersistenceManager, *bbolt.DB) {
 	tempDir := t.TempDir()
 	dbDir := filepath.Join(tempDir, "shards")
-	mgr, err := openBboltJobPersistenceManager(dbDir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dbDir, 1, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	return mgr, mgr.dbs[0]
 }
@@ -44,6 +44,11 @@ func newTestCompactionJob(id string) TrackedJob {
 
 func newTestPlanJob() TrackedJob {
 	job := NewTrackedPlanJob(time.Now())
+	return job
+}
+
+func newTestCleanupJob() TrackedJob {
+	job := NewTrackedCleanupJob(time.Now())
 	return job
 }
 
@@ -90,6 +95,8 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.NoError(t, err)
 	err = tenantPersister.WriteJob(newTestPlanJob())
 	require.NoError(t, err)
+	err = tenantPersister.WriteJob(newTestCleanupJob())
+	require.NoError(t, err)
 
 	ctm, err = mgr.RecoverAll(allowedTenants, jobTrackerFactory)
 	require.NoError(t, err)
@@ -97,9 +104,10 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.Contains(t, ctm, "foo")
 
 	jobTracker := ctm["foo"]
-	require.Len(t, jobTracker.incompleteJobs, 2)
+	require.Len(t, jobTracker.incompleteJobs, 3)
 	require.Contains(t, jobTracker.incompleteJobs, "id")
 	require.Contains(t, jobTracker.incompleteJobs, planJobId)
+	require.Contains(t, jobTracker.incompleteJobs, cleanupJobId)
 }
 
 func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
@@ -171,6 +179,77 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBboltJobPersistenceManager_RecoverAll_DiscardsDisabledJobTypes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter jobDiscardFilter
+	}{
+		{"neither disabled", jobDiscardFilter{}},
+		{"cleanup disabled", jobDiscardFilter{discardCleanup: true}},
+		{"planning disabled", jobDiscardFilter{discardPlanning: true}},
+		{"both disabled", jobDiscardFilter{discardPlanning: true, discardCleanup: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dbDir := filepath.Join(t.TempDir(), "shards")
+			mgr, err := openBboltJobPersistenceManager(dbDir, 1, tc.filter, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, mgr.Close())
+			})
+
+			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+			jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
+				return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+			}
+
+			// A tenant with a pending compaction job, a leased plan job, and a pending cleanup job.
+			persister, err := mgr.InitializeTenant("tenant")
+			require.NoError(t, err)
+			compactionJob := newTestCompactionJob("foo")
+			require.NoError(t, persister.WriteJob(compactionJob))
+			planJob := NewTrackedPlanJob(time.Now())
+			planJob.MarkLeased(time.Now())
+			require.NoError(t, persister.WriteJob(planJob))
+			cleanupJob := NewTrackedCleanupJob(time.Now())
+			require.NoError(t, persister.WriteJob(cleanupJob))
+
+			jobTrackers, err := mgr.RecoverAll(util.NewAllowList(nil, nil), jobTrackerFactory)
+			require.NoError(t, err)
+			require.Len(t, jobTrackers, 1)
+
+			incomplete := jobTrackers["tenant"].incompleteJobs
+			requireRecovered := func(id string, recovered bool) {
+				if recovered {
+					require.Contains(t, incomplete, id)
+				} else {
+					require.NotContains(t, incomplete, id)
+				}
+			}
+			requireRecovered(compactionJob.ID(), !tc.filter.discardPlanning)
+			requireRecovered(planJobId, !tc.filter.discardPlanning)
+			requireRecovered(cleanupJobId, !tc.filter.discardCleanup)
+
+			// The disabled types' keys are deleted while the rest remain.
+			err = mgr.dbs[0].View(func(tx *bbolt.Tx) error {
+				bucket := tx.Bucket([]byte("tenant"))
+				require.NotNil(t, bucket)
+				requireKey := func(id string, kept bool) {
+					if kept {
+						require.NotNil(t, bucket.Get([]byte(id)))
+					} else {
+						require.Nil(t, bucket.Get([]byte(id)))
+					}
+				}
+				requireKey(compactionJob.ID(), !tc.filter.discardPlanning)
+				requireKey(planJobId, !tc.filter.discardPlanning)
+				requireKey(cleanupJobId, !tc.filter.discardCleanup)
+				return nil
+			})
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestBboltJobPersister_Drop(t *testing.T) {
 	mgr, db := setupBboltManager(t)
 	t.Cleanup(func() {
@@ -218,14 +297,14 @@ func TestMetadataBucketNameIsInvalidTenantID(t *testing.T) {
 func TestBboltJobPersistenceManager_CreationTimePersists(t *testing.T) {
 	dir := t.TempDir()
 
-	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 1, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
 	require.NoError(t, mgr.Close())
 
 	// Reopen with the same shard count
-	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 1, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved on reopen")
 	require.NoError(t, mgr.Close())
@@ -235,7 +314,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	dir := t.TempDir()
 
 	// Open with 1 shard and write some data
-	mgr, err := openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 1, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
@@ -249,7 +328,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	require.NoError(t, mgr.Close())
 
 	// Reopen with 2 shards
-	mgr, err = openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 2, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-up migration")
@@ -290,7 +369,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	dir := t.TempDir()
 
 	// Open with 2 shards, place a tenant on each shard directly.
-	mgr, err := openBboltJobPersistenceManager(dir, 2, log.NewNopLogger())
+	mgr, err := openBboltJobPersistenceManager(dir, 2, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	originalCreationTime := mgr.CreationTime()
 	require.False(t, originalCreationTime.IsZero())
@@ -306,7 +385,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	require.NoError(t, mgr.Close())
 
 	// Reopen with 1 shard.
-	mgr, err = openBboltJobPersistenceManager(dir, 1, log.NewNopLogger())
+	mgr, err = openBboltJobPersistenceManager(dir, 1, jobDiscardFilter{}, log.NewNopLogger())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, mgr.Close()) })
 	require.True(t, mgr.CreationTime().Equal(originalCreationTime), "creation time should be preserved after scale-down migration")
@@ -375,6 +454,21 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				// No fields to validate
 			},
 		},
+		"cleanup job": {
+			job: &TrackedCleanupJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           cleanupJobId,
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_COMPLETE,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				// No fields to validate
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -391,26 +485,28 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanup *keyCleanup, err error) {
+			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanupJob *TrackedCleanupJob, keyCleanup *keyCleanup, err error) {
 				err = db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob, cleanup = jobsFromTenantBucket(b)
+					compactionJobs, planJob, cleanupJob, keyCleanup = jobsFromTenantBucket(b, jobDiscardFilter{})
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, cleanup, err := readJobs()
+			compactionJobs, planJob, cleanupJob, keyCleanup, err := readJobs()
 			require.NoError(t, err)
-			require.Nil(t, cleanup)
+			require.Nil(t, keyCleanup)
 			var readJob TrackedJob
 			if len(compactionJobs) == 1 {
 				readJob = compactionJobs[0]
-			} else {
+			} else if planJob != nil {
 				readJob = planJob
+			} else {
+				readJob = cleanupJob
 			}
 			require.Equal(t, tc.job.ID(), readJob.ID())
 			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
@@ -423,11 +519,12 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, cleanup, err = readJobs()
+			compactionJobs, planJob, cleanupJob, keyCleanup, err = readJobs()
 			require.NoError(t, err)
-			require.Nil(t, cleanup)
+			require.Nil(t, keyCleanup)
 			require.Empty(t, compactionJobs)
 			require.Nil(t, planJob)
+			require.Nil(t, cleanupJob)
 		})
 	}
 }

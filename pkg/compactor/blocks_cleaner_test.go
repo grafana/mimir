@@ -842,7 +842,8 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
 	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err := cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 
 	// check that no blocks were marked for deletion, because deletion delay is set to 0.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -852,7 +853,8 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	// The delay time must be very short since these temporary files were just created
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err = cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 
 	// check that first block was marked for deletion (partial block updated far in the past), but not the second one, because it's not partial.
 	checkBlock(t, "user-1", bucketClient, block1, false, true)
@@ -917,7 +919,8 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayP
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, false)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err := cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 
 	// cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion again
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
@@ -990,7 +993,8 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent
 	checkBlock(t, "user-1", parentClient, block1, false, false)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err = cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 
 	var foundAfter bool
 	// block should not be discoverable via global markers path
@@ -1073,11 +1077,13 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
 	cfgProvider.userPartialBlockDelay["user-2"] = 1 * time.Nanosecond
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err := cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // This block was updated too recently, so we don't mark it for deletion just yet.
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // No change for user-2.
 
-	require.NoError(t, cleaner.cleanUser(ctx, "user-2", logger))
+	_, err = cleaner.cleanUser(ctx, "user-2", logger)
+	require.NoError(t, err)
 	checkBlock(t, "user-1", bucketClient, block1, false, false) // No change for user-1
 	checkBlock(t, "user-2", bucketClient, block2, true, false)  // Block with corrupted meta is NOT marked for deletion.
 
@@ -1138,7 +1144,8 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 
 	// Run the cleanup.
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+	_, err = cleaner.cleanUser(ctx, "user-1", logger)
+	require.NoError(t, err)
 
 	// Ensure the block has NOT been marked for deletion.
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
@@ -1722,12 +1729,14 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 			go func() {
 				defer wg.Done()
-				require.NoError(t, cleaner1.cleanUser(ctx, tenantID, logger))
+				_, err := cleaner1.cleanUser(ctx, tenantID, logger)
+				require.NoError(t, err)
 			}()
 
 			go func() {
 				defer wg.Done()
-				require.NoError(t, cleaner2.cleanUser(ctx, tenantID, logger))
+				_, err := cleaner2.cleanUser(ctx, tenantID, logger)
+				require.NoError(t, err)
 			}()
 
 			// Wait until both cleaners have done.

@@ -126,12 +126,13 @@ func (jp *BboltJobPersister) WriteAndDeleteJobs(writes, deletes []TrackedJob) er
 }
 
 type BboltJobPersistenceManager struct {
-	dbs    []*bbolt.DB
-	meta   *compactorschedulerpb.PersistenceMetadata
-	logger log.Logger
+	dbs           []*bbolt.DB
+	meta          *compactorschedulerpb.PersistenceMetadata
+	discardFilter jobDiscardFilter
+	logger        log.Logger
 }
 
-func openBboltJobPersistenceManager(dir string, shardCount int, logger log.Logger) (*BboltJobPersistenceManager, error) {
+func openBboltJobPersistenceManager(dir string, shardCount int, discardFilter jobDiscardFilter, logger log.Logger) (*BboltJobPersistenceManager, error) {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("failed to create bbolt shard directory: %w", err)
 	}
@@ -147,9 +148,10 @@ func openBboltJobPersistenceManager(dir string, shardCount int, logger log.Logge
 	}
 
 	return &BboltJobPersistenceManager{
-		dbs:    dbs,
-		meta:   meta,
-		logger: logger,
+		dbs:           dbs,
+		meta:          meta,
+		discardFilter: discardFilter,
+		logger:        logger,
 	}, nil
 }
 
@@ -184,6 +186,8 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	var (
 		numCompactionJobsRecovered int
 		numPlanJobsRecovered       int
+		numCleanupJobsRecovered    int
+		numJobsDiscarded           int
 		numBucketCleanups          int
 		numKeyCleanups             int
 	)
@@ -191,13 +195,15 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	level.Info(m.logger).Log("msg", "starting job recovery")
 
 	for _, db := range m.dbs {
-		stats, err := recoverDB(db, m.logger, allowedTenants, jobTrackers, jobTrackerFactory)
+		stats, err := recoverDB(db, m.logger, allowedTenants, m.discardFilter, jobTrackers, jobTrackerFactory)
 		if err != nil {
 			level.Error(m.logger).Log("msg", "failed job recovery for shard", "path", db.Path(), "err", err)
 			return nil, fmt.Errorf("failed recovering jobs from %q: %w", db.Path(), err)
 		}
 		numCompactionJobsRecovered += stats.numCompactionJobs
 		numPlanJobsRecovered += stats.numPlanJobs
+		numCleanupJobsRecovered += stats.numCleanupJobs
+		numJobsDiscarded += stats.numJobsDiscarded
 		numBucketCleanups += stats.numBucketCleanups
 		numKeyCleanups += stats.numKeyCleanups
 	}
@@ -207,6 +213,8 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		"num_tenants_recovered", len(jobTrackers),
 		"num_compaction_jobs_recovered", numCompactionJobsRecovered,
 		"num_plan_jobs_recovered", numPlanJobsRecovered,
+		"num_cleanup_jobs_recovered", numCleanupJobsRecovered,
+		"num_jobs_discarded", numJobsDiscarded,
 		"num_bucket_cleanups", numBucketCleanups,
 		"num_key_cleanups", numKeyCleanups,
 	)
@@ -217,12 +225,14 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 type recoveryStats struct {
 	numCompactionJobs int
 	numPlanJobs       int
+	numCleanupJobs    int
+	numJobsDiscarded  int
 	numBucketCleanups int
 	numKeyCleanups    int
 }
 
 // recoverDB recovers all job trackers from a single bbolt database.
-func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, jobTrackers map[string]*JobTracker, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (recoveryStats, error) {
+func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, discardFilter jobDiscardFilter, jobTrackers map[string]*JobTracker, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (recoveryStats, error) {
 	var stats recoveryStats
 
 	// Iterate through each bucket and create the corresponding JobTracker.
@@ -249,10 +259,13 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 				return nil
 			}
 
-			compactionJobs, planJob, keyCleanup := jobsFromTenantBucket(b)
+			compactionJobs, planJob, cleanupJob, keyCleanup := jobsFromTenantBucket(b, discardFilter)
 			stats.numCompactionJobs += len(compactionJobs)
 			if planJob != nil {
 				stats.numPlanJobs++
+			}
+			if cleanupJob != nil {
+				stats.numCleanupJobs++
 			}
 			if keyCleanup != nil {
 				cleanup[tenant] = keyCleanup
@@ -260,14 +273,14 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 
 			jp := newBboltJobPersister(db, []byte(tenant), logger)
 			jt := jobTrackerFactory(tenant, jp)
-			jt.recoverFrom(compactionJobs, planJob)
+			jt.recoverFrom(compactionJobs, planJob, cleanupJob)
 			jobTrackers[tenant] = jt
 			return nil
 		}); err != nil {
 			return err
 		}
 
-		stats.numBucketCleanups, stats.numKeyCleanups = cleanupBuckets(tx, cleanup, logger)
+		stats.numBucketCleanups, stats.numKeyCleanups, stats.numJobsDiscarded = cleanupBuckets(tx, cleanup, logger)
 		return nil
 	})
 	return stats, err
@@ -275,17 +288,20 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 
 // keyCleanup is only valid within the transaction in which it was created.
 type keyCleanup struct {
-	bucket    *bbolt.Bucket
-	keyErrors []keyError
+	bucket   *bbolt.Bucket
+	removals []keyRemoval
 }
 
-// keyError is only valid within the transaction in which it was created.
-type keyError struct {
-	key []byte
-	err error
+// keyRemoval is a key to delete during recovery. It is only valid within the
+// transaction in which it was created. A nil cause marks an intentional discard
+// (the job's type is disabled); a non-nil cause marks a value that could not be
+// recovered.
+type keyRemoval struct {
+	key   []byte
+	cause error
 }
 
-func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Logger) (numBucketCleanups, numKeyCleanups int) {
+func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Logger) (numBucketCleanups, numKeyCleanups, numJobsDiscarded int) {
 	for tenant, kc := range cleanup {
 		name := []byte(tenant)
 		if kc == nil {
@@ -298,11 +314,21 @@ func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Log
 			continue
 		}
 
-		// Delete the keys that failed.
-		for _, ke := range kc.keyErrors {
-			failureLogger := log.With(logger, "user", tenant, "key", string(ke.key), "err", ke.err)
+		// Discards are counted rather than logged individually because a tenant can have any number of compaction jobs.
+		var discarded int
+		for _, r := range kc.removals {
+			// A disabled job type is discarded intentionally rather than being a recovery failure.
+			if r.cause == nil {
+				if err := kc.bucket.Delete(r.key); err != nil {
+					level.Warn(logger).Log("msg", "failed to delete discarded job", "user", tenant, "key", string(r.key), "delete_err", err)
+					continue
+				}
+				discarded++
+				continue
+			}
 
-			if err := kc.bucket.Delete(ke.key); err != nil {
+			failureLogger := log.With(logger, "user", tenant, "key", string(r.key), "err", r.cause)
+			if err := kc.bucket.Delete(r.key); err != nil {
 				// Only returns an error if we're in a read-only transaction, which should never be the case.
 				// This isn't the actual write, but instead an addition to the write transaction which hasn't reached commit yet.
 				level.Warn(failureLogger).Log("msg", "failed to delete job that failed to deserialize", "delete_err", err)
@@ -311,34 +337,72 @@ func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Log
 			numKeyCleanups++
 			level.Warn(failureLogger).Log("msg", "deleted job that failed to deserialize")
 		}
+
+		if discarded > 0 {
+			numJobsDiscarded += discarded
+			level.Info(logger).Log("msg", "discarded persisted jobs because their job type is disabled", "user", tenant, "num_jobs", discarded)
+		}
 	}
 	return
 }
 
-func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *TrackedPlanJob, *keyCleanup) {
+// jobDiscardFilter decides which persisted jobs to discard during
+// recovery because their job type has been disabled.
+type jobDiscardFilter struct {
+	// discardPlanning covers compaction jobs as well, since they only exist as the result of a plan job.
+	discardPlanning bool
+	discardCleanup  bool
+}
+
+// discardKey reports whether the job persisted under key should be discarded rather than recovered.
+func (f jobDiscardFilter) discardKey(key []byte) bool {
+	if len(key) != reservedJobIdLen {
+		return f.discardPlanning // a compaction job
+	}
+	switch string(key[0]) {
+	case planJobId:
+		return f.discardPlanning
+	case cleanupJobId:
+		return f.discardCleanup
+	}
+	return false
+}
+
+func jobsFromTenantBucket(bucket *bbolt.Bucket, discardFilter jobDiscardFilter) ([]*TrackedCompactionJob, *TrackedPlanJob, *TrackedCleanupJob, *keyCleanup) {
 	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
-	var planJob *TrackedPlanJob // may be nil
-	var keyErrs []keyError
+	var planJob *TrackedPlanJob       // may be nil
+	var cleanupJob *TrackedCleanupJob // may be nil
+	var removals []keyRemoval
 
 	c := bucket.Cursor()
 	for k, v := c.First(); k != nil; k, v = c.Next() {
+		if discardFilter.discardKey(k) {
+			removals = append(removals, keyRemoval{k, nil})
+			continue
+		}
 		if len(k) == reservedJobIdLen {
-			sk := string(k[0])
-			switch sk {
+			switch string(k[0]) {
 			case planJobId:
 				job, err := deserializePlanJob(v)
 				if err != nil {
-					keyErrs = append(keyErrs, keyError{k, err})
+					removals = append(removals, keyRemoval{k, err})
 					continue
 				}
 				planJob = job
+			case cleanupJobId:
+				job, err := deserializeCleanupJob(v)
+				if err != nil {
+					removals = append(removals, keyRemoval{k, err})
+					continue
+				}
+				cleanupJob = job
 			default:
-				keyErrs = append(keyErrs, keyError{k, errors.New("unknown key")})
+				removals = append(removals, keyRemoval{k, errors.New("unknown key")})
 			}
 		} else {
 			compactionJob, err := deserializeCompactionJob(k, v)
 			if err != nil {
-				keyErrs = append(keyErrs, keyError{k, err})
+				removals = append(removals, keyRemoval{k, err})
 				continue
 			}
 			compactionJobs = append(compactionJobs, compactionJob)
@@ -346,11 +410,11 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *Track
 	}
 
 	var kc *keyCleanup
-	if len(keyErrs) > 0 {
-		kc = &keyCleanup{bucket, keyErrs}
+	if len(removals) > 0 {
+		kc = &keyCleanup{bucket, removals}
 	}
 
-	return compactionJobs, planJob, kc
+	return compactionJobs, planJob, cleanupJob, kc
 }
 
 func (m *BboltJobPersistenceManager) Close() error {

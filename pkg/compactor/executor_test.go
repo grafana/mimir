@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
@@ -73,16 +75,17 @@ func makeSchedulerTestConfig(t *testing.T) Config {
 
 // mockCompactorSchedulerClient implements CompactorSchedulerClient
 type mockCompactorSchedulerClient struct {
-	mu                 sync.Mutex
-	leaseJobCallCount  int
-	updateJobCallCount int
-	firstUpdate        compactorschedulerpb.UpdateType
-	lastUpdate         compactorschedulerpb.UpdateType
-	recvPlannedReq     bool
-	LeaseJobFunc       func(ctx context.Context, in *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error)
-	UpdateJobFunc      func(ctx context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error)
-	PlannedJobsFunc    func(ctx context.Context, in *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error)
-	UpdatePlanJobFunc  func(ctx context.Context, in *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error)
+	mu                   sync.Mutex
+	leaseJobCallCount    int
+	updateJobCallCount   int
+	firstUpdate          compactorschedulerpb.UpdateType
+	lastUpdate           compactorschedulerpb.UpdateType
+	recvPlannedReq       bool
+	LeaseJobFunc         func(ctx context.Context, in *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error)
+	UpdateJobFunc        func(ctx context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error)
+	UpdateCleanupJobFunc func(ctx context.Context, in *compactorschedulerpb.UpdateCleanupJobRequest) (*compactorschedulerpb.UpdateJobResponse, error)
+	PlannedJobsFunc      func(ctx context.Context, in *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error)
+	UpdatePlanJobFunc    func(ctx context.Context, in *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error)
 }
 
 func (m *mockCompactorSchedulerClient) LeaseJob(ctx context.Context, in *compactorschedulerpb.LeaseJobRequest, opts ...grpc.CallOption) (*compactorschedulerpb.LeaseJobResponse, error) {
@@ -101,6 +104,20 @@ func (m *mockCompactorSchedulerClient) UpdateCompactionJob(ctx context.Context, 
 	m.updateJobCallCount++
 	m.mu.Unlock()
 	return m.UpdateJobFunc(ctx, in)
+}
+
+func (m *mockCompactorSchedulerClient) UpdateCleanupJob(ctx context.Context, in *compactorschedulerpb.UpdateCleanupJobRequest, opts ...grpc.CallOption) (*compactorschedulerpb.UpdateJobResponse, error) {
+	m.mu.Lock()
+	if m.updateJobCallCount == 0 {
+		m.firstUpdate = in.Update
+	}
+	m.lastUpdate = in.Update
+	m.updateJobCallCount++
+	m.mu.Unlock()
+	if m.UpdateCleanupJobFunc != nil {
+		return m.UpdateCleanupJobFunc(ctx, in)
+	}
+	return &compactorschedulerpb.UpdateJobResponse{}, nil
 }
 
 func (m *mockCompactorSchedulerClient) PlannedJobs(ctx context.Context, in *compactorschedulerpb.PlannedJobsRequest, opts ...grpc.CallOption) (*compactorschedulerpb.PlannedJobsResponse, error) {
@@ -181,6 +198,7 @@ func testLeaseJobRequest() *compactorschedulerpb.LeaseJobRequest {
 func TestParseLaneRequests(t *testing.T) {
 	compaction := compactorschedulerpb.JOB_TYPE_COMPACTION
 	planning := compactorschedulerpb.JOB_TYPE_PLANNING
+	cleanup := compactorschedulerpb.JOB_TYPE_CLEANUP
 
 	jobTypes := func(requests []*compactorschedulerpb.LaneRequest) []compactorschedulerpb.JobType {
 		types := make([]compactorschedulerpb.JobType, len(requests))
@@ -233,8 +251,81 @@ func TestParseLaneRequests(t *testing.T) {
 			input:   flagext.StringSliceCSV{"plan+plan"},
 			wantErr: true,
 		},
+		"single worker cleanup only": {
+			input:   flagext.StringSliceCSV{"cleanup"},
+			workers: [][]compactorschedulerpb.JobType{{cleanup}},
+		},
+		"single worker compaction then cleanup": {
+			input:   flagext.StringSliceCSV{"compact+cleanup"},
+			workers: [][]compactorschedulerpb.JobType{{compaction, cleanup}},
+		},
+		"cleanup across dedicated worker": {
+			input: flagext.StringSliceCSV{"plan+compact", "cleanup"},
+			workers: [][]compactorschedulerpb.JobType{
+				{planning, compaction},
+				{cleanup},
+			},
+		},
+		"duplicate cleanup within single worker rejected": {
+			input:   flagext.StringSliceCSV{"cleanup+cleanup"},
+			wantErr: true,
+		},
 		"unknown job type rejected": {
 			input:   flagext.StringSliceCSV{"unknown"},
+			wantErr: true,
+		},
+		"count suffix repeats cleanup across goroutines": {
+			input: flagext.StringSliceCSV{"cleanup:4"},
+			workers: [][]compactorschedulerpb.JobType{
+				{cleanup},
+				{cleanup},
+				{cleanup},
+				{cleanup},
+			},
+		},
+		"count suffix applies per entry not to whole value": {
+			input: flagext.StringSliceCSV{"compact+plan", "plan", "cleanup:3"},
+			workers: [][]compactorschedulerpb.JobType{
+				{compaction, planning},
+				{planning},
+				{cleanup},
+				{cleanup},
+				{cleanup},
+			},
+		},
+		"count suffix on multi-type entry repeats whole entry": {
+			input: flagext.StringSliceCSV{"compact+plan:2"},
+			workers: [][]compactorschedulerpb.JobType{
+				{compaction, planning},
+				{compaction, planning},
+			},
+		},
+		"count of one is a single goroutine": {
+			input:   flagext.StringSliceCSV{"cleanup:1"},
+			workers: [][]compactorschedulerpb.JobType{{cleanup}},
+		},
+		"zero count rejected": {
+			input:   flagext.StringSliceCSV{"cleanup:0"},
+			wantErr: true,
+		},
+		"negative count rejected": {
+			input:   flagext.StringSliceCSV{"cleanup:-1"},
+			wantErr: true,
+		},
+		"non-numeric count rejected": {
+			input:   flagext.StringSliceCSV{"cleanup:abc"},
+			wantErr: true,
+		},
+		"empty count rejected": {
+			input:   flagext.StringSliceCSV{"cleanup:"},
+			wantErr: true,
+		},
+		"count without lane spec rejected": {
+			input:   flagext.StringSliceCSV{":4"},
+			wantErr: true,
+		},
+		"multiple colons rejected": {
+			input:   flagext.StringSliceCSV{"cleanup:4:2"},
 			wantErr: true,
 		},
 	}
@@ -675,7 +766,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		exec.sendFinalJobStatus(canceledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+		exec.sendFinalJobStatus(canceledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil)
 		require.Equal(t, 1, mock.GetUpdateJobCallCount())
 	})
 
@@ -696,7 +787,7 @@ func TestSchedulerExecutor_TerminatingFinalJobStatus(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
-				exec.sendFinalJobStatus(cancelledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN)
+				exec.sendFinalJobStatus(cancelledCtx, key, spec, compactorschedulerpb.UPDATE_TYPE_REASSIGN, nil)
 				close(done) // unblock select
 			}()
 
@@ -776,6 +867,159 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Equal(t, tc.expectedStatus, status)
+		})
+	}
+}
+
+// newTestBlocksCleaner builds a BlocksCleaner suitable for driving per-job cleanup directly, without
+// running the periodic cleanup service.
+func newTestBlocksCleaner(t *testing.T, c *MultitenantCompactor, bkt objstore.Bucket) *BlocksCleaner {
+	t.Helper()
+	return NewBlocksCleaner(BlocksCleanerConfig{
+		DeletionDelay:                 time.Hour,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+		UpdateBlocksConcurrency:       1,
+		SchedulerCleanupEnabled:       true,
+	}, bkt, mimir_tsdb.AllUsers, c.cfgProvider, log.NewNopLogger(), nil)
+}
+
+func TestSchedulerExecutor_ExecuteCleanupJob(t *testing.T) {
+	const tenant = "test-tenant"
+
+	tests := map[string]struct {
+		tenant         string
+		setupBucket    func(t *testing.T, bkt objstore.Bucket)
+		makeBucket     func() objstore.Bucket // overrides the default in-memory bucket
+		expectedStatus compactorschedulerpb.UpdateType
+		expectedErrIs  error
+	}{
+		"empty tenant abandons": {
+			tenant:         "",
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
+			expectedErrIs:  errCleanupJobHasNoTenant,
+		},
+		"cleans active tenant": {
+			tenant: tenant,
+			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
+				createTSDBBlock(t, bkt, tenant, 10, 20, 2, nil)
+			},
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		},
+		"deletes tenant marked for deletion": {
+			tenant: tenant,
+			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
+				createTSDBBlock(t, bkt, tenant, 10, 20, 2, nil)
+				require.NoError(t, mimir_tsdb.WriteTenantDeletionMark(context.Background(), bkt, tenant, nil, mimir_tsdb.NewTenantDeletionMark(time.Now())))
+			},
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		},
+		"reassigns when deletion mark read fails": {
+			tenant: tenant,
+			makeBucket: func() objstore.Bucket {
+				bkt := &bucket.ClientMock{}
+				bkt.On("SupportedIterOptions").Return()
+				// Non-not-found error while reading the deletion mark forces a reassign.
+				bkt.MockGet(path.Join(tenant, mimir_tsdb.TenantDeletionMarkPath), "unused", errors.New("bucket unavailable"))
+				return bkt
+			},
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_REASSIGN,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := makeTestCompactorConfig(t)
+			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+
+			var bkt objstore.Bucket = objstore.NewInMemBucket()
+			if tc.makeBucket != nil {
+				bkt = tc.makeBucket()
+			}
+			if tc.setupBucket != nil {
+				tc.setupBucket(t, bkt)
+			}
+
+			c := prepareCompactorForExecutorTest(t, cfg, bkt, newMockConfigProvider())
+			c.blocksCleaner = newTestBlocksCleaner(t, c, bkt)
+
+			spec := &compactorschedulerpb.JobSpec{Tenant: tc.tenant, JobType: compactorschedulerpb.JOB_TYPE_CLEANUP}
+			status, _, err := schedulerExec.executeCleanupJob(context.Background(), c, spec)
+
+			assert.Equal(t, tc.expectedStatus, status)
+			switch {
+			case tc.expectedErrIs != nil:
+				require.ErrorIs(t, err, tc.expectedErrIs)
+			case tc.expectedStatus == compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+				require.NoError(t, err)
+			default:
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+// TestSchedulerExecutor_CleanupJobStatusRouting verifies that cleanup jobs route their final status
+// updates to UpdateCleanupJob rather than the compaction or plan endpoints.
+func TestSchedulerExecutor_CleanupJobStatusRouting(t *testing.T) {
+	const tenant = "test-tenant"
+
+	tests := map[string]struct {
+		tenant           string
+		expectedUpdate   compactorschedulerpb.UpdateType
+		expectExecuteErr bool
+	}{
+		"successful cleanup routes complete": {
+			tenant:         tenant,
+			expectedUpdate: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+		},
+		"missing tenant routes abandon": {
+			tenant:           "",
+			expectedUpdate:   compactorschedulerpb.UPDATE_TYPE_ABANDON,
+			expectExecuteErr: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var gotUpdate compactorschedulerpb.UpdateType
+			cleanupCalled := false
+			mockClient := &mockCompactorSchedulerClient{
+				LeaseJobFunc: func(context.Context, *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+					return &compactorschedulerpb.LeaseJobResponse{
+						Key:  &compactorschedulerpb.JobKey{Id: "c"},
+						Spec: &compactorschedulerpb.JobSpec{Tenant: tc.tenant, JobType: compactorschedulerpb.JOB_TYPE_CLEANUP},
+					}, nil
+				},
+				UpdateCleanupJobFunc: func(_ context.Context, in *compactorschedulerpb.UpdateCleanupJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+					cleanupCalled = true
+					gotUpdate = in.Update
+					return &compactorschedulerpb.UpdateJobResponse{}, nil
+				},
+			}
+
+			cfg := makeTestCompactorConfig(t)
+			cfg.SchedulerClientConfig.UpdateInterval = time.Hour // avoid periodic in-progress updates
+			schedulerExec := newTestSchedulerExecutor(t, cfg, mockClient)
+
+			bkt := objstore.NewInMemBucket()
+			if tc.tenant != "" {
+				createTSDBBlock(t, bkt, tc.tenant, 10, 20, 2, nil)
+			}
+			c := prepareCompactorForExecutorTest(t, cfg, bkt, newMockConfigProvider())
+			c.blocksCleaner = newTestBlocksCleaner(t, c, bkt)
+
+			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, t.TempDir(), testLeaseJobRequest())
+			require.True(t, gotWork)
+			if tc.expectExecuteErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.True(t, cleanupCalled, "cleanup status should route to UpdateCleanupJob")
+			assert.Equal(t, tc.expectedUpdate.String(), gotUpdate.String())
 		})
 	}
 }
@@ -1207,6 +1451,7 @@ func TestSchedulerExecutor_SendFinalJobStatus_Interrupted(t *testing.T) {
 				&compactorschedulerpb.JobKey{Id: "job-1"},
 				&compactorschedulerpb.JobSpec{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, Tenant: "test-tenant"},
 				tc.status,
+				nil,
 			)
 			require.Equal(t, tc.want.String(), mock.GetLastUpdate().String())
 		})

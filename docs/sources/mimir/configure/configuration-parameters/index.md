@@ -222,10 +222,18 @@ compactor_scheduler:
   [lease_duration: <duration> | default = 10m]
 
   # (experimental) The duration of time between when plan jobs are submitted
-  # aligned by UTC. Note that -compactor.first-level-compaction-wait-period is
-  # accounted for during alignment of this interval.
+  # aligned by UTC. Set to a nonpositive value to disable plan job submission,
+  # which additionally discards any persisted compaction jobs during recovery.
+  # Note that -compactor.first-level-compaction-wait-period is accounted for
+  # during alignment of this interval.
   # CLI flag: -compactor-scheduler.planning-interval
   [planning_interval: <duration> | default = 30m]
+
+  # (experimental) The duration of time between when cleanup jobs are submitted
+  # aligned by UTC. Set to a nonpositive value to disable cleanup job
+  # submission.
+  # CLI flag: -compactor-scheduler.cleanup-interval
+  [cleanup_interval: <duration> | default = 0s]
 
   # (experimental) The duration of time between when maintenance tasks are
   # performed on job trackers. This includes lease expiration and plan job
@@ -6836,6 +6844,13 @@ scheduler_client:
   # CLI flag: -compactor.scheduler-client.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) Controls whether the compactor handles block cleanup as
+  # scheduler jobs instead of running the background blocks cleaner. Only
+  # applies when scheduler mode is enabled. When enabled, the compactor ring is
+  # not used.
+  # CLI flag: -compactor.scheduler-client.cleanup-enabled
+  [cleanup_enabled: <boolean> | default = false]
+
   # (experimental) Compactor scheduler endpoint.
   # CLI flag: -compactor.scheduler-client.scheduler-endpoint
   [scheduler_endpoint: <string> | default = ""]
@@ -6894,8 +6909,10 @@ scheduler_client:
   # CLI flag: -compactor.scheduler-client.terminating-final-status-timeout
   [terminating_final_status_timeout: <duration> | default = 30s]
 
-  # (experimental) Lanes to request for each worker goroutine. Each entry is a
-  # '+'-separated list of job types in priority order.
+  # (experimental) Comma-separated entries, where each entry becomes one worker
+  # goroutine requesting a '+'-separated list of lanes in priority order. Append
+  # ':N' to a single entry to create N goroutines for it, e.g. 'plan,cleanup:4'
+  # creates one plan goroutine plus four cleanup goroutines.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 

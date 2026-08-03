@@ -19,6 +19,7 @@ enum JobType {
   JOB_TYPE_UNKNOWN = 0;
   JOB_TYPE_COMPACTION = 1;
   JOB_TYPE_PLANNING = 2;
+  JOB_TYPE_CLEANUP = 3;
 }
 
 message JobSpec {
@@ -38,6 +39,7 @@ service CompactorScheduler {
   rpc PlannedJobs(PlannedJobsRequest) returns (PlannedJobsResponse);
   rpc UpdatePlanJob(UpdatePlanJobRequest) returns (UpdateJobResponse);
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
+  rpc UpdateCleanupJob(UpdateCleanupJobRequest) returns (UpdateJobResponse);
 }
 
 message LaneRequest {
@@ -86,6 +88,20 @@ message UpdateCompactionJobRequest {
   JobKey key = 1;
   string tenant = 2;
   UpdateType update = 3;
+}
+
+message UpdateCleanupJobRequest {
+  JobKey key = 1;
+  string tenant = 2;
+  UpdateType update = 3;
+  CleanupJobStats stats = 4;
+}
+
+message CleanupJobStats {
+  int64 blocks_count = 1;
+  int64 marked_blocks_count = 2;
+  int64 partial_blocks_count = 3;
+  int64 bucket_index_last_update = 4;
 }
 
 message UpdateJobResponse {}

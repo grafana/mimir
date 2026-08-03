@@ -99,6 +99,34 @@ func TestPlannedJobsHandler(t *testing.T) {
 		require.Contains(t, resp.Body.String(), "<td>0@17241709254077376921-merge-2_of_3-86400000-172800000</td>")
 	})
 
+	t.Run("show compactors option is offered in standalone mode", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+
+		req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/", nil), map[string]string{"tenant": user})
+		c.PlannedJobsHandler(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.Contains(t, resp.Body.String(), `id="show-compactors"`)
+	})
+
+	t.Run("show compactors option is not offered in scheduler mode", func(t *testing.T) {
+		schedulerCfg := prepareConfig(t)
+		schedulerCfg.SchedulerClientConfig.Enabled = true
+		schedulerCompactor, _, _, _, _ := prepare(t, schedulerCfg, bucketClient)
+		schedulerCompactor.bucketClient = bucketClient
+
+		resp := httptest.NewRecorder()
+
+		// Requesting the column explicitly must not bring it back: the owning compactor comes from the
+		// ring, which doesn't decide who runs a job in scheduler mode.
+		req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/?show_compactors=on", nil), map[string]string{"tenant": user})
+		schedulerCompactor.PlannedJobsHandler(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.NotContains(t, resp.Body.String(), `id="show-compactors"`)
+		require.NotContains(t, resp.Body.String(), "Compactor that owns this job")
+	})
+
 	t.Run("compaction jobs json", func(t *testing.T) {
 		resp := httptest.NewRecorder()
 
