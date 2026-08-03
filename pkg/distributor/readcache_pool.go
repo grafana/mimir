@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -174,6 +175,7 @@ func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clust
 	if err != nil {
 		return nil, errors.Wrap(err, "building readcache gRPC dial options")
 	}
+	dialOpts = append(dialOpts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	return &readcachePool{
 		staticAddresses: addresses,
