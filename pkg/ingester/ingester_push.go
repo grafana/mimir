@@ -459,21 +459,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// histogram and float-histogram samples; see tsdb.DiscardedSampleStats.
 	if statsApp, ok := app.(discardedSampleStatsAppender); ok {
 		dropped := statsApp.DiscardedSampleStats()
-		stats.newValueForTimestampCount += dropped.SameTimestampDifferentValue
-		stats.sameValueForTimestampCount += dropped.SameTimestampSameValue
-		stats.succeededSamplesCount -= dropped.SameTimestampDifferentValue + dropped.SameTimestampSameValue
+		newValue := dropped.SameTimestampDifferentValue
+		sameValue := dropped.SameTimestampSameValue
+		stats.newValueForTimestampCount += len(newValue)
+		stats.sameValueForTimestampCount += len(sameValue)
+		stats.succeededSamplesCount -= len(newValue) + len(sameValue)
 
 		// Attribute each dropped sample to its series for per-series cost attribution.
 		// This targets cortex_discarded_attributed_samples_total, distinct from the
 		// per-user cortex_discarded_samples_total handled via the stats counts above.
-		if len(dropped.Dropped) > 0 {
+		if len(newValue)+len(sameValue) > 0 {
 			cast := i.costAttributionMgr.SampleTracker(userID)
-			for _, d := range dropped.Dropped {
-				reason := reasonSameValueForTimestamp
-				if d.ValueDiffered {
-					reason = reasonNewValueForTimestamp
-				}
-				cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), 1, reason, startAppend)
+			for _, d := range newValue {
+				cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), 1, reasonNewValueForTimestamp, startAppend)
+			}
+			for _, d := range sameValue {
+				cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), 1, reasonSameValueForTimestamp, startAppend)
 			}
 		}
 	}

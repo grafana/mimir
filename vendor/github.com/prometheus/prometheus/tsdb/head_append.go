@@ -455,31 +455,25 @@ type headAppenderBase struct {
 // Neither category is surfaced as an Append error, so this is the only signal that
 // these samples were not stored.
 type DiscardedSampleStats struct {
-	// SameTimestampDifferentValue counts dropped samples whose value differed from
-	// the sample already stored at that timestamp (a rejected overwrite; the TSDB
-	// produces ErrDuplicateSampleForTimestamp internally but swallows it at commit).
-	SameTimestampDifferentValue int
-	// SameTimestampSameValue counts dropped samples that exactly duplicated the
-	// sample already stored at that timestamp (an idempotent no-op).
-	SameTimestampSameValue int
-	// Dropped carries one entry per dropped sample, exposing the series labels so
-	// callers can attribute the drop per series (e.g. cost attribution). It is nil
-	// when nothing was dropped. Entry count equals
-	// SameTimestampDifferentValue + SameTimestampSameValue.
-	Dropped []DiscardedSample
+	// SameTimestampDifferentValue holds one entry per dropped sample whose value
+	// differed from the sample already stored at that timestamp (a rejected overwrite;
+	// the TSDB produces ErrDuplicateSampleForTimestamp internally but swallows it at
+	// commit). It is nil when no such sample was dropped; len is the count.
+	SameTimestampDifferentValue []DiscardedSample
+	// SameTimestampSameValue holds one entry per dropped sample that exactly duplicated
+	// the sample already stored at that timestamp (an idempotent no-op). It is nil when
+	// no such sample was dropped; len is the count.
+	SameTimestampSameValue []DiscardedSample
 }
 
 // DiscardedSample identifies a single sample dropped at commit time because the
-// series already had a sample at that timestamp.
+// series already had a sample at that timestamp. Which category it fell into is
+// determined by the DiscardedSampleStats field that holds it.
 type DiscardedSample struct {
 	// Labels is the label set of the series the dropped sample belonged to. It
 	// references the head's interned labels and is valid for the caller to read
 	// synchronously after Commit.
 	Labels labels.Labels
-	// ValueDiffered reports whether the dropped sample's value differed from the
-	// sample already stored at that timestamp: true for a conflict (counts toward
-	// SameTimestampDifferentValue), false for an exact duplicate (SameTimestampSameValue).
-	ValueDiffered bool
 }
 
 // DiscardedSampleStats returns the samples the most recent Commit dropped because
@@ -1246,16 +1240,14 @@ type appenderCommitContext struct {
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
 	floatOOBRejected int
 	histoOOBRejected int
-	// Number of samples (float, histogram or float histogram) silently dropped at
-	// commit time because the series already had a sample at that timestamp, split
-	// by whether the dropped value differed from (conflict) or matched (exact
-	// duplicate) the stored one. Accumulated across all sample types in the commit.
-	droppedConflict int
-	droppedExactDup int
-	// droppedSamples carries one entry per dropped sample (in either category above)
-	// with its series labels, for per-series attribution. Allocated lazily, only
-	// when a drop actually occurs.
-	droppedSamples      []DiscardedSample
+	// Samples (float, histogram or float histogram) silently dropped at commit time
+	// because the series already had a sample at that timestamp, split by whether the
+	// dropped value differed from (conflict) or matched (exact duplicate) the stored
+	// one. Each entry carries the dropped sample's series labels for per-series
+	// attribution; len is the count. Accumulated across all sample types in the commit
+	// and allocated lazily, only when a drop actually occurs.
+	droppedConflict     []DiscardedSample
+	droppedExactDup     []DiscardedSample
 	inOrderMint         int64
 	inOrderMaxt         int64
 	appendChunkOpts     chunkOpts
@@ -1273,16 +1265,22 @@ type appenderCommitContext struct {
 
 // recordDroppedConflict records a sample dropped at commit time because the series
 // already held a sample at the same timestamp with a different value.
+//
+// Capturing s.labels() here is safe: it returns the head's own series label set,
+// which is immutable for the series' lifetime and is not backed by the reused
+// unmarshal buffer. The caller reads the DiscardedSampleStats slices synchronously
+// after Commit returns, and the referenced labels remain alive as long as those
+// slices do, so there is no mutation or use-after-free window.
 func (acc *appenderCommitContext) recordDroppedConflict(s *memSeries) {
-	acc.droppedConflict++
-	acc.droppedSamples = append(acc.droppedSamples, DiscardedSample{Labels: s.labels(), ValueDiffered: true})
+	acc.droppedConflict = append(acc.droppedConflict, DiscardedSample{Labels: s.labels()})
 }
 
 // recordDroppedExactDup records a sample dropped at commit time because it exactly
 // duplicated the sample already stored at the same timestamp.
+//
+// See recordDroppedConflict for why capturing s.labels() is safe.
 func (acc *appenderCommitContext) recordDroppedExactDup(s *memSeries) {
-	acc.droppedExactDup++
-	acc.droppedSamples = append(acc.droppedSamples, DiscardedSample{Labels: s.labels(), ValueDiffered: false})
+	acc.droppedExactDup = append(acc.droppedExactDup, DiscardedSample{Labels: s.labels()})
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1916,7 +1914,6 @@ func (a *headAppenderBase) Commit() (err error) {
 	a.discardedSampleStats = DiscardedSampleStats{
 		SameTimestampDifferentValue: acc.droppedConflict,
 		SameTimestampSameValue:      acc.droppedExactDup,
-		Dropped:                     acc.droppedSamples,
 	}
 
 	acc.collectOOORecords(a)

@@ -416,6 +416,9 @@ func TestIngester_Push_DuplicateTimestampHistograms(t *testing.T) {
 // TestIngester_Push_DuplicateTimestampCostAttribution verifies that samples dropped at
 // commit time are attributed per series to cortex_discarded_attributed_samples_total,
 // with the two commit-time reasons, when cost attribution is configured for the tenant.
+// It also checks these drops against cortex_distributor_received_attributed_samples_total:
+// every sample in the request is counted as received (the distributor's accounting), while
+// only the two dropped duplicates are counted as discarded, so received is the superset.
 func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
 	const userID = "test"
 	// The series carries a "team" label that cost attribution is configured to track.
@@ -443,22 +446,33 @@ func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
 
 	// One request for a single series carrying an exact duplicate at ts=100 (same value)
 	// and a conflict at ts=200 (different value). Both extra samples are dropped at commit.
-	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{
+	req := writeRequestManySeries(metricLabels, []mimirpb.Sample{
 		{TimestampMs: 100, Value: 1},
 		{TimestampMs: 100, Value: 1}, // exact duplicate -> same-value-for-timestamp
 		{TimestampMs: 101, Value: 2},
 		{TimestampMs: 200, Value: 5},
 		{TimestampMs: 200, Value: 6}, // conflict -> new-value-for-timestamp
 		{TimestampMs: 201, Value: 7},
-	}))
+	})
+
+	// The received-samples accounting happens in the distributor, not the ingester, so
+	// simulate it here to assert the received/discarded relationship end to end.
+	cam.SampleTracker(userID).IncrementReceivedSamples(req, time.Now())
+
+	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
 
-	// Each drop is attributed to the series' "team" label, split by reason.
+	// All six samples are received; the two dropped duplicates are attributed to the
+	// series' "team" label as discarded, split by reason.
 	expected := `
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{team="foo",tenant="test",tracker="cost-attribution"} 6
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{reason="new-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
 		cortex_discarded_attributed_samples_total{reason="same-value-for-timestamp",team="foo",tenant="test",tracker="cost-attribution"} 1
 	`
-	require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected), "cortex_discarded_attributed_samples_total"))
+	require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected),
+		"cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
