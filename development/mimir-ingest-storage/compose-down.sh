@@ -12,4 +12,4 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down --remove-orphans

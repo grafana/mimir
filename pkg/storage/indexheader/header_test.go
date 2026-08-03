@@ -288,6 +288,7 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 	require.NoError(t, err)
 
 	sparseTable, err := streamindex.SparseValuesFromPostingsOffsetsTable(
+		context.Background(),
 		sbr.postingsOffsetsDecbufFactory,
 		int(sbr.postingsOffsetsTOC.PostingsOffsetTable),
 		sbr.postingsOffsetsTOC.PostingsListEnd,

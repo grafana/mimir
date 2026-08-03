@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math/bits"
 	"slices"
 	"sync"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -73,6 +73,12 @@ type RemoteExecutionGroupEvaluator struct {
 	nodeStreams  *remoteExecutionNodeStreamsCollection
 	requestSent  bool
 	perNodeStats map[int64]types.EncodedOperatorEvaluationStats
+
+	// If this group is evaluated by a querier that does not support per-node annotations,
+	// then it will send all annotations for all nodes in one annotations collection and combinedAnnotations will be populated.
+	// Otherwise, combinedAnnotations will not be populated and any annotations for a node will be in perNodeAnnotations.
+	combinedAnnotations annotations.Annotations
+	perNodeAnnotations  map[int64]annotations.Annotations
 }
 
 type remoteExecutionNodeStreamState struct {
@@ -171,10 +177,11 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	}
 
 	req := &querierpb.EvaluateQueryRequest{
-		Plan:                    *encodedPlan,
-		Nodes:                   make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
-		BatchSize:               g.cfg.RemoteExecutionBatchSize,
-		SeriesMetadataBatchSize: g.cfg.RemoteExecutionSeriesMetadataBatchSize,
+		Plan:                     *encodedPlan,
+		Nodes:                    make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
+		BatchSize:                g.cfg.RemoteExecutionBatchSize,
+		SeriesMetadataBatchSize:  g.cfg.RemoteExecutionSeriesMetadataBatchSize,
+		EnablePerNodeAnnotations: true,
 	}
 
 	overallQueriedTimeRange := planning.NoDataQueried()
@@ -302,7 +309,7 @@ func (g *RemoteExecutionGroupEvaluator) getNodeStreamState(resp *querierpb.Evalu
 func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	msg, err := g.stream.Next(ctx)
 	if err != nil {
-		return nil, err
+		return nil, translateReadError(err)
 	}
 
 	if msg == nil {
@@ -312,16 +319,29 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 	return msg, nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) finalizeStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
+// translateReadError translates errors received from queriers so that they surface as the appropriate error to callers.
+func translateReadError(err error) error {
+	// A "not acceptable" error indicates that the querier received a query plan version it doesn't understand. This is a
+	// bug or misconfiguration in the query-frontend rather than a problem with the request, so translate it to an internal
+	// server error (HTTP 500) rather than propagating the "not acceptable" status (HTTP 406) back to the caller.
+	var apiErr *apierror.APIError
+	if errors.As(err, &apiErr) && apiErr.Type == apierror.TypeNotAcceptable {
+		return apierror.New(apierror.TypeInternal, "querier rejected request as not acceptable: "+apiErr.Message)
+	}
+
+	return err
+}
+
+func (g *RemoteExecutionGroupEvaluator) finishedReadingStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (stats.Stats, error) {
 	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 	if nodeState.finished {
-		return nil, stats.Stats{}, fmt.Errorf("can't finalize node stream index %v, as it is already finished", nodeState.nodeIndex)
+		return stats.Stats{}, fmt.Errorf("can't call FinishedReading for node stream index %v, as it is already finished", nodeState.nodeIndex)
 	}
 
 	g.markStreamAsFinished(nodeStreamIndex)
 	if !g.nodeStreams.allFinished() {
-		// We'll return the actual evaluation information when the last node calls Finalize().
-		return nil, stats.Stats{}, nil
+		// We'll return the actual evaluation information when the last node calls FinishedReading().
+		return stats.Stats{}, nil
 	}
 
 	defer g.onAllStreamsFinished()
@@ -330,57 +350,82 @@ func (g *RemoteExecutionGroupEvaluator) finalizeStream(ctx context.Context, node
 	// If we reach the end of the stream, tryToReadEvaluationCompleted will return an error (because readNextMessage will return an error),
 	// so we don't need to do anything special here to handle that case.
 	for {
-		ok, annos, overallStats, err := g.tryToReadEvaluationCompleted(ctx)
+		ok, overallStats, err := g.tryToReadEvaluationCompleted(ctx)
 		if err != nil {
-			return nil, overallStats, err
+			return stats.Stats{}, err
 		}
 		if ok {
-			return annos, overallStats, nil
+			return overallStats, nil
 		}
 	}
 }
 
-func (g *RemoteExecutionGroupEvaluator) tryToReadEvaluationCompleted(ctx context.Context) (bool, *annotations.Annotations, stats.Stats, error) {
+func (g *RemoteExecutionGroupEvaluator) tryToReadEvaluationCompleted(ctx context.Context) (bool, stats.Stats, error) {
 	msg, err := g.readNextMessage(ctx)
 	if err != nil {
-		return false, nil, stats.Stats{}, err
+		return false, stats.Stats{}, err
 	}
 	defer msg.FreeBuffer()
 
 	resp := msg.GetEvaluateQueryResponse()
 	if resp == nil {
-		return false, nil, stats.Stats{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+		return false, stats.Stats{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
 	completion := resp.GetEvaluationCompleted()
 	if completion == nil {
-		return false, nil, stats.Stats{}, nil
+		return false, stats.Stats{}, nil
 	}
 
-	annos, overallStats, perNodeStats := decodeEvaluationCompletedMessage(completion)
+	combinedAnnotations, overallStats, perNodeStats, perNodeAnnotations := decodeEvaluationCompletedMessage(completion)
+	g.combinedAnnotations = combinedAnnotations
 	g.perNodeStats = perNodeStats
-	return true, annos, overallStats, nil
+	g.perNodeAnnotations = perNodeAnnotations
+	return true, overallStats, nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*types.OperatorEvaluationStats, error) {
+func (g *RemoteExecutionGroupEvaluator) statsForStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	if !g.nodeStreams.allFinished() {
-		return nil, fmt.Errorf("attempted to get stats for node stream index %v, but one or more nodes are not finished", nodeStreamIndex)
+		return nil, nil, fmt.Errorf("attempted to get stats for node stream index %v, but one or more nodes are not finished", nodeStreamIndex)
 	}
 
 	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 
+	var annos annotations.Annotations
+	if g.combinedAnnotations != nil {
+		// If this group was evaluated by a querier that does not support per-node annotations, return all annotations for the group
+		// to the first node that calls Finalize(), and then do not return them again for subsequent nodes.
+		// combinedAnnotations and perNodeAnnotations will never both be set, so falling through to the else branch below for subsequent nodes is OK.
+		if len(g.nodeStreams.streams) > 1 {
+			level.Warn(g.logger).Log("msg", "RemoteExecutionGroupEvaluator received a combined set of annotations for a request with multiple nodes. This is expected during an upgrade from queriers without per-node annotation support, but a bug otherwise, and may lead to incorrect annotations being cached if this response is being cached.")
+		}
+
+		annos = g.combinedAnnotations
+		g.combinedAnnotations = nil
+	} else {
+		annos = g.perNodeAnnotations[nodeState.nodeIndex]
+	}
+
 	if len(g.perNodeStats) == 0 {
 		// We're talking to an old querier that doesn't support per-node evaluation stats. Log a warning and return an empty set of stats.
 		level.Warn(g.logger).Log("msg", "RemoteExecutionGroupEvaluator expected node statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
-		return types.NewOperatorEvaluationStats(ctx, nodeState.timeRange, g.memoryConsumptionTracker, 0)
+		stats, err := types.NewOperatorEvaluationStats(ctx, nodeState.timeRange, g.memoryConsumptionTracker, 0)
+		if err != nil {
+			return nil, nil, err
+		}
+		return stats, annos, nil
 	}
 
 	stats, ok := g.perNodeStats[nodeState.nodeIndex]
 	if !ok {
-		return nil, fmt.Errorf("attempted to get stats for node %v, but the querier did not return any stats for that node", nodeState.nodeIndex)
+		return nil, nil, fmt.Errorf("attempted to get stats for node %v, but the querier did not return any stats for that node", nodeState.nodeIndex)
 	}
 
-	return stats.Decode(ctx, g.memoryConsumptionTracker)
+	decodedStats, err := stats.Decode(ctx, g.memoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, err
+	}
+	return decodedStats, annos, nil
 }
 
 func (g *RemoteExecutionGroupEvaluator) closeStream(nodeStreamIndex remoteExecutionNodeStreamIndex) {
@@ -523,18 +568,18 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, err
 	}
 
-	if v.Samples, err = ensureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
+	if v.Samples, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
 		return types.ScalarData{}, err
 	}
 
 	return v, nil
 }
 
-func (r *scalarExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *scalarExecutionResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *scalarExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (r *scalarExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
@@ -602,30 +647,26 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 
 	series := r.currentBatch[0]
 	r.currentBatch = r.currentBatch[1:]
-
-	mqeData := types.InstantVectorSeriesData{
-		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
-		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
-	}
+	mqeData := querierpb.DecodeInstantVectorSeriesData(series)
 
 	var err error
 
-	if mqeData.Floats, err = ensureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+	if mqeData.Floats, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if mqeData.Histograms, err = ensureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+	if mqeData.Histograms, err = types.EnsureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
 	return mqeData, nil
 }
 
-func (r *instantVectorExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *instantVectorExecutionResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *instantVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (r *instantVectorExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
@@ -706,11 +747,11 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 		return nil, err
 	}
 
-	if fPoints, err = ensureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
+	if fPoints, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
-	if hPoints, err = ensureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
+	if hPoints, err = types.EnsureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
@@ -731,11 +772,11 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	return r.stepData, nil
 }
 
-func (r *rangeVectorExecutionResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.finalizeStream(ctx, r.nodeStreamIndex)
+func (r *rangeVectorExecutionResponse) FinishedReading(ctx context.Context) (stats.Stats, error) {
+	return r.group.finishedReadingStream(ctx, r.nodeStreamIndex)
 }
 
-func (r *rangeVectorExecutionResponse) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
+func (r *rangeVectorExecutionResponse) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	return r.group.statsForStream(ctx, r.nodeStreamIndex)
 }
 
@@ -780,11 +821,7 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 		}
 
 		for _, s := range msg.Series {
-			m := types.SeriesMetadata{
-				Labels:   mimirpb.FromLabelAdaptersToLabels(s.Labels),
-				DropName: s.DropName,
-			}
-			combinedMetadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, combinedMetadata, m)
+			combinedMetadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, combinedMetadata, querierpb.DecodeSeriesMetadata(s))
 			if err != nil {
 				return -1, err
 			}
@@ -805,19 +842,14 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 	}
 }
 
-func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats, map[int64]types.EncodedOperatorEvaluationStats) {
-	count := len(msg.Annotations.Infos) + len(msg.Annotations.Warnings)
-
-	annos := make(annotations.Annotations, count)
-	for _, a := range msg.Annotations.Infos {
-		annos.Add(querierpb.NewInfoAnnotation(a))
+func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (annotations.Annotations, stats.Stats, map[int64]types.EncodedOperatorEvaluationStats, map[int64]annotations.Annotations) {
+	combinedAnnotations := msg.Annotations.Decode()
+	perNodeAnnotations := make(map[int64]annotations.Annotations, len(msg.PerNodeAnnotations))
+	for nodeIdx, a := range msg.PerNodeAnnotations {
+		perNodeAnnotations[nodeIdx] = a.Decode()
 	}
 
-	for _, a := range msg.Annotations.Warnings {
-		annos.Add(querierpb.NewWarningAnnotation(a))
-	}
-
-	return &annos, msg.Stats, msg.PerNodeStats
+	return combinedAnnotations, msg.Stats, msg.PerNodeStats, perNodeAnnotations
 }
 
 func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
@@ -834,56 +866,6 @@ func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumption
 	}
 
 	return nil
-}
-
-// ensureFPointSliceCapacityIsPowerOfTwo returns d if its capacity is already a power of two, or otherwise a new slice with the same elements and a
-// capacity that is a power of two.
-//
-// If a new slice is created, the memory consumption estimate is adjusted assuming the old slice is no longer used.
-//
-// This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
-// For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
-func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
-	if pool.IsPowerOfTwo(cap(points)) {
-		return points, nil
-	}
-
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
-	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	newSlice = newSlice[:len(points)]
-	copy(newSlice, points)
-
-	// Don't return the old slice to the pool, but update the memory consumption estimate.
-	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices)
-
-	return newSlice, nil
-}
-
-// ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
-func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
-	if pool.IsPowerOfTwo(cap(points)) {
-		return points, nil
-	}
-
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
-	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	newSlice = newSlice[:len(points)]
-	copy(newSlice, points)
-
-	// Don't return the old slice to the pool, but update the memory consumption estimate.
-	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices)
-
-	return newSlice, nil
 }
 
 type eagerLoadingResponseStream struct {

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 func TestRetry(t *testing.T) {
@@ -91,10 +92,12 @@ func TestRetry(t *testing.T) {
 			try.Store(0)
 			mockMetrics := mockRetryMetrics{}
 			h := newRetryMiddleware(log.NewNopLogger(), 5, &mockMetrics).Wrap(tc.handler)
-			resp, err := h.Do(context.Background(), nil)
+			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+			resp, err := h.Do(ctx, nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
 			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
+			require.Equal(t, uint32(tc.expectedRetries), stats.LoadRetries())
 		})
 	}
 }
@@ -195,10 +198,12 @@ func Test_RetryRoundTripper(t *testing.T) {
 			try.Store(0)
 			mockMetrics := mockRetryMetrics{}
 			rt := newRetryRoundTripper(tc.handler, log.NewNopLogger(), 5, &mockMetrics)
-			resp, err := rt.RoundTrip(&http.Request{})
+			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+			resp, err := rt.RoundTrip((&http.Request{}).WithContext(ctx))
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
 			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
+			require.Equal(t, uint32(tc.expectedRetries), stats.LoadRetries())
 		})
 	}
 }

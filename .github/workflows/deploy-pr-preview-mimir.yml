@@ -17,6 +17,9 @@ jobs:
       pull-requests: write # Create or update pull request comments.
       statuses: write # Update GitHub status check with deploy preview link.
     if: "!github.event.pull_request.head.repo.fork"
+    # Must reference @main (not a pinned SHA): the OIDC trust policy for the
+    # service account used by deploy-preview.yml only trusts the "main" ref of
+    # grafana/writers-toolkit, so pinning to a commit SHA breaks token exchange.
     uses: grafana/writers-toolkit/.github/workflows/deploy-preview.yml@main
     with:
       branch: ${{ github.head_ref }}

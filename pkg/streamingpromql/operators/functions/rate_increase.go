@@ -46,23 +46,27 @@ func rate(isRate bool) RangeVectorStepFunction {
 		hHead, hTail := step.Histograms.UnsafePoints()
 		hCount := len(hHead) + len(hTail)
 
-		if fCount > 0 && hCount > 0 {
-			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
-			// Otherwise, emit a warning and drop this sample.
+		// Under the anchored/smoothed modifier, a float and a histogram anywhere in the extended
+		// look-back/look-ahead window count as mixed because either side may be touched by
+		// boundary interpolation. This mirrors Prometheus's extendedRate / extendedHistogramRate
+		// dispatch which inspects the full extended range matrix.
+		if step.MixedInExtendedRange || (fCount > 0 && hCount > 0) {
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
 		rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
+		smoothedOrAnchored := step.Smoothed || step.Anchored
 
+		// After the mixed-type guard above, at most one of floats/histograms is present, so the order
+		// of the float and histogram branches does not matter.
 		if fCount >= 2 {
-			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, smoothedOrAnchored)
 			return val, true, nil, nil
 		}
 
-		if hCount >= 2 {
-			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+		if hCount >= minHistogramPoints(smoothedOrAnchored) {
+			val, err := histogramRate(isRate, hCount, step.Histograms, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err
@@ -74,7 +78,25 @@ func rate(isRate bool) RangeVectorStepFunction {
 	}
 }
 
-func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+// minHistogramPoints returns the minimum number of histogram samples the rate/increase/delta family
+// requires to produce a point. Two samples are needed normally, but only one under the
+// smoothed/anchored modifier: a single in-range sample plus its neighbours in the extended
+// look-back/look-ahead window are enough to interpolate or anchor both range boundaries.
+func minHistogramPoints(smoothedOrAnchored bool) int {
+	if smoothedOrAnchored {
+		return 1
+	}
+	return 2
+}
+
+func histogramRate(isRate bool, hCount int, hView *types.HPointRingBufferView, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	if smoothed || anchored {
+		// extendedHistogramRate reads the extended window directly through the ring buffer view's
+		// random access, so there is no need to materialise a joined slice.
+		return extendedHistogramRate(hView, rangeStart, rangeEnd, rangeSeconds, true, isRate, smoothed, emitAnnotation)
+	}
+
+	hHead, hTail := hView.UnsafePoints()
 	firstPoint, lastPoint, delta, fpHistCount, err := CalculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
 		return nil, err
@@ -350,22 +372,23 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	hHead, hTail := step.Histograms.UnsafePoints()
 	hCount := len(hHead) + len(hTail)
 
-	if fCount > 0 && hCount > 0 {
-		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a delta.
-		// Otherwise, emit a warning and drop this sample.
+	if step.MixedInExtendedRange || (fCount > 0 && hCount > 0) {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
 
 	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
+	smoothedOrAnchored := step.Smoothed || step.Anchored
 
+	// After the mixed-type guard above, at most one of floats/histograms is present, so the order
+	// of the float and histogram branches does not matter.
 	if fCount >= 2 {
-		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Anchored || step.Smoothed)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, smoothedOrAnchored)
 		return val, true, nil, nil
 	}
 
-	if hCount >= 2 {
-		val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+	if hCount >= minHistogramPoints(smoothedOrAnchored) {
+		val, err := histogramDelta(hCount, step.Histograms, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation)
 		if err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return 0, false, nil, err
@@ -390,7 +413,14 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	return CalculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchoredOrSmoothed)
 }
 
-func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramDelta(hCount int, hView *types.HPointRingBufferView, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	if smoothed || anchored {
+		// extendedHistogramRate reads the extended window directly through the ring buffer view's
+		// random access, so there is no need to materialise a joined slice.
+		return extendedHistogramRate(hView, rangeStart, rangeEnd, rangeSeconds, false, false, smoothed, emitAnnotation)
+	}
+
+	hHead, hTail := hView.UnsafePoints()
 	firstPoint := hHead[0]
 
 	var lastPoint promql.HPoint

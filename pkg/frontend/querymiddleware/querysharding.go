@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -263,7 +264,6 @@ type ShardingLimits interface {
 	QueryShardingTotalShards(userID string) int
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 	QueryShardingMaxShardedQueries(userID string) int
-	CompactorSplitAndMergeShards(userID string) int
 }
 
 func NewQuerySharder(
@@ -433,38 +433,19 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
-	// Adjust totalShards such that one of the following is true:
-	//
-	// 1) totalShards % compactorShards == 0
-	// 2) compactorShards % totalShards == 0
-	//
-	// This allows optimization with sharded blocks in querier to be activated.
-	//
-	// (Optimization is only activated when given *block* was sharded with correct compactor shards,
-	// but we can only adjust totalShards "globally", ie. for all queried blocks.)
-	compactorShardCount := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.CompactorSplitAndMergeShards)
-	if compactorShardCount > 1 {
+	// Round the final shard count up to the next power of two so it always meshes with
+	// (is a divisor or multiple of) the compactor shard count, which is itself enforced to be a
+	// power of two. This is what allows the querier to prune blocks that cannot possibly hold a
+	// given query shard. It's applied last so that whatever value the adjustments above produced
+	// ends up being a power of two.
+	if totalShards > 1 {
 		prevTotalShards := totalShards
-
-		if totalShards > compactorShardCount {
-			totalShards = totalShards - (totalShards % compactorShardCount)
-		} else if totalShards < compactorShardCount {
-			// Adjust totalShards down to the nearest divisor of "compactor shards".
-			for totalShards > 0 && compactorShardCount%totalShards != 0 {
-				totalShards--
-			}
-
-			// If there was no divisor, just use original total shards.
-			if totalShards <= 1 {
-				totalShards = prevTotalShards
-			}
-		}
+		totalShards = util_math.NextPowerTwo(totalShards)
 
 		if prevTotalShards != totalShards {
-			spanLog.DebugLog("msg", "number of shards has been adjusted to be compatible with compactor shards",
+			spanLog.DebugLog("msg", "number of shards has been rounded up to the next power of two",
 				"previous total shards", prevTotalShards,
-				"updated total shards", totalShards,
-				"compactor shards", compactorShardCount)
+				"updated total shards", totalShards)
 		}
 	}
 

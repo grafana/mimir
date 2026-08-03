@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -575,7 +576,8 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),
@@ -1422,7 +1424,8 @@ func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	from, through, step := time.Unix(0, 0), end.Time(), q.step
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -1496,6 +1499,14 @@ func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) SearchLabelNames(context.Context, model.Time, model.Time, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
+}
+
+func (m *errDistributor) SearchLabelValues(context.Context, model.Time, model.Time, string, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
+}
+
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
@@ -1535,7 +1546,8 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),

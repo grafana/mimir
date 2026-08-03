@@ -2458,6 +2458,93 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 	return set
 }
 
+func TestTruncatingSeriesChunkRefsSetIterator(t *testing.T) {
+	// metricName returns the metric name createSeriesChunkRefsSet assigns to the given series ID.
+	metricName := func(seriesID int) string { return fmt.Sprintf("metric_%06d", seriesID) }
+
+	testCases := map[string]struct {
+		// batches describes the series IDs in each batch produced by the underlying iterator.
+		batches  [][2]int // each entry is {minSeriesID, maxSeriesID} inclusive
+		limit    int
+		expected []int // the series IDs we expect to be returned, in order
+		// expectedBatchesPulled is how many batches the iterator should pull from the underlying
+		// iterator. It proves we stop early and don't load series (and downstream chunks) past the limit.
+		expectedBatchesPulled int
+	}{
+		"limit larger than the number of series returns everything": {
+			batches:               [][2]int{{1, 3}, {4, 5}},
+			limit:                 100,
+			expected:              []int{1, 2, 3, 4, 5},
+			expectedBatchesPulled: 2,
+		},
+		"limit equal to the number of series returns everything": {
+			batches:               [][2]int{{1, 3}, {4, 5}},
+			limit:                 5,
+			expected:              []int{1, 2, 3, 4, 5},
+			expectedBatchesPulled: 2,
+		},
+		"limit falling on a batch boundary does not pull the next batch": {
+			batches:               [][2]int{{1, 3}, {4, 5}},
+			limit:                 3,
+			expected:              []int{1, 2, 3},
+			expectedBatchesPulled: 1,
+		},
+		"limit falling in the middle of a batch truncates that batch": {
+			batches:               [][2]int{{1, 3}, {4, 6}},
+			limit:                 4,
+			expected:              []int{1, 2, 3, 4},
+			expectedBatchesPulled: 2,
+		},
+		"limit of one returns a single series from the first batch": {
+			batches:               [][2]int{{1, 3}, {4, 6}},
+			limit:                 1,
+			expected:              []int{1},
+			expectedBatchesPulled: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			sets := make([]seriesChunkRefsSet, 0, len(tc.batches))
+			for _, b := range tc.batches {
+				sets = append(sets, createSeriesChunkRefsSet(b[0], b[1], false))
+			}
+			sliceIt := newSliceSeriesChunkRefsSetIterator(nil, sets...)
+			it := newTruncatingSeriesChunkRefsSetIterator(tc.limit, sliceIt)
+
+			var actual []string
+			for _, set := range readAllSeriesChunkRefsSet(it) {
+				for _, s := range set.series {
+					actual = append(actual, s.lset.Get(model.MetricNameLabel))
+				}
+			}
+			require.NoError(t, it.Err())
+
+			expected := make([]string, 0, len(tc.expected))
+			for _, id := range tc.expected {
+				expected = append(expected, metricName(id))
+			}
+			require.Equal(t, expected, actual)
+
+			// batchesPulled counts the batches the underlying iterator surfaced. When the limit stops us
+			// early we never pull the batches past it (so their chunks are never loaded downstream); when
+			// the limit exceeds the total we pull them all (current is bumped past the end by the final
+			// end-of-stream probe, hence the min).
+			batchesPulled := min(sliceIt.current+1, len(sets))
+			require.Equal(t, tc.expectedBatchesPulled, batchesPulled, "should stop pulling batches once the limit is reached")
+		})
+	}
+
+	t.Run("propagates the error from the underlying iterator", func(t *testing.T) {
+		expectedErr := errors.New("underlying error")
+		sliceIt := newSliceSeriesChunkRefsSetIterator(expectedErr, createSeriesChunkRefsSet(1, 3, false))
+		it := newTruncatingSeriesChunkRefsSetIterator(100, sliceIt)
+
+		readAllSeriesChunkRefsSet(it)
+		require.Equal(t, expectedErr, it.Err())
+	})
+}
+
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)

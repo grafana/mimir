@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -69,8 +71,6 @@ const (
 	statusSuccess = "success"
 	// statusSuccess Prometheus error result.
 	statusError = "error"
-
-	totalShardsControlHeader = "Sharding-Control"
 
 	operationEncode = "encode"
 	operationDecode = "decode"
@@ -117,7 +117,7 @@ type MetricsQueryRequest interface {
 	// as determined from the end timestamp and any offset in the query.
 	GetMaxT() int64
 	// GetOptions returns the options for the given request.
-	GetOptions() Options
+	GetOptions() requestoptions.Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
@@ -231,6 +231,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	optionDecoder                                   requestoptions.OptionDecoder
 	injector                                        propagation.Injector
 	logger                                          log.Logger
 }
@@ -261,12 +262,14 @@ func NewCodec(
 	injector propagation.Injector,
 	logger log.Logger,
 ) Codec {
+	propagateHeadersMetrics := append(codecPropagateHeadersMetrics, propagateHeaders...)
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
-		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersMetrics:            propagateHeadersMetrics,
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		optionDecoder:                      requestoptions.OptionDecoder{PropagatedHeaders: propagateHeadersMetrics},
 		injector:                           injector,
 		logger:                             logger,
 	}
@@ -277,6 +280,19 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
 		return NewEmptyPrometheusResponse(), nil
 	}
+
+	// Ownership of the input responses transfers to the merged response's finalizer on
+	// success. Until then, any early return must close every input, otherwise resources
+	// held by them (e.g. an underlying *promql.Query and its memory consumption tracker)
+	// leak.
+	closeInputs := true
+	defer func() {
+		if closeInputs {
+			for _, res := range responses {
+				res.Close()
+			}
+		}
+	}()
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
@@ -322,6 +338,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
+	closeInputs = false
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -348,7 +365,7 @@ func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (Me
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
-		return nil, fmt.Errorf("unknown metrics query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown metrics query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 }
 
@@ -374,8 +391,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -407,8 +423,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -452,7 +467,7 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
 func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) (LabelsSeriesQueryRequest, error) {
 	if !IsLabelsQuery(r.URL.Path) && !IsSeriesQuery(r.URL.Path) {
-		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
@@ -692,31 +707,6 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func DecodeOptions(r *http.Request, opts *Options) {
-	opts.CacheDisabled = decodeCacheDisabledOption(r)
-
-	for _, value := range r.Header.Values(totalShardsControlHeader) {
-		shards, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			continue
-		}
-		opts.TotalShards = int32(shards)
-		if opts.TotalShards < 1 {
-			opts.ShardingDisabled = true
-		}
-	}
-}
-
-func decodeCacheDisabledOption(r *http.Request) bool {
-	for _, value := range r.Header.Values(cacheControlHeader) {
-		if strings.Contains(value, noStoreValue) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
@@ -770,7 +760,7 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		Header:     http.Header{},
 	}
 
-	encodeOptions(req, r.GetOptions())
+	requestoptions.EncodeOptions(req, r.GetOptions())
 
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
@@ -917,18 +907,6 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 	}
 
 	return r.WithContext(ctx), nil
-}
-
-func encodeOptions(req *http.Request, o Options) {
-	if o.CacheDisabled {
-		req.Header.Set(cacheControlHeader, noStoreValue)
-	}
-	if o.ShardingDisabled {
-		req.Header.Set(totalShardsControlHeader, "0")
-	}
-	if o.TotalShards > 0 {
-		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
-	}
 }
 
 // DecodeMetricsQueryResponse decodes a Response from an http response.
@@ -1101,6 +1079,16 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		}
 	}()
 
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
+
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1117,6 +1105,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	queryStats := stats.FromContext(ctx)
 	pr, pw := io.Pipe()
 	endTraceSpan = false
+	closeResponse = false
 	go func() {
 		var encErr error
 		defer func() {
@@ -1139,7 +1128,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 			queryStats.AddEncodeTime(encodeDuration)
 		} else {
 			user, _ := user.ExtractOrgID(ctx)
-			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", req.URL.Path, "user", user, "err", encErr)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
 		}
 	}()
 
@@ -1189,6 +1178,16 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		}
 	}()
 
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
+
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
@@ -1218,6 +1217,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 
 	pr, pw := io.Pipe()
 	endTraceSpan = false
+	closeResponse = false
 	go func() {
 		var encErr error
 		defer func() {
@@ -1238,7 +1238,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 				msg = "failed to encode series query response"
 			}
 			user, _ := user.ExtractOrgID(ctx)
-			level.Warn(c.logger).Log("msg", msg, "url", req.URL.Path, "user", user, "err", encErr)
+			level.Warn(c.logger).Log("msg", msg, "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
 		}
 	}()
 
@@ -1334,16 +1334,14 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 		}
 	}
 
-	keys := make([]string, 0, len(output))
-	for key := range output {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-
 	result := make([]SampleStream, 0, len(output))
-	for _, key := range keys {
-		result = append(result, *output[key])
+	for _, s := range output {
+		result = append(result, *s)
 	}
+
+	slices.SortFunc(result, func(a, b SampleStream) int {
+		return mimirpb.CompareLabelAdapters(a.Labels, b.Labels)
+	})
 
 	return result
 }

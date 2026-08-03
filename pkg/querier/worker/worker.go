@@ -306,12 +306,12 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 	w.resetConcurrency()
 }
 
-// MinConcurrencyPerRequestQueue prevents RequestQueue starvation in query-frontend or query-scheduler instances.
-// When the RequestQueue utilizes the querier-worker queue prioritization algorithm, querier-worker connections
+// MinConcurrencyPerQueue prevents Queue starvation in query-frontend or query-scheduler instances.
+// When the Queue utilizes the querier-worker queue prioritization algorithm, querier-worker connections
 // are partitioned across up to 4 queue dimensions representing the 4 possible assignments for expected query component:
 // ingester, store-gateway, ingester-and-store-gateway, and unknown.
 // Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
-const MinConcurrencyPerRequestQueue = 4
+const MinConcurrencyPerQueue = 4
 
 // Must be called with lock.
 func (w *querierWorker) resetConcurrency() {
@@ -324,7 +324,7 @@ func (w *querierWorker) resetConcurrency() {
 			level.Error(w.log).Log("msg", "a querier worker is connected to an unknown remote endpoint", "addr", m.address)
 
 			// Consider it as not in-use.
-			concurrency = MinConcurrencyPerRequestQueue
+			concurrency = MinConcurrencyPerQueue
 		}
 
 		m.concurrency(concurrency, "resetting worker concurrency")
@@ -347,9 +347,9 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		inUseIndex = 0
 	)
 
-	// new adjusted minimum to ensure that each in-use instance has at least MinConcurrencyPerRequestQueue connections.
+	// new adjusted minimum to ensure that each in-use instance has at least MinConcurrencyPerQueue connections.
 	maxConcurrentWithMinPerInstance := max(
-		w.maxConcurrentRequests, MinConcurrencyPerRequestQueue*numInUse,
+		w.maxConcurrentRequests, MinConcurrencyPerQueue*numInUse,
 	)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
 		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
@@ -362,7 +362,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 			// and therefore these connections will not contribute to the overall steady-state query concurrency.
 			// As the state is expected to be temporary, we allocate the minimum number of connections
 			// and do not count them against the connection pool size for the in-use instances.
-			desired[address] = MinConcurrencyPerRequestQueue
+			desired[address] = MinConcurrencyPerQueue
 			continue
 		}
 

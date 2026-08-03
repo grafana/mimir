@@ -13,6 +13,7 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#38](https://github.com/thanos-io/objstore/pull/38) GCS: Upgrade cloud.google.com/go/storage version to `v1.43.0`.
 - [#145](https://github.com/thanos-io/objstore/pull/145) Include content length in the response of Get and GetRange.
 - [#157](https://github.com/thanos-io/objstore/pull/157) Azure: Add `az_tenant_id`, `client_id` and `client_secret` configs.
+- [#178](https://github.com/thanos-io/objstore/pull/178) Feature: conditional upload API
 
 ### Fixed
 - [#196](https://github.com/thanos-io/objstore/pull/196) GCS: fix error check in Exists method when object does not exist.

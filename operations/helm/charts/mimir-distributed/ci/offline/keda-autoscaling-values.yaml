@@ -16,6 +16,11 @@ distributor:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"
 
 ruler:
   remoteEvaluationDedicatedQueryPath: true
@@ -26,6 +31,11 @@ ruler:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"
 
 querier:
   kedaAutoscaling:
@@ -34,6 +44,11 @@ querier:
     minReplicaCount: 2
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 6
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"
 
 query_frontend:
   kedaAutoscaling:
@@ -43,6 +58,11 @@ query_frontend:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"
 
 ruler_querier:
   kedaAutoscaling:
@@ -51,6 +71,11 @@ ruler_querier:
     minReplicaCount: 1
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 13
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"
 
 ruler_query_frontend:
   kedaAutoscaling:
@@ -60,3 +85,8 @@ ruler_query_frontend:
     preserveReplicas: true
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 6
+      behavior: "static"

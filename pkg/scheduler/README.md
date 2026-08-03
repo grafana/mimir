@@ -6,7 +6,7 @@ The Query Scheduler is a dedicated request queue broker component between the Qu
 and the pool of Queriers available to service the queries.
 
 - The Query Frontend instances split and shard query requests, then enqueues the requests to the Scheduler.
-- The Scheduler pushes the queries into its internal in-memory `RequestQueue` process.
+- The Scheduler pushes the queries into its internal in-memory `Queue` process.
 - Queriers connect to the Scheduler and enter a loop to continually request their next query to process.
 - Queriers also maintain connections to the Query Frontend to send query results directly back to the Frontend.
 - The Scheduler does not receive query results, but will report an error for the query
@@ -16,7 +16,7 @@ and the pool of Queriers available to service the queries.
 ## Why Do We Need the Query Scheduler?
 
 A dedicated queue component solves scalability issues which can arise from the usage of the "v1 Frontend",
-in which the `RequestQueue` process was embedded in each Query Frontend instance,
+in which the `Queue` process was embedded in each Query Frontend instance,
 and Queriers connected directly to the Frontends to request their next query to process.
 
 ### Query Frontend Resource Requirements
@@ -76,13 +76,13 @@ If any part of the Scheduler's `QuerierLoop` errors out for any reason,
 it triggers defers which deregister the Querier-Worker connection from the queue.
 The errors captured by this process are generally unexpected, such as broken or timed-out connections.
 
-1. The defer calls in the Scheduler's `QuerierLoop` tell the `RequestQueue`
+1. The defer calls in the Scheduler's `QuerierLoop` tell the `Queue`
    to decrement the connection count for that Querier ID.
 1. If the Querier no longer has any active worker connections _and_ `querier-forget-delay` _is not enabled_,
-   the Querier will be immediately deregistered from the `RequestQueue`, triggering a shuffle-shard update.
+   the Querier will be immediately deregistered from the `Queue`, triggering a shuffle-shard update.
 1. Otherwise, if the Querier no longer has any worker connections and `querier-forget-delay` _is enabled_,
-   then the `RequestQueue` notes the time the Querier was disconnected at but does not deregister it yet.
-1. The `RequestQueue` periodically calls a `forgetDisconnectedQueriers` which will deregister all Queriers
+   then the `Queue` notes the time the Querier was disconnected at but does not deregister it yet.
+1. The `Queue` periodically calls a `forgetDisconnectedQueriers` which will deregister all Queriers
    with no remaining connections whose `disconnectedAt` exceeds the `querier-forget-delay` grace period,
    then trigger shuffle-shard updates.
 1. If the Querier reconnects during the grace period, the `disconnectedAt` state for the Querier is cleared
@@ -94,8 +94,8 @@ The top-level Querier process calls a `NotifyShutdown` rpc on the Scheduler to t
 This is the expected behavior we see when Queriers are shut down as part of normal rollout or downscaling procedures.
 With minor differences, this process utilizes the same mechanisms as the error-case process described above.
 
-1. The Scheduler tells the `RequestQueue` to mark the connection state as `shuttingDown` for the given Querier ID.
-1. All worker connections from that Querier ID in the `QuerierLoop` will receive an `ErrQuerierShuttingDown` from the `RequestQueue` when they ask to dequeue their next query request.
+1. The Scheduler tells the `Queue` to mark the connection state as `shuttingDown` for the given Querier ID.
+1. All worker connections from that Querier ID in the `QuerierLoop` will receive an `ErrQuerierShuttingDown` from the `Queue` when they ask to dequeue their next query request.
 1. The rest of the lifecycle is handled by the logic in the "Errors in QuerierLoop" process described above,
    with the exception that `querier-forget-delay` is ignored when the Querier is in a `shuttingDown` state.
    The Querier is removed as soon as the last Querier-Worker connection is deregistered,

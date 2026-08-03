@@ -43,6 +43,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -91,8 +92,9 @@ func TestConfig_ShouldSupportCliFlags(t *testing.T) {
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(cfg *Config)
-		expected string
+		setup        func(cfg *Config)
+		compartments compartments.Config
+		expected     string
 	}{
 		"should pass with the default config": {
 			setup:    func(*Config) {},
@@ -156,6 +158,20 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidSchedulerUpdateInterval.Error(),
 		},
+		"should pass with an in-range read compartment ID when compartments are enabled": {
+			setup:        func(cfg *Config) { cfg.ReadCompartmentID = 1 },
+			compartments: compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},
+			expected:     "",
+		},
+		"should fail with an out-of-range read compartment ID when compartments are enabled": {
+			setup:        func(cfg *Config) { cfg.ReadCompartmentID = 2 },
+			compartments: compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},
+			expected:     "compactor read compartment ID 2 is out of range [0, 2)",
+		},
+		"should fail with a non-zero read compartment ID when compartments are disabled": {
+			setup:    func(cfg *Config) { cfg.ReadCompartmentID = 1 },
+			expected: "compactor read compartment ID must be 0 when compartments are disabled",
+		},
 	}
 
 	for testName, testData := range tests {
@@ -165,7 +181,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			if actualErr := cfg.Validate(logger); testData.expected != "" {
+			if actualErr := cfg.Validate(testData.compartments, logger); testData.expected != "" {
 				assert.EqualError(t, actualErr, testData.expected)
 			} else {
 				assert.NoError(t, actualErr)

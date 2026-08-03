@@ -16,11 +16,10 @@ type RangeVectorRemoteExec struct {
 	Node               planning.Node
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
-	Annotations        *annotations.Annotations
 	expressionPosition posrange.PositionRange
 
 	resp                      RangeVectorRemoteExecutionResponse
-	finalized                 bool
+	finishedReadingCalled     bool
 	stepsReadForCurrentSeries int
 }
 
@@ -59,22 +58,22 @@ func (r *RangeVectorRemoteExec) NextStepSamples(ctx context.Context) (*types.Ran
 	return r.resp.GetNextStepSamples(ctx)
 }
 
-func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) error {
-	if r.finalized {
+func (r *RangeVectorRemoteExec) FinishedReading(ctx context.Context) error {
+	if r.finishedReadingCalled {
 		return nil
 	}
 
-	r.finalized = true
+	r.finishedReadingCalled = true
 
-	return finalize(ctx, r.resp, r.Annotations)
+	return finishedReading(ctx, r.resp)
 }
 
 func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.expressionPosition
 }
 
-func (r *RangeVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return r.resp.Stats(ctx)
+func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return r.resp.Finalize(ctx)
 }
 
 func (r *RangeVectorRemoteExec) Close() {
@@ -82,5 +81,5 @@ func (r *RangeVectorRemoteExec) Close() {
 		r.resp.Close()
 	}
 
-	r.finalized = true // Don't try to finalize from a closed stream.
+	r.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

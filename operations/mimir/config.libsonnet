@@ -84,6 +84,15 @@
     compactor_data_disk_size: '250Gi',
     compactor_data_disk_class: 'standard',
 
+    // Ephemeral storage requested by Mimir component containers, reserving node-local scratch
+    // space (logs, tmp) so pods aren't evicted first under node disk pressure. Set to null to
+    // disable the request.
+    ephemeral_storage_request_size: '50Mi',
+
+    // Enable the experimental compactor-scheduler. When enabled, compactors pull jobs from
+    // the scheduler instead of planning them locally.
+    compactor_scheduler_enabled: false,
+
     // Allow to fine tune compactor.
     compactor_max_concurrency: 1,
     // While this is the default value, we want to pass the same to the -blocks-storage.bucket-store.sync-interval
@@ -136,6 +145,10 @@
     cache_metadata_min_ready_seconds: 60,
 
     query_engine_range_vector_splitting_enabled: false,
+    // Per-path overrides for range vector splitting.
+    query_engine_range_vector_splitting_regular_path_enabled: $._config.query_engine_range_vector_splitting_enabled,
+    query_engine_range_vector_splitting_ruler_path_enabled: $._config.query_engine_range_vector_splitting_enabled,
+    range_vector_splitting_cache_enabled: $._config.query_engine_range_vector_splitting_regular_path_enabled || $._config.query_engine_range_vector_splitting_ruler_path_enabled,
     cache_range_vector_splitting_max_item_size_mb: 5,
     cache_range_vector_splitting_connection_limit: 16384,
     cache_range_vector_splitting_min_ready_seconds: 60,
@@ -694,13 +707,25 @@
     'blocks-storage.bucket-store.bucket-index.enabled': false,
   },
 
-  range_vector_splitting_caching_config:: (
-    if $._config.query_engine_range_vector_splitting_enabled then {
-      'querier.mimir-query-engine.range-vector-splitting.enabled': true,
-      'querier.mimir-query-engine.range-vector-splitting.backend': 'memcached',
-      'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': 'dnssrvnoa+memcached-range-vector-splitting.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
-      'querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size': $._config.cache_range_vector_splitting_max_item_size_mb * 1024 * 1024,
-      'querier.mimir-query-engine.range-vector-splitting.memcached.timeout': '500ms',
-    } else {}
+  base_range_vector_splitting_config:: {
+    'querier.mimir-query-engine.range-vector-splitting.enabled': true,
+    'querier.mimir-query-engine.range-vector-splitting.backend': 'memcached',
+    'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': 'dnssrvnoa+memcached-range-vector-splitting.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+    'querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size': $._config.cache_range_vector_splitting_max_item_size_mb * 1024 * 1024,
+    'querier.mimir-query-engine.range-vector-splitting.memcached.timeout': '500ms',
+  },
+
+  // Range vector splitting config for the regular query path (query-frontend and querier).
+  regular_range_vector_splitting_caching_config:: (
+    if $._config.query_engine_range_vector_splitting_regular_path_enabled then
+      $.base_range_vector_splitting_config
+    else {}
+  ),
+
+  // Range vector splitting config for the ruler query path (ruler-query-frontend and ruler-querier).
+  ruler_range_vector_splitting_caching_config:: (
+    if $._config.query_engine_range_vector_splitting_ruler_path_enabled then
+      $.base_range_vector_splitting_config
+    else {}
   ),
 }

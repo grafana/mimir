@@ -12,7 +12,6 @@ import (
 	"net"
 	"testing"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
@@ -20,7 +19,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -75,7 +73,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storeTestSeries, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storeTestSeries, warnings annotations.Annotations, hints storepb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storegatewaypb.StoreGateway_SeriesClient
@@ -120,12 +118,9 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			warnings.Add(errors.New(res.GetWarning()))
 		}
 
-		if rawHints := res.GetHints(); rawHints != nil {
+		if rawHints := res.GetResponseHints(); rawHints != nil {
 			// We expect only 1 hints entry so we just keep 1.
-			if err = types.UnmarshalAny(rawHints, &hints); err != nil {
-				err = errors.Wrap(err, "failed to unmarshal series hints")
-				return
-			}
+			hints = *rawHints
 		}
 
 		if recvSeries := res.GetStreamingSeries(); recvSeries != nil {

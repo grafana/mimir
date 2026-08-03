@@ -15,7 +15,7 @@ Choose a sub-folder for whichever Mimir deployment mode you want to run. Then, t
 ./compose-up.sh
 ```
 
-This should give you a running Mimir system with Grafana available at [htttp://localhost:3000](http://localhost:3000), and other Mimir service UIs available via different ports (check `docker ps` for exact ports).
+This should give you a running Mimir system with Grafana available at [http://localhost:3000](http://localhost:3000), and other Mimir service UIs available via different ports (check `docker ps` for exact ports).
 
 The Minio console is available in most dev environments at [http://localhost:9001](http://localhost:9001), with the credentials defined in [mimir.yaml][minio-creds].
 

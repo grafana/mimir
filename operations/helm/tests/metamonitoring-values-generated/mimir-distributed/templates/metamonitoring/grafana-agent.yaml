@@ -41,3 +41,4 @@ spec:
         app.kubernetes.io/component: meta-monitoring
     externalLabels:
       cluster: metamonitoring-values
+

@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
@@ -124,7 +125,10 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 }
 
 func TestConfig_Validate(t *testing.T) {
+	enabledCompartments := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}}
+
 	tests := map[string]struct {
+		compartments  compartments.Config
 		setup         func(*Config)
 		expectedError string
 	}{
@@ -150,6 +154,38 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.PushGrpcMethodEnabled = false
 			},
 		},
+		"compartments disabled with a non-zero read compartment ID fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+			expectedError: "ingester read compartment ID must be 0 when compartments are disabled",
+		},
+		"compartments enabled with read compartment ID 0 passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 0
+			},
+		},
+		"compartments enabled with an in-range read compartment ID passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+		},
+		"compartments enabled with a negative read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = -1
+			},
+			expectedError: "ingester read compartment ID -1 is out of range [0, 2)",
+		},
+		"compartments enabled with an out-of-range read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 2
+			},
+			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
+		},
 	}
 
 	for name, tc := range tests {
@@ -158,7 +194,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			tc.setup(&cfg)
 
-			err := cfg.Validate(log.NewNopLogger())
+			err := cfg.Validate(tc.compartments)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 			} else {
@@ -4634,7 +4670,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "cpu"}}
+				limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "cpu"}}},
+				}
 				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
@@ -6942,7 +6980,24 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		return nil, nil, err
 	}
 
+	stopWatchedSubservicesOnCleanup(t, ingester)
+
 	return ingester, ingestersRing, nil
+}
+
+// stopWatchedSubservicesOnCleanup registers a cleanup stopping the subservices
+// that ingester.New() watches via subservicesWatcher and that never start in
+// tests skipping the full ingester lifecycle. Each WatchService spawns a
+// listener goroutine that only exits when the service reaches a terminal
+// state, so without this the listeners would leak and trip the package-level
+// goleak check. StopAsync is idempotent.
+func stopWatchedSubservicesOnCleanup(t testing.TB, ingester *Ingester) {
+	t.Cleanup(func() {
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
+		ingester.computeWorkerPool.StopAsync()
+	})
 }
 
 func startAndWaitHealthy(t testing.TB, i *Ingester, r ring.ReadRing) {
@@ -12413,4 +12468,127 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+func TestIngesterXOR2EncodingEnabled(t *testing.T)  { testIngesterXOR2Encoding(t, true) }
+func TestIngesterXOR2EncodingDisabled(t *testing.T) { testIngesterXOR2Encoding(t, false) }
+
+func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
+	limits := defaultLimitsTestConfig()
+	if xor2Enabled {
+		limits.FloatChunkEncoding = "xor2"
+	}
+
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
+	})
+
+	cfg := defaultIngesterTestConfig(t)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), "user1")
+
+	const ts = int64(1000)
+	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2"}}},
+		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		nil, nil, mimirpb.API,
+	))
+	require.NoError(t, err)
+
+	chunks := queryXOR2Chunks(ctx, t, i)
+	require.Len(t, chunks, 1)
+
+	expectedChunkEnc := chunkenc.EncXOR
+	expectedClientEnc := int32(chunk.PrometheusXorChunk)
+	if xor2Enabled {
+		expectedChunkEnc = chunkenc.EncXOR2
+		expectedClientEnc = int32(chunk.PrometheusXor2Chunk)
+	}
+	assert.Equal(t, expectedClientEnc, chunks[0].Encoding)
+	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
+}
+
+func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
+	userID := "user1"
+	tenantOverride := new(TenantLimitsMock)
+	tenantOverride.On("ByUserID", userID).Return(nil)
+
+	limits := defaultLimitsTestConfig()
+	override := validation.NewOverrides(limits, tenantOverride)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_before"}}},
+		[]mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
+		nil, nil, mimirpb.API,
+	))
+	require.NoError(t, err)
+
+	chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
+	require.Len(t, chunks, 1)
+	assert.Equal(t, int32(chunk.PrometheusXorChunk), chunks[0].Encoding)
+
+	// Enable XOR2 at runtime.
+	tenantOverride.ExpectedCalls = nil
+	tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: "xor2"})
+	<-time.After(1500 * time.Millisecond)
+
+	// A new series always starts a fresh chunk, which will use the updated XOR2 setting.
+	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_after"}}},
+		[]mimirpb.Sample{{TimestampMs: 2000, Value: 2}},
+		nil, nil, mimirpb.API,
+	))
+	require.NoError(t, err)
+
+	chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+	require.Len(t, chunks, 1)
+	assert.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+}
+
+func queryXOR2Chunks(ctx context.Context, t *testing.T, i *Ingester) []client.Chunk {
+	t.Helper()
+	return queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2")
+}
+
+func queryXOR2ChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
+	t.Helper()
+	queryReq := &client.QueryRequest{
+		StartTimestampMs:         math.MinInt64,
+		EndTimestampMs:           math.MaxInt64,
+		Matchers:                 []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+		StreamingChunksBatchSize: 64,
+	}
+	s := stream{ctx: ctx}
+	require.NoError(t, i.QueryStream(queryReq, &s))
+	var allChunks []client.Chunk
+	for _, resp := range s.responses {
+		for _, sc := range resp.StreamingSeriesChunks {
+			allChunks = append(allChunks, sc.Chunks...)
+		}
+	}
+	return allChunks
+}
+
+func verifyChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedTs int64, expectedVal float64) {
+	t.Helper()
+	chk, err := chunkenc.FromData(enc, data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	actualTs, actualVal := it.At()
+	assert.Equal(t, expectedTs, actualTs)
+	assert.Equal(t, expectedVal, actualVal)
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
 }

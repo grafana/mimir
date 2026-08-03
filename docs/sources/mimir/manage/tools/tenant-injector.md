@@ -3,11 +3,11 @@ aliases:
   - ../../operators-guide/tools/tenant-injector/
 description: Use the tenant injector to query data for a tenant during development and troubleshooting.
 menuTitle: Tenant injector
-title: Grafana Mimir tenant injector
+title: Tenant injector
 weight: 20
 ---
 
-# Grafana Mimir tenant injector
+# Tenant injector
 
 The tenant injector is a standalone HTTP proxy that injects the `X-Scope-OrgID` header with the value that you specify in the `-tenant-id` flag into incoming HTTP requests. It then forwards the modified requests to the URL you specify in the `-remote-address` flag.
 

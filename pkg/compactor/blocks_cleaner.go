@@ -51,6 +51,7 @@ type BlocksCleanerConfig struct {
 	GetDeletionMarkersConcurrency int
 	UpdateBlocksConcurrency       int
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
+	EstimateCompactionJobs        bool
 }
 
 type BlocksCleaner struct {
@@ -149,15 +150,17 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 			Name: "cortex_bucket_index_last_successful_update_timestamp_seconds",
 			Help: "Timestamp of the last successful update of a tenant's bucket index.",
 		}, []string{"user"}),
+	}
 
-		bucketIndexCompactionJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+	if cfg.EstimateCompactionJobs {
+		c.bucketIndexCompactionJobs = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_bucket_index_estimated_compaction_jobs",
 			Help: "Estimated number of compaction jobs based on latest version of bucket index.",
-		}, []string{"user", "type"}),
-		bucketIndexCompactionPlanningErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"user", "type"})
+		c.bucketIndexCompactionPlanningErrors = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_index_estimated_compaction_jobs_errors_total",
 			Help: "Total number of failed executions of compaction job estimation based on latest version of bucket index.",
-		}),
+		})
 	}
 
 	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
@@ -281,8 +284,10 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, err
 			c.tenantMarkedBlocks.DeleteLabelValues(userID)
 			c.tenantPartialBlocks.DeleteLabelValues(userID)
 			c.tenantBucketIndexLastUpdate.DeleteLabelValues(userID)
-			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
-			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+			if c.cfg.EstimateCompactionJobs {
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+			}
 		}
 	}
 	c.lastOwnedUsers = allUsers
@@ -391,8 +396,10 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	c.tenantBlocks.DeleteLabelValues(userID)
 	c.tenantMarkedBlocks.DeleteLabelValues(userID)
 	c.tenantPartialBlocks.DeleteLabelValues(userID)
-	c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
-	c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+	if c.cfg.EstimateCompactionJobs {
+		c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+		c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+	}
 
 	if deletedBlocks > 0 {
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
@@ -517,21 +524,22 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 
-	// Compute pending compaction jobs based on current index.
-	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
-	if err != nil {
-		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
-		if !errors.Is(err, context.Canceled) {
-			level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
-			c.bucketIndexCompactionPlanningErrors.Inc()
-			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
-			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
-		}
-	} else {
-		splitJobs, mergeJobs := computeSplitAndMergeJobs(jobs)
+	if c.cfg.EstimateCompactionJobs {
+		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
+		if err != nil {
+			// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
+			if !errors.Is(err, context.Canceled) {
+				level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
+				c.bucketIndexCompactionPlanningErrors.Inc()
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+			}
+		} else {
+			splitJobs, mergeJobs := computeSplitAndMergeJobs(jobs)
 
-		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
-		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
+			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
+			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
+		}
 	}
 
 	return nil

@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -30,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -42,7 +42,6 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
-var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -50,7 +49,7 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.CachePrefixGenerator, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
@@ -68,8 +67,11 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
 	}
 
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errPerStepStatsNotSupported
+	// MQE does not read delayed name removal from the Prometheus engine options: it resolves the
+	// setting per-tenant via the limits provider at query time. Fail loudly if it is enabled the
+	// Prometheus way, so it isn't silently ignored and mistaken for being active.
+	if opts.CommonOpts.EnableDelayedNameRemoval {
+		return nil, errors.New("enabling delayed name removal via the Prometheus engine option is not supported by the Mimir query engine; enable it per-tenant via the enable_delayed_name_removal setting (-querier.enable-delayed-name-removal flag) instead")
 	}
 
 	if planner == nil {
@@ -103,6 +105,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 		planning.NODE_TYPE_NO_OP:                 planning.NodeMaterializerFunc[*core.NoOp](core.MaterializeNoOp),
 		planning.NODE_TYPE_DATA_LABEL_SELECTOR:   planning.NodeMaterializerFunc[*core.DataLabelSelector](core.MaterializeDataLabelSelector),
+		planning.NODE_TYPE_EVALUATION_ROOT:       planning.NodeMaterializerFunc[*core.EvaluationRoot](core.MaterializeEvaluationRoot),
 
 		planning.NODE_TYPE_DUPLICATE:                  planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_DUPLICATE_FILTER:           planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.DuplicateFilter](commonsubexpressionelimination.MaterializeDuplicateFilter),
@@ -110,7 +113,17 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_MULTI_AGGREGATION_GROUP:    planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationGroup](multiaggregation.MaterializeMultiAggregationGroup),
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 
-		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
+		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, opts.RangeVectorSplitting.SplitInterval, opts.Limits, opts.TimeNow, intermediateCache, opts.CommonOpts.Reg, opts.Logger),
+		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 splitandcache.NewTimeRangeSplitMaterializer(opts.RangeQuerySplittingAndCaching.SplitEnabled, opts.CommonOpts.Reg),
+		planning.NODE_TYPE_CACHE: splitandcache.NewCacheMaterializer(
+			opts.RangeQuerySplittingAndCaching.CacheEnabled,
+			opts.RangeQuerySplittingAndCaching.CacheClient,
+			opts.CachePrefixGenerator,
+			opts.Limits,
+			opts.RangeQuerySplittingAndCaching.MinCacheExtent,
+			opts.RangeQuerySplittingAndCaching.CacheMetrics,
+			opts.RangeQuerySplittingAndCaching.CacheUnconsumedResults,
+		),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
@@ -216,10 +229,6 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
-	}
-
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
@@ -300,8 +309,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:          queryable,
-		Annotations:        annotations.New(),
-		QueryStats:         types.NewQueryStats(),
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
 		Logger:             e.logger,
@@ -324,7 +331,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
-		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
+		op, err := materializer.ConvertNodeToOperator(ctx, req.Node, req.TimeRange)
 		if err != nil {
 			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
@@ -350,13 +357,20 @@ type QueryLimitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 	// GetMinResultsCacheTTL returns the TTL for cached results for the tenant(s) in the context.
 	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
+	// GetMinOutOfOrderResultsCacheTTL returns the TTL for cached results possibly containing out-of-order data for the tenant(s) in the context.
+	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
+	// GetMaxCacheFreshness returns the period after which results are cacheable for the tenant(s) in the context.
+	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
+	// AllowCachingUnalignedQueries returns true if unaligned queries should be cached for the tenant(s) in the context.
+	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 // This should generally only be used in tests.
 func NewStaticQueryLimitsProvider() StaticQueryLimitsProvider {
 	return StaticQueryLimitsProvider{
-		MinResultsCacheTTL: 7 * 24 * time.Hour,
+		MinResultsCacheTTL:           7 * 24 * time.Hour,
+		MinOutOfOrderResultsCacheTTL: 7 * 24 * time.Hour,
 	}
 }
 
@@ -365,6 +379,9 @@ type StaticQueryLimitsProvider struct {
 	EnableDelayedNameRemoval              bool
 	MaxOutOfOrderTimeWindow               time.Duration
 	MinResultsCacheTTL                    time.Duration
+	MinOutOfOrderResultsCacheTTL          time.Duration
+	MaxCacheFreshness                     time.Duration
+	CacheUnalignedQueries                 bool
 }
 
 func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
@@ -381,6 +398,18 @@ func (p StaticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context)
 
 func (p StaticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
 	return p.MinResultsCacheTTL, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return p.MinOutOfOrderResultsCacheTTL, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return p.MaxCacheFreshness, nil
+}
+
+func (p StaticQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return p.CacheUnalignedQueries, nil
 }
 
 type NoopQueryTracker struct{}

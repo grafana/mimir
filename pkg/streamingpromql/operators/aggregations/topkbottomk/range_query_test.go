@@ -311,7 +311,6 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 				testCase.without,
 				true,
 				memoryConsumptionTracker,
-				nil,
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 

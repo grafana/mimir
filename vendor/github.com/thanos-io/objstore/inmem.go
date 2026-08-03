@@ -6,8 +6,10 @@ package objstore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +18,7 @@ import (
 )
 
 var errNotFound = errors.New("inmem: object not found")
+var errConditionNotMet = errors.New("inmem: condition not met")
 
 // InMemBucket implements the objstore.Bucket interfaces against local memory.
 // Methods from Bucket interface are thread-safe. Objects are assumed to be immutable.
@@ -148,6 +151,10 @@ func (i *InMemBucket) SupportedIterOptions() []IterOptionType {
 	return []IterOptionType{Recursive, UpdatedAt}
 }
 
+func (b *InMemBucket) SupportedObjectUploadOptions() []ObjectUploadOptionType {
+	return []ObjectUploadOptionType{IfNotExists, IfMatch, IfNotMatch}
+}
+
 func (b *InMemBucket) IterWithAttributes(ctx context.Context, dir string, f func(attrs IterObjectAttributes) error, options ...IterOption) error {
 	if err := ValidateIterOptions(b.SupportedIterOptions(), options...); err != nil {
 		return err
@@ -252,9 +259,40 @@ func (b *InMemBucket) Attributes(_ context.Context, name string) (ObjectAttribut
 }
 
 // Upload writes the file specified in src to into the memory.
-func (b *InMemBucket) Upload(_ context.Context, name string, r io.Reader, _ ...ObjectUploadOption) error {
+func (b *InMemBucket) Upload(_ context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error {
+	if err := ValidateUploadOptions(b.SupportedObjectUploadOptions(), opts...); err != nil {
+		return err
+	}
+
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
+
+	params := ApplyObjectUploadOptions(opts...)
+	generation := 0
+
+	if prev, ok := b.attrs[name]; ok {
+		if prev.Version == nil || prev.Version.Type != Generation {
+			return fmt.Errorf("inmem object should always have a generational version")
+		}
+		if params.IfNotExists {
+			return errConditionNotMet
+		}
+		var err error
+		if generation, err = strconv.Atoi(prev.Version.Value); err != nil {
+			return err
+		}
+		if params.Condition != nil {
+			if params.Condition.Value != prev.Version.Value && !params.IfNotMatch {
+				return errConditionNotMet
+			} else if params.Condition.Value == prev.Version.Value && params.IfNotMatch {
+				return errConditionNotMet
+			}
+		}
+	} else if params.Condition != nil && !params.IfNotMatch {
+		return errConditionNotMet
+	}
+	generation++
+
 	body, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -263,6 +301,7 @@ func (b *InMemBucket) Upload(_ context.Context, name string, r io.Reader, _ ...O
 	b.attrs[name] = ObjectAttributes{
 		Size:         int64(len(body)),
 		LastModified: time.Now(),
+		Version:      &ObjectVersion{Type: Generation, Value: strconv.Itoa(generation)},
 	}
 	return nil
 }
@@ -288,6 +327,8 @@ func (b *InMemBucket) IsObjNotFoundErr(err error) bool {
 func (b *InMemBucket) IsAccessDeniedErr(err error) bool {
 	return false
 }
+
+func (b *InMemBucket) IsConditionNotMetErr(err error) bool { return errors.Is(err, errConditionNotMet) }
 
 func (b *InMemBucket) Close() error { return nil }
 

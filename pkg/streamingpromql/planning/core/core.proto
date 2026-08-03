@@ -93,6 +93,8 @@ enum BinaryOperation {
   BINARY_LSS = 14; // <
   BINARY_GTE = 15; // >=
   BINARY_GTR = 16; // >
+  BINARY_TRIM_UPPER = 17; // </
+  BINARY_TRIM_LOWER = 18; // >/
 }
 
 message VectorMatching {
@@ -151,8 +153,8 @@ message VectorSelectorDetails {
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
   bool smoothed = 7;
-  bool projectionInclude = 8;
-  repeated string projectionLabels = 9;
+  reserved 8; // projectionInclude is no longer used.
+  reserved 9; // projectionLabels is no longer used.
   bool returnSampleTimestampsPreserveHistograms = 10;
 
   repeated SubsetMatchers subsets = 11 [(gogoproto.nullable) = false];
@@ -174,10 +176,15 @@ message MatrixSelectorDetails {
   bool smoothed = 7;
   bool anchored = 8;
   bool counterAware = 9;
-  bool projectionInclude = 10;
-  repeated string projectionLabels = 11;
+  reserved 10; // projectionInclude is no longer used.
+  reserved 11; // projectionLabels is no longer used.
 
   repeated SubsetMatchers subsets = 12 [(gogoproto.nullable) = false];
+
+  // anchoredResetsChanges is set when the anchored modifier is applied to resets() or changes(). These
+  // functions select the anchor across both floats and histograms rather than synthesising float boundary
+  // values, so they take a different path through the range vector selector.
+  bool anchoredResetsChanges = 13;
 }
 
 // SubsetMatchers defines a subset for a selector to report in its statistics.
@@ -217,6 +224,8 @@ message DeduplicateAndMergeDetails {
 }
 
 message DropNameDetails {}
+
+message EvaluationRootDetails {}
 
 message NoOpDetails {
   bool matrixSelector = 1;

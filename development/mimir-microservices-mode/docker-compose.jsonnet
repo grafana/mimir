@@ -250,6 +250,10 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
+      // Mimir reads mimir_cluster_seed.json from object storage on startup and waits up to 5 minutes
+      // from its creation time before becoming ready. The file persists in the MinIO volume across
+      // restarts, so without this flag any component starting within 5 minutes of the previous run blocks.
+      '-usage-stats.enabled=false',
     ] + options.extraArguments,
 
     // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
@@ -315,9 +319,12 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    local buckets = ['mimir-tsdb', 'mimir-ruler', 'mimir-alertmanager'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      command: ['server', '--console-address', ':9001', '/data'],
+      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // starts empty, so create the buckets the dev cluster needs before starting the server.
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
@@ -345,10 +352,11 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       command: [
         if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
+        '--enable-feature=promql-experimental-functions',
       ],
       volumes: [
         './config:/etc/prometheus',

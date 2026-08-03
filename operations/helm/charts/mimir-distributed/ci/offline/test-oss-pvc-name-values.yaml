@@ -1,0 +1,20 @@
+alertmanager:
+  persistentVolume:
+    enabled: true
+    name: custom-volume
+
+store_gateway:
+  persistentVolume:
+    enabled: true
+    name: custom-volume
+
+compactor:
+  persistentVolume:
+    enabled: true
+    name: custom-volume
+
+ingester:
+  enabled: true
+  persistentVolume:
+    enabled: true
+    name: custom-volume

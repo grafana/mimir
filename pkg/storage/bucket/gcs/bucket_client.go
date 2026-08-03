@@ -7,7 +7,9 @@ package gcs
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strconv"
 
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/log"
@@ -58,13 +60,38 @@ type retryAlwaysBucket struct {
 // Upload performs an upload using a GCS handle wrapped with RetryAlways policy.
 // Uploads will be automatically retried on transient errors without any idempotency guarantees.
 func (b *retryAlwaysBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
-	// Use the retry-wrapped handle for automatic retries.
-	w := b.bkt.Object(name).NewWriter(ctx)
+	if err := objstore.ValidateUploadOptions(b.SupportedObjectUploadOptions(), opts...); err != nil {
+		return err
+	}
 
 	uploadOpts := objstore.ApplyObjectUploadOptions(opts...)
+
+	// Use the retry-wrapped handle for automatic retries.
+	obj := b.bkt.Object(name)
+	if uploadOpts.Condition != nil {
+		if uploadOpts.Condition.Type != objstore.Generation {
+			return fmt.Errorf("%w: GCS conditional uploads require generation object versions", objstore.ErrUploadOptionInvalid)
+		}
+
+		generation, err := strconv.ParseInt(uploadOpts.Condition.Value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("%w: GCS conditional upload generation %q is invalid: %w", objstore.ErrUploadOptionInvalid, uploadOpts.Condition.Value, err)
+		}
+
+		if uploadOpts.IfNotMatch {
+			obj = obj.If(storage.Conditions{GenerationNotMatch: generation})
+		} else {
+			obj = obj.If(storage.Conditions{GenerationMatch: generation})
+		}
+	} else if uploadOpts.IfNotExists {
+		obj = obj.If(storage.Conditions{DoesNotExist: true})
+	}
+
+	w := obj.NewWriter(ctx)
+	w.ContentType = uploadOpts.ContentType
+
 	if b.chunkSize > 0 {
 		w.ChunkSize = b.chunkSize
-		w.ContentType = uploadOpts.ContentType
 	}
 
 	if _, err := io.Copy(w, r); err != nil {

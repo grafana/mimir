@@ -56,6 +56,17 @@ func (bkt *gcsBucket) Get(ctx context.Context, objectName string, options GetOpt
 	return obj.NewReader(ctx)
 }
 
+func (bkt *gcsBucket) Exists(ctx context.Context, objectName string) (bool, error) {
+	_, err := bkt.client.Object(objectName).Attrs(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
 func (bkt *gcsBucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {
 	d, ok := dstBucket.(*gcsBucket)
 	if !ok {

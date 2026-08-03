@@ -6,21 +6,12 @@
 package storepb
 
 import (
-	"github.com/gogo/protobuf/types"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
-
-func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
-	return &SeriesResponse{
-		Result: &SeriesResponse_Hints{
-			Hints: hints,
-		},
-	}
-}
 
 func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	return &SeriesResponse{
@@ -56,7 +47,7 @@ func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
 	}
 }
 
-func NewResponseHintsSeriesResponse(hints *SeriesResponseHints) *SeriesResponse {
+func NewHintsSeriesResponse(hints *SeriesResponseHints) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_ResponseHints{
 			ResponseHints: hints,
@@ -77,6 +68,12 @@ func (m *LabelNamesResponseHints) AddQueriedBlock(id ulid.ULID) {
 }
 
 func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
+}
+
+func (m *SearchResponseHints) AddQueriedBlock(id ulid.ULID) {
 	m.QueriedBlocks = append(m.QueriedBlocks, Block{
 		Id: id.String(),
 	})
@@ -161,6 +158,8 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 		return chunk.PrometheusHistogramChunk, true
 	case Chunk_FloatHistogram:
 		return chunk.PrometheusFloatHistogramChunk, true
+	case Chunk_XOR2:
+		return chunk.PrometheusXor2Chunk, true
 	default:
 		return 0, false
 	}

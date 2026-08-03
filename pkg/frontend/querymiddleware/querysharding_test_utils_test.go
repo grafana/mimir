@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -325,6 +327,22 @@ func withTimeout(timeout time.Duration) engineOpt {
 func withMaxSamples(samples int) engineOpt {
 	return func(o *streamingpromql.EngineOpts) {
 		o.CommonOpts.MaxSamples = samples
+	}
+}
+
+func withSplittingAndCachingRunningInsideMQE(splittingEnabled bool, splitInterval time.Duration, cachingEnabled bool) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.RangeQuerySplittingAndCaching.SplitEnabled = splittingEnabled
+		o.RangeQuerySplittingAndCaching.SplitInterval = splitInterval
+		o.RangeQuerySplittingAndCaching.CacheEnabled = cachingEnabled
+		o.RangeQuerySplittingAndCaching.CacheClient = cache.NewMockCache()
+		o.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", o.CommonOpts.Reg)
+	}
+}
+
+func withLimitsProvider(limits streamingpromql.QueryLimitsProvider) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.Limits = limits
 	}
 }
 

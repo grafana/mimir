@@ -171,14 +171,14 @@ ruler_storage:
 serviceAccount:
   create: true
   name: mimir-storage
-  annotation:
-    "azure.workload.identity/use: "true"
+  annotations:
+    "azure.workload.identity/use": "true"
     "azure.workload.identity/client-id": "${USER_ASSIGNED_IDENTITY_CLIENT_ID}"
   labels:
-    "azure.workload.identity/use: "true"
+    "azure.workload.identity/use": "true"
 global:
-  podlabels:
-    "azure.workload.identity/use: "true"
+  podLabels:
+    "azure.workload.identity/use": "true"
 ```
 
 {{< admonition type="note" >}}

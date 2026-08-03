@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -43,8 +44,8 @@ func (s *StepInvariantInstantVectorOperator) AfterPrepare(ctx context.Context) e
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) error {
-	return s.inner.Finalize(ctx)
+func (s *StepInvariantInstantVectorOperator) FinishedReading(ctx context.Context) error {
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *StepInvariantInstantVectorOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
@@ -58,6 +59,15 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 	}
 
 	if s.originalTimeRange.IsInstant || s.originalTimeRange.StepCount <= 1 {
+		// The inner operator will be evaluated at T=0, so we still need to set the correct timestamp for any output samples.
+		for i := range data.Floats {
+			data.Floats[i].T = s.originalTimeRange.StartT
+		}
+
+		for i := range data.Histograms {
+			data.Histograms[i].T = s.originalTimeRange.StartT
+		}
+
 		return data, nil
 	}
 
@@ -93,7 +103,7 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		histograms = append(histograms, promql.HPoint{T: data.Histograms[0].T, H: data.Histograms[0].H})
+		histograms = append(histograms, promql.HPoint{T: s.originalTimeRange.StartT, H: data.Histograms[0].H})
 		// Note that we create a copy of the histogram for each step as we can not re-use the same *FloatHistogram in the slice from the pool.
 		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			histograms = append(histograms, promql.HPoint{
@@ -111,12 +121,13 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 	return data, err
 }
 
-func (s *StepInvariantInstantVectorOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	inner, err := s.inner.Stats(ctx)
+func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.inner.Finalize(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer inner.Close()
-	return inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	stats, err := inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	return stats, annos, err
 }

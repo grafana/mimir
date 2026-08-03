@@ -30,6 +30,7 @@ type DumpCommand struct {
 	getKafkaClient    func() *kgo.Client
 	printer           Printer
 	printFormat       string
+	dupTenant         string
 }
 
 // Register is used to register the command to a parent command.
@@ -55,6 +56,9 @@ func (c *DumpCommand) Register(app *kingpin.Application, getKafkaClient func() *
 	printCmd.Flag("format", "Output format").Default("pretty").EnumVar(&c.printFormat, "pretty", "json")
 
 	cmd.Command("analyse", "Analyse dump file and compute statistics").Action(c.doAnalyse)
+
+	findDuplicatesCmd := cmd.Command("find-duplicates", "Print occurrences where a series sends a sample identical (timestamp+value) to its previous one").Action(c.doFindDuplicates)
+	findDuplicatesCmd.Flag("tenant", "Only analyse this tenant (Kafka record key).").StringVar(&c.dupTenant)
 }
 
 type key int

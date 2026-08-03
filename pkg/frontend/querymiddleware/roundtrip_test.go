@@ -89,6 +89,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		newMockQueryLimitsProvider(&limits),
 		codec,
 		nil,
+		nil,
 		engine,
 		engineOpts,
 		nil,
@@ -137,11 +138,13 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
 			cfg.ShardedQueries = true
+			cfg.UseMQEForSharding = false
 		}),
 		log.NewNopLogger(),
 		limits,
 		newMockQueryLimitsProvider(&limits),
 		codec,
+		nil,
 		nil,
 		engine,
 		engineOpts,
@@ -474,6 +477,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
 				nil,
+				nil,
 				engine,
 				engineOpts,
 				nil,
@@ -540,6 +544,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		streamingpromql.NewStaticQueryLimitsProvider(),
 		newTestCodec(),
 		nil,
+		nil,
 		engine,
 		engineOpts,
 		nil,
@@ -596,6 +601,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
+	cfg.UseMQEForSharding = false
 	cfg.RewriteQueriesHistogram = true
 	cfg.RewriteQueriesPropagateMatchers = true
 
@@ -851,6 +857,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				newMockQueryLimitsProvider(&tc.limits),
 				newTestCodec(),
 				nil,
+				nil,
 				engine,
 				engineOpts,
 				nil,
@@ -965,11 +972,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	)
 
 	// Create the topic offsets reader.
-	readClient, err := ingest.NewKafkaReaderClient(createKafkaConfig(clusterAddr, topic), nil, logger)
+	kafkaCfg := createKafkaConfig(clusterAddr, topic)
+	kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
+	offsetsReader, err := ingest.NewSingleClusterTopicOffsetsReader(kafkaCfg, topic, allTopicPartitionIDs(numPartitions), "query-frontend", prometheus.NewPedanticRegistry(), logger)
 	require.NoError(t, err)
-	t.Cleanup(readClient.Close)
-
-	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
@@ -989,9 +995,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		nil,
+		nil,
 		promEngine,
 		promOpts,
-		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		NewSingleClusterReadConsistencyOffsetsReader(offsetsReader),
 		false,
 		nil,
 		nil,
@@ -1035,9 +1042,9 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 						offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 						for partitionID, expectedOffset := range expectedOffsets {
-							actual, ok := offsets.Lookup(partitionID)
+							actual, ok := offsets.Lookup(0, partitionID)
 							assert.True(t, ok)
-							assert.Equal(t, expectedOffset, actual)
+							assert.Equal(t, expectedOffset, actual.ForKafkaCluster(0))
 						}
 					} else {
 						assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))

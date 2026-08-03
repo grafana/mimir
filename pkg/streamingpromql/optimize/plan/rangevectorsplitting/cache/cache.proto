@@ -5,6 +5,7 @@ syntax = "proto3";
 package rangevectorsplittingcache;
 
 import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "cache";
@@ -19,10 +20,11 @@ option (gogoproto.unmarshaler_all) = true;
 
 message CachedSeries {
   // cacheKey contains the non-hashed cache key, to detect hash collision.
-  string cacheKey = 1;
+  bytes cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
   repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];
   bytes results = 5;
   querierpb.Annotations annotations = 6 [(gogoproto.nullable) = false];
+  types.EncodedOperatorEvaluationStats stats = 7 [(gogoproto.nullable) = false];
 }

@@ -412,3 +412,40 @@ func TestOverridesExporter_withRing(t *testing.T) {
 func hasOverrideMetrics(e1 prometheus.Collector) bool {
 	return testutil.CollectAndCount(e1, "cortex_limits_overrides") > 0
 }
+
+func TestOverridesExporter_floatChunkEncoding(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-xor2": {FloatChunkEncoding: "xor2"},
+		"tenant-xor":  {FloatChunkEncoding: "xor"}, // Equals the default, so it is not exported as an override.
+	}
+
+	// float_chunk_encoding is opt-in: it must be explicitly enabled.
+	exporter, err := NewOverridesExporter(
+		Config{EnabledMetrics: []string{floatChunkEncoding}},
+		&validation.Limits{}, // Default FloatChunkEncoding "" maps to xor (4).
+		validation.NewMockTenantLimits(tenantLimits),
+		log.NewNopLogger(), nil,
+	)
+	require.NoError(t, err)
+
+	expectedOverrides := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="float_chunk_encoding",user="tenant-xor2"} 7
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedOverrides), "cortex_limits_overrides"))
+
+	expectedDefaults := `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="float_chunk_encoding"} 4
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
+}
+
+func TestConfig_Validate_floatChunkEncoding(t *testing.T) {
+	// float_chunk_encoding is a string limit, but it is exportable through a dedicated getter.
+	cfg := Config{EnabledMetrics: []string{floatChunkEncoding}}
+	cfg.Ring.Enabled = false
+	require.NoError(t, cfg.Validate())
+}

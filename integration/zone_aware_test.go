@@ -32,6 +32,13 @@ func TestZoneAwareReplication(t *testing.T) {
 	flags["-ingester.ring.replication-factor"] = "3"
 	flags["-ingester.ring.zone-awareness-enabled"] = "true"
 
+	// This test intentionally kills ingesters, and queries a querier directly.
+	// Queriers can take some time to remove killed ingesters from their rings, so
+	// enable hedging to help speed up this test and make it more robust.
+	// In the real world, queries would run through query-frontends, and failed requests to ingesters
+	// would either failover to another partition or be retried by the frontend.
+	flags["-querier.minimize-ingester-requests-hedging-delay"] = "3s"
+
 	// Start dependencies.
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])

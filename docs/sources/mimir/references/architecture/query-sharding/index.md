@@ -29,7 +29,7 @@ In particular associative aggregations (like `sum`, `min`, `max`, `count`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
 In the following examples we look at a concrete example with a shard count of
-`3`. All the partial queries that include a label selector `__query_shard__`
+`4`. All the partial queries that include a label selector `__query_shard__`
 are executed in parallel. The `concat()` annotation is used to show when partial
 query results are concatenated/merged by the query-frontend.
 
@@ -39,14 +39,15 @@ query results are concatenated/merged by the query-frontend.
 sum(rate(metric[1m]))
 ```
 
-Is executed as (assuming a shard count of 3):
+Is executed as (assuming a shard count of 4):
 
 ```promql
 sum(
   concat(
-    sum(rate(metric{__query_shard__="1_of_3"}[1m]))
-    sum(rate(metric{__query_shard__="2_of_3"}[1m]))
-    sum(rate(metric{__query_shard__="3_of_3"}[1m]))
+    sum(rate(metric{__query_shard__="1_of_4"}[1m]))
+    sum(rate(metric{__query_shard__="2_of_4"}[1m]))
+    sum(rate(metric{__query_shard__="3_of_4"}[1m]))
+    sum(rate(metric{__query_shard__="4_of_4"}[1m]))
   )
 )
 ```
@@ -57,14 +58,15 @@ sum(
 histogram_quantile(0.99, sum by(le) (rate(metric[1m])))
 ```
 
-Is executed as (assuming a shard count of 3):
+Is executed as (assuming a shard count of 4):
 
 ```promql
 histogram_quantile(0.99, sum by(le) (
   concat(
-    sum by(le) (rate(metric{__query_shard__="1_of_3"}[1m]))
-    sum by(le) (rate(metric{__query_shard__="2_of_3"}[1m]))
-    sum by(le) (rate(metric{__query_shard__="3_of_3"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="1_of_4"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="2_of_4"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="3_of_4"}[1m]))
+    sum by(le) (rate(metric{__query_shard__="4_of_4"}[1m]))
   )
 ))
 ```
@@ -75,22 +77,24 @@ histogram_quantile(0.99, sum by(le) (
 sum(rate(failed[1m])) / sum(rate(total[1m]))
 ```
 
-Is executed as (assuming a shard count of 3):
+Is executed as (assuming a shard count of 4):
 
 ```promql
 sum(
   concat(
-    sum (rate(failed{__query_shard__="1_of_3"}[1m]))
-    sum (rate(failed{__query_shard__="2_of_3"}[1m]))
-    sum (rate(failed{__query_shard__="3_of_3"}[1m]))
+    sum (rate(failed{__query_shard__="1_of_4"}[1m]))
+    sum (rate(failed{__query_shard__="2_of_4"}[1m]))
+    sum (rate(failed{__query_shard__="3_of_4"}[1m]))
+    sum (rate(failed{__query_shard__="4_of_4"}[1m]))
   )
 )
 /
 sum(
   concat(
-    sum (rate(total{__query_shard__="1_of_3"}[1m]))
-    sum (rate(total{__query_shard__="2_of_3"}[1m]))
-    sum (rate(total{__query_shard__="3_of_3"}[1m]))
+    sum (rate(total{__query_shard__="1_of_4"}[1m]))
+    sum (rate(total{__query_shard__="2_of_4"}[1m]))
+    sum (rate(total{__query_shard__="3_of_4"}[1m]))
+    sum (rate(total{__query_shard__="4_of_4"}[1m]))
   )
 )
 ```

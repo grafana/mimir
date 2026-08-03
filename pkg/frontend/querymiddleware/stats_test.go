@@ -17,9 +17,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -32,7 +34,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	tests := map[string]struct {
 		args                 args
 		expectedMetrics      string
-		expectedQueryDetails QueryDetails
+		expectedQueryDetails querydetails.QueryDetails
 	}{
 		"happy path range query": {
 			args: args{
@@ -58,7 +60,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats:  &querier_stats.SafeStats{},
 				Start:         start.Truncate(time.Millisecond),
 				End:           end.Truncate(time.Millisecond),
@@ -95,7 +97,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_queries_consistency_total counter
 			cortex_query_frontend_queries_consistency_total{consistency="strong",user="test"} 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
@@ -112,7 +114,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					start.Truncate(time.Millisecond).UnixMilli(),
 					5*time.Minute,
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
-					Options{},
+					requestoptions.Options{},
 					nil,
 					"",
 				)},
@@ -130,7 +132,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats:  &querier_stats.SafeStats{},
 				Start:         start.Truncate(time.Millisecond),
 				End:           start.Truncate(time.Millisecond),
@@ -185,7 +187,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 2
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
@@ -230,7 +232,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
@@ -248,7 +250,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx
 				}
-				actualDetails, ctx := ContextWithEmptyDetails(ctx)
+				actualDetails, ctx := querydetails.ContextWithEmptyDetails(ctx)
 				ctx = user.InjectOrgID(ctx, tenantID)
 
 				for _, req := range tt.args.req {
@@ -371,7 +373,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			mw := newQueryStatsMiddleware(reg)
-			actualDetails, ctx := ContextWithEmptyDetails(context.Background())
+			actualDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 			ctx = user.InjectOrgID(ctx, tenantID)
 
 			_, err := mw.Wrap(mockHandlerWith(tt.resp, nil)).Do(ctx, req)

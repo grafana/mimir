@@ -6,6 +6,7 @@
 package index
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -29,6 +30,10 @@ func init() {
 }
 
 type SymbolsTable struct {
+	// DecbufFactory method interfaces require context for remote implementations like BucketDecbufFactory.
+	// Usage of remote impls is not implemented for Symbols table, so we can pass the same context each time.
+	ctx context.Context
+
 	tableOffset   int
 	decbufFactory streamencoding.DecbufFactory
 
@@ -48,6 +53,8 @@ func NewSymbolsTableReader(
 	switch indexVersion {
 	case index.FormatV2:
 		return &SymbolsTable{
+			// Context for DecbufFactory methods is unused for symbols table and does not need to be tied to request.
+			ctx:                  context.Background(),
 			tableOffset:          tableOffset,
 			decbufFactory:        decbufFactory,
 			allSymbolsCount:      allSymbolsCount,
@@ -63,7 +70,7 @@ var ErrSymbolNotFound = errors.New("symbol not found")
 // For TSDB index v2, the reference is expected to be the sequence number of the symbol (starting at 0).
 // If the symbol reference is beyond the last symbol in the symbols table, the return error's cause will be ErrSymbolNotFound.
 func (s *SymbolsTable) Lookup(o uint32) (sym string, err error) {
-	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.ctx, s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
 	if err := d.Err(); err != nil {
 		return "", err
@@ -91,7 +98,7 @@ func (s *SymbolsTable) ReverseLookup(sym string) (o uint32, err error) {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.ctx, s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "reverse lookup symbol")
 	if err := d.Err(); err != nil {
 		return 0, err
@@ -112,7 +119,7 @@ func (s *SymbolsTable) ForEachSymbol(syms []string, f func(sym string, offset ui
 		return errors.New("no symbols")
 	}
 
-	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.ctx, s.tableOffset)
 	defer runutil.CloseWithErrCapture(&err, &d, "iterate over symbols")
 	if err := d.Err(); err != nil {
 		return err
@@ -177,7 +184,7 @@ type SymbolsReader interface {
 }
 
 func (s *SymbolsTable) Reader() SymbolsReader {
-	d := s.decbufFactory.NewDecbufAtUnchecked(s.tableOffset)
+	d := s.decbufFactory.NewDecbufAtUnchecked(s.ctx, s.tableOffset)
 	d.ResetAt(s.sparseSymbolsOffsets[0])
 
 	return &SymbolsTableReaderV2{

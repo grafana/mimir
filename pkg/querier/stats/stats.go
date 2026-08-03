@@ -299,6 +299,22 @@ func (s *SafeStats) LoadPhysicalSamplesRead() uint64 {
 	return atomic.LoadUint64(&s.PhysicalSamplesRead)
 }
 
+func (s *SafeStats) AddRetries(count uint32) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint32(&s.Retries, count)
+}
+
+func (s *SafeStats) LoadRetries() uint32 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint32(&s.Retries)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -320,6 +336,7 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
 	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
 	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
+	s.AddRetries(other.LoadRetries())
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

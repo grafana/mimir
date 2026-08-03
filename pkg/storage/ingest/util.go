@@ -20,6 +20,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
 	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
@@ -64,17 +65,21 @@ var (
 )
 
 // sampledOnlyTracer wraps a kotel.Tracer and skips span creation and header
-// injection on the produce path for unsampled traces. Fetch hooks always
-// delegate to the parent tracer because the consume side needs to extract
-// trace context from record headers regardless of local sampling. Without
-// this wrapper, kotel creates spans for every produced Kafka record regardless
-// of sampling, which is expensive at high volume.
+// injection for unsampled traces, on both the produce and the fetch path.
+// Without this wrapper, kotel creates a span with attributes for every Kafka
+// record regardless of sampling, which is expensive at high volume.
+//
+// On the fetch path the trace context is still extracted from record headers
+// for every record — consumers rely on the record context carrying the
+// producer's span context (see pusher.go) — but the per-record "receive" span
+// and its attributes are only created when the producer trace was sampled.
 type sampledOnlyTracer struct {
-	parent *kotel.Tracer
+	parent     *kotel.Tracer
+	propagator propagation.TextMapPropagator
 }
 
 func newSampledOnlyTracer() *sampledOnlyTracer {
-	return &sampledOnlyTracer{parent: recordsTracer()}
+	return &sampledOnlyTracer{parent: recordsTracer(), propagator: recordsPropagator()}
 }
 
 func (t *sampledOnlyTracer) OnProduceRecordBuffered(r *kgo.Record) {
@@ -95,10 +100,30 @@ func (t *sampledOnlyTracer) OnProduceRecordUnbuffered(r *kgo.Record, err error) 
 }
 
 func (t *sampledOnlyTracer) OnFetchRecordBuffered(r *kgo.Record) {
+	if r.Context == nil {
+		r.Context = context.Background()
+	}
+	// Always extract the trace context from the record headers (cheap), so that
+	// the consume side observes the producer's span context even when we skip
+	// the "receive" span below.
+	ctx := t.propagator.Extract(r.Context, kotel.NewRecordCarrier(r))
+	if !trace.SpanContextFromContext(ctx).IsSampled() {
+		r.Context = ctx
+		return
+	}
+	// Sampled: delegate to kotel for the full "receive" span. The parent
+	// re-extracts from headers, which is redundant but only paid for the
+	// sampled fraction of records.
 	t.parent.OnFetchRecordBuffered(r)
 }
 
+// OnFetchRecordUnbuffered is safe to skip when OnFetchRecordBuffered was also skipped:
+// the record's context carries the (unsampled) remote span context, so the parent's
+// OnFetchRecordUnbuffered would only call End() on a no-op span.
 func (t *sampledOnlyTracer) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
 	t.parent.OnFetchRecordUnbuffered(r, polled)
 }
 
@@ -122,6 +147,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.SeedBrokers(cfg.Address...),
 		kgo.DialTimeout(cfg.DialTimeout),
 
+		// Mimir 3.1 and earlier doesn't fully support the newest Kafka protocols, resulting in failures to commit the offsets.
+		// As a workaround, we cap the maximum Kafka protocol version to negotiate with the broker to the older one.
+		// Ref to https://github.com/grafana/mimir/issues/15319
+		kgo.MaxVersions(kversion.V3_9_0()),
+
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
 		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
 		// (b) when some events occur (e.g. backoff due to errors).
@@ -140,8 +170,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		//
 		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
 		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(10 * time.Second),
-		kgo.MetadataMaxAge(10 * time.Second),
+		kgo.MetadataMinAge(DefaultMetadataRefreshInterval),
+		kgo.MetadataMaxAge(DefaultMetadataRefreshInterval),
 
 		kgo.WithLogger(NewKafkaLogger(logger)),
 
@@ -168,6 +198,10 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			panic("must call Validate before trying to construct Kafka options")
 		}
 		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+	}
+
+	if cfg.Dialer != nil {
+		opts = append(opts, kgo.Dialer(cfg.Dialer))
 	}
 
 	opts = append(opts, kgo.WithHooks(newSampledOnlyTracer()))
@@ -318,8 +352,15 @@ func requestJSONFromSocket[T any](ctx context.Context, socketPath string, timeou
 	return a, nil
 }
 
+// recordsPropagator returns the propagator used for Kafka record headers. It must be
+// shared by recordsTracer and sampledOnlyTracer so that header injection and extraction
+// stay in sync.
+func recordsPropagator() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(sampledOnlyPropagator{propagation.TraceContext{}})
+}
+
 func recordsTracer() *kotel.Tracer {
-	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(sampledOnlyPropagator{propagation.TraceContext{}})))
+	return kotel.NewTracer(kotel.TracerPropagator(recordsPropagator()))
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
@@ -355,9 +396,9 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	}
 }
 
-// CreateTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
-// If the topic already exists, then the function logs a message and returns nil.
-func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
+// CreateTopics creates the given topics in the Kafka cluster. A topic that already exists is treated as
+// success. If creating any topic fails for another reason, then an error is returned.
+func CreateTopics(cfg KafkaConfig, logger log.Logger, topics ...string) error {
 	logger = log.With(logger, "task", "autocreate_topic")
 
 	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
@@ -371,28 +412,32 @@ func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
 
 	// As of kafka 2.4 we can pass -1 and the broker will use its default configuration.
 	const defaultReplication = -1
-	resp, err := adm.CreateTopic(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, cfg.Topic)
-	if err == nil {
-		err = resp.Err
-	}
+	resps, err := adm.CreateTopics(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, topics...)
 	if err != nil {
-		if errors.Is(err, kerr.TopicAlreadyExists) {
-			level.Info(logger).Log(
-				"msg", "topic already exists",
-				"topic", resp.Topic,
-				"num_partitions", resp.NumPartitions,
-				"replication_factor", resp.ReplicationFactor,
-			)
-			return nil
-		}
-		return fmt.Errorf("failed to create topic %s: %w", cfg.Topic, err)
+		return fmt.Errorf("failed to create topics %v: %w", topics, err)
 	}
 
-	level.Info(logger).Log(
-		"msg", "successfully created topic",
-		"topic", resp.Topic,
-		"num_partitions", resp.NumPartitions,
-		"replication_factor", resp.ReplicationFactor,
-	)
+	for _, topic := range topics {
+		resp, ok := resps[topic]
+		if !ok {
+			// The broker should return a response for every requested topic; a missing one means we
+			// can't confirm it was created, so fail rather than report a success we didn't observe.
+			return fmt.Errorf("failed to create topic %s: not part of the create topics response", topic)
+		}
+		if resp.Err != nil {
+			if errors.Is(resp.Err, kerr.TopicAlreadyExists) {
+				level.Info(logger).Log("msg", "skipped Kafka topic creation because it already exists", "topic", topic)
+				continue
+			}
+			return fmt.Errorf("failed to create topic %s: %w", topic, resp.Err)
+		}
+
+		level.Info(logger).Log(
+			"msg", "successfully created Kafka topic",
+			"topic", resp.Topic,
+			"num_partitions", resp.NumPartitions,
+			"replication_factor", resp.ReplicationFactor,
+		)
+	}
 	return nil
 }

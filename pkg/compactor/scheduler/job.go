@@ -26,6 +26,7 @@ type TrackedJob interface {
 	MarkLeased(time.Time)
 	MarkComplete(time.Time)
 	RenewLease(time.Time)
+	DecrementLeaseCount()
 	ClearLease()
 	NumLeases() int
 	Epoch() int64
@@ -91,6 +92,12 @@ func (j *baseTrackedJob) MarkComplete(now time.Time) {
 
 func (j *baseTrackedJob) RenewLease(now time.Time) {
 	j.statusTime = now
+}
+
+func (j *baseTrackedJob) DecrementLeaseCount() {
+	if j.numLeases > 0 { // defensive
+		j.numLeases -= 1
+	}
 }
 
 func (j *baseTrackedJob) ClearLease() {

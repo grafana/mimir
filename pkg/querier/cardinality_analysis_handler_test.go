@@ -3,8 +3,12 @@
 package querier
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
@@ -846,7 +851,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			}
 			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, test.returnedError)
 
-			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+			handler := createEnabledHandler(t, activeSeriesCardinalityHandler, d)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			data := url.Values{}
@@ -886,6 +891,115 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "up", "job", "prometheus"),
+		labels.FromStrings("__name__", "process_start_time_seconds", "instance", "localhost:9090", "job", "prometheus"),
+	}
+
+	newRequest := func(t *testing.T, accept string) *http.Request {
+		ctx := user.InjectOrgID(context.Background(), "test")
+		r, err := http.NewRequestWithContext(ctx, "POST", "/active_series", strings.NewReader(`selector={job="prometheus"}`))
+		require.NoError(t, err)
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		if accept != "" {
+			r.Header.Add("Accept", accept)
+		}
+		return r
+	}
+
+	serve := func(t *testing.T, accept string) *http.Response {
+		d := &mockDistributor{}
+		d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, error(nil))
+		handler := createEnabledHandler(t, activeSeriesCardinalityHandler, d)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(t, accept))
+		return recorder.Result()
+	}
+
+	t.Run("returns framed response when requested via Accept", func(t *testing.T) {
+		resp := serve(t, api.ContentTypeActiveSeriesFramed)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
+		require.Empty(t, resp.Header.Get("Content-Length"))
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		decoded := decodeFramedActiveSeries(t, body)
+		require.ElementsMatch(t, series, decoded)
+	})
+
+	t.Run("framed frames are byte-identical to the JSON array elements", func(t *testing.T) {
+		framed := serve(t, api.ContentTypeActiveSeriesFramed)
+		framedBody, err := io.ReadAll(framed.Body)
+		require.NoError(t, err)
+
+		jsonResp := serve(t, "")
+		require.Equal(t, "application/json", jsonResp.Header.Get("Content-Type"))
+		jsonBody, err := io.ReadAll(jsonResp.Body)
+		require.NoError(t, err)
+
+		// Reconstruct the JSON array from the framed frames and compare it to the JSON handler's output.
+		var out bytes.Buffer
+		out.WriteString(`{"data":[`)
+		for i, frame := range framedFrames(t, framedBody) {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			out.Write(frame)
+		}
+		out.WriteString(`]}`)
+		require.JSONEq(t, string(jsonBody), out.String())
+		require.Equal(t, string(jsonBody), out.String(), "framed frames must byte-match the JSON array elements")
+	})
+
+	t.Run("returns JSON unless the framed format is explicitly requested", func(t *testing.T) {
+		for _, accept := range []string{"", "application/json", "*/*", "application/*", "text/plain, */*"} {
+			resp := serve(t, accept)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "application/json", resp.Header.Get("Content-Type"), "Accept %q must yield JSON", accept)
+		}
+	})
+
+	t.Run("honours framed format alongside other Accept clauses and q-values", func(t *testing.T) {
+		resp := serve(t, "application/json;q=0.5, "+api.ContentTypeActiveSeriesFramed)
+		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
+
+		resp = serve(t, api.ContentTypeActiveSeriesFramed+";q=0")
+		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	})
+}
+
+func framedFrames(t *testing.T, body []byte) [][]byte {
+	t.Helper()
+	var frames [][]byte
+	r := bytes.NewReader(body)
+	br := bufio.NewReader(r)
+	for {
+		n, err := binary.ReadUvarint(br)
+		if errors.Is(err, io.EOF) {
+			return frames
+		}
+		require.NoError(t, err)
+		frame := make([]byte, n)
+		_, err = io.ReadFull(br, frame)
+		require.NoError(t, err)
+		frames = append(frames, frame)
+	}
+}
+
+func decodeFramedActiveSeries(t *testing.T, body []byte) []labels.Labels {
+	t.Helper()
+	var out []labels.Labels
+	for _, frame := range framedFrames(t, body) {
+		var ls labels.Labels
+		require.NoError(t, ls.UnmarshalJSON(frame))
+		out = append(out, ls)
+	}
+	return out
+}
+
 func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
 	const numResponseSeries = 1000
 
@@ -897,7 +1011,7 @@ func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
 	}
 	d.On("ActiveSeries", mock.Anything, mock.Anything).Return(s, nil)
 
-	handler := createEnabledHandler(b, ActiveSeriesCardinalityHandler, d)
+	handler := createEnabledHandler(b, activeSeriesCardinalityHandler, d)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for i := 0; i < b.N; i++ {
@@ -1048,6 +1162,10 @@ func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
 		// Make sure we're not benchmarking error responses.
 		require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
 	}
+}
+
+func activeSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
+	return ActiveSeriesCardinalityHandler(d, limits, log.NewNopLogger())
 }
 
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler

@@ -130,3 +130,7 @@ func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, e
 		},
 	}, nil
 }
+
+func (s *embeddedQueriesSquasher) WrapAvgResult(expr parser.Expr) (parser.Expr, error) {
+	return expr, nil
+}

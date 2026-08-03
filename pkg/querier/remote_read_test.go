@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -32,7 +35,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -349,6 +354,435 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			for i, queryCall := range queryCalls {
 				require.Equal(t, int64(1), queryCall.Load(), "Query %d should be called exactly once", i)
 			}
+		})
+	}
+}
+
+func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
+	equivalentCountForHistogram := func(i int) uint64 {
+		h := test.GenerateTestHistogram(i)
+		return uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+	}
+
+	tests := map[string]struct {
+		queries                       []*prompb.Query
+		seriesSets                    func() []storage.SeriesSet
+		expectedStatusCode            int
+		expectedPhysicalSampleCount   uint64
+		expectedEquivalentSampleCount uint64
+	}{
+		"single query with float samples only": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"single query with histograms": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							nil,
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+							},
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   equivalentCountForHistogram(1) + equivalentCountForHistogram(2),
+			expectedEquivalentSampleCount: equivalentCountForHistogram(1) + equivalentCountForHistogram(2),
+		},
+		"single query with mixed float and histogram samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+							},
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   2 + equivalentCountForHistogram(3),
+			expectedEquivalentSampleCount: 2 + equivalentCountForHistogram(3),
+		},
+		"multiple queries": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+							nil,
+						),
+					}),
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "baz"),
+							[]model.SamplePair{{Timestamp: 3, Value: 3}},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"empty series set": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries(nil),
+				}
+			},
+			expectedPhysicalSampleCount:   0,
+			expectedEquivalentSampleCount: 0,
+		},
+		"stale samples not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				staleNaN := model.SampleValue(math.Float64frombits(value.StaleNaN))
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{
+								{Timestamp: 1, Value: 1},
+								{Timestamp: 2, Value: staleNaN},
+								{Timestamp: 3, Value: 3},
+								{Timestamp: 4, Value: staleNaN},
+								{Timestamp: 5, Value: 5},
+							},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"stale histogram samples not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				staleSum := math.Float64frombits(value.StaleNaN)
+				staleHist := test.GenerateTestHistogram(2)
+				staleHist.Sum = staleSum
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							nil,
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, staleHist),
+								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+							},
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   equivalentCountForHistogram(1) + equivalentCountForHistogram(3),
+			expectedEquivalentSampleCount: equivalentCountForHistogram(1) + equivalentCountForHistogram(3),
+		},
+		"stats reported after partial read error": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				// The SeriesSet yields one series and then fails on Err(); the already-read
+				// series must still be counted, matching the streaming path's behaviour.
+				return []storage.SeriesSet{
+					&partiallyFailingSeriesSet{
+						ss: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+								nil,
+							),
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "baz"),
+								[]model.SamplePair{{Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+						failAfter: 1,
+						err:       errors.New("partial series set failure"),
+					},
+				}
+			},
+			expectedStatusCode:            http.StatusInternalServerError,
+			expectedPhysicalSampleCount:   2,
+			expectedEquivalentSampleCount: 2,
+		},
+	}
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			seriesSets := tc.seriesSets()
+			callCount := atomic.NewInt64(0)
+
+			q := &mockSampleAndChunkQueryable{
+				queryableFn: func(int64, int64) (storage.Querier, error) {
+					return mockQuerier{
+						selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+							idx := callCount.Inc() - 1
+							return seriesSets[idx]
+						},
+					}, nil
+				},
+			}
+
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
+			w := httptest.NewRecorder()
+			req := &prompb.ReadRequest{Queries: tc.queries}
+
+			remoteReadSamples(ctx, q, w, req, 0, log.NewNopLogger())
+
+			expectedCode := tc.expectedStatusCode
+			if expectedCode == 0 {
+				expectedCode = http.StatusOK
+			}
+			require.Equal(t, expectedCode, w.Code)
+			require.Equal(t, tc.expectedPhysicalSampleCount, queryStats.LoadPhysicalSamplesRead())
+			require.Equal(t, tc.expectedEquivalentSampleCount, queryStats.LoadEquivalentSamplesRead())
+		})
+	}
+}
+
+func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
+	tests := map[string]struct {
+		queries                       []*prompb.Query
+		chunkSeriesSets               func() []storage.ChunkSeriesSet
+		expectedPhysicalSampleCount   uint64
+		expectedEquivalentSampleCount uint64
+	}{
+		"single query with float samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"single query with histogram samples": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								nil,
+								[]mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(2, test.GenerateTestHistogram(2)),
+								},
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount: func() uint64 {
+				h := test.GenerateTestHistogram(1)
+				perSample := types.EquivalentFloatSampleCount(h.ToFloat(nil))
+				return uint64(perSample) * 2
+			}(),
+			// Both histograms land in one chunk so the equivalent cost is first sample's weight * NumSamples().
+			expectedEquivalentSampleCount: func() uint64 {
+				h := test.GenerateTestHistogram(1)
+				perSample := types.EquivalentFloatSampleCount(h.ToFloat(nil))
+				return uint64(perSample) * 2
+			}(),
+		},
+		"single query with many samples across multiple chunks": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 1000},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								getNSamples(250),
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   250,
+			expectedEquivalentSampleCount: 250,
+		},
+		"multiple queries": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+								nil,
+							),
+						}),
+					),
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "baz"),
+								[]model.SamplePair{{Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"stale samples are not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				staleNaN := model.SampleValue(math.Float64frombits(value.StaleNaN))
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{
+									{Timestamp: 1, Value: 1},
+									{Timestamp: 2, Value: staleNaN},
+									{Timestamp: 3, Value: 3},
+									{Timestamp: 4, Value: staleNaN},
+									{Timestamp: 5, Value: 5},
+								},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"over-read samples outside the query range are not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				// The querier can over-read whole chunks; the series spans t=1..20 but the
+				// query only asks for [0,10], so only 10 samples must be metered.
+				samples := make([]model.SamplePair, 0, 20)
+				for ts := int64(1); ts <= 20; ts++ {
+					samples = append(samples, model.SamplePair{Timestamp: model.Time(ts), Value: model.SampleValue(ts)})
+				}
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(labels.FromStrings("foo", "bar"), samples, nil),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   10,
+			expectedEquivalentSampleCount: 10,
+		},
+		"empty series set": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries(nil),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   0,
+			expectedEquivalentSampleCount: 0,
+		},
+	}
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			chunkSeriesSets := tc.chunkSeriesSets()
+			callCount := atomic.NewInt64(0)
+
+			q := &mockSampleAndChunkQueryable{
+				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
+					return mockChunkQuerier{
+						selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+							idx := callCount.Inc() - 1
+							return chunkSeriesSets[idx]
+						},
+					}, nil
+				},
+			}
+
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
+			w := httptest.NewRecorder()
+			req := &prompb.ReadRequest{
+				Queries:               tc.queries,
+				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+			}
+
+			remoteReadStreamedXORChunks(ctx, q, w, req, maxRemoteReadFrameBytes, 0, log.NewNopLogger())
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.expectedPhysicalSampleCount, queryStats.LoadPhysicalSamplesRead())
+			require.Equal(t, tc.expectedEquivalentSampleCount, queryStats.LoadEquivalentSamplesRead())
 		})
 	}
 }
@@ -958,6 +1392,200 @@ func getIndexedChunk(idx, samplesCount int, encoding chunkenc.Encoding) []byte {
 		}
 	}
 	return enc.Bytes()
+}
+
+// equivalentSampleCountDecodeAll iterates every sample in a chunk and sums
+// the per-sample equivalent float sample count. For float chunks it falls back
+// to NumSamples(). This is the "most accurate" baseline for benchmarking.
+func equivalentSampleCountDecodeAll(chk chunkenc.Chunk) uint64 {
+	enc := chk.Encoding()
+	if enc == chunkenc.EncXOR || enc == chunkenc.EncXOR2 {
+		return uint64(chk.NumSamples())
+	}
+
+	var count uint64
+	it := chk.Iterator(nil)
+	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+		var fh histogram.FloatHistogram
+		_, h := it.AtFloatHistogram(&fh)
+		count += uint64(types.EquivalentFloatSampleCount(h))
+	}
+	return count
+}
+
+// makeChunk creates a chunkenc.Chunk with n samples of the given encoding.
+func makeChunk(tb testing.TB, encoding chunkenc.Encoding, n int) chunkenc.Chunk {
+	tb.Helper()
+
+	var chk chunkenc.Chunk
+	switch encoding {
+	case chunkenc.EncXOR:
+		chk = chunkenc.NewXORChunk()
+	case chunkenc.EncHistogram:
+		chk = chunkenc.NewHistogramChunk()
+	case chunkenc.EncFloatHistogram:
+		chk = chunkenc.NewFloatHistogramChunk()
+	default:
+		tb.Fatalf("unsupported encoding: %v", encoding)
+	}
+
+	ap, err := chk.Appender()
+	require.NoError(tb, err)
+
+	for i := range n {
+		switch encoding {
+		case chunkenc.EncXOR:
+			ap.Append(0, int64(i), float64(i))
+		case chunkenc.EncHistogram:
+			_, _, _, err = ap.AppendHistogram(nil, 0, int64(i), test.GenerateTestHistogram(i), true)
+			require.NoError(tb, err)
+		case chunkenc.EncFloatHistogram:
+			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), test.GenerateTestFloatHistogram(i), true)
+			require.NoError(tb, err)
+		}
+	}
+
+	return chk
+}
+
+func TestSampleCountsForChunk(t *testing.T) {
+	staleSum := math.Float64frombits(value.StaleNaN)
+	// Wide bounds that include every sample, for cases not exercising the time filter.
+	const allTimes, allTimesEnd = int64(math.MinInt64), int64(math.MaxInt64)
+
+	t.Run("float samples within range are counted", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 5 {
+			ap.Append(0, int64(i), float64(i))
+		}
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(5), physical)
+		require.Equal(t, uint64(5), equivalent)
+	})
+
+	t.Run("float samples outside the range are excluded", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 10 {
+			ap.Append(0, int64(i), float64(i)) // timestamps 0..9
+		}
+
+		// Only timestamps 3,4,5,6 are within [3,6].
+		physical, equivalent, err := sampleCountsForChunk(chk, 3, 6)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), physical)
+		require.Equal(t, uint64(4), equivalent)
+	})
+
+	t.Run("stale float samples are skipped including mid-chunk", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		ap.Append(0, 0, 1)
+		ap.Append(0, 1, staleSum)
+		ap.Append(0, 2, 3)
+		ap.Append(0, 3, staleSum)
+		ap.Append(0, 4, 5)
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(3), physical)
+		require.Equal(t, uint64(3), equivalent)
+	})
+
+	t.Run("all stale float histogram samples return zero", func(t *testing.T) {
+		chk := chunkenc.NewFloatHistogramChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 3 {
+			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), &histogram.FloatHistogram{Sum: staleSum}, true)
+			require.NoError(t, err)
+		}
+		require.Equal(t, 3, chk.NumSamples())
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), physical)
+		require.Equal(t, uint64(0), equivalent)
+	})
+
+	t.Run("all stale integer histogram samples return zero", func(t *testing.T) {
+		chk := chunkenc.NewHistogramChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 3 {
+			_, _, _, err = ap.AppendHistogram(nil, 0, int64(i), &histogram.Histogram{Sum: staleSum}, true)
+			require.NoError(t, err)
+		}
+		require.Equal(t, 3, chk.NumSamples())
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), physical)
+		require.Equal(t, uint64(0), equivalent)
+	})
+
+	t.Run("histogram samples are counted and weighted within range", func(t *testing.T) {
+		chk := chunkenc.NewFloatHistogramChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 5 {
+			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), test.GenerateTestFloatHistogram(i), true)
+			require.NoError(t, err)
+		}
+
+		// All samples in the chunk share one bucket layout, so each has the same weight.
+		perSample := uint64(types.EquivalentFloatSampleCount(test.GenerateTestFloatHistogram(0)))
+		require.Greater(t, perSample, uint64(0))
+
+		// Only timestamps 2,3,4 are within [2,10].
+		physical, equivalent, err := sampleCountsForChunk(chk, 2, 10)
+		require.NoError(t, err)
+		require.Equal(t, perSample*3, physical)
+		require.Equal(t, perSample*3, equivalent)
+	})
+
+	t.Run("cached histogram weight matches per-sample decode", func(t *testing.T) {
+		// sampleCountsForChunk reuses the first non-stale sample's weight for the whole chunk;
+		// that must equal summing every sample's weight, since all samples in a histogram chunk
+		// share one bucket layout. Guards the optimization against regressions.
+		for _, enc := range []chunkenc.Encoding{chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
+			for _, n := range []int{120, 500} {
+				chk := makeChunk(t, enc, n)
+				_, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+				require.NoError(t, err)
+				require.Equal(t, equivalentSampleCountDecodeAll(chk), equivalent)
+			}
+		}
+	})
+}
+
+func BenchmarkSampleCountsForChunk(b *testing.B) {
+	const allTimes, allTimesEnd = int64(math.MinInt64), int64(math.MaxInt64)
+
+	for _, tc := range []struct {
+		name     string
+		encoding chunkenc.Encoding
+		n        int
+	}{
+		{"float_120", chunkenc.EncXOR, 120},
+		{"hist_120", chunkenc.EncHistogram, 120},
+		{"hist_500", chunkenc.EncHistogram, 500},
+		{"float_hist_120", chunkenc.EncFloatHistogram, 120},
+	} {
+		chk := makeChunk(b, tc.encoding, tc.n)
+		require.Equal(b, tc.n, chk.NumSamples())
+		b.Run(tc.name, func(b *testing.B) {
+			for b.Loop() {
+				_, _, _ = sampleCountsForChunk(chk, allTimes, allTimesEnd)
+			}
+		})
+	}
 }
 
 func TestRemoteReadErrorParsing(t *testing.T) {

@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -38,12 +39,11 @@ type GroupedVectorVectorBinaryOperation struct {
 	VectorMatching parser.VectorMatching
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
 	hints              *Hints
 	logger             log.Logger
 
-	evaluator       vectorVectorBinaryOperationEvaluator
+	evaluator       *vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
 	oneSide         types.InstantVectorOperator // Either Left or Right
 	manySide        types.InstantVectorOperator
@@ -65,9 +65,9 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
-func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	g.manySide.Finalize(memoryConsumptionTracker)
-	g.oneSide.Finalize(memoryConsumptionTracker)
+func (g *groupedBinaryOperationOutputSeries) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.manySide.FinishedReading(memoryConsumptionTracker)
+	g.oneSide.FinishedReading(memoryConsumptionTracker)
 }
 
 type groupedBinaryOperationOutputSeriesWithLabels struct {
@@ -91,7 +91,7 @@ func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *manySide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *manySide) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
@@ -114,7 +114,7 @@ func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *oneSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *oneSide) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
@@ -151,13 +151,12 @@ func NewGroupedVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +171,6 @@ func NewGroupedVectorVectorBinaryOperation(
 
 		evaluator:          e,
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
@@ -211,7 +209,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
-		if err := g.Finalize(ctx); err != nil {
+		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -228,7 +226,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
 
-		if err := g.Finalize(ctx); err != nil {
+		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -254,11 +252,11 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// Load the "one" side first: it is the smaller side, and once we have its metadata
 	// we can use it to build hint-based matchers for the "many" side.
 	//
-	// Labels in VectorMatching.Include come from the many side, so any outer matchers for
-	// those labels must not be forwarded to the one side: the one side won't have them and
-	// would be incorrectly over-filtered. Split them out and keep them to forward to the
-	// many side instead.
-	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include)
+	// Only forward outer matchers to the one side for labels it participates in the join through:
+	// with "on(...)" that's MatchingLabels (so "on()" forwards none), and Include labels are never
+	// forwarded (they come from the many side). Other matchers go to the many side instead;
+	// forwarding them to the one side would incorrectly filter it to empty (see separateIncludeLabelMatchers).
+	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
 
 	var err error
 	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, oneSideMatchers)
@@ -345,7 +343,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	manySideMap := map[string]*manySide{}                                        // Series from the "many" side, grouped by which output series they'll contribute to.
 	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
 	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
@@ -470,7 +468,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 		}
 	}
 
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	return func(oneSideLabels labels.Labels) []byte {
 		buf = oneSideLabels.BytesWithLabels(buf, g.VectorMatching.Include...)
@@ -481,7 +479,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 // manySideGroupKeyFunc returns a function that extracts a key representing the set of labels from the "many" side that will contribute
 // to the same set of output series.
 func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySideLabels labels.Labels) []byte {
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	if !g.shouldRemoveMetricNameFromManySide() && len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
@@ -554,11 +552,9 @@ func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSi
 }
 
 func (g *GroupedVectorVectorBinaryOperation) shouldRemoveMetricNameFromManySide() bool {
-	if g.Op.IsComparisonOperator() {
-		return g.ReturnBool
-	}
-
-	return true
+	// Operations that retain the metric name (comparison filters and trim operators) keep the name of
+	// the "many" side; all others drop it.
+	return !promqlext.RetainsMetricName(g.Op, g.ReturnBool)
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
@@ -784,12 +780,19 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 	return merged, nil
 }
 
-// separateIncludeLabelMatchers partitions matchers into two groups: those whose label name
-// appears in includeLabels (extra labels sourced from the many side), and all others.
-// If includeLabels is empty or matchers is empty, the original slice is returned unchanged
-// and includeMatchers is nil.
-func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []string) (otherMatchers, includeMatchers types.Matchers) {
-	if len(matchers) == 0 || len(includeLabels) == 0 {
+// separateIncludeLabelMatchers splits matchers into those describing the one side (oneSideMatchers)
+// and those to route to the many side (manySideMatchers).
+//
+// A matcher is kept for the one side only if its label is not in includeLabels (those come from the
+// many side) and, when using "on(...)", is in matchingLabels. For "ignoring(...)"/default matching
+// (on is false) this reduces to only splitting out include-label matchers.
+func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideMatchers types.Matchers) {
+	if len(matchers) == 0 {
+		return matchers, nil
+	}
+
+	// Fast path: ignoring/default matching with no include labels keeps every matcher on the one side.
+	if !on && len(includeLabels) == 0 {
 		return matchers, nil
 	}
 
@@ -798,14 +801,29 @@ func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []strin
 		includeSet[l] = struct{}{}
 	}
 
-	for _, m := range matchers {
-		if _, ok := includeSet[m.Name]; ok {
-			includeMatchers = append(includeMatchers, m)
-		} else {
-			otherMatchers = append(otherMatchers, m)
+	var matchingSet map[string]struct{}
+	if on {
+		matchingSet = make(map[string]struct{}, len(matchingLabels))
+		for _, l := range matchingLabels {
+			matchingSet[l] = struct{}{}
 		}
 	}
-	return otherMatchers, includeMatchers
+
+	for _, m := range matchers {
+		_, isInclude := includeSet[m.Name]
+		keepForOneSide := !isInclude
+		if on {
+			_, isMatching := matchingSet[m.Name]
+			keepForOneSide = keepForOneSide && isMatching
+		}
+
+		if keepForOneSide {
+			oneSideMatchers = append(oneSideMatchers, m)
+		} else {
+			manySideMatchers = append(manySideMatchers, m)
+		}
+	}
+	return oneSideMatchers, manySideMatchers
 }
 
 func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {
@@ -839,36 +857,43 @@ func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) e
 	return g.Right.AfterPrepare(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context) error {
 	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
 	if g.oneSideBuffer != nil {
-		g.oneSideBuffer.Finalize()
+		g.oneSideBuffer.FinishedReading()
 		g.oneSideBuffer = nil
 	}
 
 	if g.manySideBuffer != nil {
-		g.manySideBuffer.Finalize()
+		g.manySideBuffer.FinishedReading()
 		g.manySideBuffer = nil
 	}
 
 	for _, s := range g.remainingSeries {
-		s.Finalize(g.MemoryConsumptionTracker)
+		s.FinishedReading(g.MemoryConsumptionTracker)
 	}
 
 	g.remainingSeries = nil
 
-	// We don't need to finalize g.oneSide or g.manySide, as these are either g.Left or g.Right and so will be finalized below.
-	if err := g.Left.Finalize(ctx); err != nil {
+	// We don't need to call FinishedReading on g.oneSide or g.manySide, as these are either g.Left or g.Right and so will have FinishedReading called below.
+	if err := g.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return g.Right.Finalize(ctx)
+	return g.Right.FinishedReading(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, g.Left, g.Right)
+func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, g.Left, g.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	g.evaluator.annotations.Merge(childAnnos)
+
+	return stats, g.evaluator.annotations, nil
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

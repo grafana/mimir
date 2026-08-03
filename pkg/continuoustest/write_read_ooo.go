@@ -146,7 +146,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: string(t.client.Protocol())})
 		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, oooMetricMetadata, &t.inOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return
@@ -163,7 +163,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: string(t.client.Protocol())})
 		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, oooMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return

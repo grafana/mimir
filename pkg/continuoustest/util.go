@@ -44,6 +44,7 @@ type skipTimestampFunc func(t time.Time) bool
 type histogramProfile struct {
 	metricName              string
 	typeLabel               string
+	otelCompatible          bool
 	metadata                []prompb.MetricMetadata
 	generateHistogram       generateHistogramFunc
 	generateSampleHistogram generateSampleHistogramFunc
@@ -52,10 +53,11 @@ type histogramProfile struct {
 }
 
 var (
-	histogramProfiles = []histogramProfile{
+	defaultHistogramProfiles = []histogramProfile{
 		{
-			metricName: "mimir_continuous_test_histogram_int_counter_v2",
-			typeLabel:  "histogram_int_counter",
+			metricName:     "mimir_continuous_test_histogram_int_counter_v2",
+			typeLabel:      "histogram_int_counter",
+			otelCompatible: true,
 			metadata: []prompb.MetricMetadata{{
 				Type:             prompb.MetricMetadata_HISTOGRAM,
 				MetricFamilyName: "mimir_continuous_test_histogram_int_counter_v2",
@@ -125,12 +127,28 @@ var (
 )
 
 func init() {
-	for i, histProfile := range histogramProfiles {
-		histogramProfiles[i].generateValue = nil
-		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
+	for i, histProfile := range defaultHistogramProfiles {
+		defaultHistogramProfiles[i].generateValue = nil
+		defaultHistogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
 			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram, extraLabels...)
 		}
 	}
+}
+
+func histogramProfilesForWriteProtocol(writeProtocol WriteProtocol) []histogramProfile {
+	var out []histogramProfile
+	for _, p := range defaultHistogramProfiles {
+		switch writeProtocol {
+		case writeProtocolOtelHttp:
+			if p.otelCompatible {
+				out = append(out, p)
+			}
+		default:
+			out = append(out, p)
+		}
+	}
+
+	return out
 }
 
 type querySumFunc func(metricName string) string
@@ -144,7 +162,28 @@ func querySumFloat(metricName string) string {
 }
 
 func querySumHist(metricName string) string {
-	return fmt.Sprintf("sum(%s)", metricName)
+	// As with querySumFloat, we wrap the selector in an over_time() function with a 1s range selector so
+	// that only the samples we previously wrote are fetched and the PromQL lookback period doesn't
+	// influence query results. Without this, the lookback period carries the most recently written
+	// histogram forward past its real timestamp, producing samples whose values don't match the expected
+	// value for those later timestamps. This is especially problematic when recovering the last written
+	// sample on startup, where the query end time is "now" rather than the last written timestamp.
+	// We use last_over_time() rather than max_over_time() (used for floats) because the latter does not
+	// support native histograms.
+	return fmt.Sprintf("sum(last_over_time(%s[1s]))", metricName)
+}
+
+// The fan-out query variants below use a regex (=~) name matcher to force the read path to fan out
+// across all ingest-storage compartments instead of pinning to one, so continuous-test can exercise
+// cross-compartment query merging. The trailing ".*" matters: a regex matching a single literal value
+// is optimized back into an equality matcher (which re-pins the query). Since no continuous-test metric
+// name is a prefix of another, the result still matches the pinned query and the same verification applies.
+func querySumFloatFanOut(metricName string) string {
+	return fmt.Sprintf(`sum(max_over_time({__name__=~"%s.*"}[1s]))`, metricName)
+}
+
+func querySumHistFanOut(metricName string) string {
+	return fmt.Sprintf(`sum(last_over_time({__name__=~"%s.*"}[1s]))`, metricName)
 }
 
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -66,7 +67,7 @@ func TestDurationMiddleware(t *testing.T) {
 						1000,
 						0,
 						expr,
-						Options{},
+						requestoptions.Options{},
 						nil,
 						"",
 					)
@@ -79,7 +80,7 @@ func TestDurationMiddleware(t *testing.T) {
 						60000,
 						0,
 						expr,
-						Options{},
+						requestoptions.Options{},
 						nil,
 						"",
 					)
@@ -155,7 +156,7 @@ func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	handler := middleware.Wrap(capture)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, requestoptions.Options{}, nil, "")
 
 	// This should not panic, should pass through to the next handler.
 	require.NotPanics(t, func() {

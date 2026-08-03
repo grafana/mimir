@@ -88,10 +88,10 @@ func TestConcat(t *testing.T) {
 	_, err = o.NextSeries(ctx)
 	require.Equal(t, types.EOS, err)
 
-	err = o.Finalize(ctx)
+	err = o.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.True(t, inner1.Finalized)
-	require.True(t, inner2.Finalized)
+	require.True(t, inner1.FinishedReadingCalled)
+	require.True(t, inner2.FinishedReadingCalled)
 
 	o.Close()
 	require.True(t, inner1.Closed)
@@ -154,12 +154,12 @@ func TestConcat_InnerOperatorsWithNoSeries(t *testing.T) {
 	_, err = o.NextSeries(ctx)
 	require.Equal(t, types.EOS, err)
 
-	err = o.Finalize(ctx)
+	err = o.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.True(t, inner1.Finalized)
-	require.True(t, inner2.Finalized)
-	require.True(t, inner3.Finalized)
-	require.True(t, inner4.Finalized)
+	require.True(t, inner1.FinishedReadingCalled)
+	require.True(t, inner2.FinishedReadingCalled)
+	require.True(t, inner3.FinishedReadingCalled)
+	require.True(t, inner4.FinishedReadingCalled)
 
 	o.Close()
 	require.True(t, inner1.Closed)

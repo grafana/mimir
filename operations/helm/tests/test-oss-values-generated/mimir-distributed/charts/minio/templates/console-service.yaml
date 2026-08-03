@@ -19,3 +19,4 @@ spec:
   selector:
     app: minio
     release: test-oss-values
+

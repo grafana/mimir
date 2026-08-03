@@ -127,9 +127,7 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, mimir1 *e2emimir.MimirS
 
 	// Flush blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
-		res, err := e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
-		require.NoError(t, err)
-		require.Equal(t, 204, res.StatusCode)
+		flushIngesterBlocks(t, instance)
 	}
 
 	// Given store-gateway blocks sharding is enabled with the default replication factor of 3,

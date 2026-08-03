@@ -30,6 +30,11 @@ const (
 	maxErrMsgLen     = 256
 	defaultTenant    = "anonymous"
 	defaultUserAgent = "mimir-continuous-test"
+
+	writeProtocolPrometheus  = WriteProtocol("prometheus")
+	writeProtocolPrometheus2 = WriteProtocol("prometheus2")
+	writeProtocolOtelHttp    = WriteProtocol("otlp-http")
+	writeProtocolDefault     = writeProtocolPrometheus
 )
 
 // MimirClient is the interface implemented by a client used to interact with Mimir.
@@ -48,7 +53,7 @@ type MimirClient interface {
 	Metadata(ctx context.Context, metricName string) (v1.Metadata, error)
 
 	// Protocol indicates the protocol used to write series data.
-	Protocol() string
+	Protocol() WriteProtocol
 }
 
 type ClientConfig struct {
@@ -60,7 +65,7 @@ type ClientConfig struct {
 	WriteBaseEndpoint flagext.URLValue
 	WriteBatchSize    int
 	WriteTimeout      time.Duration
-	WriteProtocol     string
+	WriteProtocol     WriteProtocol
 
 	ReadBaseEndpoint flagext.URLValue
 	ReadTimeout      time.Duration
@@ -81,7 +86,8 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
 	f.DurationVar(&cfg.WriteTimeout, "tests.write-timeout", 5*time.Second, "The timeout for a single write request.")
-	f.StringVar(&cfg.WriteProtocol, "tests.write-protocol", "prometheus", "The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http")
+	f.Var(&cfg.WriteProtocol, "tests.write-protocol", fmt.Sprintf("The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http (default %q)", writeProtocolDefault))
+	_ = cfg.WriteProtocol.Set(string(writeProtocolDefault))
 
 	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
@@ -91,7 +97,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type Client struct {
-	protocol    string
+	protocol    WriteProtocol
 	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
@@ -151,7 +157,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	var writeClient clientWriter
 
 	switch cfg.WriteProtocol {
-	case "prometheus":
+	case writeProtocolPrometheus:
 		writeClient = &prometheusWriter{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
@@ -159,7 +165,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 			writeTimeout:      cfg.WriteTimeout,
 		}
 
-	case "prometheus2":
+	case writeProtocolPrometheus2:
 		writeClient = &prometheus2Writer{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
@@ -167,7 +173,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 			writeTimeout:      cfg.WriteTimeout,
 		}
 
-	case "otlp-http":
+	case writeProtocolOtelHttp:
 		writeClient = &otlpHTTPWriter{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
@@ -289,7 +295,7 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries, me
 }
 
 // Protocol implements MimirClient.
-func (c *Client) Protocol() string {
+func (c *Client) Protocol() WriteProtocol {
 	return c.protocol
 }
 
@@ -380,4 +386,22 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	}
 
 	return rt.rt.RoundTrip(req)
+}
+
+type WriteProtocol string
+
+func (w *WriteProtocol) String() string {
+	return string(*w)
+}
+
+func (w *WriteProtocol) Set(s string) error {
+	switch WriteProtocol(s) {
+	case writeProtocolPrometheus,
+		writeProtocolPrometheus2,
+		writeProtocolOtelHttp:
+		*w = WriteProtocol(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid write protocol %q", s)
+	}
 }

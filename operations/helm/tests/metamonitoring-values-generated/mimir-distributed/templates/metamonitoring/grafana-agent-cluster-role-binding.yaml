@@ -17,3 +17,4 @@ subjects:
   - kind: ServiceAccount
     name: metamonitoring-values-mimir
     namespace: citestns
+

@@ -1,0 +1,77 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.templateStructData*/ -}}
+
+{{define "children_field" -}}
+func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
+{{- if .ChildrenMin }}
+	if len(children) < {{.ChildrenMin}} {
+		return fmt.Errorf("node of type {{.Type}} expects at least {{if eq .ChildrenMin 1}}one child{{else}}{{.ChildrenMin}} children{{end}}, but got %d", len(children))
+	}
+{{ end }}
+	{{.Receiver}}.{{.ChildrenField}} = children
+	return nil
+}
+{{- end }}
+
+{{define "no_fields" -}}
+func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type {{.Type}} expects 0 children, but got %d", len(children))
+	}
+	return nil
+}
+{{- end }}
+
+{{define "child_fields" -}}
+func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
+	if len(children) != {{len .ChildFields}} {
+		return fmt.Errorf("node of type {{.Type}} expects {{if eq (len .ChildFields) 1}}one child{{else}}{{len .ChildFields}} children{{end}}, but got %d", len(children))
+	}
+	{{- range $i, $f := .ChildFields}}
+	{{- if ne $f.Type "planning.Node"}}
+	child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
+	if !ok {
+		return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+	}
+	{{$.Receiver}}.{{$f.Name}} = child{{$i}}
+	{{- else}}
+	{{$.Receiver}}.{{$f.Name}} = children[{{$i}}]
+	{{- end}}
+	{{- end}}
+	return nil
+}
+{{- end }}
+
+{{define "nilable_last" -}}
+func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
+	switch len(children) {
+	case {{.CountWithoutLast}}:
+	{{- range $i, $f := slice .ChildFields 0 $.CountWithoutLast}}
+	{{- if ne $f.Type "planning.Node"}}
+		child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
+		if !ok {
+			return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+		}
+		{{$.Receiver}}.{{$f.Name}} = child{{$i}}
+	{{- else}}
+		{{$.Receiver}}.{{$f.Name}} = children[{{$i}}]
+	{{- end}}
+	{{- end}}
+		{{.Receiver}}.{{.LastField.Name}} = nil
+	case {{len .ChildFields}}:
+	{{- range $i, $f := .ChildFields}}
+	{{- if ne $f.Type "planning.Node"}}
+		child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
+		if !ok {
+			return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+		}
+		{{$.Receiver}}.{{$f.Name}} = child{{$i}}
+	{{- else}}
+		{{$.Receiver}}.{{$f.Name}} = children[{{$i}}]
+	{{- end}}
+	{{- end}}
+	default:
+		return fmt.Errorf("node of type {{.Type}} expects {{.CountWithoutLast}} or {{len .ChildFields}} children, but got %d", len(children))
+	}
+	return nil
+}
+{{- end }}

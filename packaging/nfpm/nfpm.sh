@@ -26,7 +26,7 @@ for name in metaconvert mimir mimirtool query-tee ; do
             # Generate NFPM configuration using jsonnet
             docker run --rm \
               -v "$(pwd)/packaging/nfpm/nfpm.jsonnet:/nfpm/nfpm.jsonnet" \
-              -it 'bitnamilegacy/jsonnet:0.21.0-debian-12-r6' \
+              -i 'bitnamilegacy/jsonnet:0.21.0-debian-12-r6' \
               -V "name=${name}" -V "arch=${arch}" -V "packager=${packager}" "/nfpm/nfpm.jsonnet" > "${config_path}"
 
             # Generate package dependencies using envsubst
@@ -39,7 +39,7 @@ for name in metaconvert mimir mimirtool query-tee ; do
                     -v "$(pwd)/packaging/nfpm/${name}:/work" \
                     -v "$(pwd)/${pkg_dependencies_path}:/processed" \
                     -e "OS_ENV_DIR=${os_env_dir}" \
-                    -it 'bhgedigital/envsubst' \
+                    -i 'bhgedigital/envsubst' \
                     sh -c "envsubst '\${OS_ENV_DIR}' < /work/${dependency} > /processed/${dependency}"
               done
             fi
@@ -48,7 +48,7 @@ for name in metaconvert mimir mimirtool query-tee ; do
               -v  "$(pwd):/work:delegated,z" \
               -w /work \
               -e "VERSION=${VERSION}" \
-              -it goreleaser/nfpm:v2.22.2 \
+              -i goreleaser/nfpm:v2.22.2 \
               package \
               --config ${config_path} \
               --packager ${packager} \

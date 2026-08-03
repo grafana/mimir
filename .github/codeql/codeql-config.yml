@@ -1,0 +1,11 @@
+name: "Mimir CodeQL config"
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - "**/vendor/**"
+  - "**/testdata/**"
+  - "**/*.min.js"
+  - "**/*.min.css"
+  - pkg/api/static/**

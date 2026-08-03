@@ -22,6 +22,7 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -1129,6 +1130,78 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSubsetSelectorsEliminated:    0,
 			expectedSelectorsInspected:           2,
 		},
+		"duplicate scalar expressions in instant query": {
+			expr:       "scalar(foo) / (scalar(foo) + 2)",
+			rangeQuery: false,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: scalar(...)
+							- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
+		},
+		"duplicate scalar expressions in range query": {
+			expr:       "scalar(foo) / (scalar(foo) + 2)",
+			rangeQuery: true,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: scalar(...)
+							- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
+		},
+		"subset scalar expressions in instant query": {
+			expr:       `scalar(foo) / (scalar(foo{env="prod"}) + 2)`,
+			rangeQuery: false,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: FunctionCall: scalar(...)
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: FunctionCall: scalar(...)
+							- DuplicateFilter: {env="prod"}, subset index: 0
+								- ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset scalar expressions in range query": {
+			expr:       `scalar(foo) / (scalar(foo{env="prod"}) + 2)`,
+			rangeQuery: true,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: FunctionCall: scalar(...)
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: FunctionCall: scalar(...)
+							- DuplicateFilter: {env="prod"}, subset index: 0
+								- ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
 	}
 
 	ctx := context.Background()
@@ -1147,7 +1220,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -1415,7 +1488,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, nil, opts.Logger))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1438,7 +1511,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxSupportedQueryPlanVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, true, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, true, true, nil, opts.Logger))
 
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1494,7 +1567,7 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEDisabled(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, enabled, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, enabled, true, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1592,7 +1665,7 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
 		require.NoError(t, err)
 		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorCSEEnabled, nil, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, rangeQueryRangeVectorCSEEnabled, true, nil, opts.Logger))
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -1662,6 +1735,74 @@ func TestOptimizationPass_RangeQueryRangeVectorCSEVersionGating(t *testing.T) {
 	})
 }
 
+func TestOptimizationPass_ScalarCSEVersionGating(t *testing.T) {
+	runTest := func(t *testing.T, expr string, maxVersion planning.QueryPlanVersion, scalarCSEEnabled bool, expectedPlan string, expectedPlanVersion planning.QueryPlanVersion) {
+		ctx := context.Background()
+		observer := streamingpromql.NoopPlanningObserver{}
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxVersion))
+		require.NoError(t, err)
+		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, scalarCSEEnabled, nil, opts.Logger))
+
+		timeRange := types.NewInstantQueryTimeRange(time.Now())
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+		require.NoError(t, err)
+		require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
+		require.Equal(t, expectedPlanVersion, p.Version)
+	}
+
+	expr := `scalar(foo) / (scalar(foo) + 2)`
+
+	deduplicatedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: ref#1 Duplicate
+				- FunctionCall: scalar(...)
+					- VectorSelector: {__name__="foo"}
+			- RHS: BinaryExpression: LHS + RHS
+				- LHS: ref#1 Duplicate ...
+				- RHS: NumberLiteral: 2
+	`
+
+	unchangedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: FunctionCall: scalar(...)
+				- VectorSelector: {__name__="foo"}
+			- RHS: BinaryExpression: LHS + RHS
+				- LHS: FunctionCall: scalar(...)
+					- VectorSelector: {__name__="foo"}
+				- RHS: NumberLiteral: 2
+	`
+
+	t.Run("enabled", func(t *testing.T) {
+		scalarCSEEnabled := true
+
+		t.Run("querier supports v19", func(t *testing.T) {
+			// CSE should be applied.
+			runTest(t, expr, planning.QueryPlanV19, scalarCSEEnabled, deduplicatedPlan, planning.QueryPlanV19)
+		})
+
+		t.Run("querier does not support v19", func(t *testing.T) {
+			// CSE should not be applied.
+			runTest(t, expr, planning.QueryPlanV18, scalarCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		rangeQueryRangeVectorCSEEnabled := false
+
+		t.Run("range query, querier supports v19", func(t *testing.T) {
+			// CSE should not be applied.
+			runTest(t, expr, planning.QueryPlanV19, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+
+		t.Run("range query, querier does not support v19", func(t *testing.T) {
+			// CSE should not be applied.
+			runTest(t, expr, planning.QueryPlanV18, rangeQueryRangeVectorCSEEnabled, unchangedPlan, planning.QueryPlanVersionZero)
+		})
+	})
+}
+
 func BenchmarkOptimizationPass(b *testing.B) {
 	testCases := []string{
 		`foo`,
@@ -1712,7 +1853,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, reg, opts.Logger))
 
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
@@ -1730,7 +1871,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 }
 
 func TestShouldSkipChild(t *testing.T) {
-	pass := commonsubexpressionelimination.NewOptimizationPass(true, true, nil, nil)
+	pass := commonsubexpressionelimination.NewOptimizationPass(true, true, true, nil, nil)
 
 	// Test info function - should skip only 2nd children
 	infoFunctionCall := &core.FunctionCall{
@@ -2217,6 +2358,31 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 			expectedSafeWithDelayedNameRemovalEnabled:  true,
 		},
 
+		"split function call with filter on other label": {
+			node: &rangevectorsplitting.SplitFunctionCall{
+				Inner: &core.FunctionCall{
+					FunctionCallDetails: &core.FunctionCallDetails{
+						Function: functions.FUNCTION_RATE,
+					},
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"split function call with filter on __name__": {
+			node: &rangevectorsplitting.SplitFunctionCall{
+				Inner: &core.FunctionCall{
+					FunctionCallDetails: &core.FunctionCallDetails{
+						Function: functions.FUNCTION_RATE,
+					},
+				},
+			},
+			group: groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
 		"node with no special handling in IsSafeToApplyFilteringAfter": {
 			node:  &core.NumberLiteral{},
 			group: groupWithNoFilters,
@@ -2227,11 +2393,11 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, false)
+			safe, err := commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, false)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, safe)
 
-			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, nil, testCase.group, true)
+			safe, err = commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, safe)
 		})
@@ -2478,7 +2644,7 @@ func TestIsSafeToApplyFilteringAfterFunction_HandlesAllKnownFunctions(t *testing
 				},
 			}
 
-			if f == functions.FUNCTION_LABEL_REPLACE || f == functions.FUNCTION_LABEL_JOIN {
+			if f == functions.FUNCTION_LABEL_REPLACE || f == functions.FUNCTION_LABEL_JOIN || f == functions.FUNCTION_HISTOGRAM_QUANTILES {
 				fn.Args = []planning.Node{&core.VectorSelector{}, &core.StringLiteral{StringLiteralDetails: &core.StringLiteralDetails{Value: "the_label"}}}
 			}
 

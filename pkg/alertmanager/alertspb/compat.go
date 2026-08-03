@@ -12,7 +12,7 @@ var (
 )
 
 // ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
-func ToProto(cfg string, templates map[string]string, user string) AlertConfigDesc {
+func ToProto(cfg string, templates map[string]string, user string) *AlertConfigDesc {
 	tmpls := make([]*TemplateDesc, 0, len(templates))
 	for fn, body := range templates {
 		tmpls = append(tmpls, &TemplateDesc{
@@ -20,7 +20,7 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 			Filename: fn,
 		})
 	}
-	return AlertConfigDesc{
+	return &AlertConfigDesc{
 		User:      user,
 		RawConfig: cfg,
 		Templates: tmpls,
@@ -28,7 +28,7 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 }
 
 // ParseTemplates returns an Alertmanager config object.
-func ParseTemplates(cfg AlertConfigDesc) map[string]string {
+func ParseTemplates(cfg *AlertConfigDesc) map[string]string {
 	templates := map[string]string{}
 	for _, t := range cfg.Templates {
 		templates[t.Filename] = t.Body

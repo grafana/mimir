@@ -13,8 +13,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
@@ -178,3 +180,37 @@ func TestRewrite(t *testing.T) {
 }
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
+
+func TestUpdateStats_XOR2CountedAsFloatSamples(t *testing.T) {
+	xorChunk := chunkenc.NewXORChunk()
+	xor2Chunk := chunkenc.NewXOR2Chunk()
+	histChunk := chunkenc.NewHistogramChunk()
+
+	app, err := xorChunk.Appender()
+	require.NoError(t, err)
+	app.Append(0, 1000, 1.0)
+	app.Append(0, 2000, 2.0)
+
+	app2, err := xor2Chunk.Appender()
+	require.NoError(t, err)
+	app2.Append(0, 3000, 3.0)
+
+	histApp, err := histChunk.Appender()
+	require.NoError(t, err)
+	_, _, _, err = histApp.AppendHistogram(nil, 0, 4000, &histogram.Histogram{Count: 5, Sum: 10}, false)
+	require.NoError(t, err)
+
+	chks := []chunks.Meta{
+		{Chunk: xorChunk},
+		{Chunk: xor2Chunk},
+		{Chunk: histChunk},
+	}
+
+	var stats tsdb.BlockStats
+	updateStats(&stats, 1, chks)
+
+	require.Equal(t, uint64(3), stats.NumChunks)
+	require.Equal(t, uint64(4), stats.NumSamples)
+	require.Equal(t, uint64(3), stats.NumFloatSamples)
+	require.Equal(t, uint64(1), stats.NumHistogramSamples)
+}

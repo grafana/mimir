@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -57,6 +58,12 @@ type Config struct {
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
+
+	// ReadCompartmentID is the read compartment this store-gateway serves.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
+
+	// Compartments is dynamically injected because defined outside the store-gateway config.
+	Compartments compartments.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the Config flags.
@@ -66,10 +73,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
+	f.IntVar(&cfg.ReadCompartmentID, "store-gateway.read-compartment-id", 0, "The read compartment this store-gateway serves. Only used when compartments are enabled.")
 }
 
 // Validate the Config.
-func (cfg *Config) Validate(limits validation.Limits) error {
+func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.StoreGatewayTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
@@ -78,12 +86,30 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return err
 	}
 
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("store-gateway read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		return errors.New("store-gateway read compartment ID must be 0 when compartments are disabled")
+	}
+
 	return nil
 }
 
 // StoreGateway is the Mimir service responsible to expose an API over the bucket
 // where blocks are stored, supporting blocks sharding and replication across a pool
 // of store gateway instances (optional).
+// activityTracker is the subset of *activitytracker.ActivityTracker exercised
+// by StoreGateway. Defined as an interface so tests can inject a fake; the
+// production *activitytracker.ActivityTracker satisfies it implicitly. Both
+// methods are nil-safe on the concrete type, so a typed-nil pointer wrapped
+// in this interface continues to behave the same way.
+type activityTracker interface {
+	Insert(activityGenerator func() string) int
+	Delete(activityIndex int)
+}
+
 type StoreGateway struct {
 	services.Service
 
@@ -91,7 +117,7 @@ type StoreGateway struct {
 	storageCfg mimir_tsdb.BlocksStorageConfig
 	logger     log.Logger
 	stores     *BucketStores
-	tracker    *activitytracker.ActivityTracker
+	tracker    activityTracker
 
 	// Ring used for sharding blocks.
 	ringLifecycler *ring.BasicLifecycler
@@ -158,6 +184,13 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "invalid ring lifecycler config")
 	}
 
+	// With compartments enabled the store-gateway registers into its read compartment's own ring.
+	ringName, ringKey := RingNameForServer, RingKey
+	if gatewayCfg.Compartments.Enabled {
+		ringName = compartments.WithReadCompartmentSuffix(RingNameForServer, gatewayCfg.ReadCompartmentID)
+		ringKey = compartments.WithReadCompartmentSuffix(RingKey, gatewayCfg.ReadCompartmentID)
+	}
+
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, lifecyclerCfg.NumTokens))
@@ -167,13 +200,13 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		delegate = ring.NewAutoForgetDelegate(time.Duration(gatewayCfg.ShardingRing.AutoForgetUnhealthyPeriods)*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
 	}
 
-	g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, ringName, ringKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create ring lifecycler")
 	}
 
 	ringCfg := gatewayCfg.ShardingRing.ToRingConfig()
-	g.ring, err = ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	g.ring, err = ring.NewWithStoreClientAndStrategy(ringCfg, ringName, ringKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "create ring client")
 	}
@@ -198,7 +231,18 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	// cacheBucketID prefixes the caching-bucket keys. The bucket ID should be "blocks" but we pass an empty
+	// string to not cause a massive cache invalidation when rolling out a new Mimir version introducing the
+	// bucket ID. This is still fine, as far as all other caching bucket implementations specify their own
+	// unique ID. With compartments enabled the store-gateways of different read compartments read different
+	// buckets at identical object paths through a shared cache, so each is scoped to its read compartment or
+	// they collide.
+	cacheBucketID := ""
+	if gatewayCfg.Compartments.Enabled {
+		cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", gatewayCfg.ReadCompartmentID)
+	}
+
+	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}
@@ -377,6 +421,26 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 	defer g.tracker.Delete(ix)
 
 	return g.stores.LabelValues(ctx, req)
+}
+
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	ix := g.tracker.Insert(func() string {
+		return requestActivity(srv.Context(), "StoreGateway/SearchLabelNames", req)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SearchLabelNames(req, srv)
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	ix := g.tracker.Insert(func() string {
+		return requestActivity(srv.Context(), "StoreGateway/SearchLabelValues", req)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SearchLabelValues(req, srv)
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {

@@ -21,7 +21,9 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	promcfg "github.com/prometheus/prometheus/config"
 
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -69,7 +71,25 @@ const (
 	alertmanagerMaxDispatcherAggregationGroups = "alertmanager_max_dispatcher_aggregation_groups"
 	alertmanagerMaxAlertsCount                 = "alertmanager_max_alerts_count"
 	alertmanagerMaxAlertsSizeBytes             = "alertmanager_max_alerts_size_bytes"
+	floatChunkEncoding                         = "float_chunk_encoding"
 )
+
+// stringLimitMetricGetters maps limits that are stored as strings (and therefore
+// cannot be exported via reflection) to a getter returning a stable numeric value.
+// These metrics are still gated by the -overrides-exporter.enabled-metrics flag.
+var stringLimitMetricGetters = map[string]func(*validation.Limits) float64{
+	floatChunkEncoding: floatChunkEncodingMetricValue,
+}
+
+// floatChunkEncodingMetricValue maps the per-tenant float_chunk_encoding limit to a
+// stable numeric value. The values match the storage chunk encoding constants, which
+// are hardcoded for backward compatibility, making them a safe metric contract.
+func floatChunkEncodingMetricValue(limits *validation.Limits) float64 {
+	if limits.FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+		return float64(chunk.PrometheusXor2Chunk)
+	}
+	return float64(chunk.PrometheusXorChunk)
+}
 
 // Config holds the configuration for an overrides-exporter
 type Config struct {
@@ -248,6 +268,11 @@ func (r *LimitsFieldRegistry) ValidateMetricName(metricName string) error {
 		return fmt.Errorf("enabled-metrics: unknown metric name '%s' - must match a yaml tag in the Limits struct", metricName)
 	}
 
+	// String limits are exported through a dedicated getter, so they don't need to be float64-convertible.
+	if _, ok := stringLimitMetricGetters[metricName]; ok {
+		return nil
+	}
+
 	// Attempt to convert the field type to float64 to ensure it's supported
 	fieldValue := r.defaultLimitsValue.FieldByName(field.Name)
 	if _, err := convertToFloat64(fieldValue); err != nil {
@@ -271,6 +296,12 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 	// Get all possible metric names from global registry and check if each is enabled
 	for _, metricName := range fieldRegistry.GetAllowedMetricNames() {
 		if enabledMetrics.IsAllowed(metricName) {
+			// String limits can't be reflected into a float64, so they use a dedicated getter.
+			if get, ok := stringLimitMetricGetters[metricName]; ok {
+				exportedMetrics = append(exportedMetrics, ExportedMetric{Name: metricName, Get: get})
+				continue
+			}
+
 			field, found := fieldRegistry.GetField(metricName)
 			if !found {
 				panic(fmt.Sprintf("couldn't find fields that the fields registry returned, this shouldn't happen (metric name: %s)", metricName))

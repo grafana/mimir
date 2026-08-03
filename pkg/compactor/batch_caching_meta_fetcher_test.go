@@ -224,7 +224,7 @@ func TestBatchCachingMetaFetcher_FetchCompactableMetasFromListing(t *testing.T) 
 		c := cache.NewMockCache()
 		metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
 
-		fetcher := newBatchCachingMetaFetcher(errBkt, c, log.NewNopLogger(), tenant, 2, 24*time.Hour)
+		fetcher := newBatchCachingMetaFetcher(errBkt, c, log.NewNopLogger(), tenant, 2, 24*time.Hour, "")
 		_, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 
 		require.Error(t, err)
@@ -240,7 +240,7 @@ func TestBatchCachingMetaFetcher_FetchCompactableMetasFromListing(t *testing.T) 
 			Injector: bucket.InjectErrorOn(bucket.OpGet, path.Join(block1Meta.ULID.String(), block.MetaFilename), errors.New("injected get error")),
 		}
 		metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
-		fetcher := newBatchCachingMetaFetcher(errBkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour)
+		fetcher := newBatchCachingMetaFetcher(errBkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour, "")
 
 		_, err := fetcher.fetchCompactableMetasFromListing(ctx, 0, nil, metrics)
 		require.Error(t, err)
@@ -262,7 +262,7 @@ func TestBatchCachingMetaFetcher_FetchCompactableMetasFromListing(t *testing.T) 
 	t.Run("nil cache falls back to storage", func(t *testing.T) {
 		bkt := objstore.NewInMemBucket()
 		metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
-		fetcher := newBatchCachingMetaFetcher(bkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour)
+		fetcher := newBatchCachingMetaFetcher(bkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour, "")
 
 		uploadBlockMeta(t, bkt, block1Meta)
 
@@ -357,7 +357,7 @@ func TestBatchCachingMetaFetcher_FetchMetasFromIDs(t *testing.T) {
 
 	t.Run("nil cache falls back to storage", func(t *testing.T) {
 		bkt := objstore.NewInMemBucket()
-		fetcher := newBatchCachingMetaFetcher(bkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour)
+		fetcher := newBatchCachingMetaFetcher(bkt, nil, log.NewNopLogger(), tenant, 2, 24*time.Hour, "")
 
 		uploadBlockMeta(t, bkt, block1Meta)
 
@@ -374,7 +374,7 @@ func newTestFetcher(t *testing.T, tenant string) (*batchCachingMetaFetcher, *obj
 	bkt := objstore.NewInMemBucket()
 	c := cache.NewMockCache()
 	metrics := block.NewFetcherMetrics(prometheus.NewPedanticRegistry(), nil)
-	return newBatchCachingMetaFetcher(bkt, c, log.NewNopLogger(), tenant, 2, 24*time.Hour), bkt, c, metrics
+	return newBatchCachingMetaFetcher(bkt, c, log.NewNopLogger(), tenant, 2, 24*time.Hour, ""), bkt, c, metrics
 }
 
 // createBlockMeta creates a block.Meta with a ULID derived from minTime

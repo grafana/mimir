@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -74,7 +73,33 @@ const QueryPlanV11 = QueryPlanVersion(11)
 // QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
 const QueryPlanV12 = QueryPlanVersion(12)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV12
+// QueryPlanV13 derives the SplitFunctionCall inner-node cache key at materialize time
+// rather than reading it from the proto.
+const QueryPlanV13 = QueryPlanVersion(13)
+
+// QueryPlanV14 introduces support for splitting a range query into smaller sub ranges.
+const QueryPlanV14 = QueryPlanVersion(14)
+
+// QueryPlanV15 introduces support for quantile aggregation in multi-aggregation nodes.
+const QueryPlanV15 = QueryPlanVersion(15)
+
+// QueryPlanV16 introduces support for caching the result of an instant vector operator.
+const QueryPlanV16 = QueryPlanVersion(16)
+
+// QueryPlanV17 introduces the EvaluationRoot node used when spinning off subqueries from instant
+// queries. EvaluationRoot nodes only ever run in query-frontends, so queriers do not need to support
+// this version.
+const QueryPlanV17 = QueryPlanVersion(17)
+
+// QueryPlanV18 computes the SplitFunctionCall split ranges at materialize time rather than storing
+// them in the proto. The split ranges depend on the out-of-order window and current time, which are
+// evaluated on the querier when the operator is materialized.
+const QueryPlanV18 = QueryPlanVersion(18)
+
+// QueryPlanV19 introduces support for deduplicating scalar expressions.
+const QueryPlanV19 = QueryPlanVersion(19)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV19
 
 type QueryPlan struct {
 	Root       Node
@@ -245,8 +270,6 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
@@ -272,9 +295,6 @@ type SplitNode interface {
 	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
-
-	// SplittingCacheKey returns a cache key for this node's intermediate results.
-	SplittingCacheKey() string
 
 	GetRangeParams() RangeParams
 }
@@ -431,7 +451,7 @@ func NodeTypeName(n Node) string {
 // DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
 func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 	if p.Version > MaximumSupportedQueryPlanVersion {
-		return nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+		return nil, apierror.Newf(apierror.TypeNotAcceptable, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)

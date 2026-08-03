@@ -72,6 +72,7 @@
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
 

@@ -70,9 +70,29 @@ eval instant at 0 label_replace(sum by (group) (histogram_metric), "subgroup", "
   {group="b", subgroup="1"} {{count:9}}
   {group="c", subgroup="1"} {{count:6}}
 
-# Make sure that running a supported and unsupported aggregation in the same expression works.
+# Test quantile aggregation within multi-aggregation.
 eval range from 0 to 10m step 1m sum(float_metric) + quantile(0.9, float_metric)
   {} 19.6+19.6x10
+
+eval instant at 0 sum(float_metric) + quantile(0.9, float_metric)
+  {} 19.6
+
+eval instant at 0 max(float_metric) - quantile(0.99, float_metric)
+  {} 0.04000000000000001
+
+eval range from 0 to 10m step 1m max(float_metric) - quantile(0.99, float_metric)
+  {} 0.04000000000000001+0.04000000000000001x10
+
+eval instant at 0 quantile(0.99, float_metric) - quantile(0.5, float_metric)
+  {} 1.96
+
+eval range from 0 to 10m step 1m quantile(0.99, float_metric) - quantile(0.5, float_metric)
+  {} 1.96+1.96x10
+
+eval instant at 0 quantile(0.9, float_metric) by (group) + count by (group) (float_metric)
+  {group="a"} 5.7
+  {group="b"} 6.7
+  {group="c"} 4
 
 eval instant at 0 sum by (foo) (does_not_exist) / scalar(sum(does_not_exist))
   # Should return no results.

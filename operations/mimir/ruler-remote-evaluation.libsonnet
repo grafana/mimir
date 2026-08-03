@@ -36,6 +36,7 @@
 
   ruler_querier_args+::
     $.querier_args +
+    $.ruler_range_vector_splitting_caching_config +
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
     } +
@@ -73,6 +74,7 @@
     // The ruler remote evaluation connects to ruler-query-frontend via gRPC.
     $._config.grpcIngressConfig +
     $.query_frontend_args +
+    $.ruler_range_vector_splitting_caching_config +
     $.queryFrontendUseQuerySchedulerArgs(rulerQuerySchedulerName) +
     {
       // Result caching is of no benefit to rule evaluation, but the cache can be used for storing cardinality estimates.

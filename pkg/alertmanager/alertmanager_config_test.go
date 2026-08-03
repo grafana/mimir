@@ -25,11 +25,11 @@ func stripSlogFields(line string) string {
 func TestValidateMatchersInConfigDesc(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   alertspb.AlertConfigDesc
+		config   *alertspb.AlertConfigDesc
 		expected []string
 	}{{
 		name: "config is accepted",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "1",
 			RawConfig: `
 route:
@@ -50,7 +50,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config contains invalid input",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "2",
 			RawConfig: `
 route:
@@ -74,7 +74,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config is accepted in matchers/parse but not pkg/labels",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "3",
 			RawConfig: `
 route:
@@ -95,7 +95,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config is accepted in pkg/labels but not matchers/parse",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "4",
 			RawConfig: `
 route:
@@ -119,7 +119,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config contains disagreement",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "5",
 			RawConfig: `
 route:

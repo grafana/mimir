@@ -38,12 +38,23 @@ import (
 	golangproto "google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/costattribution"
-	"github.com/grafana/mimir/pkg/costattribution/testutils"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// costAttributionOverridesForTest canonicalizes and hashes the given per-tenant cost-attribution
+// limits and wraps them in Overrides with the provided defaults.
+func costAttributionOverridesForTest(defaults validation.Limits, tenantLimits map[string]*validation.Limits) *validation.Overrides {
+	for _, l := range tenantLimits {
+		l.CostAttributionBaseTrackers.Canonicalize()
+		l.AdditionalCostAttributionTrackers.Canonicalize()
+		l.ComputeCostAttributionConfigHash()
+	}
+	return validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
+}
 
 func TestValidateLabels(t *testing.T) {
 	t.Parallel()
@@ -75,11 +86,15 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
 	perTenant[droppingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 
+	// defaultUserID and utf8UserID attribute cost by the "team" label.
+	for _, userID := range []string{defaultUserID, utf8UserID} {
+		perTenant[userID].MaxCostAttributionCardinality = 10
+		perTenant[userID].CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+		}
+	}
 	overrides := func(limits *validation.Limits) *validation.Overrides {
-		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
-			[]string{defaultUserID, "team"},
-			[]string{utf8UserID, "team"},
-		)
+		return costAttributionOverridesForTest(*limits, perTenant)
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1063,7 +1078,14 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 		nameValidationScheme: model.UTF8Validation,
 	}
 	const userID = "testUser"
-	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	limits := costAttributionOverridesForTest(validation.Limits{}, map[string]*validation.Limits{
+		userID: {
+			MaxCostAttributionCardinality: 10,
+			CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+				costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+			},
+		},
+	})
 	reg := prometheus.NewPedanticRegistry()
 	s := newSampleValidationMetrics(reg)
 	careg := prometheus.NewRegistry()

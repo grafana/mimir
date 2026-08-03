@@ -182,6 +182,21 @@ func checkCopyStatus(ctx context.Context, client *blob.Client) (*blob.CopyStatus
 	return response.CopyStatus, response.CopyStatusDescription, nil
 }
 
+func (bkt *azureBucket) Exists(ctx context.Context, objectName string) (bool, error) {
+	resp, err := bkt.containerClient.NewBlobClient(objectName).GetProperties(ctx, nil)
+	if err == nil {
+		// Don't treat failed or pending copies as existing
+		if resp.CopyStatus != nil && *resp.CopyStatus != blob.CopyStatusTypeSuccess {
+			return false, nil
+		}
+		return true, nil
+	}
+	if bloberror.HasCode(err, bloberror.BlobNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
 func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {
 	sourceClient := bkt.containerClient.NewBlobClient(objectName)
 	sourceClient, err := sourceClient.WithVersionID(options.SourceVersionID)

@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -90,6 +91,7 @@ func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 // TestParserOpts are the parser options used for all built-in test engines.
 var TestParserOpts = parser.Options{
 	EnableExperimentalFunctions:  true,
+	ExperimentalDurationExpr:     true,
 	EnableExtendedRangeSelectors: true,
 	EnableBinopFillModifiers:     true,
 }
@@ -160,7 +162,9 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
 		return teststorage.New(t, func(opt *tsdb.Options) {
 			opt.EnableSTStorage = true
-			opt.EnableXOR2Encoding = true
+			opt.XOR2EncodingAllowed = true
+			opt.FloatChunkEncoding = chunkenc.EncXOR2
+			opt.EnableHistogramSTEncoding = true
 		})
 	})
 }

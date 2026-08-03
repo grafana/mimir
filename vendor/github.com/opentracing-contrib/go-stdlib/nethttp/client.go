@@ -33,12 +33,12 @@ type Transport struct {
 }
 
 type clientOptions struct {
+	urlTagFunc               func(u *url.URL) string
+	spanObserver             func(span opentracing.Span, r *http.Request)
 	operationName            string
 	componentName            string
-	urlTagFunc               func(u *url.URL) string
 	disableClientTrace       bool
 	disableInjectSpanContext bool
-	spanObserver             func(span opentracing.Span, r *http.Request)
 }
 
 // ClientOption contols the behavior of TraceRequest.
@@ -79,7 +79,7 @@ func ClientTrace(enabled bool) ClientOption {
 
 // InjectSpanContext returns a ClientOption that turns on or off
 // injection of the Span context in the request HTTP headers.
-// If this option is not used, the default behaviour is to
+// If this option is not used, the default behavior is to
 // inject the span context.
 func InjectSpanContext(enabled bool) ClientOption {
 	return func(options *clientOptions) {
@@ -101,24 +101,24 @@ func ClientSpanObserver(f func(span opentracing.Span, r *http.Request)) ClientOp
 //
 // Example:
 //
-// 	func AskGoogle(ctx context.Context) error {
-// 		client := &http.Client{Transport: &nethttp.Transport{}}
-// 		req, err := http.NewRequest("GET", "http://google.com", nil)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		req = req.WithContext(ctx) // extend existing trace, if any
+//	func AskGoogle(ctx context.Context) error {
+//		client := &http.Client{Transport: &nethttp.Transport{}}
+//		req, err := http.NewRequest("GET", "http://google.com", nil)
+//		if err != nil {
+//			return err
+//		}
+//		req = req.WithContext(ctx) // extend existing trace, if any
 //
-// 		req, ht := nethttp.TraceRequest(tracer, req)
-// 		defer ht.Finish()
+//		req, ht := nethttp.TraceRequest(tracer, req)
+//		defer ht.Finish()
 //
-// 		res, err := client.Do(req)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		res.Body.Close()
-// 		return nil
-// 	}
+//		res, err := client.Do(req)
+//		if err != nil {
+//			return err
+//		}
+//		res.Body.Close()
+//		return nil
+//	}
 func TraceRequest(tr opentracing.Tracer, req *http.Request, options ...ClientOption) (*http.Request, *Tracer) {
 	opts := &clientOptions{
 		urlTagFunc: func(u *url.URL) string {
@@ -192,20 +192,19 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if !tracer.opts.disableInjectSpanContext {
 		carrier := opentracing.HTTPHeadersCarrier(req.Header)
-		sp.Tracer().Inject(sp.Context(), opentracing.HTTPHeaders, carrier)
+		sp.Tracer().Inject(sp.Context(), opentracing.HTTPHeaders, carrier) //nolint:errcheck // TODO: should we check the error? Returning it makes the tests fail
 	}
 
 	resp, err := rt.RoundTrip(req)
-
 	if err != nil {
 		sp.Finish()
 		return resp, err
 	}
-	ext.HTTPStatusCode.Set(sp, uint16(resp.StatusCode))
+	ext.HTTPStatusCode.Set(sp, uint16(resp.StatusCode)) //nolint:gosec // can't have integer overflow with status code
 	if resp.StatusCode >= http.StatusInternalServerError {
 		ext.Error.Set(sp, true)
 	}
-	if req.Method == "HEAD" {
+	if req.Method == http.MethodHead {
 		sp.Finish()
 	} else {
 		readWriteCloser, ok := resp.Body.(io.ReadWriteCloser)

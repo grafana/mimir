@@ -68,6 +68,11 @@ func (b *SSEBucketClient) Upload(ctx context.Context, name string, r io.Reader, 
 	return b.bucket.Upload(ctx, name, r, opts...)
 }
 
+// SupportedObjectUploadOptions implements objstore.Bucket.
+func (b *SSEBucketClient) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return b.bucket.SupportedObjectUploadOptions()
+}
+
 // Delete implements objstore.Bucket.
 func (b *SSEBucketClient) Delete(ctx context.Context, name string) error {
 	return b.bucket.Delete(ctx, name)
@@ -141,6 +146,11 @@ func (b *SSEBucketClient) IsObjNotFoundErr(err error) bool {
 // IsAccessDeniedErr implements objstore.Bucket.
 func (b *SSEBucketClient) IsAccessDeniedErr(err error) bool {
 	return b.bucket.IsAccessDeniedErr(err)
+}
+
+// IsConditionNotMetErr implements objstore.Bucket.
+func (b *SSEBucketClient) IsConditionNotMetErr(err error) bool {
+	return b.bucket.IsConditionNotMetErr(err)
 }
 
 // Attributes implements objstore.Bucket.

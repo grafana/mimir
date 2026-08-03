@@ -1,0 +1,37 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.equalsFuncData*/ -}}
+
+{{define "node_equivalent_method" -}}
+func ({{.Receiver}} *{{.Type}}) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	{{- if .Comparisons}}
+	oi, ok := other.(*{{.Type}})
+	return ok{{range .Comparisons}} &&
+		{{template "compare" .}}{{end}}
+	{{- else}}
+	_, ok := other.(*{{.Type}})
+	return ok
+	{{- end}}
+}
+{{- end}}
+
+{{define "struct_equals_func" -}}
+func {{.FuncName}}(a, b {{.Type}}) bool {
+	{{- if .Comparisons}}
+	return {{range $i, $c := .Comparisons}}{{if $i}} &&
+		{{end}}{{template "compare" $c}}{{end}}
+	{{- else}}
+	return true
+	{{- end}}
+}
+{{- end}}
+
+{{define "compare"}}
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.comparison*/}}
+{{- if eq .Kind "scalar"}}{{.A}} == {{.B}}
+{{- else if eq .Kind "func"}}{{.Func}}({{.A}}, {{.B}})
+{{- else if eq .Kind "method"}}({{.A}}).{{.Method}}({{.B}})
+{{- else if eq .Kind "pointer"}}(({{.A}} == nil && {{.B}} == nil) || ({{.A}} != nil && {{.B}} != nil && {{template "compare" .Elem}}))
+{{- else if eq .Kind "sliceEqual"}}slices.Equal({{.A}}, {{.B}})
+{{- else if eq .Kind "sliceFunc"}}slices.EqualFunc({{.A}}, {{.B}}, {{.Func}})
+{{- else if eq .Kind "sliceClosure"}}slices.EqualFunc({{.A}}, {{.B}}, func(a, b {{.ElemType}}) bool { return {{template "compare" .Elem}} })
+{{- end}}
+{{- end}}

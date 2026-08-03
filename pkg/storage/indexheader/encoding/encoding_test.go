@@ -834,7 +834,7 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	tb.Cleanup(func() {
 		_ = diskFactory.Close()
 	})
-	diskDecBuf := diskFactory.NewRawDecbuf()
+	diskDecBuf := diskFactory.NewRawDecbuf(context.Background())
 	require.NoError(tb, diskDecBuf.Err())
 
 	bkt, err := filesystem.NewBucket(dir)
@@ -843,8 +843,8 @@ func runAllBufReaderTypes(tb test.TB, caseName string, bytes []byte, testFn func
 	tb.Cleanup(func() {
 		require.NoError(tb, bkt.Close())
 	})
-	bucketFactory := NewBucketDecbufFactory(context.Background(), instBkt, fileName)
-	bucketDecBuf := bucketFactory.NewRawDecbuf()
+	bucketFactory := NewBucketDecbufFactory(instBkt, fileName)
+	bucketDecBuf := bucketFactory.NewRawDecbuf(context.Background())
 	require.NoError(tb, bucketDecBuf.Err())
 
 	decbufs := map[string]Decbuf{

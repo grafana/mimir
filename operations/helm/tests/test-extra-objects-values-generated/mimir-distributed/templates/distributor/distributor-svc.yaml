@@ -29,3 +29,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-extra-objects-values
     app.kubernetes.io/component: distributor
+

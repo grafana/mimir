@@ -24,9 +24,9 @@ func TestDropName(t *testing.T) {
 		labels.FromStrings(model.MetricNameLabel, "metric", "foo", "3"),
 	}
 	inputData := []types.InstantVectorSeriesData{
-		{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
-		{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
-		{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+		{Floats: []promql.FPoint{{T: 1, F: 1}}},
+		{Floats: []promql.FPoint{{T: 1, F: 11}}},
+		{Floats: []promql.FPoint{{T: 1, F: 21}}},
 	}
 	inputDropName := []bool{
 		true,
@@ -39,9 +39,9 @@ func TestDropName(t *testing.T) {
 		labels.FromStrings("foo", "3"),
 	}
 	expectedOutputData := []types.InstantVectorSeriesData{
-		{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
-		{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
-		{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+		{Floats: []promql.FPoint{{T: 1, F: 1}}},
+		{Floats: []promql.FPoint{{T: 1, F: 11}}},
+		{Floats: []promql.FPoint{{T: 1, F: 21}}},
 	}
 	expectedOutputDropName := []bool{
 		false,

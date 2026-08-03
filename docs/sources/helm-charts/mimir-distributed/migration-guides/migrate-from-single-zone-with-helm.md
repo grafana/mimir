@@ -18,7 +18,6 @@ The migration path of Alertmanager and store-gateway is straight forward, howeve
 Depending on what version of the `mimir-distributed` Helm chart is installed currently, make sure to meet the following requirements.
 
 - If the current version of the `mimir-distributed` Helm chart is less than 4.0.0 (version < 4.0.0).
-
   1.  Follow the upgrade instructions for 4.0.0 in the [CHANGELOG.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md#400).
       In particular make sure to disable zone awareness before upgrading the chart:
 
@@ -42,7 +41,6 @@ Depending on what version of the `mimir-distributed` Helm chart is installed cur
       For more information, see [Manage the configuration of Grafana Mimir with Helm](../../run-production-environment-with-helm/configuration-with-helm/).
 
 - If the current version of the `mimir-distributed` Helm chart is greater than 4.0.0 (version >= 4.0.0).
-
   1.  Make sure that zone-aware replication is turned off for the component in question.
 
       For example, the store-gateway:
@@ -583,7 +581,6 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 1. Add zone-aware ingester replicas, maximum 21 at a time.
 
    Explanation: while new ingesters are being added, some series will start to be written to new ingesters, however the series will also exist on old ingesters, thus the series will count twice towards limits. Adding only 21 replicas at a time reduces the number of series affected and thus the likelihood of breaching maximum series limits.
-
    1. Replace the contents of the `migrate.yaml` file with:
 
       ```yaml
@@ -611,7 +608,6 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
 1. If you are using [shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/), it must be turned off on the read path at this point.
-
    1. Update your configuration with these values and keep them until otherwise instructed.
 
       ```yaml
@@ -761,7 +757,6 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
 1. If you are using [shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/):
-
    1. Wait an extra 12 hours.
 
       The 12 hours is calculated from the `querier.query_store_after` Grafana Mimir parameter. After this time, no series are stored outside their dedicated shard, meaning that shuffle sharding on the read path can be safely enabled.

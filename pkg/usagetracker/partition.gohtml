@@ -1,0 +1,192 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/usagetracker.partitionPageContents*/ -}}
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Usage-tracker: Partition {{ .Partition }}</title>
+
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-5.1.3.min.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-icons-1.8.1.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}mimir-styles.css">
+    <script src="{{ .StaticRoot }}bootstrap-5.1.3.bundle.min.js"></script>
+    <style>
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable .sort-indicator { opacity: 0.3; }
+        th.sortable.sorted .sort-indicator { opacity: 1; }
+    </style>
+</head>
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+    <div class="container">
+        <div class="header row border-bottom py-3 flex-column-reverse flex-sm-row">
+            <div class="col-12 col-sm-9 text-center text-sm-start">
+                <h1>Usage-tracker: Partition {{ .Partition }}</h1>
+            </div>
+            <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
+                <img alt="Mimir logo" class="mimir-brand" src="{{ .StaticRoot }}mimir-icon.png">
+            </div>
+        </div>
+        <div class="row my-3">
+            <div class="col-12">
+                <p><a href="../partitions" class="text-decoration-none">&larr; All partitions</a></p>
+                <p class="text-muted">Served by instance <span class="font-monospace">{{ .InstanceID }}</span>.</p>
+
+                {{ if .Tenant }}
+                    <div class="alert alert-secondary d-flex justify-content-between align-items-center" role="alert">
+                        <span>Showing only tenant <strong class="font-monospace">{{ .Tenant }}</strong>.</span>
+                        <a href="{{ .Partition }}" class="btn btn-sm btn-outline-secondary">Show all tenants</a>
+                    </div>
+                {{ end }}
+
+                {{ if .Shards }}
+                    {{ if not .Tenant }}
+                        <div class="row mb-3 align-items-center">
+                            <div class="col-12 col-sm-6">
+                                <input type="text" id="filter" class="form-control" placeholder="Filter by tenant…" autocomplete="off">
+                            </div>
+                            <div class="col-12 col-sm-6 text-sm-end">
+                                <small class="text-muted"><span id="visible-rows">{{ len .Shards }}</span> / {{ len .Shards }} rows</small>
+                            </div>
+                        </div>
+                    {{ end }}
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover table-striped" id="shards-table">
+                            <thead>
+                            <tr>
+                                <th class="sortable" data-col="0" data-type="str" role="button" title="Sort by tenant">
+                                    <span class="text-nowrap">Tenant <i class="bi bi-arrow-down-up sort-indicator"></i></span>
+                                </th>
+                                <th class="sortable fit-width" data-col="1" data-type="num" role="button" title="Sort by shard">
+                                    <span class="text-nowrap">Shard <i class="bi bi-arrow-down-up sort-indicator"></i></span>
+                                </th>
+                                <th class="sortable fit-width" data-col="2" data-type="num" role="button" title="Sort by resident">
+                                    <span class="text-nowrap">Resident <i class="bi bi-arrow-down-up sort-indicator"></i></span>
+                                </th>
+                                <th class="sortable fit-width" data-col="3" data-type="num" role="button" title="Sort by dead">
+                                    <span class="text-nowrap">Dead <i class="bi bi-arrow-down-up sort-indicator"></i>
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of dead elements (tombstones)."></i>
+                                    </span>
+                                </th>
+                                <th class="sortable fit-width" data-col="4" data-type="num" role="button" title="Sort by limit">
+                                    <span class="text-nowrap">Limit <i class="bi bi-arrow-down-up sort-indicator"></i>
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Resident count that triggers a rehash when reached."></i>
+                                    </span>
+                                </th>
+                                <th class="sortable fit-width" data-col="5" data-type="num" role="button" title="Sort by length">
+                                    <span class="text-nowrap">Length <i class="bi bi-arrow-down-up sort-indicator"></i>
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of groups; the identical length of the index, keys and data arrays."></i>
+                                    </span>
+                                </th>
+                                <th class="sortable fit-width" data-col="6" data-type="num" role="button" title="Sort by rehashes">
+                                    <span class="text-nowrap">Rehashes <i class="bi bi-arrow-down-up sort-indicator"></i>
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of rehashes since this shard was created."></i>
+                                    </span>
+                                </th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{ range .Shards }}
+                                <tr data-tenant-row="{{ .Tenant }}">
+                                    <td class="align-middle font-monospace small">{{ .Tenant }}
+                                        <a href="?tenant={{ .Tenant }}" class="text-decoration-none ms-1" title="Show only this tenant">
+                                            <i class="bi bi-search"></i>
+                                        </a>
+                                    </td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Shard }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Resident }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Dead }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Limit }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Length }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Rehashes }}</td>
+                                </tr>
+                            {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                {{ else }}
+                    <div class="alert alert-info" role="alert">
+                        {{ if .Tenant }}
+                            Tenant <strong class="font-monospace">{{ .Tenant }}</strong> has no tracked series in this partition.
+                        {{ else }}
+                            This partition's tracker store has no tenants.
+                        {{ end }}
+                    </div>
+                {{ end }}
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+    </div>
+</footer>
+<script type="text/javascript">
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function (el) { new bootstrap.Tooltip(el); });
+
+    var filterInput = document.getElementById('filter');
+    if (filterInput) {
+        var shardRows = [].slice.call(document.querySelectorAll('#shards-table tbody tr'));
+        var rowCounter = document.getElementById('visible-rows');
+        var applyFilter = function () {
+            var q = filterInput.value.trim().toLowerCase();
+            var visible = 0;
+            shardRows.forEach(function (row) {
+                var tenant = row.getAttribute('data-tenant-row').toLowerCase();
+                var show = q === '' || tenant.indexOf(q) !== -1;
+                row.style.display = show ? '' : 'none';
+                if (show) { visible++; }
+            });
+            rowCounter.textContent = visible;
+        };
+        filterInput.addEventListener('input', applyFilter);
+    }
+
+    var table = document.getElementById('shards-table');
+    if (table) {
+        var tbody = table.querySelector('tbody');
+        var headers = [].slice.call(table.querySelectorAll('th.sortable'));
+        var sortCol = -1, sortDir = 1;
+        var cellValue = function (row, col, type) {
+            var text = row.children[col].textContent.trim();
+            return type === 'num' ? parseFloat(text) : text.toLowerCase();
+        };
+        var sortBy = function (header) {
+            var col = parseInt(header.getAttribute('data-col'), 10);
+            var type = header.getAttribute('data-type');
+            if (sortCol === col) { sortDir = -sortDir; } else { sortCol = col; sortDir = 1; }
+            var rows = [].slice.call(tbody.querySelectorAll('tr'));
+            rows.sort(function (a, b) {
+                var va = cellValue(a, col, type), vb = cellValue(b, col, type);
+                if (va < vb) { return -sortDir; }
+                if (va > vb) { return sortDir; }
+                return 0;
+            });
+            rows.forEach(function (r) { tbody.appendChild(r); });
+            headers.forEach(function (h) {
+                var indicator = h.querySelector('.sort-indicator');
+                if (h === header) {
+                    h.classList.add('sorted');
+                    indicator.className = 'bi sort-indicator ' + (sortDir === 1 ? 'bi-sort-down-alt' : 'bi-sort-up-alt');
+                } else {
+                    h.classList.remove('sorted');
+                    indicator.className = 'bi bi-arrow-down-up sort-indicator';
+                }
+            });
+        };
+        headers.forEach(function (h) {
+            h.addEventListener('click', function () { sortBy(h); });
+        });
+    }
+</script>
+</body>
+</html>

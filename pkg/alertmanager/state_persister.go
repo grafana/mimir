@@ -126,7 +126,7 @@ func (s *statePersister) persist(ctx context.Context) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	desc := alertspb.FullStateDesc{State: fs}
+	desc := &alertspb.FullStateDesc{State: fs}
 	if err = s.store.SetFullState(ctx, s.userID, desc); err != nil {
 		return err
 	}

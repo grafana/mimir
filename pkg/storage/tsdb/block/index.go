@@ -291,7 +291,7 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 			level.Debug(logger).Log("msg", "found out of order series", "labels", lset)
 		}
 	}
-	if p.Err() != nil {
+	if err = p.Err(); err != nil {
 		return stats, errors.Wrap(err, "walk postings")
 	}
 
@@ -676,7 +676,7 @@ func updateStats(stats *tsdb.BlockStats, series uint64, chks []chunks.Meta) {
 		switch chk.Chunk.Encoding() {
 		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
 			stats.NumHistogramSamples += numSamples
-		case chunkenc.EncXOR:
+		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			stats.NumFloatSamples += numSamples
 		}
 	}

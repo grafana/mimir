@@ -24,6 +24,7 @@ type TenantDiscoverer struct {
 	logger                         log.Logger
 	metrics                        *schedulerMetrics
 	clock                          clock.Clock
+	lanePolicy                     lanePolicy
 	allowedTenants                 *util.AllowList
 	bkt                            objstore.Bucket
 	jpm                            JobPersistenceManager
@@ -36,6 +37,7 @@ type TenantDiscoverer struct {
 
 func NewTenantDiscoverer(
 	cfg Config,
+	lanePolicy lanePolicy,
 	allowList *util.AllowList,
 	rotator *Rotator,
 	bkt objstore.Bucket,
@@ -46,6 +48,7 @@ func NewTenantDiscoverer(
 		logger:                         logger,
 		metrics:                        metrics,
 		clock:                          clock.New(),
+		lanePolicy:                     lanePolicy,
 		allowedTenants:                 allowList,
 		bkt:                            bkt,
 		jpm:                            jpm,
@@ -108,7 +111,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker := NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}

@@ -28,3 +28,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: large-values
     app.kubernetes.io/component: chunks-cache
+

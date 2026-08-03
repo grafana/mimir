@@ -154,13 +154,13 @@
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
     },
 
-  memcached_range_vector_splitting_zone_a: if !isZoneAEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+  memcached_range_vector_splitting_zone_a: if !isZoneAEnabled || !$._config.range_vector_splitting_cache_enabled then null else
     $.newMemcachedRangeVectorSplittingZone('a', $.memcached_range_vector_splitting_zone_a_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_a_replicas),
 
-  memcached_range_vector_splitting_zone_b: if !isZoneBEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+  memcached_range_vector_splitting_zone_b: if !isZoneBEnabled || !$._config.range_vector_splitting_cache_enabled then null else
     $.newMemcachedRangeVectorSplittingZone('b', $.memcached_range_vector_splitting_zone_b_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_b_replicas),
 
-  memcached_range_vector_splitting_zone_c: if !isZoneCEnabled || !$._config.query_engine_range_vector_splitting_enabled then null else
+  memcached_range_vector_splitting_zone_c: if !isZoneCEnabled || !$._config.range_vector_splitting_cache_enabled then null else
     $.newMemcachedRangeVectorSplittingZone('c', $.memcached_range_vector_splitting_zone_c_node_affinity_matchers, $._config.memcached_range_vector_splitting_zone_c_replicas),
 
   // Remove single-zone deployment when it's disabled.
@@ -189,7 +189,11 @@
   local memcachedRangeVectorSplittingClientZoneAddress(zone) =
     'dnssrvnoa+memcached-range-vector-splitting-zone-%(zone)s.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: zone }),
 
-  rangeVectorSplittingZoneCachingConfig(zone):: if !$._config.query_engine_range_vector_splitting_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
+  regularRangeVectorSplittingZoneCachingConfig(zone):: if !$._config.query_engine_range_vector_splitting_regular_path_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
+    'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': memcachedRangeVectorSplittingClientZoneAddress(zone),
+  },
+
+  rulerRangeVectorSplittingZoneCachingConfig(zone):: if !$._config.query_engine_range_vector_splitting_ruler_path_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
     'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': memcachedRangeVectorSplittingClientZoneAddress(zone),
   },
 

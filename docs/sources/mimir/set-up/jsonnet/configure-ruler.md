@@ -92,7 +92,6 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
    ```
 
 1. Check that all of pods for the following deployments have successfully started before moving to the next step:
-
    - `ruler-query-frontend`
    - `ruler-query-scheduler`
    - `ruler-querier`

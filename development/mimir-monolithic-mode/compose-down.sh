@@ -45,4 +45,4 @@ if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
 fi
 
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" down "${ARGS[@]}"
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml "${PROFILES[@]}" down "${ARGS[@]}" --remove-orphans

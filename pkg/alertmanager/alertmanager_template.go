@@ -7,11 +7,9 @@ import (
 	"fmt"
 	tmplhtml "html/template"
 	"net/url"
-	"path"
 	"strings"
 	tmpltext "text/template"
 
-	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/template"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -92,27 +90,10 @@ func WithCustomFunctions(userID string) template.Option {
 }
 
 // loadTemplates produces a template.Template from several in-memory template files.
-// It is adapted from FromGlobs in prometheus/alertmanager: https://github.com/prometheus/alertmanager/blob/9de8ef36755298a68b6ab20244d4369d38bdea99/template/template.go#L67-L95
 func loadTemplates(tmpls []*alertspb.TemplateDesc, options ...template.Option) (*template.Template, error) {
-	t, err := template.New(options...)
+	t, err := template.FromGlobs([]string{}, options...)
 	if err != nil {
 		return nil, err
-	}
-
-	// Prometheus keeps its default templates in a virtual filesystem.
-	// Ensure these are included - this does not actually hit the disk.
-	defaultTemplates := []string{"default.tmpl", "email.tmpl"}
-
-	for _, file := range defaultTemplates {
-		f, err := asset.Assets.Open(path.Join("/templates", file))
-		if err != nil {
-			return nil, err
-		}
-		if err := t.Parse(f); err != nil {
-			f.Close()
-			return nil, err
-		}
-		f.Close()
 	}
 
 	for _, tp := range tmpls {

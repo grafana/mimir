@@ -18,6 +18,13 @@
     // The version of the Kafka record wire format. Versions 0, 1, and 2 are stable.
     ingest_storage_kafka_producer_record_version: 2,
 
+    // Kafka is a single cluster shared across availability zones, so its address is intentionally
+    // non-zonal. Exclude it from the multi-zone config validation, which would otherwise flag it on
+    // zone-aware deployments (e.g. multi-AZ ingesters).
+    multi_zone_config_validation_excluded_args+: if !$._config.ingest_storage_enabled then [] else [
+      '-ingest-storage.kafka.address',
+    ],
+
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
 

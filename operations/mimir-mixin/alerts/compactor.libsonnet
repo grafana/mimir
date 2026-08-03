@@ -19,67 +19,71 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully cleaned up blocks in the last 6 hours.' % $._config,
           },
         },
-      ] + [
-        // Alert if the compactor has not successfully run compaction in the last X hours.
-        {
-          alert: $.alertName('CompactorNotRunningCompaction'),
-          'for': '15m',
-          expr: |||
-            # The "last successful run" metric is updated even if the compactor owns no tenants,
-            # so this alert correctly doesn't fire if compactor has nothing to do.
-            (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * %(threshold_hours)d)
-            and
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-          ||| % $._config { threshold_hours: alert.threshold_hours },
-          labels: {
-            severity: alert.severity,
-            reason: 'in-last-%dh' % alert.threshold_hours,
+      ] + (
+        // The following alerts only apply when running in standalone mode
+        if !$._config.compactor_standalone_enabled then [] else [
+          // Alert if the compactor has not successfully run compaction in the last X hours.
+          {
+            alert: $.alertName('CompactorNotRunningCompaction'),
+            'for': '15m',
+            expr: |||
+              # The "last successful run" metric is updated even if the compactor owns no tenants,
+              # so this alert correctly doesn't fire if compactor has nothing to do.
+              (time() - max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * %(threshold_hours)d)
+              and
+              (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
+            ||| % $._config { threshold_hours: alert.threshold_hours },
+            labels: {
+              severity: alert.severity,
+              reason: 'in-last-%dh' % alert.threshold_hours,
+            },
+            annotations: {
+              message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last %(threshold_hours)d hours.' % $._config { threshold_hours: alert.threshold_hours },
+            },
+          }
+          for alert in [
+            { severity: 'warning', threshold_hours: 6 },
+            { severity: 'critical', threshold_hours: 24 },
+          ]
+        ] + [
+          // Alert if the compactor has not successfully run compaction since startup.
+          {
+            alert: $.alertName('CompactorNotRunningCompaction'),
+            'for': alert.for_duration,
+            expr: |||
+              # The "last successful run" metric is updated even if the compactor owns no tenants,
+              # so this alert correctly doesn't fire if compactor has nothing to do.
+              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
+            ||| % $._config,
+            labels: {
+              severity: alert.severity,
+              reason: 'since-startup',
+            },
+            annotations: {
+              message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction since startup.' % $._config,
+            },
+          }
+          for alert in [
+            { severity: 'warning', for_duration: '6h' },
+            { severity: 'critical', for_duration: '12h' },
+          ]
+        ] + [
+          {
+            // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
+            alert: $.alertName('CompactorNotRunningCompaction'),
+            expr: |||
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
+            ||| % $._config,
+            labels: {
+              severity: 'critical',
+              reason: 'consecutive-failures',
+            },
+            annotations: {
+              message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run 2 consecutive compactions.' % $._config,
+            },
           },
-          annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction in the last %(threshold_hours)d hours.' % $._config { threshold_hours: alert.threshold_hours },
-          },
-        }
-        for alert in [
-          { severity: 'warning', threshold_hours: 6 },
-          { severity: 'critical', threshold_hours: 24 },
         ]
-      ] + [
-        // Alert if the compactor has not successfully run compaction since startup.
-        {
-          alert: $.alertName('CompactorNotRunningCompaction'),
-          'for': alert.for_duration,
-          expr: |||
-            # The "last successful run" metric is updated even if the compactor owns no tenants,
-            # so this alert correctly doesn't fire if compactor has nothing to do.
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
-          ||| % $._config,
-          labels: {
-            severity: alert.severity,
-            reason: 'since-startup',
-          },
-          annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not run compaction since startup.' % $._config,
-          },
-        }
-        for alert in [
-          { severity: 'warning', for_duration: '6h' },
-          { severity: 'critical', for_duration: '12h' },
-        ]
-      ] + [
-        {
-          // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
-          alert: $.alertName('CompactorNotRunningCompaction'),
-          expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
-          ||| % $._config,
-          labels: {
-            severity: 'critical',
-            reason: 'consecutive-failures',
-          },
-          annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s failed to run 2 consecutive compactions.' % $._config,
-          },
-        },
+      ) + [
         {
           // Alert if compactor ran out of disk space in the last 24h.
           // This is a non-transient condition which requires an operator to look at it even if it happens only once.

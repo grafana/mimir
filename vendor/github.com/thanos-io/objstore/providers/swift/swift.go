@@ -337,8 +337,13 @@ func (c *Container) IsAccessDeniedErr(err error) bool {
 	return errors.Is(err, swift.Forbidden)
 }
 
+func (c *Container) IsConditionNotMetErr(_ error) bool { return false }
+
 // Upload writes the contents of the reader as an object into the container.
 func (c *Container) Upload(_ context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) (err error) {
+	if err := objstore.ValidateUploadOptions(c.SupportedObjectUploadOptions(), opts...); err != nil {
+		return err
+	}
 	size, err := objstore.TryToGetSize(r)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "could not guess file size, using large object to avoid issues if the file is larger than limit", "name", name, "err", err)
@@ -377,6 +382,10 @@ func (c *Container) Upload(_ context.Context, name string, r io.Reader, opts ...
 		return errors.Wrap(err, "uploading object")
 	}
 	return nil
+}
+
+func (c *Container) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return []objstore.ObjectUploadOptionType{objstore.ContentType}
 }
 
 // Delete removes the object with the given name.

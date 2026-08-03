@@ -1882,7 +1882,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1903,6 +1903,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1999,7 +2000,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2020,6 +2021,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2095,7 +2097,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2184,7 +2186,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2268,7 +2270,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
@@ -2291,7 +2293,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2312,6 +2314,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2386,7 +2389,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.prefer-availability-zones=zone-a,zone-a-backup
@@ -2411,7 +2414,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2432,6 +2435,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2511,7 +2515,7 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.prefer-availability-zones=zone-b,zone-b-backup
@@ -2536,7 +2540,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2557,6 +2561,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2611,11 +2616,15 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2624,6 +2633,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2631,7 +2641,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2649,10 +2659,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2710,12 +2721,16 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.ring.prefix=querier-zone-a/
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2724,6 +2739,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2731,7 +2747,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2749,10 +2765,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2815,12 +2832,16 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.ring.prefix=querier-zone-b/
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -2829,6 +2850,7 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2836,7 +2858,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2854,10 +2876,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2920,7 +2943,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2929,7 +2952,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2950,6 +2973,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3009,7 +3033,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -3018,7 +3042,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3039,6 +3063,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3103,7 +3128,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -3112,7 +3137,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3133,6 +3158,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3176,7 +3202,7 @@ spec:
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         - -zpdb.pod-ready-annotation-patch-timeout=5s
-        image: grafana/rollout-operator:v0.37.0
+        image: grafana/rollout-operator:v0.38.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -3274,7 +3300,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3381,7 +3407,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3402,6 +3428,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3499,7 +3526,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3520,6 +3547,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3622,7 +3650,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3643,6 +3671,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -3697,12 +3726,16 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -3723,7 +3756,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3741,10 +3774,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -3802,12 +3836,16 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.ring.prefix=ruler-querier-zone-a/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -3828,7 +3866,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3846,10 +3884,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -3912,12 +3951,16 @@ spec:
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.ring.prefix=ruler-querier-zone-b/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
@@ -3938,7 +3981,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3956,10 +3999,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -4022,7 +4066,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -4031,7 +4075,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4052,6 +4096,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -4111,7 +4156,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -4120,7 +4165,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4141,6 +4186,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -4205,7 +4251,7 @@ spec:
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -4214,7 +4260,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4235,6 +4281,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -4295,7 +4342,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -4401,7 +4448,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -4422,6 +4469,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -4547,7 +4595,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4568,6 +4616,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -4684,7 +4733,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4705,6 +4754,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -4816,7 +4866,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4837,6 +4887,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -5798,7 +5849,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -5819,6 +5870,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -5958,7 +6010,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -5979,6 +6031,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -6121,7 +6174,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6142,6 +6195,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -6281,7 +6335,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -6302,6 +6356,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -6612,7 +6667,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_memory_hpa_default
     type: prometheus
 ---
@@ -6674,7 +6729,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -6736,7 +6791,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---
@@ -7070,7 +7125,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_memory_hpa_default
     type: prometheus
 ---
@@ -7132,7 +7187,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -7194,7 +7249,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---

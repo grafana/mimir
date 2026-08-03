@@ -354,6 +354,10 @@ type SearchResult struct {
 	// Score represents relevance, with 1.0 being a perfect match.
 	// Score range is [0.0, 1.0].
 	Score float64
+
+	// Optional metric metadata. This has been added specifically
+	// for use in Mimir.
+	Metadata *metadata.Metadata
 }
 
 // Searcher provides search capabilities with relevance scoring.

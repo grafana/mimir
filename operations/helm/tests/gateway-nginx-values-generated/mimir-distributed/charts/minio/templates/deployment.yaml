@@ -82,4 +82,5 @@ spec:
             claimName: gateway-nginx-values-minio
         - name: minio-user
           secret:
-            secretName: gateway-nginx-values-minio
+            secretName: gateway-nginx-values-minio        
+

@@ -156,7 +156,15 @@ local filename = 'mimir-queries.json';
       $.row('Query-frontend – query splitting and results cache')
       .addPanel(
         local query = utils.ncHistogramApplyTemplate(
-          template='sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / %s',
+          template=|||
+            sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))
+            /
+            (
+              (%s or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.
+              +
+              (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.
+            )
+          |||,
           query=utils.ncHistogramSumBy(
             query=utils.ncHistogramCountRate('cortex_frontend_query_range_duration_seconds', '$read_path_matcher, method="split_by_interval_and_results_cache"'),
           )
@@ -261,6 +269,10 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Query Expression Percentiles') +
         $.queryPanel(
+          'histogram_quantile(1.00, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '100th Percentile'
+        ) +
+        $.queryPanel(
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           '99th Percentile'
         ) +
@@ -272,7 +284,19 @@ local filename = 'mimir-queries.json';
           'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           'Average'
         ) +
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'bytes',
+              custom+: {
+                scaleDistribution: {
+                  type: 'log',
+                  log: 2,
+                },
+              },
+            },
+          },
+        }
       )
     )
     .addRowIf(

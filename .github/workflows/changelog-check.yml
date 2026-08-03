@@ -4,20 +4,33 @@ on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
 
+permissions:
+  contents: read         # actions/checkout
+  pull-requests: read    # `gh pr view --json labels` in the check-label step
+
 jobs:
   check-changelog:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
 
       - name: Check if changelog should be skipped
         id: check-label
         run: |
+          # Renovate's labels vary by update type (e.g. update-patch, severity:*) and don't always
+          # include dependency-update, so the label check below can't be relied on for its PRs.
+          if [ "$PR_AUTHOR" = 'renovate-sh-app[bot]' ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "PR is authored by $PR_AUTHOR, skipping changelog check"
+            exit 0
+          fi
+
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
 
-          # "grep -w" to check for the whole words
-          if echo "$LABELS" | grep -w -qE "(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release|backport)"; then
+          if echo "$LABELS" | grep -qE '^(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release|backport)$'; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "PR has a label that skips changelog check, skipping changelog check"
           else
@@ -26,6 +39,7 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
 
       - name: Check PR reference in CHANGELOG.md
         if: steps.check-label.outputs.skip == 'false'

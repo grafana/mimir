@@ -9,5 +9,6 @@ func CreatePromQLParser(enableExperimentalFunctions bool) parser.Parser {
 		EnableExperimentalFunctions:  enableExperimentalFunctions,
 		EnableExtendedRangeSelectors: false,
 		EnableBinopFillModifiers:     false,
+		ExperimentalDurationExpr:     true,
 	})
 }

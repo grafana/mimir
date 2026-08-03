@@ -1520,7 +1520,7 @@ eval instant at 70s mad_over_time(metric_mix[80s])
 
 eval instant at 70s mad_over_time(metric_mix_nan[80s])
   expect no_info
-  {} 43.7
+  {} NaN
 
 eval instant at 70s mad_over_time(metric_none[80s])
   expect no_info
@@ -1581,3 +1581,17 @@ eval instant at 305s timestamp(metric_3) <= 5
 
 eval instant at 306s timestamp(metric_3) <= 5
   # Should be empty
+
+clear
+
+eval range from 0 to 4m step 1m max_of(time(), 3)
+  {} 3 60 120 180 240
+
+eval range from 0 to 4m step 1m min_of(4, time())
+  {} 0 4 4 4 4
+
+eval range from 0 to 4m step 1m max_of(4, 4)
+  {} 4 4 4 4 4
+
+eval range from 0 to 4m step 1m max_of(0, 1)
+  {} 1 1 1 1 1

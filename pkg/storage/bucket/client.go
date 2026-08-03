@@ -21,6 +21,7 @@ import (
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
@@ -159,8 +160,45 @@ func (cfg *Config) Validate() error {
 	return cfg.StorageBackendConfig.Validate()
 }
 
+// BucketName returns the configured bucket (S3/GCS), container (Azure/Swift) or directory (filesystem)
+// name for the active backend, or an empty string for an unknown backend.
+func (cfg *Config) BucketName() string {
+	switch cfg.Backend {
+	case S3:
+		return cfg.S3.BucketName
+	case GCS:
+		return cfg.GCS.BucketName
+	case Azure:
+		return cfg.Azure.ContainerName
+	case Swift:
+		return cfg.Swift.ContainerName
+	case Filesystem:
+		return cfg.Filesystem.Directory
+	}
+	return ""
+}
+
+// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
+// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
+// absent. It must enumerate the same backends as BucketName so the two stay consistent.
+func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+	switch cfg.Backend {
+	case S3:
+		cfg.S3.BucketName = compartments.ReplaceReadCompartment(cfg.S3.BucketName, readCompartmentID)
+	case GCS:
+		cfg.GCS.BucketName = compartments.ReplaceReadCompartment(cfg.GCS.BucketName, readCompartmentID)
+	case Azure:
+		cfg.Azure.ContainerName = compartments.ReplaceReadCompartment(cfg.Azure.ContainerName, readCompartmentID)
+	case Swift:
+		cfg.Swift.ContainerName = compartments.ReplaceReadCompartment(cfg.Swift.ContainerName, readCompartmentID)
+	case Filesystem:
+		cfg.Filesystem.Directory = compartments.ReplaceReadCompartment(cfg.Filesystem.Directory, readCompartmentID)
+	}
+	return cfg
+}
+
 // NewClient creates a new bucket client based on the configured backend
-func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
+func NewClient(ctx context.Context, cfg Config, component string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
 	var (
 		backendClient objstore.Bucket
 		err           error
@@ -168,13 +206,13 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 
 	switch cfg.Backend {
 	case S3:
-		backendClient, err = s3.NewBucketClient(cfg.S3, name, logger)
+		backendClient, err = s3.NewBucketClient(cfg.S3, component, logger)
 	case GCS:
-		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger)
+		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, component, logger)
 	case Azure:
-		backendClient, err = azure.NewBucketClient(cfg.Azure, name, logger)
+		backendClient, err = azure.NewBucketClient(cfg.Azure, component, logger)
 	case Swift:
-		backendClient, err = swift.NewBucketClient(cfg.Swift, name, logger)
+		backendClient, err = swift.NewBucketClient(cfg.Swift, component, logger)
 	case Filesystem:
 		backendClient, err = filesystem.NewBucketClient(cfg.Filesystem)
 	default:
@@ -189,7 +227,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), tracer)
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, component, reg), tracer)
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -202,7 +240,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	return instrumentedClient, nil
 }
 
-func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus.Registerer) objstore.Bucket {
+func bucketWithMetrics(bucketClient objstore.Bucket, component string, reg prometheus.Registerer) objstore.Bucket {
 	if reg == nil {
 		return bucketClient
 	}
@@ -210,11 +248,12 @@ func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus
 	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
 	// rely on object storage related metrics including a "thanos_" prefix.
 	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
-	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
 
+	// The "bucket" label lets one component register these metrics once per bucket it accesses.
 	return objstore.WrapWithMetrics(
 		bucketClient,
 		reg,
-		"", // bucket label value
+		bucketClient.Name(),
 	)
 }

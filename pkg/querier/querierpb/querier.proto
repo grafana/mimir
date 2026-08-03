@@ -24,6 +24,7 @@ message EvaluateQueryRequest {
   // supports receiving batched series metadata messages (ie. multiple EvaluateQueryResponseSeriesMetadata
   // messages per node).
   uint64 seriesMetadataBatchSize = 5;
+  bool enablePerNodeAnnotations = 6;
 }
 
 message EvaluationNode {
@@ -100,9 +101,10 @@ message Error {
 }
 
 message EvaluateQueryResponseEvaluationCompleted {
-  Annotations annotations = 1 [(gogoproto.nullable) = false];
+  Annotations annotations = 1 [(gogoproto.nullable) = false]; // Deprecated, retained only for backwards compatibility with query-frontends that do not support per-node annotations.
   stats.Stats stats = 2 [(gogoproto.nullable) = false];
   map<int64, types.EncodedOperatorEvaluationStats> perNodeStats = 3 [(gogoproto.nullable) = false];
+  map<int64, Annotations> perNodeAnnotations = 4 [(gogoproto.nullable) = false];
 }
 
 message Annotations {

@@ -518,6 +518,8 @@ func TestMergeExemplars(t *testing.T) {
 	exemplar5 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-4")), TimestampMs: now, Value: 7}
 	labels1 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo1"}}
 	labels2 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo2"}}
+	labelsWithoutPrefix := []mimirpb.LabelAdapter{{Name: "region", Value: "abc"}, {Name: "pod", Value: "xyz"}}
+	labelsWithPrefix := []mimirpb.LabelAdapter{{Name: "region", Value: "abc-123"}, {Name: "pod", Value: "xyz"}}
 
 	for i, c := range []struct {
 		seriesA       []mimirpb.TimeSeries
@@ -566,6 +568,14 @@ func TestMergeExemplars(t *testing.T) {
 			expected: []mimirpb.TimeSeries{
 				{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}},
 				{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}}},
+		},
+		{ // Ensure that series are returned sorted in label order when one label's value is a prefix of another.
+			seriesA: []mimirpb.TimeSeries{{Labels: labelsWithoutPrefix, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}}},
+			seriesB: []mimirpb.TimeSeries{{Labels: labelsWithPrefix, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: labelsWithoutPrefix, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}},
+				{Labels: labelsWithPrefix, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}},
+			},
 		},
 	} {
 		t.Run(fmt.Sprint("test", i), func(t *testing.T) {

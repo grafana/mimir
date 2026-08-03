@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -31,18 +30,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
 	// resultsCacheVersion should be increased every time cache should be invalidated (after a bugfix or cache format change).
 	resultsCacheVersion = 1
-
-	// cacheControlHeader is the name of the cache control header.
-	cacheControlHeader = "Cache-Control"
-
-	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
-	noStoreValue = "no-store"
 )
 
 var (
@@ -86,28 +81,8 @@ func errUnsupportedResultsCacheBackend(backend string) error {
 	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
 }
 
-type resultsCacheMetrics struct {
-	cacheRequests prometheus.Counter
-	cacheHits     prometheus.Counter
-}
-
-func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
-	return &resultsCacheMetrics{
-		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_frontend_query_result_cache_requests_total",
-			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
-			ConstLabels: map[string]string{"request_type": requestType},
-		}),
-		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_frontend_query_result_cache_hits_total",
-			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
-			ConstLabels: map[string]string{"request_type": requestType},
-		}),
-	}
-}
-
-// newResultsCache creates a new results cache based on the input configuration.
-func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+// NewResultsCache creates a new results cache based on the input configuration.
+func NewResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	// Add the "component" label similarly to other components, so that metrics don't clash and have the same labels set
 	// when running in monolithic mode.
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
@@ -119,11 +94,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	return cache.NewVersioned(
-		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
-		resultsCacheVersion,
-		logger,
-	), nil
+	return cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.
@@ -279,12 +250,12 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		return false, notCachableReasonUnalignedTimeRange
+		return false, splitandcache.NotCachableReasonUnalignedTimeRange
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
 	if req.GetStart() > maxCacheTime {
-		return false, notCachableReasonTooNew
+		return false, splitandcache.NotCachableReasonTooNew
 	}
 
 	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
@@ -298,8 +269,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 // via an HTTP header, false otherwise.
 func responseHeadersAllowCaching(r Response) bool {
 	for _, hv := range r.GetHeaders() {
-		if hv.GetName() == cacheControlHeader {
-			return !slices.Contains(hv.GetValues(), noStoreValue)
+		if hv.GetName() == requestoptions.CacheControlHeader {
+			return !slices.Contains(hv.GetValues(), requestoptions.NoStoreValue)
 		}
 	}
 
@@ -363,7 +334,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	})
 
 	if !cachable {
-		return false, notCachableReasonModifiersNotCachable
+		return false, splitandcache.NotCachableReasonModifiersNotCachable
 	}
 	return true, ""
 }

@@ -564,7 +564,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -585,6 +585,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -642,7 +643,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
@@ -665,7 +666,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -686,6 +687,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -726,6 +728,7 @@ spec:
     spec:
       containers:
       - args:
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting.default.svc.cluster.local.:11211
@@ -734,13 +737,17 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -748,7 +755,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -764,10 +771,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -814,13 +822,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -839,6 +847,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -912,7 +921,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -990,7 +999,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1089,7 +1098,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1110,6 +1119,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -1199,7 +1209,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1220,6 +1230,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -1623,7 +1634,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1644,6 +1655,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data

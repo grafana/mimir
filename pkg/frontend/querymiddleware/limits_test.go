@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -637,7 +638,7 @@ func TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery(t *testing.T) 
 		t.Run(testName, func(t *testing.T) {
 			queryTime := util.TimeToMillis(now)
 			req := NewPrometheusInstantQueryRequest(
-				"/query", nil, queryTime, 0, parseQuery(t, testData.query), Options{}, nil, "",
+				"/query", nil, queryTime, 0, parseQuery(t, testData.query), requestoptions.Options{}, nil, "",
 			)
 
 			limits := mockLimits{maxTotalQueryLength: testData.maxTotalQueryLength}
@@ -702,6 +703,10 @@ func (m multiTenantMockLimits) QueryShardingTotalShards(userID string) int {
 
 func (m multiTenantMockLimits) QueryShardingMaxShardedQueries(userID string) int {
 	return m.byTenant[userID].maxShardedQueries
+}
+
+func (m multiTenantMockLimits) CardinalityShardingMaxShardedQueries(userID string) int {
+	return m.byTenant[userID].cardinalityMaxShardedQueries
 }
 
 func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
@@ -805,6 +810,7 @@ type mockLimits struct {
 	maxCacheFreshness                     time.Duration
 	maxQueryParallelism                   int
 	maxShardedQueries                     int
+	cardinalityMaxShardedQueries          int
 	maxRegexpSizeBytes                    int
 	totalShards                           int
 	compactorShards                       int
@@ -871,6 +877,10 @@ func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 
 func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
 	return m.maxRegexpSizeBytes
+}
+
+func (m mockLimits) CardinalityShardingMaxShardedQueries(string) int {
+	return m.cardinalityMaxShardedQueries
 }
 
 func (m mockLimits) CompactorSplitAndMergeShards(string) int {
@@ -981,8 +991,21 @@ func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context
 func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
 	return m.m.outOfOrderTimeWindow, nil
 }
+
 func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
 	return m.m.resultsCacheTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheOutOfOrderWindowTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return m.m.maxCacheFreshness, nil
+}
+
+func (m mockQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return m.m.resultsCacheForUnalignedQueryEnabled, nil
 }
 
 type mockHandler struct {
@@ -1218,6 +1241,14 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	}
 }
 
+func TestContextWithRequestHints(t *testing.T) {
+	hints := &Hints{TotalQueries: 3}
+	ctx := ContextWithRequestHints(context.Background(), hints)
+	require.Equal(t, hints, RequestHintsFromContext(ctx))
+
+	require.Nil(t, RequestHintsFromContext(context.Background()))
+}
+
 func TestSmallestPositiveNonZeroDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration())
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(0))
@@ -1267,7 +1298,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		return expr
 	}
 
-	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+	encodedOffsets := string(api.EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2}))
 
 	requestHeaders := []*PrometheusHeader{
 		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
@@ -1287,7 +1318,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
 	}
 
-	requestOptions := Options{
+	requestOptions := requestoptions.Options{
 		TotalShards: 123,
 	}
 
@@ -1456,9 +1487,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
 			require.Equal(t, testCase.expectedPhysicalSamplesRead, stats.PhysicalSamplesRead)
-			require.Zero(t, stats.EquivalentSamplesRead, "this test is outdated and needs to be updated given https://github.com/grafana/mimir/pull/14838 seems to have been merged")
-			// Once https://github.com/grafana/mimir/pull/14838 has been merged, remove the assertion above and replace it with:
-			//  require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
+			require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
 
 			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
 				// We can't perform the assertions below for string results because it doesn't select any data,
@@ -1472,7 +1501,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			hints := RequestHintsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetHints(), hints)
 
-			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
+			options := requestoptions.OptionsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetOptions(), options)
 		})
 	}
@@ -1511,7 +1540,7 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 		},
 	}
 
-	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), requestoptions.Options{}, nil, "")
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {

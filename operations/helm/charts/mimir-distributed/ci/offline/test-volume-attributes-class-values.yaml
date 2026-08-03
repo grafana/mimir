@@ -1,0 +1,40 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.34"
+
+ingester:
+  persistentVolume:
+    volumeAttributesClassName: gp3-standard
+  zoneAwareReplication:
+    zones:
+      - name: zone-a
+        nodeSelector: null
+        extraAffinity: {}
+        storageClass: null
+        volumeAttributesClassName: gp3-standard
+        noDownscale: false
+        downscaleLeader: null
+        prepareDownscale: true
+      - name: zone-b
+        nodeSelector: null
+        extraAffinity: {}
+        storageClass: null
+        volumeAttributesClassName: null
+        noDownscale: false
+        downscaleLeader: null
+        prepareDownscale: true
+      - name: zone-c
+        nodeSelector: null
+        extraAffinity: {}
+        storageClass: null
+        volumeAttributesClassName: null
+        noDownscale: false
+        downscaleLeader: null
+        prepareDownscale: true
+
+compactor:
+  persistentVolume:
+    volumeAttributesClassName: compactor-vac
+
+kafka:
+  persistence:
+    volumeAttributesClassName: external-vac

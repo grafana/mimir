@@ -86,14 +86,6 @@ message Extent {
   reserved 7; // Formerly: samples_processed_per_step.
 }
 
-message Options {
-  bool CacheDisabled = 1;
-  bool ShardingDisabled = 2;
-  int32 TotalShards = 3;
-
-  reserved 4, 5; // Fields previously used by instant query splitting.
-}
-
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
   string UserID = 2;

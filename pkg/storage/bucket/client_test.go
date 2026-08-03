@@ -15,13 +15,58 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestConfig_ReadCompartmentConfig(t *testing.T) {
+	placeholder := compartments.ReadCompartmentIDPlaceholder
+
+	tests := map[string]struct {
+		backend      string
+		setName      func(cfg *Config, name string)
+		readName     func(cfg Config) string
+		templateName string
+		wantName     string
+	}{
+		"s3":         {backend: S3, setName: func(c *Config, n string) { c.S3.BucketName = n }, readName: func(c Config) string { return c.S3.BucketName }, templateName: "blocks-rc-" + placeholder, wantName: "blocks-rc-2"},
+		"gcs":        {backend: GCS, setName: func(c *Config, n string) { c.GCS.BucketName = n }, readName: func(c Config) string { return c.GCS.BucketName }, templateName: "blocks-rc-" + placeholder, wantName: "blocks-rc-2"},
+		"azure":      {backend: Azure, setName: func(c *Config, n string) { c.Azure.ContainerName = n }, readName: func(c Config) string { return c.Azure.ContainerName }, templateName: "blocks-rc-" + placeholder, wantName: "blocks-rc-2"},
+		"swift":      {backend: Swift, setName: func(c *Config, n string) { c.Swift.ContainerName = n }, readName: func(c Config) string { return c.Swift.ContainerName }, templateName: "blocks-rc-" + placeholder, wantName: "blocks-rc-2"},
+		"filesystem": {backend: Filesystem, setName: func(c *Config, n string) { c.Filesystem.Directory = n }, readName: func(c Config) string { return c.Filesystem.Directory }, templateName: "blocks-rc-" + placeholder, wantName: "blocks-rc-2"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var cfg Config
+			cfg.Backend = tc.backend
+			tc.setName(&cfg, tc.templateName)
+
+			assert.Equal(t, tc.templateName, cfg.BucketName())
+
+			got := cfg.ReadCompartmentConfig(2)
+			assert.Equal(t, tc.wantName, tc.readName(got))
+			assert.Equal(t, tc.wantName, got.BucketName())
+
+			// The original config is unchanged.
+			assert.Equal(t, tc.templateName, tc.readName(cfg))
+		})
+	}
+
+	t.Run("no-op when the placeholder is absent", func(t *testing.T) {
+		var cfg Config
+		cfg.Backend = S3
+		cfg.S3.BucketName = "blocks"
+		assert.Equal(t, "blocks", cfg.ReadCompartmentConfig(2).S3.BucketName)
+	})
+}
 
 const (
 	configWithS3Backend = `
@@ -101,6 +146,28 @@ func TestNewClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+// One bucket client per read compartment on a shared registry, all under the same "component".
+func TestNewClient_MetricsOfMultipleBucketsUnderSameComponent(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, yaml.Unmarshal([]byte(configWithS3Backend), &cfg))
+	cfg.S3.BucketName = "blocks-rc-" + compartments.ReadCompartmentIDPlaceholder
+
+	reg := prometheus.NewPedanticRegistry()
+	for compartmentID := 0; compartmentID < 2; compartmentID++ {
+		bucketClient, err := NewClient(context.Background(), cfg.ReadCompartmentConfig(compartmentID), "querier", test.NewTestingLogger(t), reg)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, bucketClient.Close()) })
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP thanos_objstore_bucket_last_successful_upload_time Second timestamp of the last successful upload to the bucket.
+		# TYPE thanos_objstore_bucket_last_successful_upload_time gauge
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-0",component="querier"} 0
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-1",component="querier"} 0
+	`), "thanos_objstore_bucket_last_successful_upload_time"))
 }
 
 func TestClientMock_MockGet(t *testing.T) {

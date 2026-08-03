@@ -29,7 +29,8 @@
     $.tracing_env_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '1Gi') +
-    $.util.resourcesLimits(null, '2Gi'),
+    $.util.resourcesLimits(null, '2Gi') +
+    $.mimirEphemeralStorageRequest,
 
   query_scheduler_env_map:: {},
 

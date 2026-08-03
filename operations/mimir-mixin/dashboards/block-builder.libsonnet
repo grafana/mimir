@@ -75,8 +75,20 @@ local filename = 'mimir-block-builder.json';
           'Number of records in the backlog of a partition.',
         ) +
         $.queryPanel(
-          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder
+              (cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, job!~".*-rc-.*"} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, job!~".*-rc-.*"}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder
+              label_replace((cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, job=~".*-rc-.*"} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, job=~".*-rc-.*"}) > 0, "read_compartment", "$1", "job", ".*-rc-(.*)")
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / wc {{write_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
@@ -91,8 +103,20 @@ local filename = 'mimir-block-builder.json';
           |||,
         ) +
         $.queryPanel(
-          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder
+              sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s, job!~".*-rc-.*"}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder
+              sum by (read_compartment, partition) (label_replace(cortex_blockbuilder_scheduler_pending_jobs{%(job)s, job=~".*-rc-.*"}, "read_compartment", "$1", "job", ".*-rc-(.*)")) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )

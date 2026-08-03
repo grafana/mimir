@@ -189,7 +189,7 @@
         },
         {
           alert: $.alertName('IngesterTSDBWALWritesFailed'),
-          'for': '3m',
+          'for': '12m',
           expr: |||
             rate(cortex_ingester_tsdb_wal_writes_failed_total[%s]) > 0
           ||| % $.rateInterval('1m'),
@@ -241,6 +241,7 @@
           ||| % $._config {
             rate_interval: $.rateInterval('15m'),
           },
+          'for': '2m',  // Extra buffer to allow the compactor that was restarted close to the end of previous update cycle to discover the tenant and udpate their bucket.
           labels: {
             severity: 'critical',
           },

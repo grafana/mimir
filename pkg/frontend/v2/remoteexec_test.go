@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -671,181 +672,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
-	testCases := map[string]struct {
-		input            []promql.FPoint
-		expectedCapacity int
-	}{
-		"empty slice": {
-			input:            nil,
-			expectedCapacity: 0,
-		},
-		"slice with length 0 and capacity 0": {
-			input:            make([]promql.FPoint, 0),
-			expectedCapacity: 0,
-		},
-		"slice with length 0 and capacity 1": {
-			input:            make([]promql.FPoint, 0, 1),
-			expectedCapacity: 1,
-		},
-		"slice with length 1 and capacity 1": {
-			input:            make([]promql.FPoint, 1),
-			expectedCapacity: 1,
-		},
-		"slice with length 0 and capacity 2": {
-			input:            make([]promql.FPoint, 0, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 1 and capacity 2": {
-			input:            make([]promql.FPoint, 1, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 2 and capacity 2": {
-			input:            make([]promql.FPoint, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 2 and capacity 3": {
-			input:            make([]promql.FPoint, 2, 3),
-			expectedCapacity: 4,
-		},
-		"slice with length 3 and capacity 3": {
-			input:            make([]promql.FPoint, 3),
-			expectedCapacity: 4,
-		},
-		"slice with length 4 and capacity 4": {
-			input:            make([]promql.FPoint, 4),
-			expectedCapacity: 4,
-		},
-		"slice with length 5 and capacity 5": {
-			input:            make([]promql.FPoint, 5),
-			expectedCapacity: 8,
-		},
-		"slice with length 6 and capacity 6": {
-			input:            make([]promql.FPoint, 6),
-			expectedCapacity: 8,
-		},
-		"slice with length 7 and capacity 7": {
-			input:            make([]promql.FPoint, 7),
-			expectedCapacity: 8,
-		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			for idx := range testCase.input {
-				testCase.input[idx].T = int64(idx)
-				testCase.input[idx].F = float64(idx * 10)
-			}
-
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.FPointSize, limiter.FPointSlices)
-			require.NoError(t, err)
-
-			output, err := ensureFPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
-			require.NoError(t, err)
-			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
-			require.Equal(t, testCase.expectedCapacity, cap(output))
-			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
-
-			require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
-
-			if cap(testCase.input) == testCase.expectedCapacity {
-				require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
-			} else {
-				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
-			}
-		})
-	}
-}
-
-func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
-	testCases := map[string]struct {
-		input            []promql.HPoint
-		expectedCapacity int
-	}{
-		"empty slice": {
-			input:            nil,
-			expectedCapacity: 0,
-		},
-		"slice with length 0 and capacity 0": {
-			input:            make([]promql.HPoint, 0),
-			expectedCapacity: 0,
-		},
-		"slice with length 0 and capacity 1": {
-			input:            make([]promql.HPoint, 0, 1),
-			expectedCapacity: 1,
-		},
-		"slice with length 1 and capacity 1": {
-			input:            make([]promql.HPoint, 1),
-			expectedCapacity: 1,
-		},
-		"slice with length 0 and capacity 2": {
-			input:            make([]promql.HPoint, 0, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 1 and capacity 2": {
-			input:            make([]promql.HPoint, 1, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 2 and capacity 2": {
-			input:            make([]promql.HPoint, 2),
-			expectedCapacity: 2,
-		},
-		"slice with length 2 and capacity 3": {
-			input:            make([]promql.HPoint, 2, 3),
-			expectedCapacity: 4,
-		},
-		"slice with length 3 and capacity 3": {
-			input:            make([]promql.HPoint, 3),
-			expectedCapacity: 4,
-		},
-		"slice with length 4 and capacity 4": {
-			input:            make([]promql.HPoint, 4),
-			expectedCapacity: 4,
-		},
-		"slice with length 5 and capacity 5": {
-			input:            make([]promql.HPoint, 5),
-			expectedCapacity: 8,
-		},
-		"slice with length 6 and capacity 6": {
-			input:            make([]promql.HPoint, 6),
-			expectedCapacity: 8,
-		},
-		"slice with length 7 and capacity 7": {
-			input:            make([]promql.HPoint, 7),
-			expectedCapacity: 8,
-		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			for idx := range testCase.input {
-				testCase.input[idx].T = int64(idx)
-				testCase.input[idx].H = &histogram.FloatHistogram{Count: float64(idx * 10)}
-			}
-
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.HPointSize, limiter.HPointSlices)
-			require.NoError(t, err)
-
-			output, err := ensureHPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
-			require.NoError(t, err)
-			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
-			require.Equal(t, testCase.expectedCapacity, cap(output))
-			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
-
-			require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
-
-			if cap(testCase.input) == testCase.expectedCapacity {
-				require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
-			} else {
-				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
-			}
-		})
-	}
-}
-
-func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
+func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
@@ -904,7 +731,7 @@ func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
 				memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				annos, overallStats, err := response.Finalize(ctx)
+				overallStats, err := response.FinishedReading(ctx)
 				if !expectSuccess {
 					require.Equal(t, expectedError, err)
 					return
@@ -912,10 +739,6 @@ func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
 
 				require.NoError(t, err)
 				require.Equal(t, expectedTotalSamples, overallStats.SamplesProcessed)
-
-				warnings, infos := annos.AsStrings("", 0, 0)
-				require.ElementsMatch(t, expectedWarnings, warnings)
-				require.ElementsMatch(t, expectedInfos, infos)
 
 				expectedOperatorStats, err := types.NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 0)
 				require.NoError(t, err)
@@ -926,9 +749,15 @@ func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
 					expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil)
 				}
 
-				operatorStats, err := response.Stats(ctx)
+				operatorStats, annos, err := response.Finalize(ctx)
 				require.NoError(t, err)
 				require.Equal(t, expectedOperatorStats, operatorStats)
+
+				warnings, infos := annos.AsStrings("", 0, 0)
+				require.ElementsMatch(t, expectedWarnings, warnings)
+				require.ElementsMatch(t, expectedInfos, infos)
+
+				// TODO: test per-node annotations
 			})
 		}
 	}
@@ -966,6 +795,38 @@ func TestExecutionResponses_FinalizeAndStats(t *testing.T) {
 			mockResponse{err: expectedError},
 		)
 	})
+}
+
+func TestRemoteExecutionGroupEvaluator_TranslatesNotAcceptableErrorToInternal(t *testing.T) {
+	testCases := map[string]func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error{
+		"while reading messages": func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error {
+			_, err := resp.GetValues(ctx)
+			return err
+		},
+		"while finishing reading a stream": func(ctx context.Context, resp remoteexec.ScalarRemoteExecutionResponse) error {
+			_, err := resp.FinishedReading(ctx)
+			return err
+		},
+	}
+
+	notAcceptableErr := apierror.New(apierror.TypeNotAcceptable, "query plan has version 123, but the maximum supported query plan version is 1")
+	expectedError := apierror.New(apierror.TypeInternal, "querier rejected request as not acceptable: query plan has version 123, but the maximum supported query plan version is 1")
+
+	for name, fn := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			stream := &mockResponseStream{responses: []mockResponse{{err: notAcceptableErr}}}
+			frontend := &mockFrontend{stream: stream}
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
+			response, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			require.NoError(t, err)
+			require.NoError(t, response.Start(ctx))
+
+			err = fn(ctx, response)
+			require.Equal(t, expectedError, err)
+		})
+	}
 }
 
 type mockResponseStream struct {
@@ -1028,7 +889,7 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 		},
 	}
 
-	annos, overallStats, perNodeStats := decodeEvaluationCompletedMessage(msg)
+	annos, overallStats, perNodeStats, perNodeAnnotations := decodeEvaluationCompletedMessage(msg)
 	require.Equal(t, msg.Stats, overallStats)
 	require.Equal(t, msg.PerNodeStats, perNodeStats)
 
@@ -1037,6 +898,8 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 	warnings, infos := annos.AsStrings("", 0, 0)
 	require.ElementsMatch(t, []string{"warning: something isn't quite right", "warning: something else isn't quite right"}, warnings)
 	require.ElementsMatch(t, []string{"info: you should know about this", "info: you should know about this too"}, infos)
+
+	require.Empty(t, perNodeAnnotations)
 }
 
 func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
@@ -1159,6 +1022,23 @@ func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []stri
 	}
 }
 
+func newEvaluationCompletedWithPerNodeAnnotations(totalSamples uint64, perNodeAnnotations map[int64]querierpb.Annotations) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+						Stats: stats.Stats{
+							SamplesProcessed: totalSamples,
+						},
+						PerNodeAnnotations: perNodeAnnotations,
+					},
+				},
+			},
+		},
+	}
+}
+
 func generateFPoints(baseT int64, count int, offset float64) []promql.FPoint {
 	points := make([]promql.FPoint, 0, count)
 	for i := range count {
@@ -1263,10 +1143,9 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err := resp1.Finalize(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp1.GetNextSeries(ctx)
@@ -1283,20 +1162,27 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.Finalize(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
+	_, annos, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
+
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
@@ -1396,23 +1282,115 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
 	// read the results when we are done with the second node.
-	annos, returnedStats, err := resp1.Finalize(ctx)
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.Finalize(ctx)
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
+}
+
+func TestRemoteExecutionGroupEvaluator_PerStepAnnotations(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false),
+			},
+			{
+				msg: newSeriesMetadata(1, false),
+			},
+			{
+				msg: newEvaluationCompletedWithPerNodeAnnotations(
+					1234,
+					map[int64]querierpb.Annotations{
+						0: {
+							Infos:    []string{"an info annotation for node index 0"},
+							Warnings: []string{"a warning annotation for node index 0"},
+						},
+						1: {
+							Infos:    []string{"an info annotation for node index 1"},
+							Warnings: []string{"a warning annotation for node index 1"},
+						},
+					},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, log.NewNopLogger(), false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message for the first node.
+	series, err := resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Empty(t, series)
+
+	// Now go and read the cached message for the first node, one more message for the first node.
+	series, err = resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Empty(t, series)
+
+	// Read the evaluation completed message for the first node.
+	returnedStats, err := resp1.FinishedReading(ctx)
+	require.NoError(t, err)
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	returnedStats, err = resp2.FinishedReading(ctx)
+	require.NoError(t, err)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 0"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation for node index 0"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos = annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation for node index 1"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation for node index 1"))
+	require.Equal(t, expectedAnnos, annos)
 }
 
 func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
@@ -1506,7 +1484,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(
 	require.Empty(t, series)
 }
 
-func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing.T) {
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinishedReading(t *testing.T) {
 	ctx := context.Background()
 
 	stream := &mockResponseStream{
@@ -1574,11 +1552,10 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	requireBufferedDataForNode(t, evaluator, node1, 1)
 	requireNoBufferedDataForNode(t, evaluator, node2)
 
-	// Finalize the first node, confirm the buffered message is dropped.
-	annos, returnedStats, err := resp1.Finalize(ctx)
+	// Call FinishedReading on the first node, confirm the buffered message is dropped.
+	returnedStats, err := resp1.FinishedReading(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls FinishedReading")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	// Read the second message from the second node, confirm nothing is buffered for the first node.
@@ -1588,18 +1565,25 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err = resp2.Finalize(ctx)
+	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	returnedStats, err = resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+
+	_, annos, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for second node, these should be returned when the first node calls Finalize")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
@@ -1681,18 +1665,21 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err := resp2.Finalize(ctx)
+	// Call FinishedReading on the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	returnedStats, err := resp2.FinishedReading(ctx)
 	require.NoError(t, err)
-	expectedAnnos := annotations.New()
-	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
-	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
-	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after calling FinishedReading on last node")
+
+	_, annos, err := resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.Annotations{}
+	expectedAnnos.Add(querierpb.NewInfoAnnotation("an info annotation"))
+	expectedAnnos.Add(querierpb.NewWarningAnnotation("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {
@@ -2322,7 +2309,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	if enableMQESharding {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
@@ -2367,7 +2354,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 	expr, err := promqlext.NewPromQLParser().ParseExpr("sum(foo)")
 	require.NoError(t, err)
-	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")
+	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
 	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)
 	require.NoError(t, err)
 
@@ -2418,6 +2405,10 @@ func (m mockLimitedParallelismLimits) QueryShardingMaxRegexpSizeBytes(_ string) 
 }
 
 func (m mockLimitedParallelismLimits) QueryShardingMaxShardedQueries(_ string) int {
+	return 0
+}
+
+func (m mockLimitedParallelismLimits) CardinalityShardingMaxShardedQueries(_ string) int {
 	return 0
 }
 

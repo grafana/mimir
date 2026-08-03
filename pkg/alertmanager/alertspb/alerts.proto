@@ -8,11 +8,8 @@ syntax = "proto3";
 package alerts;
 
 import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
-import "gogoproto/gogo.proto";
 
-option go_package = "alertspb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/alertmanager/alertspb;alertspb";
 
 message AlertConfigDesc {
   string user = 1;
@@ -27,8 +24,5 @@ message TemplateDesc {
 }
 
 message FullStateDesc {
-  // Alertmanager (clusterpb) types do not have Equal methods.
-  option (gogoproto.equal) = false;
-
   clusterpb.FullState state = 1;
 }

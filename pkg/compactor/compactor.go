@@ -13,7 +13,6 @@ import (
 	"hash/fnv"
 	"math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -43,6 +43,9 @@ import (
 const (
 	// ringKey is the key under which we store the compactors ring in the KVStore.
 	ringKey = "compactor"
+
+	// ringName is the name of the compactors ring.
+	ringName = "compactor"
 )
 
 const (
@@ -93,21 +96,22 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges                 mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency        int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency         int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DataDir                     string                  `yaml:"data_dir"`
-	CompactionInterval          time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod     time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
-	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
-	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay               time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay          time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime           time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges                      mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency             int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	BlockHealthValidationConcurrency int                     `yaml:"block_health_validation_concurrency" category:"experimental"`
+	MetaSyncConcurrency              int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir                          string                  `yaml:"data_dir"`
+	CompactionInterval               time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries                int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency            int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod             time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
+	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
+	CleanupInterval                  time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency               int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay                    time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay               time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime                time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -140,7 +144,13 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Configuration for interacting with a compaction job scheduler
-	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client" category:"experimental" doc:"hidden"`
+	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client"`
+
+	// ReadCompartmentID is the read compartment this compactor serves.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
+
+	// Compartments is dynamically injected because defined outside the compactor config.
+	Compartments compartments.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -154,6 +164,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.")
+	f.IntVar(&cfg.BlockHealthValidationConcurrency, "compactor.block-health-validation-concurrency", 0, "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
@@ -180,9 +191,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
+	f.IntVar(&cfg.ReadCompartmentID, "compactor.read-compartment-id", 0, "The read compartment this compactor serves. Only used when compartments are enabled.")
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate(compartmentsCfg compartments.Config, logger log.Logger) error {
 	// Mimir assumes that smaller blocks are eventually compacted to 24h blocks in
 	// various places on the read path (cache TTLs, query splitting). Warn when this
 	// isn't the case since it may affect performance.
@@ -216,6 +228,14 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 	if err := cfg.SchedulerClientConfig.Validate(); err != nil {
 		return err
+	}
+
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("compactor read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		return errors.New("compactor read compartment ID must be 0 when compartments are disabled")
 	}
 
 	return nil
@@ -524,6 +544,15 @@ func newMultitenantCompactor(
 	return c, nil
 }
 
+// cacheBucketID returns the metadata-cache bucket ID used to scope the cache keys.
+func (c *MultitenantCompactor) cacheBucketID() string {
+	// The logic must match the store-gateway's one.
+	if !c.compactorCfg.Compartments.Enabled {
+		return ""
+	}
+	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -543,8 +572,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
 
-	// Initialize the compactors ring if sharding is enabled.
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
+	// Initialize the compactors ring if sharding is enabled. With compartments enabled the compactor
+	// registers into its read compartment's own ring.
+	name, key := ringName, ringKey
+	if c.compactorCfg.Compartments.Enabled {
+		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
+		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
+	}
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
 	if err != nil {
 		return err
 	}
@@ -616,6 +651,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
+		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -624,10 +660,13 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
 	}
 
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
+
 	return nil
 }
 
-func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+func newRingAndLifecycler(cfg RingConfig, ringName, ringKey string, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
 	if err != nil {
@@ -646,12 +685,12 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
 	}
 
-	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, reg)
+	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, ringName, ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize compactors' lifecycler: %w", err)
 	}
 
-	compactorsRing, err := ring.New(cfg.toRingConfig(), "compactor", ringKey, logger, reg)
+	compactorsRing, err := ring.New(cfg.toRingConfig(), ringName, ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize compactors' ring client: %w", err)
 	}
@@ -854,7 +893,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, c.baseCompactDir(), reg)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -871,13 +910,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	return nil
 }
 
-func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, reg *prometheus.Registry) (*BucketCompactor, error) {
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
-		path.Join(c.compactorCfg.DataDir, "compact"),
+		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
@@ -887,6 +926,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.compactorCfg.CompactionOOOWaitPeriod,
 		c.compactorCfg.CompactionSkipFutureMaxTime,
 		c.compactorCfg.BlockSyncConcurrency,
+		c.compactorCfg.BlockHealthValidationConcurrency,
 		c.bucketCompactorMetrics,
 		c.compactorCfg.SparseIndexHeadersSamplingRate,
 		c.compactorCfg.SparseIndexHeadersConfig,
@@ -1031,6 +1071,11 @@ const compactorMetaPrefix = "compactor-meta-"
 // the directory used by the Thanos Syncer, whatever is the user ID.
 func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 	return filepath.Join(c.compactorCfg.DataDir, compactorMetaPrefix+userID)
+}
+
+// baseCompactDir is the base directory that contains subdirectories for compaction jobs
+func (c *MultitenantCompactor) baseCompactDir() string {
+	return filepath.Join(c.compactorCfg.DataDir, "compact")
 }
 
 // This function returns tenants with meta sync directories found on local disk. On error, it returns nil map.

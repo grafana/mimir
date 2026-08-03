@@ -135,15 +135,14 @@
       - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
-  "grafana-agent":
+  "grafana-alloy":
     "command":
       - "run"
       - "--storage.path=/tmp"
       - "--server.http.listen-addr=127.0.0.1:9091"
-      - "/etc/agent-config/grafana-agent.flow"
-    "environment":
-      "AGENT_MODE": "flow"
-    "image": "grafana/agent:v0.40.0"
+      - "--stability.level=experimental"
+      - "/etc/agent-config/config.alloy"
+    "image": "grafana/alloy:v1.17.1@sha256:4f6ddc56ffdcf8a6316748fc5162972e20cb301523cac1bb4a31957df733ae9b"
     "ports":
       - "9091:9091"
     "volumes":
@@ -216,11 +215,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29092:29092"
@@ -240,11 +239,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29093:29093"
@@ -264,22 +263,21 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29094:29094"
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "minio":
-    "command":
-      - "server"
-      - "--console-address"
-      - ":9001"
-      - "/data"
+    "entrypoint":
+      - "sh"
+      - "-c"
+      - "mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"

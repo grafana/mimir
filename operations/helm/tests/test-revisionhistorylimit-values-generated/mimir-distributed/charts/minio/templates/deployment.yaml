@@ -82,4 +82,5 @@ spec:
             claimName: test-revisionhistorylimit-values-minio
         - name: minio-user
           secret:
-            secretName: test-revisionhistorylimit-values-minio
+            secretName: test-revisionhistorylimit-values-minio        
+

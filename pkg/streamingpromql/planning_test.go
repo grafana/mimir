@@ -1720,29 +1720,6 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
 }
 
-func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
-	require.NoError(t, err)
-
-	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
-
-	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
-	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
-	require.Nil(t, plan)
-}
-
-type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
-	return "test optimization pass"
-}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
-	return plan, nil
-}
-
 func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}

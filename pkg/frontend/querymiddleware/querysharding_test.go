@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -472,7 +473,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			ShardingDisabled: true,
 		},
 	}
@@ -527,7 +528,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			TotalShards: 128,
 		},
 	}
@@ -590,14 +591,14 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			hints:                         &Hints{TotalQueries: 10},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			expectedShardsPerPartialQuery: 6,
+			expectedShardsPerPartialQuery: 8, // max sharded queries caps it to 6, rounded up to the next power of two.
 		},
 		"multiple splitted queries, query has 2 shardable legs": {
 			query:                         "sum(metric) / count(metric)",
 			hints:                         &Hints{TotalQueries: 10},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			expectedShardsPerPartialQuery: 3,
+			expectedShardsPerPartialQuery: 4, // max sharded queries caps it to 3, rounded up to the next power of two.
 		},
 		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
 			query:                         "sum(metric) / count(metric)",
@@ -605,47 +606,15 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			totalShards:                   16,
 			maxShardedQueries:             64,
 			compactorShards:               0,
-			expectedShardsPerPartialQuery: 10,
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
-		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+		"multiple splitted queries, query has 2 shardable legs, compactor shards do not affect the result": {
 			query:                         "sum(metric) / count(metric)",
 			hints:                         &Hints{TotalQueries: 3},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			compactorShards:               3,
-			expectedShardsPerPartialQuery: 9,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               4,
-			expectedShardsPerPartialQuery: 8,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               10,
-			expectedShardsPerPartialQuery: 10,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               11,
-			expectedShardsPerPartialQuery: 10, // cannot be adjusted to make 11 multiple or divisible, keep original.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               14,
-			expectedShardsPerPartialQuery: 7, // 7 divides 14
+			compactorShards:               10, // The compactor shard count no longer adjusts the query shard count.
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"query sharding is disabled": {
 			query:                         "sum(metric)",
@@ -661,7 +630,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries:             64,
 			nativeHistograms:              true,
 			compactorShards:               10,
-			expectedShardsPerPartialQuery: 10,
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"hints are missing, query has 1 shardable leg": {
 			query:                         "count(metric)",
@@ -1080,14 +1049,16 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 		expectedCalls int
 	}{
 		{
+			// Estimate yields min(16, 55000/10000+1)=6 shards, rounded up to the next power of two: 8.
 			"range query",
 			mustSucceed(mustSucceed(req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end))).WithEstimatedSeriesCountHint(55_000)),
-			6,
+			8,
 		},
 		{
+			// Estimate yields min(16, 29000/10000+1)=3 shards, rounded up to the next power of two: 4.
 			"instant query",
 			mustSucceed(req.WithEstimatedSeriesCountHint(29_000)),
-			3,
+			4,
 		},
 		{
 			"no hints",

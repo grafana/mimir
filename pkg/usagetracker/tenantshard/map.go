@@ -196,6 +196,33 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
+// Stats is a point-in-time snapshot of a Map's internal counters, used for debugging.
+type Stats struct {
+	// Resident is the number of resident elements, including dead ones (tombstones).
+	Resident uint32 `json:"resident"`
+	// Dead is the number of dead elements (tombstones).
+	Dead uint32 `json:"dead"`
+	// Limit is the resident count that triggers a rehash when reached.
+	Limit uint32 `json:"limit"`
+	// Length is the number of groups, i.e. the (identical) length of the index, keys and data arrays.
+	Length int `json:"length"`
+	// Rehashes is the number of rehashes since the Map was created.
+	Rehashes uint32 `json:"rehashes"`
+}
+
+// Stats returns a snapshot of the Map's internal counters.
+func (m *Map) Stats() Stats {
+	m.Lock()
+	defer m.Unlock()
+	return Stats{
+		Resident: m.resident,
+		Dead:     m.dead,
+		Limit:    m.limit,
+		Length:   len(m.index),
+		Rehashes: m.rehashes,
+	}
+}
+
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 groups:

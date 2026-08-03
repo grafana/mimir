@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -108,4 +110,12 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 	}
 
 	return nil, nil
+}
+
+func (m *mockStoreGatewayServer) SearchLabelNames(_ *storepb.SearchLabelNamesRequest, _ storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	return status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *mockStoreGatewayServer) SearchLabelValues(_ *storepb.SearchLabelValuesRequest, _ storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	return status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
 }

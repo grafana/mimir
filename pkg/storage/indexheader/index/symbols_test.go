@@ -58,7 +58,7 @@ func TestSymbolsV2(t *testing.T) {
 
 	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
 	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
-	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(context.Background(), instBkt, "index")
+	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(instBkt, "index")
 
 	factories := map[string]streamencoding.DecbufFactory{
 		"disk":   diskDecbufFactory,
@@ -66,7 +66,7 @@ func TestSymbolsV2(t *testing.T) {
 	}
 
 	for factoryName, decbufFactory := range factories {
-		allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(decbufFactory, symbolsStart, true)
+		allSymbolsCount, sparseOffsets, err := SparseValuesFromSymbolsTable(context.Background(), decbufFactory, symbolsStart, true)
 		require.NoError(t, err)
 
 		s, err := NewSymbolsTableReader(

@@ -45,6 +45,11 @@ func (b *PrefixedBucketClient) Upload(ctx context.Context, name string, r io.Rea
 	return
 }
 
+// SupportedObjectUploadOptions returns a list of ObjectUploadOptions supported by the underlying provider.
+func (b *PrefixedBucketClient) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return b.bucket.SupportedObjectUploadOptions()
+}
+
 // Delete removes the object with the given name.
 func (b *PrefixedBucketClient) Delete(ctx context.Context, name string) error {
 	return b.bucket.Delete(ctx, b.fullName(name))
@@ -102,6 +107,11 @@ func (b *PrefixedBucketClient) IsObjNotFoundErr(err error) bool {
 // IsAccessDeniedErr returns true if access to an operation is denied
 func (b *PrefixedBucketClient) IsAccessDeniedErr(err error) bool {
 	return b.bucket.IsAccessDeniedErr(err)
+}
+
+// IsConditionNotMetErr returns true if an ObjectUploadOption condition parameter was not met.
+func (b *PrefixedBucketClient) IsConditionNotMetErr(err error) bool {
+	return b.bucket.IsConditionNotMetErr(err)
 }
 
 // Attributes returns attributes of the specified object.

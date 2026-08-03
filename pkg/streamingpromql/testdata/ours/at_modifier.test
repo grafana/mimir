@@ -26,6 +26,9 @@ eval range from 0 to 50s step 10s metric @ end()
 eval range from 0 to 60s step 10s metric @ end()
   metric 5 5 5 5 5 5 5
 
+eval range from 30s to 30s step 10s metric @ 20
+  metric 2
+
 clear
 
 load 5m
@@ -47,6 +50,10 @@ eval range from 0 to 10m step 1m sum_over_time(metric[2m] @ 300)
 
 eval range from 0 to 10m step 1m increase(metric[2m] @ 300)
   {} 2 2 2 2 2 2 2 2 2 2 2
+
+# Different function applying to the same range selector to exercise common subexpression elimination.
+eval range from 0 to 10m step 1m increase(metric[2m] @ 300) + delta(metric[2m] @ 300)
+  {} 4 4 4 4 4 4 4 4 4 4 4
 
 eval range from 0 to 5m step 1m timestamp(increase(metric[2m] @ 300))
   {} 0 60 120 180 240 300
@@ -78,3 +85,10 @@ eval range from 0 to 60s step 10s avg_over_time(rate(metric[1m])[1s:60s])
   {job="web"} _ _ _ _ _ _ 20
 
 clear
+
+load 1m
+  single_histogram {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:30 count:10 buckets:[12 15 3]}}
+
+eval range from 1m to 5m step 1m single_histogram @ 60
+  single_histogram {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
+
