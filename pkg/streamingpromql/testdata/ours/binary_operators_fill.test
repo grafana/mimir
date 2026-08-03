@@ -290,13 +290,14 @@ load 5m
   cmp_right{label="a"} _ 20 10 _ 50
 
 # '>' with fill(0): at steps where only one side is present the missing operand is 0.
-#   step 0: 5 > 0    -> keep 5   (right filled)
+#   step 0: 5 > 0    -> keep 5   (right filled -> keeps the left metric name)
 #   step 1: 0 > 20   -> dropped  (left filled)
-#   step 2: 30 > 10  -> keep 30  (both present)
+#   step 2: 30 > 10  -> keep 30  (both present -> keeps the left metric name)
 #   step 3: no data on either side
 #   step 4: 5 > 50   -> dropped  (both present)
-# As a comparison filter, the result keeps the left series' metric name at every step where a result
-# is produced (including filled steps), matching upstream resultMetric behaviour.
+# Every kept step here is either both-present or right-filled, so every result comes from a real left
+# sample and keeps the left metric name. (A kept *left*-filled step would instead drop the metric
+# name. See the '!=' case below.)
 eval range from 0 to 20m step 5m cmp_left > fill(0) cmp_right
   cmp_left{label="a"} 5 _ 30 _ _
 
@@ -308,6 +309,40 @@ eval range from 0 to 20m step 5m cmp_left > bool fill(0) cmp_right
 #   step 0: 5 > 0 -> 1; step 2: 30 > 10 -> 1; step 4: 5 > 50 -> 0.
 eval range from 0 to 20m step 5m cmp_left > bool fill_right(0) cmp_right
   {label="a"} 1 _ 1 _ 0
+
+# ---------- Name-retaining comparison filter with fill_left on intermittent data ----------
+#
+# A name-retaining comparison filter (== != > < >= <= without the bool modifier) with ignoring()
+# (default) matching keeps the left series' __name__ for a *matched* group. Prometheus evaluates
+# matching per timestep. It builds the missing left operand from the right series' match labels only,
+# which drops __name__. So a kept *left-filled* step (left missing, right present) has no metric name.
+# A both-present step keeps the name. Over a range, one match group therefore splits into two output
+# series. One has __name__ (both-present steps). One has no __name__ (left-filled steps).
+
+clear
+
+load 5m
+  ir_left{label="a"}  100 _   300 _   500
+  ir_right{label="a"} _   1   2   3   _
+
+#   step 0: left 100 present, right missing -> no fill_right -> dropped
+#   step 1: left missing -> fill 0 -> 0 != 1 -> true, kept -> no __name__ (synthetic left)
+#   step 2: both present -> 300 != 2 -> true, kept -> keeps __name__ (real left)
+#   step 3: left missing -> fill 0 -> 0 != 3 -> true, kept -> no __name__ (synthetic left)
+#   step 4: left 500 present, right missing -> no fill_right -> dropped
+eval range from 0 to 20m step 5m ir_left != fill_left(0) ir_right
+  ir_left{label="a"} _ _ 300 _ _
+  {label="a"} _ 0 _ 0 _
+
+# With on(...) matching the output labels never include __name__, so there is no split. The
+# both-present step and the left-filled steps all carry the same (name-dropped) labels.
+#   step 1: 0 != 1 -> 0 (kept). step 2: 300 != 2 -> 300 (kept). step 3: 0 != 3 -> 0 (kept).
+eval range from 0 to 20m step 5m ir_left != on(label) fill_left(0) ir_right
+  {label="a"} _ 0 300 0 _
+
+# With the bool modifier the metric name is always dropped, so again there is no split.
+eval range from 0 to 20m step 5m ir_left != bool fill_left(0) ir_right
+  {label="a"} _ 1 1 1 _
 
 # ---------- fill(NaN) / fill(Inf) at intermittent steps ----------
 
