@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -107,33 +108,27 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
 	// that we can take the maximum per selector afterwards.
 	type selectorLookup struct {
-		canonical string
-		keys      []string
+		selector  string
+		cacheKeys []string
 	}
-	lookups := make([]selectorLookup, 0, len(selectorRanges))
-	seen := make(map[string]struct{})
-	allKeys := make([]string, 0, len(selectorRanges))
+	selectorsToLookUp := make([]selectorLookup, 0, len(selectorRanges))
+	keysToLookUp := make(map[string]struct{})
 
 	for _, sr := range selectorRanges {
-		canonical := selectorString(sr.matchers)
-		keys := selectorCardinalityCacheKeys(ctx, canonical, sr.minT, sr.maxT, maxSelectorCardinalityBuckets, spanLogger)
-		lookups = append(lookups, selectorLookup{canonical: canonical, keys: keys})
+		selector := selectorString(sr.matchers)
+		cacheKeys := selectorCardinalityCacheKeys(ctx, selector, sr.minT, sr.maxT, maxSelectorCardinalityBuckets, spanLogger)
+		selectorsToLookUp = append(selectorsToLookUp, selectorLookup{selector: selector, cacheKeys: cacheKeys})
 
-		for _, k := range keys {
-			if _, ok := seen[k]; ok {
+		for _, k := range cacheKeys {
+			if _, ok := keysToLookUp[k]; ok {
 				continue
 			}
-			seen[k] = struct{}{}
-			allKeys = append(allKeys, k)
+			keysToLookUp[k] = struct{}{}
 		}
 	}
 
-	if len(allKeys) == 0 {
-		return nil
-	}
-
 	// Fetch all cache entries in a single request.
-	res := e.cache.GetMulti(ctx, allKeys)
+	res := e.cache.GetMulti(ctx, slices.Collect(maps.Keys(keysToLookUp)))
 	if len(res) == 0 {
 		return nil
 	}
@@ -153,17 +148,23 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	// If there is no information available for a selector, then we return no estimate at all.
 	var overallEstimate uint64
 
-	for _, lookup := range lookups {
+	for _, s := range selectorsToLookUp {
 		hitCount := 0
 		var selectorEstimate uint64
 
-		for _, k := range lookup.keys {
-			entry, ok := decoded[k]
-			if !ok {
+		for _, k := range s.cacheKeys {
+			entry, hit := decoded[k]
+			if !hit {
 				continue
 			}
 			// Guard against hashed key collisions.
-			if entry.Selector != lookup.canonical {
+			if entry.Selector != s.selector {
+				level.Warn(spanLogger).Log(
+					"msg", "possible cache key collision: selector in entry does not match desired selector, ignoring value",
+					"key", k,
+					"entry_selector", entry.Selector,
+					"desired_selector", s.selector,
+				)
 				continue
 			}
 			hitCount++
@@ -173,16 +174,16 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 		if hitCount == 0 {
 			spanLogger.DebugLog(
 				"msg", "could not find cached cardinality estimate for selector",
-				"selector", lookup.canonical,
-				"requested_cache_entries_count", len(lookup.keys),
+				"selector", s.selector,
+				"requested_cache_entries_count", len(s.cacheKeys),
 			)
 			return nil
 		}
 
 		spanLogger.DebugLog(
 			"msg", "computed cardinality estimate for selector",
-			"selector", lookup.canonical,
-			"requested_cache_entries_count", len(lookup.keys),
+			"selector", s.selector,
+			"requested_cache_entries_count", len(s.cacheKeys),
 			"hit_count", hitCount,
 			"estimate", selectorEstimate,
 		)
