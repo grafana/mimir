@@ -14,6 +14,7 @@
 
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
+* [ENHANCEMENT] Dashboards: Make the boot/root disk device regex used to filter it out of the "Disk writes" and "Disk reads" panels configurable via `_config.node_boot_disk_device_regex` (default unchanged: `.*sda.*`), so clusters where the root device isn't `sda` (e.g. `vda` on some cloud providers) don't lose data on those panels. #16235
 
 ### Jsonnet
 
@@ -174,7 +175,6 @@
 * [ENHANCEMENT] Dashboards: Split the server-side "Usage Tracker" row of the "Writes" dashboard into separate "TrackSeries" (non-batched) and "TrackSeriesBatch" (batched) rows, so batched tracking RPCs are visible now that synchronous batched tracking can drive `TrackSeriesBatch`. #15805
 * [ENHANCEMENT] Dashboards: Simplify the ingest storage produced-records queries in the "Writes" and "Ruler" dashboards by removing the fallback to the `cortex_ingest_storage_writer_produce_requests_total` and `cortex_ingest_storage_writer_produce_failures_total` metrics, which were renamed to `cortex_ingest_storage_writer_produce_records_enqueued_total` and `cortex_ingest_storage_writer_produce_records_failed_total` more than a year ago. #16035
 * [ENHANCEMENT] Dashboards: Add optional per-zone panels for multi-zone write path deployments to the "Writes" dashboard, enabled via the `show_multi_zone_write_path_panels` config option (disabled by default). When enabled, the gateway and distributor "Requests / sec" and "Kafka produced records / sec" panels break down the traffic by availability zone, and "Latency per zone" panels are added next to the aggregate latency panels. #16206
-* [ENHANCEMENT] Dashboards: Make the boot/root disk device regex used to filter it out of the "Disk writes" and "Disk reads" panels configurable via `_config.node_boot_disk_device_regex` (default unchanged: `.*sda.*`), so clusters where the root device isn't `sda` (e.g. `vda` on some cloud providers) don't lose data on those panels. #6925
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 * [BUGFIX] Alerts: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
 
