@@ -26,3 +26,8 @@ func (a *Adaptor) SetAsync(ctx context.Context, key string, value []byte, ttl ti
 	a.inner.SetAsync(key, value, ttl)
 	return nil
 }
+
+func (a *Adaptor) SetMultiAsync(ctx context.Context, entries map[string][]byte, ttl time.Duration) error {
+	a.inner.SetMultiAsync(entries, ttl)
+	return nil
+}

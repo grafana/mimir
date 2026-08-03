@@ -14,6 +14,7 @@ import (
 type Backend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error)
 	SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	SetMultiAsync(ctx context.Context, entries map[string][]byte, ttl time.Duration) error
 }
 
 // HashCacheKey returns a hashed version of key that is small enough to fit within the Memcached key limit
