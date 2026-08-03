@@ -559,12 +559,8 @@ func newQueryMiddlewares(
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
 		//
-		// When splitting and caching run inside MQE, the split middleware is not in the chain, so
-		// this middleware would run over the whole query rather than the partial queries. Worse, the
-		// results cache lives inside MQE (downstream of this middleware), so a query answered fully
-		// from that cache reports zero fetched series here and would poison the estimate. In that
-		// mode, cardinality estimation is instead handled inside MQE (see the sharding optimization
-		// pass and the cardinality-storing query post-processor), so we skip the middleware here.
+		// When splitting and caching run inside MQE, this is handled by the cardinality
+		// estimator inside the sharding optimisation pass.
 		if cfg.CardinalityBasedShardingEnabled() && !cfg.UseMQEForSplittingAndCachingResults {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
 			queryRangeMiddleware = append(

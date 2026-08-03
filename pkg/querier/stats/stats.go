@@ -47,7 +47,7 @@ func IsEnabled(ctx context.Context) bool {
 type SafeStats struct {
 	Stats
 
-	// selectorCardinalitiesMtx guards access to Stats.SeenSelectorCardinalities and Stats.EstimatedSelectorCardinalities, which is a slice and
+	// selectorCardinalitiesMtx guards access to Stats.SeenSelectorCardinalities and Stats.EstimatedSelectorCardinalities, which are slices and
 	// therefore cannot be mutated safely with the atomic operations used for the scalar fields.
 	selectorCardinalitiesMtx sync.Mutex
 }
