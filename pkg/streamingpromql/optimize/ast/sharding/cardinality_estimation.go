@@ -326,6 +326,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	}
 
 	entries := make(map[string][]byte)
+	ignoredUpdates := 0
 
 	for gk, byShard := range seenGroups {
 		var total uint64
@@ -347,6 +348,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 			if existingEstimate > 0 && float64(total) < updateThreshold {
 				// The existing estimate is not above the threshold to write an updated entry,
 				// so leave it as-is.
+				ignoredUpdates++
 				continue
 			}
 
@@ -362,9 +364,10 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 
 	spanLogger.DebugLog(
 		"msg", "writing updated cardinality estimates (if any)",
-		"seen_count", len(seenGroups),
-		"estimates_count", len(estimatedGroups),
+		"seen_selector_group_count", len(seenGroups),
+		"estimated_selector_group_count", len(estimatedGroups),
 		"new_or_updated_estimates", len(entries),
+		"ignored_updates", ignoredUpdates,
 	)
 
 	if len(entries) == 0 {
