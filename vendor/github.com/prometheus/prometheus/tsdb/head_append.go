@@ -1501,7 +1501,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, s.V, nil, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
+			var result OOOInsertResult
+			result, chunkCreated, mmapRefs = series.insert(s.ST, s.T, s.V, nil, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1526,7 +1527,11 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 					acc.oooMmapMarkersCount++
 				}
 			}
-			if ok {
+			// NOTE: For a dropped sample we can only detect the clash against a sample in
+			// the OOOHeadChunk, not against samples in already flushed OOO chunks.
+			// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			switch result {
+			case OOOInserted:
 				acc.wblSamples = append(acc.wblSamples, s)
 				if s.T < acc.oooMinT {
 					acc.oooMinT = s.T
@@ -1535,11 +1540,12 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 					acc.oooMaxT = s.T
 				}
 				acc.oooFloatsAccepted++
-			} else {
-				// Sample is an exact duplicate of the last sample.
-				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
-				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			case OOODuplicateConflict:
+				// Same timestamp, different value: a conflicting overwrite.
+				acc.floatsAppended--
+				acc.recordDroppedConflict(series)
+			default:
+				// OOODuplicateExact: same timestamp and value, an idempotent duplicate.
 				acc.floatsAppended--
 				acc.recordDroppedExactDup(series)
 			}
@@ -1614,7 +1620,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
+			var result OOOInsertResult
+			result, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1639,7 +1646,11 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 					acc.oooMmapMarkersCount++
 				}
 			}
-			if ok {
+			// NOTE: For a dropped sample we can only detect the clash against a sample in
+			// the OOOHeadChunk, not against samples in already flushed OOO chunks.
+			// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			switch result {
+			case OOOInserted:
 				acc.wblHistograms = append(acc.wblHistograms, s)
 				if s.T < acc.oooMinT {
 					acc.oooMinT = s.T
@@ -1648,11 +1659,12 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 					acc.oooMaxT = s.T
 				}
 				acc.oooHistogramAccepted++
-			} else {
-				// Sample is an exact duplicate of the last sample.
-				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
-				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			case OOODuplicateConflict:
+				// Same timestamp, different value: a conflicting overwrite.
+				acc.histogramsAppended--
+				acc.recordDroppedConflict(series)
+			default:
+				// OOODuplicateExact: same timestamp and value, an idempotent duplicate.
 				acc.histogramsAppended--
 				acc.recordDroppedExactDup(series)
 			}
@@ -1727,7 +1739,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
+			var result OOOInsertResult
+			result, chunkCreated, mmapRefs = series.insert(s.ST, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1752,7 +1765,11 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 					acc.oooMmapMarkersCount++
 				}
 			}
-			if ok {
+			// NOTE: For a dropped sample we can only detect the clash against a sample in
+			// the OOOHeadChunk, not against samples in already flushed OOO chunks.
+			// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			switch result {
+			case OOOInserted:
 				acc.wblFloatHistograms = append(acc.wblFloatHistograms, s)
 				if s.T < acc.oooMinT {
 					acc.oooMinT = s.T
@@ -1761,11 +1778,12 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 					acc.oooMaxT = s.T
 				}
 				acc.oooHistogramAccepted++
-			} else {
-				// Sample is an exact duplicate of the last sample.
-				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
-				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			case OOODuplicateConflict:
+				// Same timestamp, different value: a conflicting overwrite.
+				acc.histogramsAppended--
+				acc.recordDroppedConflict(series)
+			default:
+				// OOODuplicateExact: same timestamp and value, an idempotent duplicate.
 				acc.histogramsAppended--
 				acc.recordDroppedExactDup(series)
 			}
@@ -1929,8 +1947,10 @@ func (a *headAppenderBase) Commit() (err error) {
 	return nil
 }
 
-// insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, o chunkOpts, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+// insert is like append, except it inserts. Used for OOO samples. The returned
+// OOOInsertResult reports whether the sample was inserted or dropped as an exact
+// duplicate or a conflicting overwrite of an existing same-timestamp sample.
+func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, o chunkOpts, oooCapMax int64, logger *slog.Logger) (result OOOInsertResult, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
@@ -1941,8 +1961,8 @@ func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *h
 		chunkCreated = true
 	}
 
-	ok := c.chunk.Insert(st, t, v, h, fh)
-	if ok {
+	result = c.chunk.Insert(st, t, v, h, fh)
+	if result == OOOInserted {
 		if chunkCreated || t < c.minTime {
 			c.minTime = t
 		}
@@ -1950,7 +1970,7 @@ func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *h
 			c.maxTime = t
 		}
 	}
-	return ok, chunkCreated, mmapRefs
+	return result, chunkCreated, mmapRefs
 }
 
 // chunkOpts are chunk-level options that are passed when appending to a memSeries.

@@ -1299,12 +1299,12 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.ST, s.T, s.V, nil, nil, appendChunkOpts, oooCapMax, h.logger)
+			result, chunkCreated, _ := ms.insert(s.ST, s.T, s.V, nil, nil, appendChunkOpts, oooCapMax, h.logger)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
-			if ok {
+			if result == OOOInserted {
 				if s.T < mint {
 					mint = s.T
 				}
@@ -1325,17 +1325,17 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				continue
 			}
 			var chunkCreated bool
-			var ok bool
+			var result OOOInsertResult
 			if s.h != nil {
-				ok, chunkCreated, _ = ms.insert(s.st, s.t, 0, s.h, nil, appendChunkOpts, oooCapMax, h.logger)
+				result, chunkCreated, _ = ms.insert(s.st, s.t, 0, s.h, nil, appendChunkOpts, oooCapMax, h.logger)
 			} else {
-				ok, chunkCreated, _ = ms.insert(s.st, s.t, 0, nil, s.fh, appendChunkOpts, oooCapMax, h.logger)
+				result, chunkCreated, _ = ms.insert(s.st, s.t, 0, nil, s.fh, appendChunkOpts, oooCapMax, h.logger)
 			}
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
-			if ok {
+			if result == OOOInserted {
 				if s.t > maxt {
 					maxt = s.t
 				}

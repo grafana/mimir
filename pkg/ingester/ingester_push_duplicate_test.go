@@ -476,3 +476,84 @@ func TestIngester_Push_DuplicateTimestampCostAttribution(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(caRegistry, strings.NewReader(expected),
 		"cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
+
+// TestIngester_Push_DuplicateTimestampOutOfOrder verifies that duplicate out-of-order
+// samples are classified by value, the same way in-order duplicates are: an OOO sample
+// that conflicts (same timestamp, different value) with an already-inserted OOO sample is
+// counted as new-value-for-timestamp, while an exact OOO duplicate (same value) is counted
+// as same-value-for-timestamp. This exercises OOOChunk.Insert's value comparison; before
+// it compared values, every OOO duplicate was reported as same-value-for-timestamp.
+func TestIngester_Push_DuplicateTimestampOutOfOrder(t *testing.T) {
+	metricLabels := labels.FromStrings(model.MetricNameLabel, "test")
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(metricLabels))
+	const userID = "test"
+
+	sampleMetricNames := []string{
+		"cortex_ingester_ingested_samples_total",
+		"cortex_ingester_ingested_samples_failures_total",
+		"cortex_discarded_samples_total",
+	}
+
+	registry := prometheus.NewRegistry()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.ReplicationFactor = 1
+	limits := defaultLimitsTestConfig()
+	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Advance the head's max time with an in-order sample so the later samples are OOO.
+	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{{TimestampMs: 1000, Value: 100}}))
+	require.NoError(t, err)
+
+	// All of these are out-of-order (ts < 1000) and within the OOO window. Within this
+	// request the first sample at each timestamp is inserted into the OOO head chunk; the
+	// second clashes with it. ts=500 clashes with a different value (conflict), ts=600 with
+	// the same value (exact duplicate).
+	_, err = i.Push(ctx, writeRequestManySeries(metricLabels, []mimirpb.Sample{
+		{TimestampMs: 500, Value: 1},
+		{TimestampMs: 500, Value: 2}, // OOO conflict -> new-value-for-timestamp
+		{TimestampMs: 600, Value: 3},
+		{TimestampMs: 600, Value: 3}, // OOO exact duplicate -> same-value-for-timestamp
+	}))
+	require.NoError(t, err)
+
+	// Read back stored samples: the first value at each timestamp wins.
+	s := &stream{ctx: ctx}
+	err = i.QueryStream(&client.QueryRequest{
+		StartTimestampMs: math.MinInt64,
+		EndTimestampMs:   math.MaxInt64,
+		Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
+	}, s)
+	require.NoError(t, err)
+	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
+	require.Equal(t, model.Matrix{
+		&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
+			{Value: 1, Timestamp: 500},
+			{Value: 3, Timestamp: 600},
+			{Value: 100, Timestamp: 1000},
+		}},
+	}, res)
+
+	// Three samples stored (one in-order + two OOO); the two duplicates are reconciled out
+	// and split by value: the different-value clash as new-value-for-timestamp and the
+	// same-value clash as same-value-for-timestamp.
+	expectedMetrics := `
+		# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+		# TYPE cortex_ingester_ingested_samples_total counter
+		cortex_ingester_ingested_samples_total{user="test"} 3
+		# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+		# TYPE cortex_ingester_ingested_samples_failures_total counter
+		cortex_ingester_ingested_samples_failures_total{user="test"} 0
+		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+		# TYPE cortex_discarded_samples_total counter
+		cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
+		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="test"} 1
+	`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), sampleMetricNames...))
+}
