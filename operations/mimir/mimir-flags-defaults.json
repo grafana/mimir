@@ -205,6 +205,7 @@
   "querier.mimir-query-engine.cardinality-estimation.bucket-size": 14400000000000,
   "querier.mimir-query-engine.cardinality-estimation.ttl": 604800000000000,
   "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector": 168,
+  "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold": 0.1,
   "querier.ring.store": "memberlist",
   "querier.ring.prefix": "collectors/",
   "querier.ring.consul.hostname": "localhost:8500",

@@ -2211,6 +2211,16 @@ mimir_query_engine:
     # CLI flag: -querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector
     [max_buckets_read_per_selector: <int> | default = 168]
 
+    # (experimental) The minimum difference from the original estimate to
+    # trigger storing a new cardinality estimate in the cache. Values are a
+    # proportion of the original value (eg. a value of 0.1 means a new estimate
+    # is only written if the new value is 10% higher than the original
+    # estimate). Only applies if running splitting and caching inside MQE is
+    # enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold
+    [estimate_update_threshold: <float> | default = 0.1]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

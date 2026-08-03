@@ -3050,6 +3050,17 @@
                   "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector",
                   "fieldType": "int",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "estimate_update_threshold",
+                  "required": false,
+                  "desc": "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (eg. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0.1,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold",
+                  "fieldType": "float",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
