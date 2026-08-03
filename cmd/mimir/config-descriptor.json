@@ -3011,6 +3011,49 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "cardinality_estimation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "bucket_size",
+                  "required": false,
+                  "desc": "The duration of each bucket used to store cardinality estimates per selector. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 14400000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.bucket-size",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl",
+                  "required": false,
+                  "desc": "The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_buckets_read_per_selector",
+                  "required": false,
+                  "desc": "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (ie. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 168,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,

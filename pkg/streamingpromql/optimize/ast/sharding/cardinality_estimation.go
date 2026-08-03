@@ -3,19 +3,19 @@
 package sharding
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"hash/fnv"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -23,30 +23,10 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-)
-
-const (
-	// selectorCardinalityCacheKeyPrefix is the prefix used for per-selector cardinality cache keys.
-	// It is deliberately different from the "QS" prefix used by the cardinality-estimation middleware
-	// so that the two sets of cache entries do not conflict.
-	selectorCardinalityCacheKeyPrefix = "SC"
-
-	// selectorCardinalityBucketSize is the width of the time buckets that a selector's queried time
-	// range is split into. Each bucket gets its own cache entry.
-	selectorCardinalityBucketSize = 4 * time.Hour
-
-	// selectorCardinalityTTL is how long a per-selector cardinality cache entry lives without being
-	// written to.
-	selectorCardinalityTTL = 7 * 24 * time.Hour
-
-	// maxSelectorCardinalityBuckets caps the number of cache entries generated for a single selector,
-	// to bound the size of the GetMulti / SetMultiAsync calls for very long time ranges.
-	maxSelectorCardinalityBuckets = 168 // 168 * 4h = 28 days.
 )
 
 // CardinalityEstimator estimates the number of series that will be selected by a query, so that the
@@ -54,7 +34,7 @@ const (
 type CardinalityEstimator interface {
 	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange
 	// with the given lookback delta, or nil if no estimate is available.
-	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *querymiddleware.EstimatedSeriesCount
+	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error)
 }
 
 // requestHintsCardinalityEstimator returns the cardinality estimate carried on the request hints,
@@ -67,18 +47,18 @@ func NewRequestHintsCardinalityEstimator() CardinalityEstimator {
 	return requestHintsCardinalityEstimator{}
 }
 
-func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) *querymiddleware.EstimatedSeriesCount {
+func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
 	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
-		return hints.GetCardinalityEstimate()
+		return hints.GetCardinalityEstimate(), nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // cacheCardinalityEstimator estimates a query's cardinality from the per-selector cardinality cache
 // entries written by the cardinality-storing query post-processor.
 type cacheCardinalityEstimator struct {
-	cache                    cache.Cache
+	cfg                      streamingpromql.CardinalityEstimationConfig
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	logger                   log.Logger
 }
@@ -88,15 +68,15 @@ type cacheCardinalityEstimator struct {
 // engine, and the lookback delta passed to EstimateSeriesCount must be the query's lookback delta, so
 // that the queried time ranges (and therefore the cache keys) line up with those used when writing
 // the cache entries.
-func NewCacheCardinalityEstimator(cache cache.Cache, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
+func NewCacheCardinalityEstimator(cfg streamingpromql.CardinalityEstimationConfig, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
 	return &cacheCardinalityEstimator{
-		cache:                    cache,
+		cfg:                      cfg,
 		noStepSubqueryIntervalFn: noStepSubqueryIntervalFn,
 		logger:                   logger,
 	}
 }
 
-func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *querymiddleware.EstimatedSeriesCount {
+func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
 	spanLogger, ctx := spanlogger.New(ctx, e.logger, tracer, "EstimateSeriesCount")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("timeRange", timeRange)
@@ -104,40 +84,46 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, e.noStepSubqueryIntervalFn)
 	if len(selectorRanges) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
 	// that we can take the maximum per selector afterwards.
 	type selectorLookup struct {
 		selector  string
-		cacheKeys []string
+		cacheKeys []cacheKey
 	}
 	selectorsToLookUp := make([]selectorLookup, 0, len(selectorRanges))
 	keysToLookUp := make(map[string]struct{})
 
 	for _, sr := range selectorRanges {
 		selector := selectorString(sr.matchers)
-		cacheKeys := selectorCardinalityCacheKeys(ctx, selector, sr.minT, sr.maxT, maxSelectorCardinalityBuckets, spanLogger)
+		cacheKeys, err := selectorCardinalityCacheKeys(ctx, e.cfg, selector, sr.minT, sr.maxT, true, spanLogger)
+		if err != nil {
+			return nil, err
+		}
 		selectorsToLookUp = append(selectorsToLookUp, selectorLookup{selector: selector, cacheKeys: cacheKeys})
 
 		for _, k := range cacheKeys {
-			if _, ok := keysToLookUp[k]; ok {
+			if _, ok := keysToLookUp[k.hashed]; ok {
 				continue
 			}
-			keysToLookUp[k] = struct{}{}
+			keysToLookUp[k.hashed] = struct{}{}
 		}
 	}
 
 	// Fetch all cache entries in a single request.
-	res := e.cache.GetMulti(ctx, slices.Collect(maps.Keys(keysToLookUp)))
+	res, err := e.cfg.Backend.GetMulti(ctx, slices.Collect(maps.Keys(keysToLookUp)))
+	if err != nil {
+		return nil, err
+	}
 	if len(res) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	decoded := make(map[string]*querymiddleware.SelectorCardinalityStatistics, len(res))
+	decoded := make(map[string]*SelectorCardinalityStatistics, len(res))
 	for k, v := range res {
-		entry := &querymiddleware.SelectorCardinalityStatistics{}
+		entry := &SelectorCardinalityStatistics{}
 		if err := proto.Unmarshal(v, entry); err != nil {
 			level.Warn(spanLogger).Log("msg", "failed to unmarshal selector cardinality cache entry", "err", err, "key", k)
 			continue
@@ -155,17 +141,15 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 		var selectorEstimate uint64
 
 		for _, k := range s.cacheKeys {
-			entry, hit := decoded[k]
+			entry, hit := decoded[k.hashed]
 			if !hit {
 				continue
 			}
 			// Guard against hashed key collisions.
-			if entry.Selector != s.selector {
+			if !bytes.Equal(entry.Key, k.plain) {
 				level.Warn(spanLogger).Log(
-					"msg", "possible cache key collision: selector in entry does not match desired selector, ignoring value",
+					"msg", "possible cache key collision: raw key in entry does not match desired key, ignoring value",
 					"key", k,
-					"entry_selector", entry.Selector,
-					"desired_selector", s.selector,
 				)
 				continue
 			}
@@ -179,7 +163,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 				"selector", s.selector,
 				"requested_cache_entries_count", len(s.cacheKeys),
 			)
-			return nil
+			return nil, nil
 		}
 
 		spanLogger.DebugLog(
@@ -195,7 +179,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
 
-	return &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}
+	return &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}, nil
 }
 
 // selectorTimeRange is a selector's matchers together with the time range it queries from storage.
@@ -270,15 +254,15 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 // of each selector evaluated by a successful query in the per-selector cardinality cache, so that the
 // cache-backed CardinalityEstimator can use it to estimate the cardinality of future queries.
 type cardinalityStoringPostProcessor struct {
-	cache  cache.Cache
+	cfg    streamingpromql.CardinalityEstimationConfig
 	logger log.Logger
 }
 
 // NewCardinalityStoringPostProcessor returns a query post-processor that stores per-selector
 // cardinality in the given cache.
-func NewCardinalityStoringPostProcessor(cache cache.Cache, logger log.Logger) streamingpromql.QueryPostProcessor {
+func NewCardinalityStoringPostProcessor(cfg streamingpromql.CardinalityEstimationConfig, logger log.Logger) streamingpromql.QueryPostProcessor {
 	return &cardinalityStoringPostProcessor{
-		cache:  cache,
+		cfg:    cfg,
 		logger: logger,
 	}
 }
@@ -324,20 +308,24 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			total += count
 		}
 
-		entry := &querymiddleware.SelectorCardinalityStatistics{Selector: gk.selector, Cardinality: total}
-		data, err := entry.Marshal()
+		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, gk.selector, gk.minT, gk.maxT, false, spanLogger)
 		if err != nil {
-			level.Warn(spanLogger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
-			continue
+			return err
 		}
 
-		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, -1, spanLogger) {
-			entries[k] = data
+		for _, k := range keys {
+			entry := &SelectorCardinalityStatistics{Key: k.plain, Cardinality: total}
+			data, err := entry.Marshal()
+			if err != nil {
+				level.Warn(spanLogger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
+				continue
+			}
+
+			entries[k.hashed] = data
 		}
 	}
 
-	p.cache.SetMultiAsync(entries, selectorCardinalityTTL)
-	return nil
+	return p.cfg.Backend.SetMultiAsync(ctx, entries, p.cfg.TTL)
 }
 
 // selectorStringWithoutShardingMatcher returns a stable string representation of the given matchers, excluding any
@@ -373,15 +361,8 @@ func selectorString(matchers []*labels.Matcher) string {
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
 // per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
 // applied so that entries for different selectors don't all expire at the same bucket boundary.
-func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, maxSelectorCardinalityBuckets int64, logger *spanlogger.SpanLogger) []string {
-	tenants, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil
-	}
-	userID := tenant.JoinTenantIDs(tenants)
-
-	bucketMs := selectorCardinalityBucketSize.Milliseconds()
-
+func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonicalSelector string, minT, maxT int64, limitBucketCount bool, logger *spanlogger.SpanLogger) ([]cacheKey, error) {
+	bucketMs := cfg.BucketSize.Milliseconds()
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(canonicalSelector))
 	offset := int64(hasher.Sum64() % uint64(bucketMs))
@@ -389,25 +370,40 @@ func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string,
 	firstBucket := (minT + offset) / bucketMs
 	lastBucket := (maxT + offset) / bucketMs
 	if lastBucket < firstBucket {
-		return nil
+		return nil, fmt.Errorf("last bucket must not be before first bucket, but got minT=%d and maxT=%d", minT, maxT)
 	}
 
-	if maxSelectorCardinalityBuckets > 0 && lastBucket-firstBucket+1 > maxSelectorCardinalityBuckets {
+	if limitBucketCount && lastBucket-firstBucket+1 > cfg.MaxBucketsReadPerSelector {
 		logger.DebugLog(
 			"msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used",
-			"max_buckets", maxSelectorCardinalityBuckets,
+			"max_buckets", cfg.MaxBucketsReadPerSelector,
 			"selector", canonicalSelector,
 		)
-		lastBucket = firstBucket + maxSelectorCardinalityBuckets - 1
+		lastBucket = firstBucket + cfg.MaxBucketsReadPerSelector - 1
 	}
 
-	userIDHash := caching.HashCacheKey([]byte(userID))
-	selectorHash := caching.HashCacheKey([]byte(canonicalSelector))
+	keys := make([]cacheKey, 0, lastBucket-firstBucket+1)
+	for bucket := firstBucket; bucket <= lastBucket; bucket++ {
+		suffix := bytes.Join([][]byte{
+			[]byte(canonicalSelector),
+			[]byte(strconv.FormatInt(bucket, 10)),
+		}, []byte(":"))
 
-	keys := make([]string, 0, lastBucket-firstBucket+1)
-	for b := firstBucket; b <= lastBucket; b++ {
-		keys = append(keys, fmt.Sprintf("%s:%s:%s:%d", selectorCardinalityCacheKeyPrefix, userIDHash, selectorHash, b))
+		plain, hashed, err := cfg.CacheKeyGenerator.ComputeCacheKey(ctx, suffix)
+		if err != nil {
+			return nil, err
+		}
+
+		keys = append(keys, cacheKey{
+			plain:  plain,
+			hashed: hashed,
+		})
 	}
 
-	return keys
+	return keys, nil
+}
+
+type cacheKey struct {
+	plain  []byte
+	hashed string
 }

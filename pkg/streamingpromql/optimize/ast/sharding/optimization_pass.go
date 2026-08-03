@@ -85,7 +85,12 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr p
 	var seriesCount *querymiddleware.EstimatedSeriesCount
 
 	if o.estimator != nil {
-		seriesCount = o.estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		var err error
+		seriesCount, err = o.estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {

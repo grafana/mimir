@@ -91,16 +91,6 @@ message QueryStatistics {
   string UserID = 2;
 }
 
-// SelectorCardinalityStatistics is the value stored in the cardinality cache for a single selector
-// and time range when splitting and caching run inside the Mimir query engine.
-message SelectorCardinalityStatistics {
-  // Selector is the canonical string form of the selector's matchers. It is stored unhashed so that
-  // hash collisions on the cache key can be detected.
-  string selector = 1;
-  // Cardinality is the number of series selected.
-  uint64 cardinality = 2;
-}
-
 // CachedHTTPResponse holds a generic HTTP response in the query results cache.
 message CachedHTTPResponse {
   // cacheKey contains the non-hashed cache key, used to guarantee there haven't

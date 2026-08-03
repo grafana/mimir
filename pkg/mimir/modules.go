@@ -965,7 +965,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
 	// createQueryFrontendQueryPlanner) can use it to size shards for future queries.
 	if middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.ShardedQueries && middlewareCfg.UseMQEForSharding && middlewareCfg.CardinalityBasedShardingEnabled() {
-		opts.QueryPostProcessors = append(opts.QueryPostProcessors, sharding.NewCardinalityStoringPostProcessor(t.QueryFrontendCacheClient, util_log.Logger))
+		opts.QueryPostProcessors = append(opts.QueryPostProcessors, sharding.NewCardinalityStoringPostProcessor(opts.CardinalityEstimation, util_log.Logger))
 	}
 
 	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
@@ -1216,7 +1216,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		var estimator sharding.CardinalityEstimator
 		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
 			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-				estimator = sharding.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
+				estimator = sharding.NewCacheCardinalityEstimator(opts.CardinalityEstimation, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
 			} else {
 				estimator = sharding.NewRequestHintsCardinalityEstimator()
 			}
@@ -1255,6 +1255,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.
