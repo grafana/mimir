@@ -116,7 +116,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	for _, sr := range selectorRanges {
 		canonical := canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(sr.matchers))
-		keys := selectorCardinalityCacheKeys(ctx, canonical, sr.minT, sr.maxT, spanLogger)
+		keys := selectorCardinalityCacheKeys(ctx, canonical, sr.minT, sr.maxT, maxSelectorCardinalityBuckets, spanLogger)
 		lookups = append(lookups, selectorLookup{canonical: canonical, keys: keys})
 
 		for _, k := range keys {
@@ -329,7 +329,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			continue
 		}
 
-		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, spanLogger) {
+		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, -1, spanLogger) {
 			entries[k] = data
 		}
 	}
@@ -378,7 +378,7 @@ func canonicalSelectorString(matchers []stats.LabelMatcher) string {
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
 // per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
 // applied so that entries for different selectors don't all expire at the same bucket boundary.
-func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, logger *spanlogger.SpanLogger) []string {
+func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, maxSelectorCardinalityBuckets int64, logger *spanlogger.SpanLogger) []string {
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil
@@ -397,7 +397,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string,
 		return nil
 	}
 
-	if lastBucket-firstBucket+1 > maxSelectorCardinalityBuckets {
+	if maxSelectorCardinalityBuckets > 0 && lastBucket-firstBucket+1 > maxSelectorCardinalityBuckets {
 		logger.DebugLog(
 			"msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used",
 			"max_buckets", maxSelectorCardinalityBuckets,
