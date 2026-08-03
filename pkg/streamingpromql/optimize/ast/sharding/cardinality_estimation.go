@@ -359,8 +359,11 @@ func selectorString(matchers []*labels.Matcher) string {
 }
 
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
-// per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
-// applied so that entries for different selectors don't all expire at the same bucket boundary.
+// per selectorCardinalityBucketSize-wide bucket that the range overlaps.
+//
+// If limitBucketCount is true and the range overlaps more than MaxBucketsReadPerSelector buckets, an
+// evenly-spaced subset of at most MaxBucketsReadPerSelector buckets is returned instead, to bound the
+// size of the cache request.
 func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonicalSelector string, minT, maxT int64, limitBucketCount bool, logger *spanlogger.SpanLogger) ([]cacheKey, error) {
 	bucketMs := cfg.BucketSize.Milliseconds()
 	hasher := fnv.New64a()
@@ -373,17 +376,38 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 		return nil, fmt.Errorf("last bucket must not be before first bucket, but got minT=%d and maxT=%d", minT, maxT)
 	}
 
-	if limitBucketCount && lastBucket-firstBucket+1 > cfg.MaxBucketsReadPerSelector {
-		logger.DebugLog(
-			"msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used",
-			"max_buckets", cfg.MaxBucketsReadPerSelector,
-			"selector", canonicalSelector,
-		)
-		lastBucket = firstBucket + cfg.MaxBucketsReadPerSelector - 1
+	bucketCount := lastBucket - firstBucket + 1
+
+	if !limitBucketCount || bucketCount <= cfg.MaxBucketsReadPerSelector {
+		keys := make([]cacheKey, 0, bucketCount)
+		for bucketIndex := firstBucket; bucketIndex <= lastBucket; bucketIndex++ {
+			key, err := selectorCardinalityCacheKey(ctx, cfg, canonicalSelector, bucketIndex)
+			if err != nil {
+				return nil, err
+			}
+
+			keys = append(keys, key)
+		}
+
+		return keys, nil
 	}
 
-	keys := make([]cacheKey, 0, lastBucket-firstBucket+1)
-	for bucketIndex := firstBucket; bucketIndex <= lastBucket; bucketIndex++ {
+	// The range overlaps more buckets than we're willing to read, so read an evenly-spaced subset of
+	// MaxBucketsReadPerSelector buckets across the range instead.
+	maxBuckets := cfg.MaxBucketsReadPerSelector
+	logger.DebugLog(
+		"msg", "selector cardinality time range spans more buckets than the maximum; only a subset of buckets will be queried",
+		"max_buckets", maxBuckets,
+		"bucket_count", bucketCount,
+		"selector", canonicalSelector,
+	)
+
+	keys := make([]cacheKey, 0, maxBuckets)
+	for i := range maxBuckets {
+		// Space the selected buckets evenly across [firstBucket, lastBucket], rounding to the nearest
+		// bucket so the first and last buckets in the range are always included.
+		bucketIndex := firstBucket + (i*bucketCount*2+maxBuckets)/(maxBuckets*2)
+
 		key, err := selectorCardinalityCacheKey(ctx, cfg, canonicalSelector, bucketIndex)
 		if err != nil {
 			return nil, err

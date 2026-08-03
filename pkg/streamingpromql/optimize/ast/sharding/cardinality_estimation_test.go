@@ -165,6 +165,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 1, c.KeysCount)
 	})
 
 	t.Run("returns the cardinality of a single selector", func(t *testing.T) {
@@ -182,6 +183,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NotNil(t, result)
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 1, c.KeysCount)
 	})
 
 	t.Run("returns the total cardinality across selectors", func(t *testing.T) {
@@ -199,6 +201,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NotNil(t, result)
 		require.Equal(t, uint64(600), result.EstimatedSeriesCount)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 2, c.KeysCount)
 	})
 
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {
@@ -215,6 +218,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 2, c.KeysCount)
 	})
 
 	t.Run("returns the maximum cardinality across the buckets of a single selector", func(t *testing.T) {
@@ -245,6 +249,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NotNil(t, result)
 		require.Equal(t, uint64(9999), result.EstimatedSeriesCount)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, len(keys), c.KeysCount)
 	})
 
 	t.Run("ignores entries whose stored selector does not match (hash collision)", func(t *testing.T) {
@@ -267,7 +272,91 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 1, c.KeysCount)
 	})
+
+	t.Run("queries no more than the maximum allowed number of buckets, even if the selector queries a longer time range", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.MaxBucketsReadPerSelector = 4
+		cfg.BucketSize = 5 * time.Minute
+
+		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		require.NoError(t, err)
+
+		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
+		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		require.NoError(t, err)
+		require.Nil(t, result)
+		require.Equal(t, 1, c.GetCount)
+		require.EqualValues(t, cfg.MaxBucketsReadPerSelector, c.KeysCount)
+	})
+}
+
+func TestSelectorCardinalityCacheKeys(t *testing.T) {
+	const bucketSize = 5 * time.Minute
+	const maxBuckets = 10
+
+	testCases := map[string]struct {
+		minT int64
+		maxT int64
+
+		expectedBucketIndices []int64
+	}{
+		"start and end are the same": {
+			minT:                  1,
+			maxT:                  1,
+			expectedBucketIndices: []int64{0},
+		},
+		"number of buckets queried is much less than limit": {
+			minT:                  0,
+			maxT:                  bucketSize.Milliseconds() + 1,
+			expectedBucketIndices: []int64{0, 1},
+		},
+		"number of buckets queried is exactly the limit": {
+			minT:                  0,
+			maxT:                  bucketSize.Milliseconds() * (maxBuckets - 1),
+			expectedBucketIndices: []int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+		},
+		"number of buckets queried is just beyond the limit, only one needs to be dropped": {
+			minT:                  0,
+			maxT:                  bucketSize.Milliseconds() * maxBuckets,
+			expectedBucketIndices: []int64{0, 1, 2, 3, 4 /* 5 dropped */, 6, 7, 8, 9, 10},
+		},
+		"number of buckets queried is well beyond the limit, every second bucket needs to be dropped": {
+			minT:                  0,
+			maxT:                  (bucketSize.Milliseconds() * 19) - 1,
+			expectedBucketIndices: []int64{0, 2, 4, 6, 8, 10, 12, 14, 16, 18},
+		},
+		"number of buckets queried is more than double the limit, three in every four buckets needs to be dropped": {
+			minT:                  0,
+			maxT:                  (bucketSize.Milliseconds() * 39) - 1,
+			expectedBucketIndices: []int64{0, 4, 8, 12, 16, 20, 24, 28, 32, 36},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.LessOrEqual(t, len(testCase.expectedBucketIndices), maxBuckets, "invalid test case: more expected buckets than limit")
+
+			_, cfg := setupCardinalityEstimationTest()
+			cfg.BucketSize = bucketSize
+			cfg.MaxBucketsReadPerSelector = maxBuckets
+			ctx := context.Background()
+
+			selector := "foo"
+			actualKeys, err := selectorCardinalityCacheKeys(ctx, cfg, selector, testCase.minT, testCase.maxT, true, newNoOpSpanLogger(t))
+			require.NoError(t, err)
+
+			expectedKeys := make([]cacheKey, 0, len(testCase.expectedBucketIndices))
+			for _, k := range testCase.expectedBucketIndices {
+				key, err := selectorCardinalityCacheKey(ctx, cfg, selector, k)
+				require.NoError(t, err)
+				expectedKeys = append(expectedKeys, key)
+			}
+
+			require.Equal(t, expectedKeys, actualKeys)
+		})
+	}
 }
 
 func TestRequestHintsCardinalityEstimator(t *testing.T) {
@@ -372,6 +461,17 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		result := estimateFoo(t, cfg)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(50), result.EstimatedSeriesCount)
+	})
+
+	t.Run("records cache entries for all buckets covered by the selector, even if this is more than the configured limit for number of buckets read per selector", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.MaxBucketsReadPerSelector = 5
+		cfg.BucketSize = time.Minute
+		ctx, qs := newCtxWithStats()
+		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 0, MaxT: 10 * time.Minute.Milliseconds(), SeriesCount: 50})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.Equal(t, 11, c.SetCount)
 	})
 }
 
