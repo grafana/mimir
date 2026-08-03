@@ -340,24 +340,6 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 	return nil
 }
 
-// shardLabelValue returns the value of the query-shard matcher in matchers, or "" if there is none.
-func shardLabelValue(matchers []stats.LabelMatcher) string {
-	for _, m := range matchers {
-		if m.Name == sharding.ShardLabel {
-			return m.Value
-		}
-	}
-	return ""
-}
-
-func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []stats.LabelMatcher {
-	out := make([]stats.LabelMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		out = append(out, stats.LabelMatcher{Type: m.Type, Name: m.Name, Value: m.Value})
-	}
-	return out
-}
-
 // selectorStringWithoutShardingMatcher returns a stable string representation of the given matchers, excluding any
 // query-shard matcher so that all shards of the same logical selector map to the same string. The
 // format matches labels.Matcher.String() so that the read and write paths agree.
