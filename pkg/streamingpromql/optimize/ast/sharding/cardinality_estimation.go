@@ -383,24 +383,30 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	}
 
 	keys := make([]cacheKey, 0, lastBucket-firstBucket+1)
-	for bucket := firstBucket; bucket <= lastBucket; bucket++ {
-		suffix := bytes.Join([][]byte{
-			[]byte(canonicalSelector),
-			[]byte(strconv.FormatInt(bucket, 10)),
-		}, []byte(":"))
-
-		plain, hashed, err := cfg.CacheKeyGenerator.ComputeCacheKey(ctx, suffix)
+	for bucketIndex := firstBucket; bucketIndex <= lastBucket; bucketIndex++ {
+		key, err := selectorCardinalityCacheKey(ctx, cfg, canonicalSelector, bucketIndex)
 		if err != nil {
 			return nil, err
 		}
 
-		keys = append(keys, cacheKey{
-			plain:  plain,
-			hashed: hashed,
-		})
+		keys = append(keys, key)
 	}
 
 	return keys, nil
+}
+
+func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonicalSelector string, bucketIndex int64) (cacheKey, error) {
+	suffix := bytes.Join([][]byte{
+		[]byte(canonicalSelector),
+		[]byte(strconv.FormatInt(bucketIndex, 10)),
+	}, []byte(":"))
+
+	plain, hashed, err := cfg.CacheKeyGenerator.ComputeCacheKey(ctx, suffix)
+	if err != nil {
+		return cacheKey{}, err
+	}
+
+	return cacheKey{plain: plain, hashed: hashed}, nil
 }
 
 type cacheKey struct {
