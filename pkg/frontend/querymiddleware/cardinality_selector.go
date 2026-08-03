@@ -281,10 +281,6 @@ func NewCardinalityStoringPostProcessor(cache cache.Cache, logger log.Logger) st
 }
 
 func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error {
-	if p.cache == nil {
-		return nil
-	}
-
 	queryStats := stats.FromContext(ctx)
 	cardinalities := queryStats.LoadSelectorCardinalities()
 	if len(cardinalities) == 0 {
