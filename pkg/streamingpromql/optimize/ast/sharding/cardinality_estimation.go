@@ -84,6 +84,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	spanLogger.SetTag("timeRange", timeRange)
 	spanLogger.SetTag("lookbackDelta", lookbackDelta)
 
+	queryStats := stats.FromContext(ctx)
 	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
 	if len(selectorRanges) == 0 {
 		return nil, nil
@@ -92,6 +93,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
 	// that we can take the maximum per selector afterwards.
 	type selectorLookup struct {
+		matchers  []stats.LabelMatcher
 		selector  string
 		cacheKeys []cacheKey
 	}
@@ -104,7 +106,11 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		if err != nil {
 			return nil, err
 		}
-		selectorsToLookUp = append(selectorsToLookUp, selectorLookup{selector: selector, cacheKeys: cacheKeys})
+		selectorsToLookUp = append(selectorsToLookUp, selectorLookup{
+			matchers:  toStatsMatchers(sr.matchers),
+			selector:  selector,
+			cacheKeys: cacheKeys,
+		})
 
 		for _, k := range cacheKeys {
 			if _, ok := keysToLookUp[k.hashed]; ok {
@@ -137,6 +143,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	// cardinality of a single selector is the maximum across the buckets it spans.
 	// If there is no information available for a selector, then we return no estimate at all.
 	var overallEstimate uint64
+	sawAllSelectors := true
 
 	for _, s := range selectorsToLookUp {
 		hitCount := 0
@@ -157,6 +164,13 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 			}
 			hitCount++
 			selectorEstimate = max(selectorEstimate, entry.Cardinality)
+
+			queryStats.AddEstimatedSelectorCardinality(stats.SelectorCardinality{
+				Matchers:    s.matchers,
+				MinT:        k.minT,
+				MaxT:        k.maxT,
+				SeriesCount: entry.Cardinality,
+			})
 		}
 
 		if hitCount == 0 {
@@ -165,7 +179,11 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 				"selector", s.selector,
 				"requested_cache_entries_count", len(s.cacheKeys),
 			)
-			return nil, nil
+
+			// We don't return early because we still want to populate all the estimated selector cardinalities in the query stats
+			// so we don't bother writing them to the cache again in the post-processor.
+			sawAllSelectors = false
+			continue
 		}
 
 		spanLogger.DebugLog(
@@ -177,6 +195,10 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		)
 
 		overallEstimate += selectorEstimate
+	}
+
+	if !sawAllSelectors {
+		return nil, nil
 	}
 
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
@@ -352,6 +374,19 @@ func selectorString(matchers []*labels.Matcher) string {
 	return strings.Join(strs, ",")
 }
 
+func toStatsMatchers(matchers []*labels.Matcher) []stats.LabelMatcher {
+	statsMatchers := make([]stats.LabelMatcher, 0, len(matchers))
+	for _, m := range matchers {
+		statsMatchers = append(statsMatchers, stats.LabelMatcher{
+			Name:  m.Name,
+			Value: m.Value,
+			Type:  m.Type,
+		})
+	}
+
+	return statsMatchers
+}
+
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
 // per selectorCardinalityBucketSize-wide bucket that the range overlaps.
 //
@@ -396,7 +431,9 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 			bucketIndex = firstBucket + (i*desiredBucketCount*2+maxBuckets)/(maxBuckets*2)
 		}
 
-		key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex)
+		bucketMinT := bucketIndex*cfg.BucketSize.Milliseconds() - offset
+		bucketMaxT := bucketMinT + cfg.BucketSize.Milliseconds()
+		key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex, bucketMinT, bucketMaxT)
 		if err != nil {
 			return nil, err
 		}
@@ -407,7 +444,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	return keys, nil
 }
 
-func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, bucketIndex int64) (cacheKey, error) {
+func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, bucketIndex int64, minT, maxT int64) (cacheKey, error) {
 	suffix := bytes.Join([][]byte{
 		[]byte(originalExpression),
 		[]byte(canonicalSelector),
@@ -419,10 +456,17 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 		return cacheKey{}, err
 	}
 
-	return cacheKey{plain: plain, hashed: hashed}, nil
+	return cacheKey{
+		plain:  plain,
+		hashed: hashed,
+		minT:   minT,
+		maxT:   maxT,
+	}, nil
 }
 
 type cacheKey struct {
 	plain  []byte
 	hashed string
+	minT   int64
+	maxT   int64
 }
