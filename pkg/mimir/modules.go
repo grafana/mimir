@@ -1214,10 +1214,12 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		// the chain, so estimate cardinality from the per-selector cardinality cache. Otherwise, use
 		// the estimate provided by the cardinality-estimation middleware via the request hints.
 		var estimator querymiddleware.CardinalityEstimator
-		if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-			estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
-		} else {
-			estimator = querymiddleware.NewRequestHintsCardinalityEstimator()
+		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
+			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+				estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
+			} else {
+				estimator = querymiddleware.NewRequestHintsCardinalityEstimator()
+			}
 		}
 
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, estimator, opts.CommonOpts.Reg, util_log.Logger))
