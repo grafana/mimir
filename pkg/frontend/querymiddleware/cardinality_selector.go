@@ -287,6 +287,9 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 		return nil
 	}
 
+	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "cardinalityStoringPostProcessor.PostProcess")
+	defer spanLogger.Finish()
+
 	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and time range,
 	// then aggregate within each group. Different shards of the same logical selector each report a
 	// disjoint subset of the series, so their cardinalities are summed. A selector that is reported
@@ -322,11 +325,11 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 		entry := &SelectorCardinalityStatistics{Selector: gk.selector, Cardinality: total}
 		data, err := entry.Marshal()
 		if err != nil {
-			level.Warn(p.logger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
+			level.Warn(spanLogger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
 			continue
 		}
 
-		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, p.logger) {
+		for _, k := range selectorCardinalityCacheKeys(ctx, gk.selector, gk.minT, gk.maxT, spanLogger) {
 			entries[k] = data
 		}
 	}
@@ -375,7 +378,7 @@ func canonicalSelectorString(matchers []stats.LabelMatcher) string {
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
 // per selectorCardinalityBucketSize-wide bucket that the range overlaps. A per-selector offset is
 // applied so that entries for different selectors don't all expire at the same bucket boundary.
-func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, logger log.Logger) []string {
+func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string, minT, maxT int64, logger *spanlogger.SpanLogger) []string {
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil
@@ -395,7 +398,11 @@ func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string,
 	}
 
 	if lastBucket-firstBucket+1 > maxSelectorCardinalityBuckets {
-		level.Debug(logger).Log("msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used", "max_buckets", maxSelectorCardinalityBuckets, "selector", canonicalSelector)
+		logger.DebugLog(
+			"msg", "selector cardinality time range spans more buckets than the maximum; only the first buckets are used",
+			"max_buckets", maxSelectorCardinalityBuckets,
+			"selector", canonicalSelector,
+		)
 		lastBucket = firstBucket + maxSelectorCardinalityBuckets - 1
 	}
 
