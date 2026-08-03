@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -16,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -157,7 +159,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
-			output, err := pass.Apply(ctx, input, &planning.QueryParameters{})
+			output, err := pass.Apply(ctx, input, &planning.QueryParameters{TimeRange: types.NewInstantQueryTimeRange(time.Now())})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
