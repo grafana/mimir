@@ -115,7 +115,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 	allKeys := make([]string, 0, len(selectorRanges))
 
 	for _, sr := range selectorRanges {
-		canonical := canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(sr.matchers))
+		canonical := selectorString(sr.matchers)
 		keys := selectorCardinalityCacheKeys(ctx, canonical, sr.minT, sr.maxT, maxSelectorCardinalityBuckets, spanLogger)
 		lookups = append(lookups, selectorLookup{canonical: canonical, keys: keys})
 
@@ -302,7 +302,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 	groups := make(map[groupKey]map[string]uint64)
 
 	for _, c := range cardinalities {
-		selector := canonicalSelectorString(c.Matchers)
+		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
 		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
 
 		byShard := groups[gk]
@@ -310,7 +310,6 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			byShard = make(map[string]uint64)
 			groups[gk] = byShard
 		}
-		shard := shardLabelValue(c.Matchers)
 		byShard[shard] = max(byShard[shard], c.SeriesCount)
 	}
 
@@ -334,10 +333,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 		}
 	}
 
-	if len(entries) > 0 {
-		p.cache.SetMultiAsync(entries, selectorCardinalityTTL)
-	}
-
+	p.cache.SetMultiAsync(entries, selectorCardinalityTTL)
 	return nil
 }
 
@@ -359,17 +355,31 @@ func cardinalitySelectorMatchersFromLabelMatchers(matchers []*labels.Matcher) []
 	return out
 }
 
-// canonicalSelectorString returns a stable string representation of the given matchers, excluding any
+// selectorStringWithoutShardingMatcher returns a stable string representation of the given matchers, excluding any
 // query-shard matcher so that all shards of the same logical selector map to the same string. The
 // format matches labels.Matcher.String() so that the read and write paths agree.
-func canonicalSelectorString(matchers []stats.LabelMatcher) string {
+//
+// The sharding label is returned separately.
+func selectorStringWithoutShardingMatcher(matchers []stats.LabelMatcher) (string, string) {
 	strs := make([]string, 0, len(matchers))
+	shard := ""
+
 	for _, m := range matchers {
 		if m.Name == sharding.ShardLabel {
+			shard = m.Value
 			continue
 		}
 		matcher := labels.Matcher{Name: m.Name, Value: m.Value, Type: m.Type}
 		strs = append(strs, matcher.String())
+	}
+	slices.Sort(strs)
+	return "{" + strings.Join(strs, ",") + "}", shard
+}
+
+func selectorString(matchers []*labels.Matcher) string {
+	strs := make([]string, 0, len(matchers))
+	for _, m := range matchers {
+		strs = append(strs, m.String())
 	}
 	slices.Sort(strs)
 	return "{" + strings.Join(strs, ",") + "}"
