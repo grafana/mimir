@@ -156,7 +156,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange.StepCount, nil, nil)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -629,9 +629,9 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 	switch g.VectorMatching.Card {
 	case parser.CardOneToMany:
 		// The grouped operator never splits fill-left points, so the second return value is always empty.
-		result, _, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide, false)
+		result, _, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide, fillLeftOptions{})
 	case parser.CardManyToOne:
-		result, _, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide, false)
+		result, _, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide, fillLeftOptions{})
 	default:
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}

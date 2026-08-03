@@ -64,34 +64,90 @@ type oneToOneBinaryOperationOutputSeries struct {
 	// synthesised from the RHS fill value. rightSide is then nil and leftSeriesIndices is populated.
 	fillMissingRight bool
 
-	// splitHolder is non-nil for the two siblings of a name-retaining fill-left split (see
-	// computeOutputSeries). The two siblings share one holder, one rightSide, and one set of
-	// leftSeriesIndices. The operator evaluates the group once. Each sibling then takes its half of the
-	// result.
+	// splitHolder is non-nil for every output series of a name-retaining fill-left split group (see
+	// computeOutputSeries). One group has one holder. Every matched output series of the group and the
+	// group's single name-dropped sibling share that holder. The last matched read of the group
+	// computes the group's fill-left points and stores them in the holder. The sibling then takes
+	// them.
 	splitHolder *oneToOneBinaryOperationSplitHolder
 
-	// nameDropped marks the name-dropped sibling of a split pair. This output series holds the
-	// fill-left points, which are the steps where the left side is absent. Upstream produces those
-	// points without a metric name. The other sibling (nameDropped false) holds the name-retaining
-	// points.
+	// fillLeftCarrier marks the single output series of a split group that emits the group's
+	// fill-left points. Those are the points at the steps where no left series of the group has a
+	// sample. Upstream Prometheus produces them without a metric name, so they carry the group's match
+	// key labels.
+	//
+	// The carrier is normally the group's name-dropped sibling. That sibling reads no left series of
+	// its own, and nameDropped is then also true. The sibling's labels can collide with a matched
+	// output series of the group. That matched output series then becomes the carrier instead. It
+	// emits the group's fill-left points together with its own name-retaining points, and nameDropped
+	// stays false. See addNameDroppedFillLeftSiblings.
+	fillLeftCarrier bool
+
+	// nameDropped marks the name-dropped sibling of a split group. The sibling reads no left series
+	// and takes its whole result from splitHolder. The matched output series of the group
+	// (nameDropped false) hold the name-retaining points.
 	nameDropped bool
+
+	// groupLatestLeftSeriesIndex is set only when fillLeftCarrier is true. It holds the highest left
+	// series index of the split group, and latestLeftSeries reports it. sortSeries then places the
+	// carrier after every other matched output series of its group. The carrier needs that order.
+	// Only the last matched read of the group has the complete left-side presence of the group (see
+	// NextSeries).
+	groupLatestLeftSeriesIndex int
 }
 
-// oneToOneBinaryOperationSplitHolder carries the single evaluation result of a name-retaining
-// fill-left split group between its two output series (name-retaining and name-dropped). The operator
-// evaluates the group once, when it reads the first sibling. It stores the result here so the second
-// sibling takes its half without a second evaluation.
+// oneToOneBinaryOperationSplitHolder carries the fill-left points of a name-retaining fill-left split
+// group. The last matched read of the group puts the points in the holder. The group's name-dropped
+// sibling then takes them.
+//
+// The operator evaluates every matched output series of the group against the same right side. Each
+// of those evaluations sees only its own left series. Such an evaluation would treat a step as
+// left-absent even when another left series of the group has a sample there. Only the last of those
+// reads has the complete left-side presence of the group. Only that read can decide which steps the
+// left fill applies to. Every earlier read therefore skips the fill-left branch (see
+// fillLeftOptionsFor).
+//
+// A group whose fill-left carrier is one of its matched output series has no name-dropped sibling.
+// That carrier emits the group's fill-left points itself, so the holder stays empty and only marks
+// the group's output series as split.
 type oneToOneBinaryOperationSplitHolder struct {
-	computed      bool
-	nameRetaining types.InstantVectorSeriesData
-	fillLeft      types.InstantVectorSeriesData
+	// computed is true once the last matched read of the group has stored fillLeft.
+	computed bool
+
+	// fillLeft holds the group's fill-left points until the name-dropped sibling takes them.
+	fillLeft types.InstantVectorSeriesData
+}
+
+// oneToOneBinaryOperationSplitGroup collects one name-retaining fill-left split group while
+// computeOutputSeries builds the group's output series. addNameDroppedFillLeftSiblings then gives
+// each group its fill-left carrier.
+type oneToOneBinaryOperationSplitGroup struct {
+	// holder is the single split holder shared by every output series of the group.
+	holder *oneToOneBinaryOperationSplitHolder
+
+	// rightSide is the group's right side, shared by every output series of the group.
+	rightSide *oneToOneBinaryOperationRightSide
+
+	// matchedSeriesCount is the number of name-retaining matched output series of the group.
+	matchedSeriesCount int
+
+	// latestLeftSeriesIndex is the highest left series index of the group.
+	latestLeftSeriesIndex int
 }
 
 // latestLeftSeries returns the index of the last series from the left source needed for this output series.
 //
 // It assumes that leftSeriesIndices is sorted in ascending order.
 // It returns -1 for output series that only exist because of a left-side fill, as those have no left series.
+//
+// For the fill-left carrier of a split group it returns the highest left series index of the group.
+// The operator must read the carrier after every other matched output series of its group (see
+// groupLatestLeftSeriesIndex).
 func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
+	if s.fillLeftCarrier {
+		return s.groupLatestLeftSeriesIndex
+	}
+
 	if len(s.leftSeriesIndices) == 0 {
 		return -1
 	}
@@ -120,10 +176,20 @@ type oneToOneBinaryOperationRightSide struct {
 	// The number of output series that use the same series from the right side.
 	// Will only be greater than 1 for comparison binary operations without the bool modifier
 	// where the input series on the left side have different metric names.
+	//
+	// The operator does not count the name-dropped sibling of a name-retaining fill-left split group
+	// here. The sibling takes its points from the group's split holder and never reads the right side
+	// itself (see addNameDroppedFillLeftSiblings). So outputSeriesCount reaches 0 on the last matched
+	// read of the group. That read is where the operator computes the group's fill-left points.
 	outputSeriesCount int
 
 	// Time steps at which we've seen samples for any left side that matches with this right side.
 	// Each value is the index of the source series of the sample, or -1 if no sample has been seen for this time step yet.
+	//
+	// The operator populates this slice only when more than one output series uses this right side.
+	// The operator uses the slice to report duplicate left series. The slice also controls the left
+	// fill. The evaluator must not fill the left side at a step where another left series of the same
+	// match group has a sample.
 	leftSidePresence []int
 }
 
@@ -175,7 +241,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	// The one-to-one operator never swaps operands, so the fill values map directly onto
 	// computeResult's left and right arguments.
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange.StepCount, vectorMatching.FillValues.LHS, vectorMatching.FillValues.RHS)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange, vectorMatching.FillValues.LHS, vectorMatching.FillValues.RHS)
 	if err != nil {
 		return nil, err
 	}
@@ -315,11 +381,15 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	fillLeft := b.VectorMatching.FillValues.LHS != nil
 	fillRight := b.VectorMatching.FillValues.RHS != nil
 
-	// splitFillLeftName is true when the operator must split a matched group into a name-retaining
-	// output series and a name-dropped output series. Upstream Prometheus builds the missing left
-	// operand of a left-filled step from the right series' match labels only and drops __name__. So a
-	// kept left-filled step for a name-retaining operator has no metric name, but a both-present step
-	// keeps the name. The two steps therefore need distinct output series.
+	// splitFillLeftName is true when the operator must split a matched group into its name-retaining
+	// output series and one extra name-dropped output series. Upstream Prometheus builds the missing
+	// left operand of a left-filled step from the right series' match labels only and drops __name__.
+	// So a kept left-filled step for a name-retaining operator has no metric name, but a both-present
+	// step keeps the name. The two kinds of step therefore need distinct output series.
+	//
+	// One match group can hold several left series with different metric names. The group then has
+	// several name-retaining output series. The left fill still applies only at a step where no left
+	// series of the group has a sample. So the group needs exactly one name-dropped output series.
 	//
 	// The split matters only when the name-retaining labels (labelsFunc) differ from the name-dropped
 	// labels (fillLabelsFunc). This happens when the operator retains __name__ and matching uses
@@ -392,10 +462,13 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	// against a filled-right series (see addUnmatchedLeftSeriesWithFilledRightSides).
 	var unmatchedLeftSeries []int
 
-	// splitMatchedSeries records the name-retaining matched output series that need a name-dropped
-	// sibling (see splitFillLeftName). A second pass creates the siblings, after all left series have
-	// merged into each matched series (see addNameDroppedFillLeftSiblings).
-	var splitMatchedSeries []*oneToOneBinaryOperationOutputSeries
+	// splitFillLeftGroups records, by group key, the output series of each name-retaining fill-left
+	// split group (see splitFillLeftName). After the loop registers every matched output series, a
+	// second pass adds one name-dropped sibling per group (see addNameDroppedFillLeftSiblings).
+	var splitFillLeftGroups map[string]*oneToOneBinaryOperationSplitGroup
+	if splitFillLeftName {
+		splitFillLeftGroups = make(map[string]*oneToOneBinaryOperationSplitGroup, len(rightSideGroupsMap))
+	}
 
 	for leftSeriesIndex, s := range b.leftMetadata {
 		groupKey := groupKeyFunc(s.Labels)
@@ -418,6 +491,28 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 		if fillLeft {
 			matchedRightGroups[string(groupKey)] = struct{}{}
+		}
+
+		// All matched output series of one split group share one holder and one name-dropped sibling.
+		// The left fill applies only at a step where no left series of the group has a sample.
+		var splitGroup *oneToOneBinaryOperationSplitGroup
+
+		if splitFillLeftName {
+			// Important: do not extract the string(...) call below - passing it directly allows us to avoid allocating it.
+			splitGroup = splitFillLeftGroups[string(groupKey)]
+
+			if splitGroup == nil {
+				splitGroup = &oneToOneBinaryOperationSplitGroup{
+					holder:    &oneToOneBinaryOperationSplitHolder{},
+					rightSide: rightSide,
+				}
+
+				splitFillLeftGroups[string(groupKey)] = splitGroup
+			}
+
+			// The loop reads b.leftMetadata in ascending index order. So the last value that the loop
+			// writes here is the group's highest left series index.
+			splitGroup.latestLeftSeriesIndex = leftSeriesIndex
 		}
 
 		outputSeriesLabels := labelsFunc(s.Labels)
@@ -449,12 +544,13 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 			series := &oneToOneBinaryOperationOutputSeries{rightSide: rightSide}
 
-			// A name-retaining fill-left matched group splits into two output series that share one
-			// evaluation. Attach a shared holder now. A second pass (addNameDroppedFillLeftSiblings)
-			// creates the name-dropped sibling, after all left series have merged into this series.
+			// A name-retaining fill-left matched group splits into its matched output series and one
+			// name-dropped sibling. Attach the group's shared holder now. After the loop registers
+			// every matched output series of the group, a second pass
+			// (addNameDroppedFillLeftSiblings) adds the sibling.
 			if splitFillLeftName {
-				series.splitHolder = &oneToOneBinaryOperationSplitHolder{}
-				splitMatchedSeries = append(splitMatchedSeries, series)
+				series.splitHolder = splitGroup.holder
+				splitGroup.matchedSeriesCount++
 			}
 
 			outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
@@ -490,11 +586,10 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		}
 	}
 
-	// Add the name-dropped sibling for each name-retaining fill-left matched group. This runs last,
-	// after every matched series has all its left indices, so the sibling can share the group's single
-	// evaluation.
+	// Add one name-dropped sibling for each name-retaining fill-left matched group. This pass runs
+	// last, so every group already holds all of its matched output series.
 	if splitFillLeftName {
-		if err := b.addNameDroppedFillLeftSiblings(outputSeriesMap, &outputSeriesLabelsBytes, fillLabelsFunc, splitMatchedSeries); err != nil {
+		if err := b.addNameDroppedFillLeftSiblings(outputSeriesMap, &outputSeriesLabelsBytes, fillLabelsFunc, splitFillLeftGroups); err != nil {
 			return nil, nil, nil, -1, nil, -1, err
 		}
 	}
@@ -579,36 +674,81 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 	return nil
 }
 
-// addNameDroppedFillLeftSiblings creates a name-dropped sibling output series for each name-retaining
-// matched output series in splitMatchedSeries. The sibling carries the group's left-filled points
-// (see splitFillLeftName). The sibling shares the matched series' rightSide, leftSeriesIndices and
-// split holder. The operator therefore reads and evaluates the group exactly once. Each sibling then
-// takes its half of the result at evaluation time.
+// addNameDroppedFillLeftSiblings gives each name-retaining fill-left match group in
+// splitFillLeftGroups one fill-left carrier. The carrier is the output series that emits the group's
+// fill-left points (see splitFillLeftName). For nearly every group the carrier is one extra
+// name-dropped sibling output series.
 //
-// The sibling's labels are the matched series' labels without __name__ (fillLabelsFunc). Those labels
-// equal the match group key labels, so they can collide with another output series only in the
-// degenerate empty-__name__ case. On a collision, addNameDroppedFillLeftSiblings keeps the existing
-// series and skips the sibling.
+// One sibling serves the whole group, even when the group has several matched output series. The left
+// fill applies only at a step where no left series of the group has a sample. So the group has exactly
+// one set of fill-left points. The sibling shares the group's rightSide and split holder. The sibling
+// reads no left series of its own. The last matched read of the group computes the group's fill-left
+// points and stores them in the holder (see NextSeries).
+//
+// The sibling's labels are the group's match key labels (fillLabelsFunc). Those labels can collide
+// with a matched output series of the same group. That happens when a left series of the group has no
+// __name__. labelsFunc then gives that left series the match key labels as well. The group already
+// has an output series with the sibling's labels, so it needs no sibling. The colliding matched
+// output series becomes the group's fill-left carrier instead. addNameDroppedFillLeftSiblings handles
+// the collision in one of two ways:
+//
+//   - The colliding series is the group's only matched output series. Every left series of the group
+//     then merges into that one output series. That series therefore reads the whole left side of
+//     the group, and its own left-side presence is the whole group's presence. The group also has no
+//     other matched output series to keep the fill-left points out of, so the split serves no
+//     purpose. The function clears the group's split holder, and the series emits its fill-left
+//     points inline. Without a sibling to take the fill-left points, a split would leak that pooled
+//     data.
+//   - The group has more than one matched output series. The colliding series then becomes the
+//     group's fill-left carrier, and keeps the split. The operator reads it last in the group and
+//     merges the group's fill-left points into its own points (see NextSeries). Every other matched
+//     output series of the group keeps its fill-left points out of its result, exactly as it does
+//     when a sibling exists.
+//
+// A collision with any other output series is impossible:
+//   - The sibling's labels are the group's match key labels. A matched output series of another group
+//     carries that other group's match key labels, plus a metric name unless its left series has none.
+//     Two different groups never have equal match key labels, because the group key is a canonical
+//     encoding of exactly those labels.
+//   - addUnmatchedRightGroupsWithFilledLeftSides skips every matched group, so it never creates a
+//     series with this group's match key labels.
+//   - addUnmatchedLeftSeriesWithFilledRightSides only handles left series whose group has no right
+//     side, so its output series belong to other groups.
 //
 // outputSeriesLabelsBytes is a scratch buffer reused across calls.
 func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
 	outputSeriesLabelsBytes *[]byte,
 	fillLabelsFunc func(labels.Labels) labels.Labels,
-	splitMatchedSeries []*oneToOneBinaryOperationOutputSeries,
+	splitFillLeftGroups map[string]*oneToOneBinaryOperationSplitGroup,
 ) error {
-	for _, matchedSeries := range splitMatchedSeries {
-		// Derive the name-dropped labels from the first left series in the group. All left series in
-		// the group share the same name-dropped (match group key) labels.
-		outputSeriesLabels := fillLabelsFunc(b.leftMetadata[matchedSeries.leftSeriesIndices[0]].Labels)
+	for _, group := range splitFillLeftGroups {
+		// Derive the name-dropped labels from one left series of the group. Every left series of the
+		// group has the same name-dropped (match key) labels.
+		outputSeriesLabels := fillLabelsFunc(b.leftMetadata[group.latestLeftSeriesIndex].Labels)
 		*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
 
-		if _, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
-			// Degenerate empty-__name__ collision. The name-dropped labels match an existing output
-			// series. Keep the existing series and skip this sibling. Clear the matched series' split
-			// holder so the operator evaluates it as a plain matched series with no split. Without a
-			// sibling to take the fill-left half, a split would leak that pooled half.
-			matchedSeries.splitHolder = nil
+		if existing, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
+			// Only a matched output series of this same group can collide here. Every other collision
+			// is impossible (see the doc comment), so treat one as a bug.
+			if existing.series.splitHolder != group.holder {
+				return fmt.Errorf("unexpected output series collision for match group %v while adding the name-dropped fill-left series for operator %v; this indicates a bug in the query engine", outputSeriesLabels, b.Op)
+			}
+
+			if group.matchedSeriesCount == 1 {
+				// Every left series of the group merges into this one matched output series. Its own
+				// left-side presence is therefore the whole group's presence. The group has no other
+				// matched output series to keep the fill-left points out of. The split serves no
+				// purpose. Clear it and let the series emit its fill-left points inline.
+				existing.series.splitHolder = nil
+				continue
+			}
+
+			// The group has more than one matched output series. So the operator must still keep the
+			// fill-left points out of the other matched output series. Make the colliding series the
+			// group's fill-left carrier.
+			existing.series.fillLeftCarrier = true
+			existing.series.groupLatestLeftSeriesIndex = group.latestLeftSeriesIndex
 			continue
 		}
 
@@ -616,16 +756,18 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 			return err
 		}
 
-		// The sibling shares the matched series' rightSide, leftSeriesIndices and split holder. It does
-		// not increment rightSide.outputSeriesCount. The pair is a single consumer of the right side and
-		// uses one evaluation (see NextSeries), so the matched series already accounts for that use.
+		// The sibling does not increment rightSide.outputSeriesCount. It never reads the right side
+		// itself, so the group's matched output series already account for every use of the right side.
+		// outputSeriesCount therefore reaches 0 on the last matched read of the group. That read is
+		// where the operator computes the group's fill-left points.
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
 			series: &oneToOneBinaryOperationOutputSeries{
-				rightSide:         matchedSeries.rightSide,
-				leftSeriesIndices: matchedSeries.leftSeriesIndices,
-				splitHolder:       matchedSeries.splitHolder,
-				nameDropped:       true,
+				rightSide:                  group.rightSide,
+				splitHolder:                group.holder,
+				fillLeftCarrier:            true,
+				nameDropped:                true,
+				groupLatestLeftSeriesIndex: group.latestLeftSeriesIndex,
 			},
 		}
 	}
@@ -795,7 +937,13 @@ func (g favourLeftSideSorter) Less(i, j int) bool {
 		return iLeft < jLeft
 	}
 
-	return g.series[i].latestRightSeries() < g.series[j].latestRightSeries()
+	iRight := g.series[i].latestRightSeries()
+	jRight := g.series[j].latestRightSeries()
+	if iRight != jRight {
+		return iRight < jRight
+	}
+
+	return fillLeftCarrierLast(g.series[i], g.series[j])
 }
 
 func (g favourRightSideSorter) Less(i, j int) bool {
@@ -805,7 +953,26 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 		return iRight < jRight
 	}
 
-	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
+	iLeft := g.series[i].latestLeftSeries()
+	jLeft := g.series[j].latestLeftSeries()
+	if iLeft != jLeft {
+		return iLeft < jLeft
+	}
+
+	return fillLeftCarrierLast(g.series[i], g.series[j])
+}
+
+// fillLeftCarrierLast is the final tie-break of both sorters. It orders the fill-left carrier of a
+// split group after every output series it ties with. Those series include every other matched output
+// series of its own group.
+//
+// The carrier reports the group's highest left series index as its latest left series. So it ties
+// with the matched output series that holds that index. The carrier also shares its right side with
+// every matched output series of the group. Without this tie-break the two sorters report those
+// series as equal. sort.Sort is not stable, so the carrier could then run before the group's
+// left-side presence is complete.
+func fillLeftCarrierLast(i, j *oneToOneBinaryOperationOutputSeries) bool {
+	return !i.fillLeftCarrier && j.fillLeftCarrier
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -820,10 +987,21 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return b.nextFilledLeftSeries(ctx, thisSeries)
 	}
 
-	if thisSeries.splitHolder != nil && thisSeries.splitHolder.computed {
-		// This is the second sibling of a name-retaining fill-left split. The first sibling already
-		// read and evaluated the group. Return this sibling's stored half of the result.
-		return b.takeSplitHalf(thisSeries), nil
+	if thisSeries.nameDropped {
+		// This is the name-dropped sibling of a name-retaining fill-left split group. sortSeries places
+		// the sibling after every matched output series of its group. The last matched read has
+		// therefore already computed and stored the group's fill-left points. Take them and clear the
+		// holder, so the operator neither returns them twice nor frees them twice.
+		holder := thisSeries.splitHolder
+
+		if !holder.computed {
+			return types.InstantVectorSeriesData{}, fmt.Errorf("read the name-dropped fill-left series of a match group before the group was evaluated for operator %v; this indicates a bug in the query engine", b.Op)
+		}
+
+		result := holder.fillLeft
+		holder.fillLeft = types.InstantVectorSeriesData{}
+
+		return result, nil
 	}
 
 	rightSide := thisSeries.rightSide
@@ -844,6 +1022,12 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
 		rightSide.outputSeriesCount--
 		isLastUseOfRightSide = rightSide.outputSeriesCount == 0
+	}
+
+	if thisSeries.fillLeftCarrier && !isLastUseOfRightSide {
+		// sortSeries places the fill-left carrier after every other matched output series of its group.
+		// The read of the carrier is therefore always the last use of the group's right side.
+		return types.InstantVectorSeriesData{}, fmt.Errorf("read the fill-left carrier of a match group before the group was evaluated for operator %v; this indicates a bug in the query engine", b.Op)
 	}
 
 	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
@@ -876,9 +1060,9 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		rightData = rightSide.mergedData
 	}
 
-	// splitFillLeft is set only for the first read of a split pair. The evaluator then returns the
-	// left-filled points as fillLeftResult for the name-dropped sibling.
-	finalResult, fillLeftResult, err := b.evaluator.computeResult(mergedLeftSide, rightData, true, isLastUseOfRightSide, thisSeries.splitHolder != nil)
+	fillLeft := b.fillLeftOptionsFor(thisSeries, rightSide, isLastUseOfRightSide)
+
+	finalResult, fillLeftResult, err := b.evaluator.computeResult(mergedLeftSide, rightData, true, isLastUseOfRightSide, fillLeft)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -888,6 +1072,23 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return finalResult, nil
 	}
 
+	if fillLeft.mode == fillLeftSeparate {
+		// This is the last matched read of a split group, so fillLeftResult holds the group's fill-left
+		// points.
+		if thisSeries.fillLeftCarrier {
+			// This matched output series already carries the group's match key labels. So the group has
+			// no name-dropped sibling, and this series emits the group's fill-left points itself.
+			finalResult, err = b.mergeGroupFillLeftPoints(finalResult, fillLeftResult)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+		} else {
+			// Keep the group's fill-left points for the name-dropped sibling.
+			thisSeries.splitHolder.fillLeft = fillLeftResult
+			thisSeries.splitHolder.computed = true
+		}
+	}
+
 	if isLastUseOfRightSide {
 		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in FinishedReading().
 		rightSide.mergedData = types.InstantVectorSeriesData{}
@@ -895,33 +1096,70 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		rightSide.FinishedReading(b.MemoryConsumptionTracker)
 	}
 
-	if thisSeries.splitHolder != nil {
-		// First read of a split pair. Store both halves and return this sibling's half. The other
-		// sibling returns its half on its own NextSeries call, through the computed fast path above.
-		thisSeries.splitHolder.nameRetaining = finalResult
-		thisSeries.splitHolder.fillLeft = fillLeftResult
-		thisSeries.splitHolder.computed = true
-		return b.takeSplitHalf(thisSeries), nil
-	}
-
 	return finalResult, nil
 }
 
-// takeSplitHalf returns the half of a split pair's single evaluation that belongs to thisSeries. It
-// clears that half from the holder so the operator does not return it twice or free it twice. The
-// name-dropped sibling takes the fill-left half. The name-retaining sibling takes the other half.
-func (b *OneToOneVectorVectorBinaryOperation) takeSplitHalf(thisSeries *oneToOneBinaryOperationOutputSeries) types.InstantVectorSeriesData {
-	holder := thisSeries.splitHolder
-
-	if thisSeries.nameDropped {
-		result := holder.fillLeft
-		holder.fillLeft = types.InstantVectorSeriesData{}
-		return result
+// fillLeftOptionsFor returns the fill-left instructions for one read of thisSeries.
+//
+// A read that is not part of a name-retaining fill-left split group gets the zero value. The
+// evaluator then adds every kept fill-left point to the main result.
+//
+// A matched read of a split group must keep the group's fill-left points out of its own result. Its
+// output labels retain a metric name. Only the last matched read of the group has the complete
+// left-side presence of the group. Only that read can decide which steps the left fill applies to.
+//
+// Every earlier matched read of the group therefore skips the fill-left branch. Such a read produces
+// no point for those steps, and, just as important, no annotation. Prometheus never evaluates those
+// steps, so it raises no annotation for them either.
+//
+// The last matched read of the group splits the fill-left points into their own result. It also
+// passes the group's left-side presence. The evaluator then skips every step that a left series of
+// the group covers. rightSide.leftSidePresence is nil when only one output series uses the group's
+// right side. The group then has a single matched output series. The left side of this read is
+// therefore the whole left side of the group, and the evaluator skips no step.
+func (b *OneToOneVectorVectorBinaryOperation) fillLeftOptionsFor(thisSeries *oneToOneBinaryOperationOutputSeries, rightSide *oneToOneBinaryOperationRightSide, isLastUseOfRightSide bool) fillLeftOptions {
+	if thisSeries.splitHolder == nil {
+		return fillLeftOptions{mode: fillLeftInResult}
 	}
 
-	result := holder.nameRetaining
-	holder.nameRetaining = types.InstantVectorSeriesData{}
-	return result
+	if !isLastUseOfRightSide {
+		return fillLeftOptions{mode: fillLeftSkip}
+	}
+
+	return fillLeftOptions{mode: fillLeftSeparate, leftSidePresence: rightSide.leftSidePresence}
+}
+
+// mergeGroupFillLeftPoints merges the fill-left points of a match group into the result of the
+// group's fill-left carrier.
+//
+// The carrier is a matched output series, so it has points of its own at the steps where its left
+// series has a sample. The group's fill-left points sit at the steps where no left series of the group
+// has a sample. The two sets of points are therefore disjoint, and the merged result stays in
+// timestamp order.
+//
+// mergeGroupFillLeftPoints takes ownership of both inputs and returns any unused slice to the pool.
+func (b *OneToOneVectorVectorBinaryOperation) mergeGroupFillLeftPoints(result types.InstantVectorSeriesData, fillLeft types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+	if len(fillLeft.Floats) == 0 && len(fillLeft.Histograms) == 0 {
+		// The group has no fill-left points, which is the common case. Avoid the merge entirely.
+		types.PutInstantVectorSeriesData(fillLeft, b.MemoryConsumptionTracker)
+		return result, nil
+	}
+
+	// mergeGroupFillLeftPoints runs only when a matched output series is the group's fill-left
+	// carrier. That happens only for a degenerate match group. Such a group holds a left series with
+	// no __name__ next to a left series with a __name__. So these two small allocations are rare.
+	data := []types.InstantVectorSeriesData{result, fillLeft}
+	merged, conflict, err := operators.MergeSeries(data, []int{0, 1}, b.MemoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if conflict != nil {
+		// The two sets of points cover disjoint steps, so a conflict is impossible.
+		return types.InstantVectorSeriesData{}, fmt.Errorf("found %v at timestamp %v while merging the fill-left points of a match group for operator %v; this indicates a bug in the query engine", conflict.Description, conflict.Timestamp, b.Op)
+	}
+
+	return merged, nil
 }
 
 // nextFilledLeftSeries produces the output for a series with no real left side, synthesising the left
@@ -944,7 +1182,7 @@ func (b *OneToOneVectorVectorBinaryOperation) nextFilledLeftSeries(ctx context.C
 	// right timestep, through the same per-timestep fill path used for intermittently matched groups.
 	// This is a fill-left-only output series. Its labels already have no metric name, so we do not
 	// split its points.
-	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, true, isLastUseOfRightSide, false)
+	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, true, isLastUseOfRightSide, fillLeftOptions{})
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -1070,6 +1308,18 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 		// Output series that only exist because of a right-side fill have no right side to release.
 		if s.rightSide != nil {
 			s.rightSide.FinishedReading(b.MemoryConsumptionTracker)
+		}
+
+		// The last matched read of a name-retaining fill-left split group stores the group's fill-left
+		// points in the group's split holder. Only the group's name-dropped sibling takes them. If the
+		// consumer stops before it reads the sibling, nothing else releases those points.
+		//
+		// Every remaining output series of the group points at the same holder, so clear the holder
+		// here. That releases the points exactly once.
+		if s.splitHolder != nil {
+			types.PutInstantVectorSeriesData(s.splitHolder.fillLeft, b.MemoryConsumptionTracker)
+			s.splitHolder.fillLeft = types.InstantVectorSeriesData{}
+			s.splitHolder.computed = false
 		}
 	}
 

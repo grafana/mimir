@@ -225,6 +225,10 @@ func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 }
 
 func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
+	// Every output series of one name-retaining fill-left split group shares one right side.
+	siblingGroupRightSide := &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{0}}
+	carrierGroupRightSide := &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{0}}
+
 	testCases := map[string]struct {
 		series []*oneToOneBinaryOperationOutputSeries
 
@@ -529,6 +533,68 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			// input[0] and input[1] tie on L=-1, tie-break on right: input[1](R=1) < input[0](R=3).
 			expectedOrderFavouringLeftSide: []int{1, 0, 2},
 			// Favour right (right asc): R values input[0]=3, input[1]=1, input[2]=2 -> 1, 2, 3.
+			expectedOrderFavouringRightSide: []int{1, 2, 0},
+		},
+		"name-dropped sibling of a split group sorts after every matched series of the group": {
+			// A split group with two matched output series and one name-dropped sibling. All three
+			// share one right side, and the sibling reports the group's highest left series index. So
+			// the sibling ties with input[2] on both sides, and only the final tie-break puts it last.
+			// The operator must read the sibling last. The last matched read of the group computes the
+			// group's fill-left points.
+			// input[0]: sibling -> latestLeftSeries=1, latestRightSeries=0
+			// input[1]: matched -> latestLeftSeries=0, latestRightSeries=0
+			// input[2]: matched -> latestLeftSeries=1, latestRightSeries=0
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					rightSide:                  siblingGroupRightSide,
+					splitHolder:                &oneToOneBinaryOperationSplitHolder{},
+					fillLeftCarrier:            true,
+					nameDropped:                true,
+					groupLatestLeftSeriesIndex: 1,
+				},
+				{
+					leftSeriesIndices: []int{0},
+					rightSide:         siblingGroupRightSide,
+					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
+				},
+				{
+					leftSeriesIndices: []int{1},
+					rightSide:         siblingGroupRightSide,
+					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{1, 2, 0},
+			expectedOrderFavouringRightSide: []int{1, 2, 0},
+		},
+		"fill-left carrier that is a matched series sorts after every other matched series of the group": {
+			// A split group whose fill-left carrier is one of its matched output series. The carrier
+			// reads left series 0, but it reports the group's highest left series index (2). So it ties
+			// with input[2] on both sides, and only the final tie-break puts it last.
+			// input[0]: carrier -> latestLeftSeries=2, latestRightSeries=0
+			// input[1]: matched -> latestLeftSeries=1, latestRightSeries=0
+			// input[2]: matched -> latestLeftSeries=2, latestRightSeries=0
+			series: []*oneToOneBinaryOperationOutputSeries{
+				{
+					leftSeriesIndices:          []int{0},
+					rightSide:                  carrierGroupRightSide,
+					splitHolder:                &oneToOneBinaryOperationSplitHolder{},
+					fillLeftCarrier:            true,
+					groupLatestLeftSeriesIndex: 2,
+				},
+				{
+					leftSeriesIndices: []int{1},
+					rightSide:         carrierGroupRightSide,
+					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
+				},
+				{
+					leftSeriesIndices: []int{2},
+					rightSide:         carrierGroupRightSide,
+					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
+				},
+			},
+
+			expectedOrderFavouringLeftSide:  []int{1, 2, 0},
 			expectedOrderFavouringRightSide: []int{1, 2, 0},
 		},
 	}
@@ -1301,16 +1367,395 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_CollisionKeepsMatchedSeri
 	}
 }
 
+// expectedSplitGroup describes the output series that computeOutputSeries must build for one
+// name-retaining fill-left split group.
+type expectedSplitGroup struct {
+	// matchedSeries maps the labels of each matched output series of the group to the left series
+	// indices that output series reads.
+	matchedSeries map[string][]int
+
+	// fillLeftCarrier is the labels of the output series that emits the group's fill-left points. It
+	// is empty when the group has no carrier. The group has no carrier when the collision path clears
+	// the split.
+	fillLeftCarrier string
+
+	// carrierIsSibling is true when the carrier is an extra name-dropped output series, and false when
+	// the carrier is one of matchedSeries.
+	carrierIsSibling bool
+
+	// latestLeftSeriesIndex is the highest left series index of the group. The carrier must report it.
+	latestLeftSeriesIndex int
+
+	// rightSideOutputSeriesCount is the number of output series that count against the group's right
+	// side. A name-dropped sibling must not count.
+	rightSideOutputSeriesCount int
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillLeft_NameRetainingSplitOutputSeries(t *testing.T) {
+	// This test checks the output series that computeOutputSeries builds for a name-retaining
+	// fill-left split group. It checks which output series exist. It checks which left series each
+	// output series reads. It checks which output series carries the group's fill-left points. It
+	// also checks how the groups share their split holder and right side.
+	//
+	// The operator is != without the bool modifier, so it retains __name__. Matching is the default
+	// and ignores nothing. That combination makes the operator split a match group.
+	fillZero := 0.0
+
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedGroups []expectedSplitGroup
+	}{
+		"one left series in the group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries:              map[string][]int{`{__name__="left_a", label="x"}`: {0}},
+					fillLeftCarrier:            `{label="x"}`,
+					carrierIsSibling:           true,
+					latestLeftSeriesIndex:      0,
+					rightSideOutputSeriesCount: 1,
+				},
+			},
+		},
+		"two differently named left series in the group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_b", "label", "x"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries: map[string][]int{
+						`{__name__="left_a", label="x"}`: {0},
+						`{__name__="left_b", label="x"}`: {1},
+					},
+					fillLeftCarrier:            `{label="x"}`,
+					carrierIsSibling:           true,
+					latestLeftSeriesIndex:      1,
+					rightSideOutputSeriesCount: 2,
+				},
+			},
+		},
+		"three differently named left series in the group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_b", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_c", "label", "x"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries: map[string][]int{
+						`{__name__="left_a", label="x"}`: {0},
+						`{__name__="left_b", label="x"}`: {1},
+						`{__name__="left_c", label="x"}`: {2},
+					},
+					fillLeftCarrier:            `{label="x"}`,
+					carrierIsSibling:           true,
+					latestLeftSeriesIndex:      2,
+					rightSideOutputSeriesCount: 3,
+				},
+			},
+		},
+		"two split groups stay independent": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_b", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_c", "label", "y"),
+				labels.FromStrings(model.MetricNameLabel, "left_d", "label", "y"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "y"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries: map[string][]int{
+						`{__name__="left_a", label="x"}`: {0},
+						`{__name__="left_b", label="x"}`: {1},
+					},
+					fillLeftCarrier:            `{label="x"}`,
+					carrierIsSibling:           true,
+					latestLeftSeriesIndex:      1,
+					rightSideOutputSeriesCount: 2,
+				},
+				{
+					matchedSeries: map[string][]int{
+						`{__name__="left_c", label="y"}`: {2},
+						`{__name__="left_d", label="y"}`: {3},
+					},
+					fillLeftCarrier:            `{label="y"}`,
+					carrierIsSibling:           true,
+					latestLeftSeriesIndex:      3,
+					rightSideOutputSeriesCount: 2,
+				},
+			},
+		},
+		"single left series with no metric name clears the split": {
+			// The group's only left series has no __name__, so the matched output series already carries
+			// the group's match key labels. The group needs no split at all.
+			leftSeries: []labels.Labels{
+				labels.FromStrings("label", "x"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries:              map[string][]int{`{label="x"}`: {0}},
+					fillLeftCarrier:            "",
+					latestLeftSeriesIndex:      0,
+					rightSideOutputSeriesCount: 1,
+				},
+			},
+		},
+		"left series with no metric name next to a named left series makes the matched series the carrier": {
+			// The group holds a named left series and an unnamed one. The matched output series of the
+			// unnamed one already carries the group's match key labels. So it becomes the carrier, and
+			// the group gets no extra name-dropped sibling. The split stays in place, so the named left
+			// series keeps its fill-left points out of its own output series.
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+				labels.FromStrings("label", "x"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x"),
+			},
+			expectedGroups: []expectedSplitGroup{
+				{
+					matchedSeries: map[string][]int{
+						`{__name__="left_a", label="x"}`: {0},
+						`{label="x"}`:                    {1},
+					},
+					fillLeftCarrier:            `{label="x"}`,
+					carrierIsSibling:           false,
+					latestLeftSeriesIndex:      1,
+					rightSideOutputSeriesCount: 2,
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			o.leftMetadata, err = left.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			allMetadata, allSeries, leftSeriesUsed, _, rightSeriesUsed, _, err := o.computeOutputSeries()
+			require.NoError(t, err)
+			require.Len(t, allSeries, len(allMetadata))
+
+			seriesByLabels := make(map[string]*oneToOneBinaryOperationOutputSeries, len(allSeries))
+			expectedLabels := []string{}
+
+			for i, m := range allMetadata {
+				seriesByLabels[m.Labels.String()] = allSeries[i]
+			}
+
+			for _, group := range testCase.expectedGroups {
+				for l := range group.matchedSeries {
+					expectedLabels = append(expectedLabels, l)
+				}
+
+				if group.carrierIsSibling {
+					expectedLabels = append(expectedLabels, group.fillLeftCarrier)
+				}
+			}
+
+			actualLabels := make([]string, 0, len(seriesByLabels))
+			for l := range seriesByLabels {
+				actualLabels = append(actualLabels, l)
+			}
+
+			require.ElementsMatch(t, expectedLabels, actualLabels, "unexpected set of output series")
+
+			holders := map[*oneToOneBinaryOperationSplitHolder]struct{}{}
+
+			for groupIndex, group := range testCase.expectedGroups {
+				t.Run(fmt.Sprintf("group %v", groupIndex), func(t *testing.T) {
+					var (
+						groupHolder    *oneToOneBinaryOperationSplitHolder
+						groupRightSide *oneToOneBinaryOperationRightSide
+					)
+
+					for l, expectedLeftSeriesIndices := range group.matchedSeries {
+						series := seriesByLabels[l]
+						require.NotNilf(t, series, "expected an output series with labels %v", l)
+						require.Equalf(t, expectedLeftSeriesIndices, series.leftSeriesIndices, "unexpected left series indices for %v", l)
+						require.Falsef(t, series.nameDropped, "%v is a matched output series, so it must not be name-dropped", l)
+						require.NotNilf(t, series.rightSide, "expected %v to have a right side", l)
+
+						if groupRightSide == nil {
+							groupRightSide = series.rightSide
+						}
+
+						require.Samef(t, groupRightSide, series.rightSide, "every matched output series of the group must share one right side, but %v does not", l)
+
+						if group.fillLeftCarrier == "" {
+							// The collision path cleared the split for the whole group.
+							require.Nilf(t, series.splitHolder, "expected the split to be cleared for %v", l)
+							require.Falsef(t, series.fillLeftCarrier, "expected %v not to carry the group's fill-left points", l)
+							continue
+						}
+
+						require.NotNilf(t, series.splitHolder, "expected %v to have a split holder", l)
+
+						if groupHolder == nil {
+							groupHolder = series.splitHolder
+						}
+
+						require.Samef(t, groupHolder, series.splitHolder, "every output series of the group must share one split holder, but %v does not", l)
+					}
+
+					require.NotNil(t, groupRightSide)
+					require.Equal(t, group.rightSideOutputSeriesCount, groupRightSide.outputSeriesCount, "unexpected number of output series counted against the group's right side")
+
+					if group.fillLeftCarrier == "" {
+						return
+					}
+
+					carrier := seriesByLabels[group.fillLeftCarrier]
+					require.NotNilf(t, carrier, "expected a fill-left carrier with labels %v", group.fillLeftCarrier)
+					require.True(t, carrier.fillLeftCarrier, "expected the carrier to be marked as such")
+					require.Same(t, groupHolder, carrier.splitHolder, "the carrier must share the group's split holder")
+					require.Same(t, groupRightSide, carrier.rightSide, "the carrier must share the group's right side")
+					require.Equal(t, group.latestLeftSeriesIndex, carrier.groupLatestLeftSeriesIndex)
+					require.Equal(t, group.latestLeftSeriesIndex, carrier.latestLeftSeries(), "the carrier must report the group's highest left series index")
+
+					require.Equal(t, group.carrierIsSibling, carrier.nameDropped)
+					if group.carrierIsSibling {
+						require.Empty(t, carrier.leftSeriesIndices, "the name-dropped sibling must read no left series of its own")
+					}
+
+					// Each group must have its own holder. The map key is a pointer, so the lookup
+					// compares identity and not the holder's contents.
+					_, alreadySeen := holders[groupHolder]
+					require.False(t, alreadySeen, "split groups must not share a split holder")
+					holders[groupHolder] = struct{}{}
+				})
+			}
+
+			// The operator must read the carrier after every other matched output series of its group.
+			// That order must hold, no matter which sorter sortSeries picks.
+			//
+			// computeOutputSeries builds its result from a map, so it returns the output series in Go
+			// map iteration order. That order changes on every run. sort.Sort is not stable, so the
+			// result of the sort depends on that input order. The test therefore checks every input
+			// order. The assertion then does not depend on the order of one run.
+			assertCarrierSortedLast := func(t *testing.T, newSorter func([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries) sort.Interface) {
+				metadata := make([]types.SeriesMetadata, len(allMetadata))
+				series := make([]*oneToOneBinaryOperationOutputSeries, len(allSeries))
+				positions := make(map[string]int, len(allMetadata))
+
+				forEachPermutation(len(allMetadata), func(permutation []int) {
+					for i, from := range permutation {
+						metadata[i] = allMetadata[from]
+						series[i] = allSeries[from]
+					}
+
+					sort.Sort(newSorter(metadata, series))
+
+					clear(positions)
+					for i, m := range metadata {
+						positions[m.Labels.String()] = i
+					}
+
+					for _, group := range testCase.expectedGroups {
+						if group.fillLeftCarrier == "" {
+							continue
+						}
+
+						for l := range group.matchedSeries {
+							if l == group.fillLeftCarrier {
+								continue
+							}
+
+							require.Lessf(t, positions[l], positions[group.fillLeftCarrier], "with input order %v, expected the fill-left carrier %v to be sorted after the matched output series %v", permutation, group.fillLeftCarrier, l)
+						}
+					}
+				})
+			}
+
+			t.Run("sorting favouring left side", func(t *testing.T) {
+				assertCarrierSortedLast(t, func(m []types.SeriesMetadata, s []*oneToOneBinaryOperationOutputSeries) sort.Interface {
+					return newFavourLeftSideSorter(m, s)
+				})
+			})
+
+			t.Run("sorting favouring right side", func(t *testing.T) {
+				assertCarrierSortedLast(t, func(m []types.SeriesMetadata, s []*oneToOneBinaryOperationOutputSeries) sort.Interface {
+					return newFavourRightSideSorter(m, s)
+				})
+			})
+
+			types.SeriesMetadataSlicePool.Put(&allMetadata, memoryConsumptionTracker)
+			types.BoolSlicePool.Put(&leftSeriesUsed, memoryConsumptionTracker)
+			types.BoolSlicePool.Put(&rightSeriesUsed, memoryConsumptionTracker)
+
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
+	}
+}
+
+// forEachPermutation calls f once for every permutation of the indices 0 to n-1.
+//
+// The slice that forEachPermutation passes to f is valid only during that call.
+func forEachPermutation(n int, f func(permutation []int)) {
+	permutation := make([]int, n)
+	for i := range permutation {
+		permutation[i] = i
+	}
+
+	var permute func(firstIndexToFix int)
+
+	permute = func(firstIndexToFix int) {
+		if firstIndexToFix == n {
+			f(permutation)
+			return
+		}
+
+		for i := firstIndexToFix; i < n; i++ {
+			permutation[firstIndexToFix], permutation[i] = permutation[i], permutation[firstIndexToFix]
+			permute(firstIndexToFix + 1)
+			permutation[firstIndexToFix], permutation[i] = permutation[i], permutation[firstIndexToFix]
+		}
+	}
+
+	permute(0)
+}
+
 func TestOneToOneVectorVectorBinaryOperation_FillLeft_NameRetainingSplitReadOrder(t *testing.T) {
 	// The .test files in testdata/ours/binary_operators_fill.test already cover the output values and
-	// labels of a name-retaining fill-left split, and pedantic mode there covers pool release. Those
-	// tests cannot control the read order of the two split siblings: the sort treats them as equal, so
-	// their order is not deterministic.
+	// labels of a name-retaining fill-left split. Pedantic mode there covers pool release.
 	//
-	// This test pins the read order that the .test files cannot: it reads the name-dropped sibling
-	// first. That path makes the sibling which does not own the name-retaining labels trigger the
-	// single evaluation. The operator must still evaluate the group once and return both halves
-	// correctly.
+	// This test pins the read order that the .test files cannot check. The name-dropped output series
+	// of a split group holds no result of its own. The last matched read of the group computes the
+	// group's fill-left points. So the operator must always return the name-dropped series after every
+	// matched series of its group. It must also report an out-of-order read as a bug.
 	fillZero := 0.0
 
 	step1 := timestamp.Time(0)
@@ -1318,6 +1763,7 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_NameRetainingSplitReadOrde
 	step3 := step2.Add(5 * time.Minute)
 	timeRange := types.NewRangeQueryTimeRange(step1, step3, 5*time.Minute)
 
+	t0 := timestamp.FromTime(step1)
 	t1 := timestamp.FromTime(step2)
 	t2 := timestamp.FromTime(step3)
 
@@ -1332,53 +1778,260 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_NameRetainingSplitReadOrde
 	}
 
 	// Left present at steps 0 and 2. Right present at steps 1 and 2.
-	//   step 1: left missing -> fill 0 -> 0 != 10 -> kept, no __name__ (name-dropped sibling).
-	//   step 2: both present -> 300 != 20 -> kept, keeps __name__ (name-retaining sibling).
-	leftSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "a")}
-	rightSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "a")}
+	//   step 1: left missing -> fill 0 -> 0 != 10 -> kept, no __name__ (name-dropped series).
+	//   step 2: both present -> 300 != 20 -> kept, keeps __name__ (matched series).
+	newOperator := func() (*OneToOneVectorVectorBinaryOperation, []types.SeriesMetadata) {
+		leftSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "a")}
+		rightSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "a")}
 
-	leftData := []types.InstantVectorSeriesData{makeData(promql.FPoint{T: timestamp.FromTime(step1), F: 100}, promql.FPoint{T: t2, F: 300})}
-	rightData := []types.InstantVectorSeriesData{makeData(promql.FPoint{T: t1, F: 10}, promql.FPoint{T: t2, F: 20})}
+		leftData := []types.InstantVectorSeriesData{makeData(promql.FPoint{T: t0, F: 100}, promql.FPoint{T: t2, F: 300})}
+		rightData := []types.InstantVectorSeriesData{makeData(promql.FPoint{T: t1, F: 10}, promql.FPoint{T: t2, F: 20})}
 
-	left := &operators.TestOperator{Series: leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
-	right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+		left := &operators.TestOperator{Series: leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
 
-	vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}}
-	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
-	require.NoError(t, err)
+		vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}}
+		o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+		require.NoError(t, err)
 
-	metadata, err := o.SeriesMetadata(ctx, nil)
-	require.NoError(t, err)
-	require.Len(t, metadata, 2)
+		metadata, err := o.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+		require.Len(t, metadata, 2)
 
-	// b.remainingSeries aligns with metadata, so reorder both together to put the name-dropped
-	// ({label="a"}) sibling first.
-	if metadata[0].Labels.Has(model.MetricNameLabel) {
+		return o, metadata
+	}
+
+	t.Run("the operator returns the name-dropped series last", func(t *testing.T) {
+		o, metadata := newOperator()
+
+		require.True(t, metadata[0].Labels.Has(model.MetricNameLabel), "expected the matched series to be returned first")
+		require.False(t, metadata[1].Labels.Has(model.MetricNameLabel), "expected the name-dropped series to be returned last")
+
+		actual := map[string][]promql.FPoint{}
+
+		for i := range metadata {
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			actual[metadata[i].Labels.String()] = slices.Clone(d.Floats)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+		}
+
+		expected := map[string][]promql.FPoint{
+			// Matched series: only the both-present step keeps the left metric name.
+			`{__name__="left_metric", label="a"}`: {{T: t2, F: 300}},
+			// Name-dropped series: the kept left-filled step drops the metric name.
+			`{label="a"}`: {{T: t1, F: 0}},
+		}
+		require.Equal(t, expected, actual)
+
+		types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+		require.NoError(t, o.FinishedReading(ctx))
+		o.Close()
+	})
+
+	t.Run("an out-of-order read of the name-dropped series is reported as a bug", func(t *testing.T) {
+		o, metadata := newOperator()
+
+		// b.remainingSeries aligns with metadata, so reorder both together to put the name-dropped
+		// ({label="a"}) series first.
 		metadata[0], metadata[1] = metadata[1], metadata[0]
 		o.remainingSeries[0], o.remainingSeries[1] = o.remainingSeries[1], o.remainingSeries[0]
-	}
-	require.False(t, metadata[0].Labels.Has(model.MetricNameLabel), "expected the name-dropped sibling to be read first")
 
-	actual := map[string][]promql.FPoint{}
-	for range metadata {
-		d, err := o.NextSeries(ctx)
+		_, err := o.NextSeries(ctx)
+		require.EqualError(t, err, "read the name-dropped fill-left series of a match group before the group was evaluated for operator !=; this indicates a bug in the query engine")
+
+		types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+		require.NoError(t, o.FinishedReading(ctx))
+		o.Close()
+	})
+
+	// A match group that holds a left series with no __name__ next to a named left series has no
+	// name-dropped sibling. The matched output series of the unnamed left series already carries the
+	// group's match key labels. So it carries the group's fill-left points as well.
+	//
+	// Left series left_metric is present at step 0 only. The unnamed left series is present at step 1
+	// only. The right side is present at every step.
+	//   step 0: left_metric present -> 100 != 1 -> kept, keeps __name__.
+	//   step 1: the unnamed left series is present -> 200 != 2 -> kept, labels {label="a"}.
+	//   step 2: no left series of the group is present -> fill 0 -> 0 != 3 -> kept, labels {label="a"}.
+	newOperatorWithCarrier := func() (*OneToOneVectorVectorBinaryOperation, []types.SeriesMetadata) {
+		leftSeries := []labels.Labels{
+			labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "a"),
+			labels.FromStrings("label", "a"),
+		}
+		rightSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "a")}
+
+		leftData := []types.InstantVectorSeriesData{
+			makeData(promql.FPoint{T: t0, F: 100}),
+			makeData(promql.FPoint{T: t1, F: 200}),
+		}
+		rightData := []types.InstantVectorSeriesData{makeData(promql.FPoint{T: t0, F: 1}, promql.FPoint{T: t1, F: 2}, promql.FPoint{T: t2, F: 3})}
+
+		left := &operators.TestOperator{Series: leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+		right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+
+		vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}}
+		o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 		require.NoError(t, err)
-		idx := len(actual)
-		actual[metadata[idx].Labels.String()] = slices.Clone(d.Floats)
-		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+		metadata, err := o.SeriesMetadata(ctx, nil)
+		require.NoError(t, err)
+		require.Len(t, metadata, 2)
+
+		return o, metadata
 	}
 
-	expected := map[string][]promql.FPoint{
-		// Name-retaining sibling: only the both-present step keeps the left metric name.
-		`{__name__="left_metric", label="a"}`: {{T: t2, F: 300}},
-		// Name-dropped sibling: the kept left-filled step drops the metric name.
-		`{label="a"}`: {{T: t1, F: 0}},
-	}
-	require.Equal(t, expected, actual)
+	t.Run("the operator returns the fill-left carrier last and merges the group's fill-left points into it", func(t *testing.T) {
+		o, metadata := newOperatorWithCarrier()
 
-	types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
-	require.NoError(t, o.FinishedReading(ctx))
-	o.Close()
+		require.True(t, metadata[0].Labels.Has(model.MetricNameLabel), "expected the named matched series to be returned first")
+		require.False(t, metadata[1].Labels.Has(model.MetricNameLabel), "expected the fill-left carrier to be returned last")
+
+		actual := map[string][]promql.FPoint{}
+
+		for i := range metadata {
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			actual[metadata[i].Labels.String()] = slices.Clone(d.Floats)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+		}
+
+		expected := map[string][]promql.FPoint{
+			// The named matched series holds only its own point. It must not hold any left-filled point.
+			`{__name__="left_metric", label="a"}`: {{T: t0, F: 100}},
+			// The carrier holds its own point and the group's one left-filled point.
+			`{label="a"}`: {{T: t1, F: 200}, {T: t2, F: 0}},
+		}
+		require.Equal(t, expected, actual)
+
+		types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+		require.NoError(t, o.FinishedReading(ctx))
+		o.Close()
+	})
+
+	t.Run("an out-of-order read of the fill-left carrier is reported as a bug", func(t *testing.T) {
+		o, metadata := newOperatorWithCarrier()
+
+		// b.remainingSeries aligns with metadata, so reorder both together to put the carrier
+		// ({label="a"}) series first.
+		metadata[0], metadata[1] = metadata[1], metadata[0]
+		o.remainingSeries[0], o.remainingSeries[1] = o.remainingSeries[1], o.remainingSeries[0]
+
+		_, err := o.NextSeries(ctx)
+		require.EqualError(t, err, "read the fill-left carrier of a match group before the group was evaluated for operator !=; this indicates a bug in the query engine")
+
+		types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+		require.NoError(t, o.FinishedReading(ctx))
+		o.Close()
+	})
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillLeft_ReleasesSplitGroupDataIfStoppedEarly(t *testing.T) {
+	// The last matched read of a name-retaining fill-left split group stores the group's fill-left
+	// points in the group's split holder. Only the group's name-dropped sibling takes them. A consumer
+	// that stops before it reads the sibling must not leak that pooled data.
+	//
+	// This test stops after each possible number of reads and checks that FinishedReading returns
+	// everything to the pools. init_test.go turns on slice mangling. So this test also catches a slice
+	// that the operator still references after it returns the slice to a pool.
+	fillZero := 0.0
+
+	step1 := timestamp.Time(0)
+	step2 := step1.Add(5 * time.Minute)
+	step3 := step2.Add(5 * time.Minute)
+	timeRange := types.NewRangeQueryTimeRange(step1, step3, 5*time.Minute)
+
+	t0 := timestamp.FromTime(step1)
+	t1 := timestamp.FromTime(step2)
+	t2 := timestamp.FromTime(step3)
+
+	testCases := map[string]struct {
+		leftSeries []labels.Labels
+		leftPoints [][]promql.FPoint
+
+		// expectedOutputSeriesCount is the number of output series. That is the number of matched
+		// output series of the group plus its one name-dropped sibling.
+		expectedOutputSeriesCount int
+	}{
+		"one left series in the group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+			},
+			leftPoints: [][]promql.FPoint{
+				{{T: t0, F: 100}},
+			},
+			expectedOutputSeriesCount: 2,
+		},
+		"two differently named left series in the group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "label", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_b", "label", "x"),
+			},
+			leftPoints: [][]promql.FPoint{
+				{{T: t0, F: 100}},
+				{{T: t1, F: 200}},
+			},
+			expectedOutputSeriesCount: 3,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for seriesToRead := 0; seriesToRead <= testCase.expectedOutputSeriesCount; seriesToRead++ {
+				t.Run(fmt.Sprintf("stop after reading %v output series", seriesToRead), func(t *testing.T) {
+					ctx := context.Background()
+					memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+					makeData := func(points []promql.FPoint) types.InstantVectorSeriesData {
+						floats, err := types.FPointSlicePool.Get(len(points), memoryConsumptionTracker)
+						require.NoError(t, err)
+						floats = append(floats, points...)
+						return types.InstantVectorSeriesData{Floats: floats}
+					}
+
+					leftData := make([]types.InstantVectorSeriesData, 0, len(testCase.leftPoints))
+					for _, points := range testCase.leftPoints {
+						leftData = append(leftData, makeData(points))
+					}
+
+					// The right side has a sample at every step. The last step has no left sample at
+					// all, so the group always has fill-left points for the sibling to take.
+					rightSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "x")}
+					rightData := []types.InstantVectorSeriesData{makeData([]promql.FPoint{{T: t0, F: 1}, {T: t1, F: 2}, {T: t2, F: 3}})}
+
+					left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+					right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+
+					// parser.NEQ without the bool modifier retains __name__. That is what makes the
+					// operator split the match group.
+					vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}}
+					o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+					require.NoError(t, err)
+
+					metadata, err := o.SeriesMetadata(ctx, nil)
+					require.NoError(t, err)
+					require.Len(t, metadata, testCase.expectedOutputSeriesCount)
+					types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+
+					for i := 0; i < seriesToRead; i++ {
+						d, err := o.NextSeries(ctx)
+						require.NoErrorf(t, err, "got error while reading output series at index %v", i)
+						types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+					}
+
+					require.NoError(t, o.FinishedReading(ctx))
+
+					// TestOperator keeps the data of any series that the operator never read. The test
+					// must release that data, so do it before the check below.
+					left.ReleaseUnreadData(memoryConsumptionTracker)
+					right.ReleaseUnreadData(memoryConsumptionTracker)
+
+					require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all pooled data to be released, but have %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+					o.Close()
+				})
+			}
+		})
+	}
 }
 
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {

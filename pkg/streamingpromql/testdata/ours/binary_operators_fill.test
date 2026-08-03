@@ -344,6 +344,212 @@ eval range from 0 to 20m step 5m ir_left != on(label) fill_left(0) ir_right
 eval range from 0 to 20m step 5m ir_left != bool fill_left(0) ir_right
   {label="a"} _ 1 1 1 _
 
+# ---------- Name-retaining comparison filter with fill_left and two differently named left series ----------
+#
+# Default matching ignores __name__, so two left series with different metric names can belong to the
+# same match group. Here they are never present at the same step, so there is no duplicate-series
+# conflict.
+#
+# Prometheus matches per timestep and treats the left side of the group as a whole. It fills the left
+# operand only at a step where NO left series of the group has a sample. A step that comes from a real
+# left sample keeps that series' __name__. A left-filled step has no __name__, because the synthetic
+# left operand takes only the match group labels.
+
+clear
+
+load 5m
+  multi_a{label="a"} 100 _   _
+  multi_b{label="a"} _   200 _
+  multi_r{label="a"} 1   2   3
+
+#   step 0: multi_a=100 present -> 100 != 1 -> kept, keeps __name__ multi_a
+#   step 1: multi_b=200 present -> 200 != 2 -> kept, keeps __name__ multi_b
+#   step 2: no left series of the group is present -> fill 0 -> 0 != 3 -> kept, no __name__
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != fill_left(0) multi_r
+  multi_a{label="a"} 100 _ _
+  multi_b{label="a"} _ 200 _
+  {label="a"} _ _ 0
+
+# Control: with on(...) the output labels never include __name__, so the group produces one series and
+# there is no split.
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != on(label) fill_left(0) multi_r
+  {label="a"} 100 200 0
+
+# Control: with the bool modifier the operator always drops the metric name. So again there is no
+# split.
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != bool fill_left(0) multi_r
+  {label="a"} 1 1 1
+
+# The two left series together cover every step where the right side has a sample. The left fill
+# therefore never applies, and no name-dropped output series exists.
+
+clear
+
+load 5m
+  cover_a{label="a"} 100 _
+  cover_b{label="a"} _   200
+  cover_r{label="a"} 1   2
+
+eval range from 0 to 5m step 5m {__name__=~"cover_a|cover_b"} != fill_left(0) cover_r
+  cover_a{label="a"} 100 _
+  cover_b{label="a"} _   200
+
+# Three differently named left series in one match group. Only the last step has no left sample.
+
+clear
+
+load 5m
+  three_a{label="a"} 100 _   _   _
+  three_b{label="a"} _   200 _   _
+  three_c{label="a"} _   _   300 _
+  three_r{label="a"} 1   2   3   4
+
+eval range from 0 to 15m step 5m {__name__=~"three_a|three_b|three_c"} != fill_left(0) three_r
+  three_a{label="a"} 100 _ _ _
+  three_b{label="a"} _ 200 _ _
+  three_c{label="a"} _ _ 300 _
+  {label="a"} _ _ _ 0
+
+# ---------- Name-retaining comparison filter with fill_left and a left series with no __name__ ----------
+#
+# Default matching ignores __name__. So a left series with no __name__ belongs to the same match group
+# as a left series with a __name__. The left-filled steps of a group carry the match group labels.
+# Here those labels are exactly the labels of the unnamed left series. So the group produces no extra
+# output series. The output series of the unnamed left series carries the group's left-filled steps as
+# well.
+
+clear
+
+load 5m
+  named_a{group="g"} 100 _   _
+  {group="g"}        _   200 _
+  named_r{group="g"} 1   2   3
+
+#   step 0: named_a=100 present -> 100 != 1 -> kept, keeps __name__ named_a
+#   step 1: the unnamed left series is present -> 200 != 2 -> kept, labels {group="g"}
+#   step 2: no left series of the group is present -> fill 0 -> 0 != 3 -> kept, labels {group="g"}
+eval range from 0 to 10m step 5m {group="g", __name__!="named_r"} != fill_left(0) named_r
+  named_a{group="g"} 100 _ _
+  {group="g"} _ 200 0
+
+# Control: with on(...) the output labels never include __name__, so the whole group produces one
+# series.
+eval range from 0 to 10m step 5m {group="g", __name__!="named_r"} != on(group) fill_left(0) named_r
+  {group="g"} 100 200 0
+
+# The two left series together cover every step where the right side has a sample. So the left fill
+# never applies. The output series of the unnamed left series holds only its own points.
+
+clear
+
+load 5m
+  covered_a{group="g"} 100 _   300
+  {group="g"}          _   200 _
+  covered_r{group="g"} 1   2   3
+
+eval range from 0 to 10m step 5m {group="g", __name__!="covered_r"} != fill_left(0) covered_r
+  covered_a{group="g"} 100 _ 300
+  {group="g"} _ 200 _
+
+# Three left series in one match group, one of them with no __name__.
+
+clear
+
+load 5m
+  trio_a{group="g"} 100 _   _   _
+  trio_b{group="g"} _   200 _   _
+  {group="g"}       _   _   300 _
+  trio_r{group="g"} 1   2   3   4
+
+eval range from 0 to 15m step 5m {group="g", __name__!="trio_r"} != fill_left(0) trio_r
+  trio_a{group="g"} 100 _ _ _
+  trio_b{group="g"} _ 200 _ _
+  {group="g"} _ _ 300 0
+
+# A match group whose only left series has no __name__. The matched steps and the left-filled steps
+# then already share the same labels, so there is no split at all.
+
+clear
+
+load 5m
+  {group="g"}       100 _
+  solo_r{group="g"} 1   2
+
+eval range from 0 to 5m step 5m {group="g", __name__!="solo_r"} != fill_left(0) solo_r
+  {group="g"} 100 0
+
+# A match group whose left series all have no __name__ and differ only in an ignored label. They all
+# merge into one matched output series. That series reads the whole left side of the group. It emits
+# the group's left-filled steps itself.
+
+clear
+
+load 5m
+  {l="x",pod="1"} 100 _   _
+  {l="x",pod="2"} _   200 _
+  ur{l="x"}       1   2   3
+
+eval range from 0 to 10m step 5m {l="x",__name__!="ur"} != ignoring(pod) fill_left(0) ur
+  {l="x"} 100 200 0
+
+# ---------- Annotations must come only from a step that the operator emits a point for ----------
+#
+# The operator evaluates a match group with several left series once per matched output series. Only
+# the last of those evaluations knows the whole left side of the group. So only that evaluation can
+# decide which steps the left fill applies to. An engine must not raise an annotation from a step that
+# it discards afterwards.
+
+clear
+
+load 5m
+  hla{l="x"} {{schema:0 sum:1 count:1}} _
+  hlb{l="x"} _                          {{schema:0 sum:3 count:3}}
+  hr{l="x"}  {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}}
+
+# The two left series together cover every step where the right side has a sample. So the left fill
+# never applies. No step combines the float fill value with a right-side histogram, so there is no
+# annotation.
+#   step 0: hla present -> the two histograms differ -> kept, keeps __name__ hla
+#   step 1: hlb present -> the two histograms differ -> kept, keeps __name__ hlb
+eval range from 0 to 5m step 5m {__name__=~"hla|hlb"} != fill_left(0) hr
+  hla{l="x"} {{schema:0 sum:1 count:1}} _
+  hlb{l="x"} _ {{schema:0 sum:3 count:3}}
+  expect no_info
+  expect no_warn
+
+# The same shape with a left series that has no __name__. That series' output series carries the
+# group's left-filled steps, and again there are none.
+
+clear
+
+load 5m
+  hna{l="x"} {{schema:0 sum:1 count:1}} _
+  {l="x"}    _                          {{schema:0 sum:3 count:3}}
+  hnr{l="x"} {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}}
+
+eval range from 0 to 5m step 5m {l="x",__name__!="hnr"} != fill_left(0) hnr
+  hna{l="x"} {{schema:0 sum:1 count:1}} _
+  {l="x"} _ {{schema:0 sum:3 count:3}}
+  expect no_info
+  expect no_warn
+
+# Control: a step that no left series of the group covers is a real left-filled step. The float fill
+# value then meets a right-side histogram. That pair is incompatible. So the operator drops the point
+# and raises the info annotation.
+
+clear
+
+load 5m
+  hma{l="x"} {{schema:0 sum:1 count:1}} _                          _
+  hmb{l="x"} _                          {{schema:0 sum:3 count:3}} _
+  hmr{l="x"} {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}} {{schema:0 sum:5 count:5}}
+
+eval range from 0 to 10m step 5m {__name__=~"hma|hmb"} != fill_left(0) hmr
+  hma{l="x"} {{schema:0 sum:1 count:1}} _ _
+  hmb{l="x"} _ {{schema:0 sum:3 count:3}} _
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "!=": float != histogram
+  expect no_warn
+
 # ---------- fill(NaN) / fill(Inf) at intermittent steps ----------
 
 clear
