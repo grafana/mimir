@@ -71,11 +71,10 @@ type cacheCardinalityEstimator struct {
 // engine, and the lookback delta passed to EstimateSeriesCount must be the query's lookback delta, so
 // that the queried time ranges (and therefore the cache keys) line up with those used when writing
 // the cache entries.
-func NewCacheCardinalityEstimator(cfg streamingpromql.CardinalityEstimationConfig, noStepSubqueryIntervalFn func(rangeMillis int64) int64, logger log.Logger) CardinalityEstimator {
+func NewCacheCardinalityEstimator(cfg streamingpromql.CardinalityEstimationConfig, logger log.Logger) CardinalityEstimator {
 	return &cacheCardinalityEstimator{
-		cfg:                      cfg,
-		noStepSubqueryIntervalFn: noStepSubqueryIntervalFn,
-		logger:                   logger,
+		cfg:    cfg,
+		logger: logger,
 	}
 }
 
@@ -85,7 +84,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	spanLogger.SetTag("timeRange", timeRange)
 	spanLogger.SetTag("lookbackDelta", lookbackDelta)
 
-	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta, e.noStepSubqueryIntervalFn)
+	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
 	if len(selectorRanges) == 0 {
 		return nil, nil
 	}
@@ -198,7 +197,7 @@ type selectorTimeRange struct {
 //
 // FIXME: ideally we'd run sharding over the query plan (rather than AST) and therefore be able to
 // reuse the existing QueriedTimeRange method rather than implementing it again here.
-func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, noStepSubqueryIntervalFn func(rangeMillis int64) int64) []selectorTimeRange {
+func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) []selectorTimeRange {
 	var out []selectorTimeRange
 
 	// visit descends the expression carrying the time range that applies at the current node, which is
@@ -230,15 +229,7 @@ func collectSelectorTimeRanges(expr parser.Expr, timeRange types.QueryTimeRange,
 			out = append(out, selectorTimeRange{matchers: n.LabelMatchers, minT: minT, maxT: maxT})
 
 		case *parser.SubqueryExpr:
-			// Selectors inside a subquery are evaluated over a widened time range. Compute it exactly
-			// as the planner does (see the SubqueryExpr case in QueryPlanner.nodeFromExpr and
-			// Subquery.ChildrenTimeRange) so that the cache keys line up with the write path.
-			step := n.Step
-			if step == 0 {
-				step = time.Duration(noStepSubqueryIntervalFn(n.Range.Milliseconds())) * time.Millisecond
-			}
-
-			childTimeRange := core.SubqueryChildrenTimeRange(tr, n.Range, step, n.OriginalOffset, core.TimeFromTimestamp(n.Timestamp))
+			childTimeRange := core.SubqueryChildrenTimeRange(tr, n.Range, n.Step, n.OriginalOffset, core.TimeFromTimestamp(n.Timestamp))
 			visit(n.Expr, childTimeRange)
 
 		default:

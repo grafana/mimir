@@ -1216,7 +1216,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		var estimator sharding.CardinalityEstimator
 		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
 			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-				estimator = sharding.NewCacheCardinalityEstimator(opts.CardinalityEstimation, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
+				estimator = sharding.NewCacheCardinalityEstimator(opts.CardinalityEstimation, util_log.Logger)
 			} else {
 				estimator = sharding.NewRequestHintsCardinalityEstimator()
 			}
