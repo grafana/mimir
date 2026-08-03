@@ -965,7 +965,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
 	// createQueryFrontendQueryPlanner) can use it to size shards for future queries.
 	if middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.ShardedQueries && middlewareCfg.UseMQEForSharding && middlewareCfg.CardinalityBasedShardingEnabled() {
-		opts.QueryPostProcessors = append(opts.QueryPostProcessors, querymiddleware.NewCardinalityStoringPostProcessor(t.QueryFrontendCacheClient, util_log.Logger))
+		opts.QueryPostProcessors = append(opts.QueryPostProcessors, sharding.NewCardinalityStoringPostProcessor(t.QueryFrontendCacheClient, util_log.Logger))
 	}
 
 	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
@@ -1213,12 +1213,12 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		// When splitting and caching run inside MQE, the cardinality-estimation middleware is not in
 		// the chain, so estimate cardinality from the per-selector cardinality cache. Otherwise, use
 		// the estimate provided by the cardinality-estimation middleware via the request hints.
-		var estimator querymiddleware.CardinalityEstimator
+		var estimator sharding.CardinalityEstimator
 		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
 			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-				estimator = querymiddleware.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
+				estimator = sharding.NewCacheCardinalityEstimator(t.QueryFrontendCacheClient, opts.CommonOpts.NoStepSubqueryIntervalFn, util_log.Logger)
 			} else {
-				estimator = querymiddleware.NewRequestHintsCardinalityEstimator()
+				estimator = sharding.NewRequestHintsCardinalityEstimator()
 			}
 		}
 

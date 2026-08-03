@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querymiddleware
+package sharding
 
 import (
 	"context"
@@ -19,9 +19,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -52,7 +54,7 @@ const (
 type CardinalityEstimator interface {
 	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange
 	// with the given lookback delta, or nil if no estimate is available.
-	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount
+	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *querymiddleware.EstimatedSeriesCount
 }
 
 // requestHintsCardinalityEstimator returns the cardinality estimate carried on the request hints,
@@ -65,8 +67,8 @@ func NewRequestHintsCardinalityEstimator() CardinalityEstimator {
 	return requestHintsCardinalityEstimator{}
 }
 
-func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) *EstimatedSeriesCount {
-	if hints := RequestHintsFromContext(ctx); hints != nil {
+func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) *querymiddleware.EstimatedSeriesCount {
+	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
 		return hints.GetCardinalityEstimate()
 	}
 
@@ -94,7 +96,7 @@ func NewCacheCardinalityEstimator(cache cache.Cache, noStepSubqueryIntervalFn fu
 	}
 }
 
-func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *EstimatedSeriesCount {
+func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) *querymiddleware.EstimatedSeriesCount {
 	spanLogger, ctx := spanlogger.New(ctx, e.logger, tracer, "EstimateSeriesCount")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("timeRange", timeRange)
@@ -133,9 +135,9 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 		return nil
 	}
 
-	decoded := make(map[string]*SelectorCardinalityStatistics, len(res))
+	decoded := make(map[string]*querymiddleware.SelectorCardinalityStatistics, len(res))
 	for k, v := range res {
-		entry := &SelectorCardinalityStatistics{}
+		entry := &querymiddleware.SelectorCardinalityStatistics{}
 		if err := proto.Unmarshal(v, entry); err != nil {
 			level.Warn(spanLogger).Log("msg", "failed to unmarshal selector cardinality cache entry", "err", err, "key", k)
 			continue
@@ -193,7 +195,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
 
-	return &EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}
+	return &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}
 }
 
 // selectorTimeRange is a selector's matchers together with the time range it queries from storage.
@@ -322,7 +324,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			total += count
 		}
 
-		entry := &SelectorCardinalityStatistics{Selector: gk.selector, Cardinality: total}
+		entry := &querymiddleware.SelectorCardinalityStatistics{Selector: gk.selector, Cardinality: total}
 		data, err := entry.Marshal()
 		if err != nil {
 			level.Warn(spanLogger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
@@ -417,8 +419,8 @@ func selectorCardinalityCacheKeys(ctx context.Context, canonicalSelector string,
 		lastBucket = firstBucket + maxSelectorCardinalityBuckets - 1
 	}
 
-	userIDHash := hashCacheKey(userID)
-	selectorHash := hashCacheKey(canonicalSelector)
+	userIDHash := caching.HashCacheKey([]byte(userID))
+	selectorHash := caching.HashCacheKey([]byte(canonicalSelector))
 
 	keys := make([]string, 0, lastBucket-firstBucket+1)
 	for b := firstBucket; b <= lastBucket; b++ {

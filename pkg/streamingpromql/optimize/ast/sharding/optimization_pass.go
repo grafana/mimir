@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -24,12 +25,14 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+var tracer = otel.Tracer("pkg/streamingpromql/optimize/ast/sharding")
+
 type OptimizationPass struct {
 	sharder   *querymiddleware.QuerySharder
-	estimator querymiddleware.CardinalityEstimator
+	estimator CardinalityEstimator
 }
 
-func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator querymiddleware.CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
+func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
 		sharder:   querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
 		estimator: estimator,

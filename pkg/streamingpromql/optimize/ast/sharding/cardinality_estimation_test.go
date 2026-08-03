@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querymiddleware
+package sharding
 
 import (
 	"context"
@@ -15,11 +15,13 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 func TestCanonicalSelectorString(t *testing.T) {
@@ -28,7 +30,9 @@ func TestCanonicalSelectorString(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
 			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 		}
-		require.Equal(t, `{__name__="foo",env=~"prod"}`, canonicalSelectorString(matchers))
+		formatted, shard := selectorStringWithoutShardingMatcher(matchers)
+		require.Equal(t, `{__name__="foo",env=~"prod"}`, formatted)
+		require.Equal(t, "", shard)
 	})
 
 	t.Run("excludes the query-shard matcher so all shards map to the same string", func(t *testing.T) {
@@ -36,11 +40,15 @@ func TestCanonicalSelectorString(t *testing.T) {
 			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 			{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: "1_of_4"},
 		}
+		formattedWithShard, shard := selectorStringWithoutShardingMatcher(withShard)
+		require.Equal(t, `{__name__="foo"}`, formattedWithShard)
+		require.Equal(t, "1_of_4", shard)
+
 		withoutShard := []stats.LabelMatcher{
 			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 		}
-		require.Equal(t, canonicalSelectorString(withoutShard), canonicalSelectorString(withShard))
-		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(withShard))
+		formattedWithoutShard, _ := selectorStringWithoutShardingMatcher(withoutShard)
+		require.Equal(t, formattedWithShard, formattedWithoutShard)
 	})
 }
 
@@ -64,7 +72,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		// start - 5m lookback + 1ms .. end.
 		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
-		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
+		require.Equal(t, `{__name__="foo"}`, selectorString(ranges[0].matchers))
 	})
 
 	t.Run("matrix selector uses its range", func(t *testing.T) {
@@ -77,7 +85,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		// Range vector selectors don't apply the lookback delta: start - 10m range + 1ms .. end.
 		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
-		require.Equal(t, `{__name__="bar"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
+		require.Equal(t, `{__name__="bar"}`, selectorString(ranges[0].matchers))
 	})
 
 	t.Run("multiple selectors", func(t *testing.T) {
@@ -88,12 +96,12 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		require.Len(t, ranges, 2)
 
 		// foo is an instant vector selector: start - 5m lookback + 1ms .. end.
-		require.Equal(t, `{__name__="foo"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[0].matchers)))
+		require.Equal(t, `{__name__="foo"}`, selectorString(ranges[0].matchers))
 		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
 
 		// bar is a range vector selector and doesn't apply the lookback delta: start - 10m range + 1ms .. end.
-		require.Equal(t, `{__name__="bar"}`, canonicalSelectorString(cardinalitySelectorMatchersFromLabelMatchers(ranges[1].matchers)))
+		require.Equal(t, `{__name__="bar"}`, selectorString(ranges[1].matchers))
 		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[1].minT)
 		require.Equal(t, endT, ranges[1].maxT)
 	})
@@ -206,7 +214,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		canonical := `{__name__="foo"}`
 		minT, maxT := selectors.ComputeQueriedTimeRange(wideTimeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
+		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, -1, newNoOpSpanLogger(t))
 		require.Greater(t, len(keys), 1, "expected the wide range to span multiple buckets")
 
 		// Write a different cardinality to each bucket; the estimate should be the maximum.
@@ -231,7 +239,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 		canonical := `{__name__="foo"}`
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
+		keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, -1, newNoOpSpanLogger(t))
 		for _, k := range keys {
 			// Store an entry with a different selector at the same key.
 			writeSelectorCardinalityEntry(t, c, k, `{__name__="something-else"}`, 4321)
@@ -253,7 +261,7 @@ func TestRequestHintsCardinalityEstimator(t *testing.T) {
 	})
 
 	t.Run("hints with estimate", func(t *testing.T) {
-		ctx := ContextWithRequestHints(context.Background(), &Hints{CardinalityEstimate: &EstimatedSeriesCount{EstimatedSeriesCount: 100}})
+		ctx := querymiddleware.ContextWithRequestHints(context.Background(), &querymiddleware.Hints{CardinalityEstimate: &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: 100}})
 		result := estimator.EstimateSeriesCount(ctx, expr, timeRange, 0)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(100), result.EstimatedSeriesCount)
@@ -277,7 +285,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	}
 
 	// estimateFoo runs the cache-backed estimator for the query "foo" against the given cache.
-	estimateFoo := func(t *testing.T, c cache.Cache) *EstimatedSeriesCount {
+	estimateFoo := func(t *testing.T, c cache.Cache) *querymiddleware.EstimatedSeriesCount {
 		t.Helper()
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
 		require.NoError(t, err)
@@ -336,17 +344,11 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.NotNil(t, result)
 		require.Equal(t, uint64(50), result.EstimatedSeriesCount)
 	})
-
-	t.Run("nil cache does nothing", func(t *testing.T) {
-		ctx, qs := newCtxWithStats()
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
-		require.NoError(t, NewCardinalityStoringPostProcessor(nil, log.NewNopLogger()).PostProcess(ctx))
-	})
 }
 
 func writeSelectorCardinalityEntry(t *testing.T, c cache.Cache, key, canonical string, cardinality uint64) {
 	t.Helper()
-	entry := &SelectorCardinalityStatistics{Selector: canonical, Cardinality: cardinality}
+	entry := &querymiddleware.SelectorCardinalityStatistics{Selector: canonical, Cardinality: cardinality}
 	data, err := entry.Marshal()
 	require.NoError(t, err)
 	c.SetMultiAsync(map[string][]byte{key: data}, selectorCardinalityTTL)
@@ -354,8 +356,14 @@ func writeSelectorCardinalityEntry(t *testing.T, c cache.Cache, key, canonical s
 
 func writeSelectorCardinalityToAllBuckets(t *testing.T, c cache.Cache, ctx context.Context, canonical string, minT, maxT int64, cardinality uint64) {
 	t.Helper()
-	keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, log.NewNopLogger())
+	keys := selectorCardinalityCacheKeys(ctx, canonical, minT, maxT, -1, newNoOpSpanLogger(t))
 	for _, k := range keys {
 		writeSelectorCardinalityEntry(t, c, k, canonical, cardinality)
 	}
+}
+
+func newNoOpSpanLogger(t *testing.T) *spanlogger.SpanLogger {
+	logger, _ := spanlogger.New(t.Context(), log.NewNopLogger(), tracer, "newNoOpSpanLogger")
+	t.Cleanup(logger.Finish)
+	return logger
 }

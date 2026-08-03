@@ -84,7 +84,7 @@ func TestOptimizationPass(t *testing.T) {
 				maxShardedQueries:   6,
 				splitAndMergeShards: 1,
 			}
-			pass := NewOptimizationPass(limits, seriesPerShard, querymiddleware.NewRequestHintsCardinalityEstimator(), reg, logger)
+			pass := NewOptimizationPass(limits, seriesPerShard, NewRequestHintsCardinalityEstimator(), reg, logger)
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
@@ -150,7 +150,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 				maxShardedQueries:   6,
 				splitAndMergeShards: 1,
 			}
-			pass := NewOptimizationPass(limits, seriesPerShard, querymiddleware.NewRequestHintsCardinalityEstimator(), reg, logger)
+			pass := NewOptimizationPass(limits, seriesPerShard, NewRequestHintsCardinalityEstimator(), reg, logger)
 
 			input, err := promqlext.NewPromQLParser().ParseExpr(testCase.input)
 			require.NoError(t, err)
