@@ -169,7 +169,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
 	})
 
-	t.Run("returns the maximum cardinality across selectors", func(t *testing.T) {
+	t.Run("returns the total cardinality across selectors", func(t *testing.T) {
 		c := cache.NewMockCache()
 		expr, err := promqlext.NewPromQLParser().ParseExpr("foo + bar")
 		require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		estimator := NewCacheCardinalityEstimator(c, testNoStepSubqueryInterval, log.NewNopLogger())
 		result := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
 		require.NotNil(t, result)
-		require.Equal(t, uint64(500), result.EstimatedSeriesCount)
+		require.Equal(t, uint64(600), result.EstimatedSeriesCount)
 	})
 
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {

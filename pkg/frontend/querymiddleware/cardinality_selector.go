@@ -187,7 +187,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 			"estimate", selectorEstimate,
 		)
 
-		overallEstimate = max(overallEstimate, selectorEstimate)
+		overallEstimate += selectorEstimate
 	}
 
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
