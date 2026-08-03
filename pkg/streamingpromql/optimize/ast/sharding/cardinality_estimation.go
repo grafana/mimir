@@ -379,37 +379,31 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 		return nil, fmt.Errorf("last bucket must not be before first bucket, but got minT=%d and maxT=%d", minT, maxT)
 	}
 
-	bucketCount := lastBucket - firstBucket + 1
+	desiredBucketCount := lastBucket - firstBucket + 1
+	maxBuckets := cfg.MaxBucketsReadPerSelector
+	needToApplyLimit := limitBucketCount && desiredBucketCount > maxBuckets
+	outputBucketCount := desiredBucketCount
 
-	if !limitBucketCount || bucketCount <= cfg.MaxBucketsReadPerSelector {
-		keys := make([]cacheKey, 0, bucketCount)
-		for bucketIndex := firstBucket; bucketIndex <= lastBucket; bucketIndex++ {
-			key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex)
-			if err != nil {
-				return nil, err
-			}
+	if needToApplyLimit {
+		logger.DebugLog(
+			"msg", "selector cardinality time range spans more buckets than the maximum; only a subset of buckets will be queried",
+			"max_buckets", maxBuckets,
+			"bucket_count", desiredBucketCount,
+			"selector", canonicalSelector,
+		)
 
-			keys = append(keys, key)
-		}
-
-		return keys, nil
+		outputBucketCount = maxBuckets
 	}
 
-	// The range overlaps more buckets than we're willing to read, so read an evenly-spaced subset of
-	// MaxBucketsReadPerSelector buckets across the range instead.
-	maxBuckets := cfg.MaxBucketsReadPerSelector
-	logger.DebugLog(
-		"msg", "selector cardinality time range spans more buckets than the maximum; only a subset of buckets will be queried",
-		"max_buckets", maxBuckets,
-		"bucket_count", bucketCount,
-		"selector", canonicalSelector,
-	)
+	keys := make([]cacheKey, 0, outputBucketCount)
+	for i := range outputBucketCount {
+		bucketIndex := i
 
-	keys := make([]cacheKey, 0, maxBuckets)
-	for i := range maxBuckets {
-		// Space the selected buckets evenly across [firstBucket, lastBucket], rounding to the nearest
-		// bucket so the first and last buckets in the range are always included.
-		bucketIndex := firstBucket + (i*bucketCount*2+maxBuckets)/(maxBuckets*2)
+		if needToApplyLimit {
+			// Space the selected buckets evenly across [firstBucket, lastBucket], rounding to the nearest
+			// bucket so the first and last buckets in the range are always included.
+			bucketIndex = firstBucket + (i*desiredBucketCount*2+maxBuckets)/(maxBuckets*2)
+		}
 
 		key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex)
 		if err != nil {
