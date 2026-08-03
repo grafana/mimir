@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -144,6 +146,28 @@ func TestNewClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+// One bucket client per read compartment on a shared registry, all under the same "component".
+func TestNewClient_MetricsOfMultipleBucketsUnderSameComponent(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, yaml.Unmarshal([]byte(configWithS3Backend), &cfg))
+	cfg.S3.BucketName = "blocks-rc-" + compartments.ReadCompartmentIDPlaceholder
+
+	reg := prometheus.NewPedanticRegistry()
+	for compartmentID := 0; compartmentID < 2; compartmentID++ {
+		bucketClient, err := NewClient(context.Background(), cfg.ReadCompartmentConfig(compartmentID), "querier", test.NewTestingLogger(t), reg)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, bucketClient.Close()) })
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP thanos_objstore_bucket_last_successful_upload_time Second timestamp of the last successful upload to the bucket.
+		# TYPE thanos_objstore_bucket_last_successful_upload_time gauge
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-0",component="querier"} 0
+		thanos_objstore_bucket_last_successful_upload_time{bucket="blocks-rc-1",component="querier"} 0
+	`), "thanos_objstore_bucket_last_successful_upload_time"))
 }
 
 func TestClientMock_MockGet(t *testing.T) {

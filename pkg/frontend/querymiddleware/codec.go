@@ -231,6 +231,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	optionDecoder                                   requestoptions.OptionDecoder
 	injector                                        propagation.Injector
 	logger                                          log.Logger
 }
@@ -261,12 +262,14 @@ func NewCodec(
 	injector propagation.Injector,
 	logger log.Logger,
 ) Codec {
+	propagateHeadersMetrics := append(codecPropagateHeadersMetrics, propagateHeaders...)
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
-		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersMetrics:            propagateHeadersMetrics,
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		optionDecoder:                      requestoptions.OptionDecoder{PropagatedHeaders: propagateHeadersMetrics},
 		injector:                           injector,
 		logger:                             logger,
 	}
@@ -388,7 +391,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -420,7 +423,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 

@@ -4,6 +4,28 @@
 
 ### Grafana Mimir
 
+* [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
+* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
+* [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
+
+### Mixin
+
+* [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
+* [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
+
+### Jsonnet
+
+* [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
+* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
+
+### Documentation
+
+### Tools
+
+## 3.2.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
 * [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.33.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144, #15733
 * [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
@@ -22,9 +44,9 @@
   * Important: When upgrading to this release, you must ensure all queriers are running Mimir 3.1 before upgrading to ensure no interruption to service.
 * [CHANGE] Query-frontend and querier: multi-node remote execution is now always enabled whenever remote execution is enabled. The `-query-frontend.enable-multiple-node-remote-execution-requests` CLI flag and associated config file option has been removed. #16187
 * [CHANGE] Query-frontend and querier: enable subset selector elimination by default. #16195
-* [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [CHANGE] Vendored Prometheus: relabel configs now always serialize `separator`/`replacement` (upstream #18653). The `/runtime_config` (and `?mode=diff`) output for tenants that set an empty `separator`/`replacement` in `metric_relabel_configs` will now show those fields explicitly. No effect on relabeling behavior. #16198
 * [CHANGE] Query-frontend: Enable query sharding by default. Disable it with `-query-frontend.parallelize-shardable-queries=false`. #16212
+* [CHANGE] The `bucket` label of the `thanos_objstore_bucket_*` metrics, previously always empty, is now set to the name of the bucket the metrics refer to. This lets a component that accesses more than one bucket report each of them separately. The `thanos_store_bucket_cache_*` and `cortex_bucket_index_load*` metrics gained a `bucket` label carrying the same bucket name, for the same reason. #16265
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.producer-compression` flag to configure the Kafka producer compression codec. Supported values are `none`, `gzip`, `snappy`, `lz4`, and `zstd`. Set it to `none` to target Azure Event Hub's Kafka-compatible endpoint, which does not support compressed produce requests. #15235
 * [FEATURE] Ingester: Shared tenant-fair compute worker pool. Replaces the previous per-request fanout (which could let a heavy tenant occupy all CPU) with a fixed pool of workers backed by a round-robin per-tenant queue. The label-values-cardinality endpoint is the first consumer. New experimental flags: `-ingester.compute-workers` (default 0 = GOMAXPROCS) and `-ingester.label-values-count-chunk-size` (default 32). #15493
 * [FEATURE] Ingester, Block-builder: Add experimental `-ingester.float-chunk-encoding` flag (per-tenant `float_chunk_encoding` limit) to select the float chunk encoding (`xor` or `xor2`). The overrides-exporter can export it as a numeric value (`4` for `xor`, `7` for `xor2`) when `float_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #15831
@@ -133,7 +155,6 @@
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 * [BUGFIX] Query-frontend: Fix a goroutine leak when a querier's streaming response arrives just as the query is cancelled: the goroutine handling the response could stay blocked forever writing a response body that would never be read. #16151
 * [BUGFIX] MQE: Fix issue where a sentinel value was inadvertently returned to a pool where it could be mutated by multiple threads at once. #16205
-* [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 
 ### Mixin
 
@@ -152,7 +173,6 @@
 * [ENHANCEMENT] Dashboards: Split the server-side "Usage Tracker" row of the "Writes" dashboard into separate "TrackSeries" (non-batched) and "TrackSeriesBatch" (batched) rows, so batched tracking RPCs are visible now that synchronous batched tracking can drive `TrackSeriesBatch`. #15805
 * [ENHANCEMENT] Dashboards: Simplify the ingest storage produced-records queries in the "Writes" and "Ruler" dashboards by removing the fallback to the `cortex_ingest_storage_writer_produce_requests_total` and `cortex_ingest_storage_writer_produce_failures_total` metrics, which were renamed to `cortex_ingest_storage_writer_produce_records_enqueued_total` and `cortex_ingest_storage_writer_produce_records_failed_total` more than a year ago. #16035
 * [ENHANCEMENT] Dashboards: Add optional per-zone panels for multi-zone write path deployments to the "Writes" dashboard, enabled via the `show_multi_zone_write_path_panels` config option (disabled by default). When enabled, the gateway and distributor "Requests / sec" and "Kafka produced records / sec" panels break down the traffic by availability zone, and "Latency per zone" panels are added next to the aggregate latency panels. #16206
-* [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 * [BUGFIX] Alerts: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
 
@@ -170,7 +190,6 @@
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
 * [BUGFIX] Continuous-test: Include `._config.commonConfig` in arguments passed to continuous-test. #15988
-* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 
 
 ### Documentation
@@ -184,8 +203,6 @@
 * [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
-
-### Query-tee
 
 ## 3.1.4
 

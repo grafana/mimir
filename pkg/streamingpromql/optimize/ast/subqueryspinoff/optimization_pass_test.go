@@ -19,6 +19,7 @@ import (
 	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -94,7 +95,11 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
-			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, testCase.input, timeRange, streamingpromql.NoopPlanningObserver{})
+			params := &planning.QueryParameters{
+				OriginalExpression: testCase.input,
+				TimeRange:          timeRange,
+			}
+			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, params, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			expectedOutput := testCase.expectedOutput

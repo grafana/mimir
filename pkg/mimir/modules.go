@@ -71,10 +71,12 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
+	intermediatecache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -113,6 +115,7 @@ const (
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
+	QuerierIntermediateCacheClient   string = "querier-intermediate-cache-client"
 	QuerierLifecycler                string = "querier-lifecycler"
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QuerierRing                      string = "querier-ring"
@@ -1109,12 +1112,36 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
+	// Register any extra passes injected from outside this package after the built-in passes registered by NewQueryPlanner.
+	for _, p := range t.ExtraASTOptimizationPasses {
+		t.QuerierQueryPlanner.RegisterASTOptimizationPass(p)
+	}
+	for _, p := range t.ExtraQueryPlanOptimizationPasses {
+		t.QuerierQueryPlanner.RegisterQueryPlanOptimizationPass(p)
+	}
+
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts, requestoptions.OptionDecoder{PropagatedHeaders: t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders})
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
+
+	return nil, nil
+}
+
+func (t *Mimir) initQuerierIntermediateCacheClient() (services.Service, error) {
+	cfg := t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	client, err := intermediatecache.NewCacheClient(cfg.IntermediateResultsCache, "querier", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting.IntermediateResultsCache.CacheClient = client
 
 	return nil, nil
 }
@@ -1127,7 +1154,6 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	}
 
 	var err error
-
 	t.QueryFrontendCacheClient, err = querymiddleware.NewResultsCache(cfg.ResultsCache, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -1155,6 +1181,17 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 		return err
 	}
 
+	// Register any extra passes injected from outside this package. These run after the built-in passes
+	// registered by NewQueryPlanner, but must be registered before the remote execution, subquery spin-off
+	// and sharding passes below so that query-mutating passes run before sharding, matching how the
+	// equivalent middlewares are ordered before query sharding today.
+	for _, p := range t.ExtraASTOptimizationPasses {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
+	}
+	for _, p := range t.ExtraQueryPlanOptimizationPasses {
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(p)
+	}
+
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 	}
@@ -1176,7 +1213,7 @@ func (t *Mimir) registerQueryFrontendAnalysisEndpoint(opts streamingpromql.Engin
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts, requestoptions.OptionDecoder{PropagatedHeaders: t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders})
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 }
 
@@ -1199,6 +1236,10 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+
+	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
+	// used by operators executed in queriers.
+	opts.RangeVectorSplitting.IntermediateResultsCache.CacheClient = nil
 
 	// We can't use the engine to register these metrics, as the same metrics are used by other kinds of caches (eg. the labels query cache)
 	// and the Prometheus client library requires that they each instance of the metric has exactly the same set of label names within this process.
@@ -1680,6 +1721,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QuerierIntermediateCacheClient, t.initQuerierIntermediateCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierLifecycler, t.initQuerierLifecycler, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
@@ -1754,7 +1796,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner, QuerierIntermediateCacheClient},
 		Ruler:                            rulerDeps,
 		RulerDistributorClient:           {Vault},
 		RulerStorage:                     {Overrides},
