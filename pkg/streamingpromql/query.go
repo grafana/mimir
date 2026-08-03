@@ -96,7 +96,7 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	}
 
 	for _, pp := range q.engine.queryPostProcessors {
-		if err := pp.PostProcess(ctx); err != nil {
+		if err := pp.PostProcess(ctx, q.evaluator.originalExpression); err != nil {
 			return &promql.Result{Err: fmt.Errorf("post-processing query failed: %w", err)}
 		}
 	}

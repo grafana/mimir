@@ -33,7 +33,7 @@ func TestCanonicalSelectorString(t *testing.T) {
 			{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
 		}
 		formatted, shard := selectorStringWithoutShardingMatcher(matchers)
-		require.Equal(t, `{__name__="foo",env=~"prod"}`, formatted)
+		require.Equal(t, `__name__="foo",env=~"prod"`, formatted)
 		require.Equal(t, "", shard)
 	})
 
@@ -43,7 +43,7 @@ func TestCanonicalSelectorString(t *testing.T) {
 			{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: "1_of_4"},
 		}
 		formattedWithShard, shard := selectorStringWithoutShardingMatcher(withShard)
-		require.Equal(t, `{__name__="foo"}`, formattedWithShard)
+		require.Equal(t, `__name__="foo"`, formattedWithShard)
 		require.Equal(t, "1_of_4", shard)
 
 		withoutShard := []stats.LabelMatcher{
@@ -74,7 +74,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		// start - 5m lookback + 1ms .. end.
 		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
-		require.Equal(t, `{__name__="foo"}`, selectorString(ranges[0].matchers))
+		require.Equal(t, `__name__="foo"`, selectorString(ranges[0].matchers))
 	})
 
 	t.Run("matrix selector uses its range", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		// Range vector selectors don't apply the lookback delta: start - 10m range + 1ms .. end.
 		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
-		require.Equal(t, `{__name__="bar"}`, selectorString(ranges[0].matchers))
+		require.Equal(t, `__name__="bar"`, selectorString(ranges[0].matchers))
 	})
 
 	t.Run("multiple selectors", func(t *testing.T) {
@@ -98,12 +98,12 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		require.Len(t, ranges, 2)
 
 		// foo is an instant vector selector: start - 5m lookback + 1ms .. end.
-		require.Equal(t, `{__name__="foo"}`, selectorString(ranges[0].matchers))
+		require.Equal(t, `__name__="foo"`, selectorString(ranges[0].matchers))
 		require.Equal(t, startT-lookbackDelta.Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
 
 		// bar is a range vector selector and doesn't apply the lookback delta: start - 10m range + 1ms .. end.
-		require.Equal(t, `{__name__="bar"}`, selectorString(ranges[1].matchers))
+		require.Equal(t, `__name__="bar"`, selectorString(ranges[1].matchers))
 		require.Equal(t, startT-(10*time.Minute).Milliseconds()+1, ranges[1].minT)
 		require.Equal(t, endT, ranges[1].maxT)
 	})
@@ -149,7 +149,7 @@ func testNoStepSubqueryInterval(int64) int64 {
 
 func TestCacheCardinalityEstimator(t *testing.T) {
 	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
-	end := start.Add(time.Hour)
+	end := start.Add(10 * time.Minute)
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
 	lookbackDelta := 5 * time.Minute
 
@@ -157,11 +157,12 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 	t.Run("returns nil when nothing is cached", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		qs := "foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
@@ -170,15 +171,16 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 	t.Run("returns the cardinality of a single selector", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		qs := "foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
-		canonical := `{__name__="foo"}`
+		canonical := `__name__="foo"`
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, canonical, minT, maxT, 1234)
+		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, qs, canonical, minT, maxT, 1234)
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
@@ -188,15 +190,16 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 	t.Run("returns the total cardinality across selectors", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo + bar")
+		qs := "foo + bar"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, `{__name__="foo"}`, minT, maxT, 100)
-		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, `{__name__="bar"}`, minT, maxT, 500)
+		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, qs, `__name__="foo"`, minT, maxT, 100)
+		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, qs, `__name__="bar"`, minT, maxT, 500)
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(600), result.EstimatedSeriesCount)
@@ -206,15 +209,16 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo + bar")
+		qs := "foo + bar"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
 		// Only foo has an entry in the cache; bar has none.
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, `{__name__="foo"}`, minT, maxT, 100)
+		writeSelectorCardinalityToAllBuckets(t, ctx, cfg, qs, `__name__="foo"`, minT, maxT, 100)
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
@@ -225,12 +229,13 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		// A range that spans several buckets.
 		wideTimeRange := types.NewRangeQueryTimeRange(start, start.Add(24*time.Hour), time.Minute)
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		qs := "foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
-		canonical := `{__name__="foo"}`
+		canonical := `__name__="foo"`
 		minT, maxT := selectors.ComputeQueriedTimeRange(wideTimeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys, err := selectorCardinalityCacheKeys(ctx, cfg, canonical, minT, maxT, false, newNoOpSpanLogger(t))
+		keys, err := selectorCardinalityCacheKeys(ctx, cfg, qs, canonical, minT, maxT, false, newNoOpSpanLogger(t))
 		require.NoError(t, err)
 		require.Greater(t, len(keys), 1, "expected the wide range to span multiple buckets")
 
@@ -244,7 +249,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		}
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, wideTimeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, wideTimeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Equal(t, uint64(9999), result.EstimatedSeriesCount)
@@ -254,12 +259,13 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 
 	t.Run("ignores entries whose stored selector does not match (hash collision)", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		qs := "foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
-		canonical := `{__name__="foo"}`
+		canonical := `__name__="foo"`
 		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
-		keys, err := selectorCardinalityCacheKeys(ctx, cfg, canonical, minT, maxT, false, newNoOpSpanLogger(t))
+		keys, err := selectorCardinalityCacheKeys(ctx, cfg, qs, canonical, minT, maxT, false, newNoOpSpanLogger(t))
 		require.NoError(t, err)
 		for _, k := range keys {
 			// Store an entry with a different selector at the same key.
@@ -268,7 +274,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		}
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
@@ -280,11 +286,12 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		cfg.MaxBucketsReadPerSelector = 4
 		cfg.BucketSize = 5 * time.Minute
 
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		qs := "foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 		require.NoError(t, err)
 
 		estimator := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger())
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := estimator.EstimateSeriesCount(ctx, qs, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		require.Nil(t, result)
 		require.Equal(t, 1, c.GetCount)
@@ -343,13 +350,14 @@ func TestSelectorCardinalityCacheKeys(t *testing.T) {
 			cfg.MaxBucketsReadPerSelector = maxBuckets
 			ctx := context.Background()
 
+			expr := "foo + bar"
 			selector := "foo"
-			actualKeys, err := selectorCardinalityCacheKeys(ctx, cfg, selector, testCase.minT, testCase.maxT, true, newNoOpSpanLogger(t))
+			actualKeys, err := selectorCardinalityCacheKeys(ctx, cfg, expr, selector, testCase.minT, testCase.maxT, true, newNoOpSpanLogger(t))
 			require.NoError(t, err)
 
 			expectedKeys := make([]cacheKey, 0, len(testCase.expectedBucketIndices))
 			for _, k := range testCase.expectedBucketIndices {
-				key, err := selectorCardinalityCacheKey(ctx, cfg, selector, k)
+				key, err := selectorCardinalityCacheKey(ctx, cfg, expr, selector, k)
 				require.NoError(t, err)
 				expectedKeys = append(expectedKeys, key)
 			}
@@ -359,6 +367,18 @@ func TestSelectorCardinalityCacheKeys(t *testing.T) {
 	}
 }
 
+func TestSelectorCardinalityCacheKey_DifferentOriginalExpressions(t *testing.T) {
+	ctx := context.Background()
+	_, cfg := setupCardinalityEstimationTest()
+	keyForFoo, err := selectorCardinalityCacheKey(ctx, cfg, "foo", "foo", 0)
+	require.NoError(t, err)
+
+	keyForFooBar, err := selectorCardinalityCacheKey(ctx, cfg, "foo+bar", "foo", 0)
+	require.NoError(t, err)
+
+	require.NotEqual(t, keyForFoo, keyForFooBar, "identical selectors with different expressions should result in different keys")
+}
+
 func TestRequestHintsCardinalityEstimator(t *testing.T) {
 	estimator := NewRequestHintsCardinalityEstimator()
 	expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
@@ -366,14 +386,14 @@ func TestRequestHintsCardinalityEstimator(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	t.Run("no hints", func(t *testing.T) {
-		result, err := estimator.EstimateSeriesCount(context.Background(), expr, timeRange, 0)
+		result, err := estimator.EstimateSeriesCount(context.Background(), "", expr, timeRange, 0)
 		require.NoError(t, err)
 		require.Nil(t, result)
 	})
 
 	t.Run("hints with estimate", func(t *testing.T) {
 		ctx := querymiddleware.ContextWithRequestHints(context.Background(), &querymiddleware.Hints{CardinalityEstimate: &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: 100}})
-		result, err := estimator.EstimateSeriesCount(ctx, expr, timeRange, 0)
+		result, err := estimator.EstimateSeriesCount(ctx, "", expr, timeRange, 0)
 		require.NoError(t, err)
 		require.Equal(t, uint64(100), result.EstimatedSeriesCount)
 	})
@@ -382,7 +402,7 @@ func TestRequestHintsCardinalityEstimator(t *testing.T) {
 func TestCardinalityStoringPostProcessor(t *testing.T) {
 	const userID = "user-1"
 	start := time.Date(2024, 12, 11, 3, 0, 0, 0, time.UTC)
-	end := start.Add(time.Hour)
+	end := start.Add(10 * time.Minute)
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
 	lookbackDelta := 5 * time.Minute
 	minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
@@ -395,13 +415,15 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		return stats.LabelMatcher{Type: labels.MatchEqual, Name: sharding.ShardLabel, Value: value}
 	}
 
+	originalExpression := "foo"
+
 	// estimateFoo runs the cache-backed estimator for the query "foo" against the given cache.
 	estimateFoo := func(t *testing.T, cfg streamingpromql.CardinalityEstimationConfig) *querymiddleware.EstimatedSeriesCount {
 		t.Helper()
-		expr, err := promqlext.NewPromQLParser().ParseExpr("foo")
+		expr, err := promqlext.NewPromQLParser().ParseExpr(originalExpression)
 		require.NoError(t, err)
 		ctx := user.InjectOrgID(context.Background(), userID)
-		result, err := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger()).EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		result, err := NewCacheCardinalityEstimator(cfg, testNoStepSubqueryInterval, log.NewNopLogger()).EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
 		require.NoError(t, err)
 		return result
 	}
@@ -416,7 +438,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, _ := newCtxWithStats()
 
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Zero(t, c.SetCount)
 
 		require.Nil(t, estimateFoo(t, cfg))
@@ -427,7 +449,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		ctx, qs := newCtxWithStats()
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
 
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
 
 		result := estimateFoo(t, cfg)
@@ -441,7 +463,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 30})
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 40})
 
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
 
 		result := estimateFoo(t, cfg)
@@ -455,7 +477,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
 
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
 
 		result := estimateFoo(t, cfg)
@@ -470,7 +492,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		ctx, qs := newCtxWithStats()
 		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 0, MaxT: 10 * time.Minute.Milliseconds(), SeriesCount: 50})
 
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx))
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 11, c.SetCount)
 	})
 }
@@ -493,9 +515,9 @@ func writeSelectorCardinalityEntry(t *testing.T, ctx context.Context, cfg stream
 	require.NoError(t, cfg.Backend.SetMultiAsync(ctx, map[string][]byte{key.hashed: data}, cfg.TTL))
 }
 
-func writeSelectorCardinalityToAllBuckets(t *testing.T, ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonical string, minT, maxT int64, cardinality uint64) {
+func writeSelectorCardinalityToAllBuckets(t *testing.T, ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonical string, minT, maxT int64, cardinality uint64) {
 	t.Helper()
-	keys, err := selectorCardinalityCacheKeys(ctx, cfg, canonical, minT, maxT, false, newNoOpSpanLogger(t))
+	keys, err := selectorCardinalityCacheKeys(ctx, cfg, originalExpression, canonical, minT, maxT, false, newNoOpSpanLogger(t))
 	require.NoError(t, err)
 	for _, k := range keys {
 		writeSelectorCardinalityEntry(t, ctx, cfg, k, cardinality)

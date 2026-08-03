@@ -34,7 +34,10 @@ import (
 type CardinalityEstimator interface {
 	// EstimateSeriesCount returns an estimate of the number of series selected by expr over timeRange
 	// with the given lookback delta, or nil if no estimate is available.
-	EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error)
+	// originalExpression must be the original expression provided in the request. This is used to
+	// ensure that requests containing selectors narrowed due to binop narrowing use accurate
+	// estimates.
+	EstimateSeriesCount(ctx context.Context, originalExpression string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error)
 }
 
 // requestHintsCardinalityEstimator returns the cardinality estimate carried on the request hints,
@@ -47,7 +50,7 @@ func NewRequestHintsCardinalityEstimator() CardinalityEstimator {
 	return requestHintsCardinalityEstimator{}
 }
 
-func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
+func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context, _ string, _ parser.Expr, _ types.QueryTimeRange, _ time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
 	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
 		return hints.GetCardinalityEstimate(), nil
 	}
@@ -76,7 +79,7 @@ func NewCacheCardinalityEstimator(cfg streamingpromql.CardinalityEstimationConfi
 	}
 }
 
-func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
+func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, originalExpression string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (*querymiddleware.EstimatedSeriesCount, error) {
 	spanLogger, ctx := spanlogger.New(ctx, e.logger, tracer, "EstimateSeriesCount")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("timeRange", timeRange)
@@ -98,7 +101,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, exp
 
 	for _, sr := range selectorRanges {
 		selector := selectorString(sr.matchers)
-		cacheKeys, err := selectorCardinalityCacheKeys(ctx, e.cfg, selector, sr.minT, sr.maxT, true, spanLogger)
+		cacheKeys, err := selectorCardinalityCacheKeys(ctx, e.cfg, originalExpression, selector, sr.minT, sr.maxT, true, spanLogger)
 		if err != nil {
 			return nil, err
 		}
@@ -267,7 +270,7 @@ func NewCardinalityStoringPostProcessor(cfg streamingpromql.CardinalityEstimatio
 	}
 }
 
-func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error {
+func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, originalExpression string) error {
 	queryStats := stats.FromContext(ctx)
 	cardinalities := queryStats.LoadSelectorCardinalities()
 	if len(cardinalities) == 0 {
@@ -308,7 +311,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context) error
 			total += count
 		}
 
-		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, gk.selector, gk.minT, gk.maxT, false, spanLogger)
+		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, gk.selector, gk.minT, gk.maxT, false, spanLogger)
 		if err != nil {
 			return err
 		}
@@ -346,7 +349,7 @@ func selectorStringWithoutShardingMatcher(matchers []stats.LabelMatcher) (string
 		strs = append(strs, matcher.String())
 	}
 	slices.Sort(strs)
-	return "{" + strings.Join(strs, ",") + "}", shard
+	return strings.Join(strs, ","), shard
 }
 
 func selectorString(matchers []*labels.Matcher) string {
@@ -355,7 +358,7 @@ func selectorString(matchers []*labels.Matcher) string {
 		strs = append(strs, m.String())
 	}
 	slices.Sort(strs)
-	return "{" + strings.Join(strs, ",") + "}"
+	return strings.Join(strs, ",")
 }
 
 // selectorCardinalityCacheKeys returns the cache keys for the given selector over [minT, maxT], one
@@ -364,10 +367,10 @@ func selectorString(matchers []*labels.Matcher) string {
 // If limitBucketCount is true and the range overlaps more than MaxBucketsReadPerSelector buckets, an
 // evenly-spaced subset of at most MaxBucketsReadPerSelector buckets is returned instead, to bound the
 // size of the cache request.
-func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonicalSelector string, minT, maxT int64, limitBucketCount bool, logger *spanlogger.SpanLogger) ([]cacheKey, error) {
+func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, minT, maxT int64, limitBucketCount bool, logger *spanlogger.SpanLogger) ([]cacheKey, error) {
 	bucketMs := cfg.BucketSize.Milliseconds()
 	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(canonicalSelector))
+	_, _ = hasher.Write([]byte(originalExpression))
 	offset := int64(hasher.Sum64() % uint64(bucketMs))
 
 	firstBucket := (minT + offset) / bucketMs
@@ -381,7 +384,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	if !limitBucketCount || bucketCount <= cfg.MaxBucketsReadPerSelector {
 		keys := make([]cacheKey, 0, bucketCount)
 		for bucketIndex := firstBucket; bucketIndex <= lastBucket; bucketIndex++ {
-			key, err := selectorCardinalityCacheKey(ctx, cfg, canonicalSelector, bucketIndex)
+			key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex)
 			if err != nil {
 				return nil, err
 			}
@@ -408,7 +411,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 		// bucket so the first and last buckets in the range are always included.
 		bucketIndex := firstBucket + (i*bucketCount*2+maxBuckets)/(maxBuckets*2)
 
-		key, err := selectorCardinalityCacheKey(ctx, cfg, canonicalSelector, bucketIndex)
+		key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -419,8 +422,9 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	return keys, nil
 }
 
-func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, canonicalSelector string, bucketIndex int64) (cacheKey, error) {
+func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, bucketIndex int64) (cacheKey, error) {
 	suffix := bytes.Join([][]byte{
+		[]byte(originalExpression),
 		[]byte(canonicalSelector),
 		[]byte(strconv.FormatInt(bucketIndex, 10)),
 	}, []byte(":"))

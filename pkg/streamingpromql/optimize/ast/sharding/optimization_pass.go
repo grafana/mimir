@@ -64,7 +64,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *
 	// are sharded and the rest is left unchanged.
 	if roots := collectEvaluationRoots(expr, params.TimeRange); len(roots) > 0 {
 		for _, root := range roots {
-			shardedChild, err := o.shard(ctx, tenantIDs, root.call.Args[0], root.timeRange, params.LookbackDelta, options)
+			shardedChild, err := o.shard(ctx, tenantIDs, params.OriginalExpression, root.call.Args[0], root.timeRange, params.LookbackDelta, options)
 			if err != nil {
 				return nil, err
 			}
@@ -75,18 +75,18 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *
 		return expr, nil
 	}
 
-	return o.shard(ctx, tenantIDs, expr, params.TimeRange, params.LookbackDelta, options)
+	return o.shard(ctx, tenantIDs, params.OriginalExpression, expr, params.TimeRange, params.LookbackDelta, options)
 }
 
 // shard shards expr, returning the sharded expression, or expr unchanged if it cannot be sharded.
-func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, options requestoptions.Options) (parser.Expr, error) {
+func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, originalExpression string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, options requestoptions.Options) (parser.Expr, error) {
 	requestedShardCount := int(options.TotalShards)
 	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
 
 	if o.estimator != nil {
 		var err error
-		seriesCount, err = o.estimator.EstimateSeriesCount(ctx, expr, timeRange, lookbackDelta)
+		seriesCount, err = o.estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
 
 		if err != nil {
 			return nil, err

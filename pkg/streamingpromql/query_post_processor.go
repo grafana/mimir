@@ -2,7 +2,9 @@
 
 package streamingpromql
 
-import "context"
+import (
+	"context"
+)
 
 // QueryPostProcessor is invoked after a query has executed successfully.
 //
@@ -11,5 +13,5 @@ import "context"
 type QueryPostProcessor interface {
 	// PostProcess is called once, after the query has executed successfully. Implementations should
 	// read whatever they need (for example the query stats) from ctx.
-	PostProcess(ctx context.Context) error
+	PostProcess(ctx context.Context, originalExpression string) error
 }
