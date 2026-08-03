@@ -69,7 +69,8 @@ type Selector struct {
 type Subset struct {
 	Filter []*labels.Matcher
 
-	matchingSeries []bool // One entry per series. True means the corresponding series matches this subset.
+	matchingSeries      []bool // One entry per series. True means the corresponding series matches this subset.
+	matchingSeriesCount uint64 // The number of series that match this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
@@ -148,18 +149,11 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	})
 
 	for _, subset := range s.Subsets {
-		subsetCount := uint64(0)
-		for _, matches := range subset.matchingSeries {
-			if matches {
-				subsetCount++
-			}
-		}
-
 		queryStats.AddSelectorCardinality(stats.SelectorCardinality{
 			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
 			MinT:        minT,
 			MaxT:        maxT,
-			SeriesCount: subsetCount,
+			SeriesCount: subset.matchingSeriesCount,
 		})
 	}
 }
@@ -224,11 +218,20 @@ func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
 			return err
 		}
 
+		matchCount := uint64(0)
+
 		for _, series := range metadata {
-			bitmap = append(bitmap, types.MatchersMatch(subset.Filter, series.Labels))
+			matches := types.MatchersMatch(subset.Filter, series.Labels)
+
+			if matches {
+				matchCount++
+			}
+
+			bitmap = append(bitmap, matches)
 		}
 
 		s.Subsets[idx].matchingSeries = bitmap
+		s.Subsets[idx].matchingSeriesCount = matchCount
 	}
 
 	return nil
