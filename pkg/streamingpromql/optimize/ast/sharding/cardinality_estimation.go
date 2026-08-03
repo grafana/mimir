@@ -61,9 +61,8 @@ func (requestHintsCardinalityEstimator) EstimateSeriesCount(ctx context.Context,
 // cacheCardinalityEstimator estimates a query's cardinality from the per-selector cardinality cache
 // entries written by the cardinality-storing query post-processor.
 type cacheCardinalityEstimator struct {
-	cfg                      streamingpromql.CardinalityEstimationConfig
-	noStepSubqueryIntervalFn func(rangeMillis int64) int64
-	logger                   log.Logger
+	cfg    streamingpromql.CardinalityEstimationConfig
+	logger log.Logger
 }
 
 // NewCacheCardinalityEstimator returns a CardinalityEstimator that estimates a query's cardinality
