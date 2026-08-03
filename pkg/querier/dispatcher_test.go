@@ -193,6 +193,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -252,6 +255,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -311,6 +317,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -373,6 +382,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -479,6 +491,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -579,6 +594,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						6: {
@@ -622,6 +641,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						6: {
@@ -719,6 +742,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -831,6 +858,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}, {Type: labels.MatchRegexp, Name: "idx", Value: "(0|1|2)"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -982,6 +1013,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -1148,6 +1183,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1223,6 +1262,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1282,6 +1324,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1344,6 +1389,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1409,6 +1457,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1438,6 +1489,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1467,6 +1521,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1496,6 +1553,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1525,6 +1585,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1809,6 +1872,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						SamplesProcessed:    5,
 						PhysicalSamplesRead: 5,
 						WallTime:            expectedQueryWallTime,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -1851,6 +1917,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						SamplesProcessed:    5,
 						PhysicalSamplesRead: 5,
 						WallTime:            expectedQueryWallTime,
+						SelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
