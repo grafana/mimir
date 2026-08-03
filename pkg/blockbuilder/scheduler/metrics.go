@@ -12,13 +12,13 @@ import (
 type schedulerMetrics struct {
 	updateScheduleDuration prometheus.Histogram
 	probeRecordTimeDelta   prometheus.Histogram
-	flushFailed            prometheus.Counter
 	fetchOffsetsFailed     prometheus.Counter
 	outstandingJobs        prometheus.Gauge
 	assignedJobs           prometheus.Gauge
 	pendingJobs            *prometheus.GaugeVec
 	persistentJobFailures  prometheus.Counter
 	jobGapDetected         *prometheus.CounterVec
+	startupJobsSkipped     prometheus.Counter
 
 	// perClusterMetrics holds one set of partition offset gauges per cluster, indexed by cluster ID.
 	perClusterMetrics []singleClusterMetrics
@@ -37,10 +37,6 @@ func newSchedulerMetrics(reg prometheus.Registerer, compartmentsEnabled bool, nu
 			Help: "Delta between a probe's requested time and the timestamp of the record at the returned offset, during initial offset probing.",
 
 			NativeHistogramBucketFactor: 1.1,
-		}),
-		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
-			Help: "The total number of Kafka flushes that failed.",
 		}),
 		fetchOffsetsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_fetch_offsets_failed_total",
@@ -66,6 +62,10 @@ func newSchedulerMetrics(reg prometheus.Registerer, compartmentsEnabled bool, nu
 			Name: "cortex_blockbuilder_scheduler_job_gap_detected",
 			Help: "The number of times an unexpected gap was detected between jobs.",
 		}, []string{"offset_type"}),
+		startupJobsSkipped: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_startup_jobs_skipped_total",
+			Help: "The total number of observed jobs skipped during startup recovery for unexpected reasons (excludes jobs skipped because they were already committed).",
+		}),
 	}
 
 	// Make sure the gap detection counters are pre-initialized. This avoids misleading blanks in the series on restart.
@@ -79,10 +79,12 @@ func newSchedulerMetrics(reg prometheus.Registerer, compartmentsEnabled bool, nu
 
 // singleClusterMetrics holds the observed offset gauges for a single cluster.
 type singleClusterMetrics struct {
-	startOffset     *prometheus.GaugeVec
-	endOffset       *prometheus.GaugeVec
-	committedOffset *prometheus.GaugeVec
-	plannedOffset   *prometheus.GaugeVec
+	startOffset          *prometheus.GaugeVec
+	endOffset            *prometheus.GaugeVec
+	committedOffset      *prometheus.GaugeVec
+	plannedOffset        *prometheus.GaugeVec
+	endOffsetProbeFailed prometheus.Counter
+	flushFailed          prometheus.Counter
 }
 
 // newClusterMetrics builds one set of partition offset gauges per cluster, indexed
@@ -118,5 +120,13 @@ func newSingleClusterMetrics(reg prometheus.Registerer) singleClusterMetrics {
 			Name: "cortex_blockbuilder_scheduler_partition_planned_offset",
 			Help: "The planned offset of each partition.",
 		}, []string{"partition"}),
+		endOffsetProbeFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_end_offset_probe_failed_total",
+			Help: "The total number of times probing the cluster's end offsets failed.",
+		}),
+		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
+			Help: "The total number of times flushing the cluster's committed offsets to Kafka failed.",
+		}),
 	}
 }
