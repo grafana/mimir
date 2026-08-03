@@ -47,7 +47,7 @@ func IsEnabled(ctx context.Context) bool {
 type SafeStats struct {
 	Stats
 
-	// selectorCardinalitiesMtx guards access to Stats.SelectorCardinalities, which is a slice and
+	// selectorCardinalitiesMtx guards access to Stats.SeenSelectorCardinalities and Stats.EstimatedSelectorCardinalities, which is a slice and
 	// therefore cannot be mutated safely with the atomic operations used for the scalar fields.
 	selectorCardinalitiesMtx sync.Mutex
 }
@@ -320,13 +320,13 @@ func (s *SafeStats) LoadRetries() uint32 {
 	return atomic.LoadUint32(&s.Retries)
 }
 
-// AddSelectorCardinality records the cardinality of a single selector.
+// AddSeenSelectorCardinality records the cardinality of a single selector.
 //
 // The caller must not mutate sc, or any slice or string it references, after calling this method.
 // In particular, any strings referenced by sc (including matcher names and values) must not alias
 // a reused request buffer, as they may outlive the request: clone them first (see the note on
 // unsafe memory tricks in the contributing guide).
-func (s *SafeStats) AddSelectorCardinality(sc SelectorCardinality) {
+func (s *SafeStats) AddSeenSelectorCardinality(sc SelectorCardinality) {
 	if s == nil {
 		return
 	}
@@ -334,11 +334,11 @@ func (s *SafeStats) AddSelectorCardinality(sc SelectorCardinality) {
 	s.selectorCardinalitiesMtx.Lock()
 	defer s.selectorCardinalitiesMtx.Unlock()
 
-	s.SelectorCardinalities = append(s.SelectorCardinalities, sc)
+	s.SeenSelectorCardinalities = append(s.SeenSelectorCardinalities, sc)
 }
 
-// LoadSelectorCardinalities returns a copy of the recorded selector cardinalities.
-func (s *SafeStats) LoadSelectorCardinalities() []SelectorCardinality {
+// LoadSeenSelectorCardinalities returns a copy of the recorded selector cardinalities.
+func (s *SafeStats) LoadSeenSelectorCardinalities() []SelectorCardinality {
 	if s == nil {
 		return nil
 	}
@@ -346,11 +346,44 @@ func (s *SafeStats) LoadSelectorCardinalities() []SelectorCardinality {
 	s.selectorCardinalitiesMtx.Lock()
 	defer s.selectorCardinalitiesMtx.Unlock()
 
-	if len(s.SelectorCardinalities) == 0 {
+	if len(s.SeenSelectorCardinalities) == 0 {
 		return nil
 	}
 
-	return append([]SelectorCardinality(nil), s.SelectorCardinalities...)
+	return append([]SelectorCardinality(nil), s.SeenSelectorCardinalities...)
+}
+
+// AddEstimatedSelectorCardinality records the estimated cardinality of a single selector.
+//
+// The caller must not mutate sc, or any slice or string it references, after calling this method.
+// In particular, any strings referenced by sc (including matcher names and values) must not alias
+// a reused request buffer, as they may outlive the request: clone them first (see the note on
+// unsafe memory tricks in the contributing guide).
+func (s *SafeStats) AddEstimatedSelectorCardinality(sc SelectorCardinality) {
+	if s == nil {
+		return
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	s.EstimatedSelectorCardinalities = append(s.EstimatedSelectorCardinalities, sc)
+}
+
+// LoadEstimatedSelectorCardinalities returns a copy of the recorded estimated selector cardinalities.
+func (s *SafeStats) LoadEstimatedSelectorCardinalities() []SelectorCardinality {
+	if s == nil {
+		return nil
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	if len(s.EstimatedSelectorCardinalities) == 0 {
+		return nil
+	}
+
+	return append([]SelectorCardinality(nil), s.EstimatedSelectorCardinalities...)
 }
 
 // Merge the provided Stats into this one.
@@ -376,8 +409,12 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 	s.AddRetries(other.LoadRetries())
 
-	for _, sc := range other.LoadSelectorCardinalities() {
-		s.AddSelectorCardinality(sc)
+	for _, sc := range other.LoadSeenSelectorCardinalities() {
+		s.AddSeenSelectorCardinality(sc)
+	}
+
+	for _, sc := range other.LoadEstimatedSelectorCardinalities() {
+		s.AddEstimatedSelectorCardinality(sc)
 	}
 }
 

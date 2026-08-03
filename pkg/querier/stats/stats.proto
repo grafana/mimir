@@ -65,9 +65,12 @@ message Stats {
   // processing this request.
   // 0 means all requests succeeded on the first attempt.
   uint32 retries = 18;
-  // SelectorCardinalities records the number of series selected by each selector evaluated while
+  // SeenSelectorCardinalities records the number of series selected by each selector evaluated while
   // processing this request, keyed by the selector's matchers and queried time range.
-  repeated SelectorCardinality selector_cardinalities = 19 [(gogoproto.nullable) = false];
+  repeated SelectorCardinality seen_selector_cardinalities = 19 [(gogoproto.nullable) = false];
+  // EstimatedSelectorCardinalities records the estimated number of series selected by each selector
+  // used while preparing this request.
+  repeated SelectorCardinality estimated_selector_cardinalities = 20 [(gogoproto.nullable) = false];
 }
 
 // SelectorCardinality records the number of series selected by a single selector over a time range.

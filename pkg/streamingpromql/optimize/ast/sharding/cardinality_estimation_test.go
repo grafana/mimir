@@ -443,7 +443,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	t.Run("stores a single selector's cardinality", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, qs := newCtxWithStats()
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 1234})
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
@@ -456,8 +456,8 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	t.Run("sums the cardinality across shards of the same selector", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, qs := newCtxWithStats()
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 30})
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 40})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 30})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: minT, MaxT: maxT, SeriesCount: 40})
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
@@ -470,8 +470,8 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 	t.Run("does not double-count the same selector reported more than once without sharding", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, qs := newCtxWithStats()
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 50})
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 1, c.SetCount)
@@ -486,7 +486,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		cfg.MaxBucketsReadPerSelector = 5
 		cfg.BucketSize = time.Minute
 		ctx, qs := newCtxWithStats()
-		qs.AddSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 0, MaxT: 10 * time.Minute.Milliseconds(), SeriesCount: 50})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 0, MaxT: 10 * time.Minute.Milliseconds(), SeriesCount: 50})
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 11, c.SetCount)

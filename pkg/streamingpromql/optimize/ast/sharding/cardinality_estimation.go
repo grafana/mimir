@@ -263,7 +263,7 @@ func NewCardinalityStoringPostProcessor(cfg streamingpromql.CardinalityEstimatio
 
 func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, originalExpression string) error {
 	queryStats := stats.FromContext(ctx)
-	cardinalities := queryStats.LoadSelectorCardinalities()
+	cardinalities := queryStats.LoadSeenSelectorCardinalities()
 	if len(cardinalities) == 0 {
 		return nil
 	}

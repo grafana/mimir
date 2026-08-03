@@ -141,7 +141,7 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	// Use the time range computed for the Select call in loadSeriesSet, rather than recomputing it.
 	minT, maxT := s.queriedStartT, s.queriedEndT
 
-	queryStats.AddSelectorCardinality(stats.SelectorCardinality{
+	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
 		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
 		MinT:        minT,
 		MaxT:        maxT,
@@ -149,7 +149,7 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	})
 
 	for _, subset := range s.Subsets {
-		queryStats.AddSelectorCardinality(stats.SelectorCardinality{
+		queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
 			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
 			MinT:        minT,
 			MaxT:        maxT,

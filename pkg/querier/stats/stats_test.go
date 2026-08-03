@@ -235,27 +235,40 @@ func TestStats_SelectorCardinalities(t *testing.T) {
 			SeriesCount: 20,
 		}
 
-		stats.AddSelectorCardinality(sc1)
-		stats.AddSelectorCardinality(sc2)
+		stats.AddSeenSelectorCardinality(sc1)
+		stats.AddSeenSelectorCardinality(sc2)
 
-		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats.LoadSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats.LoadSeenSelectorCardinalities())
+
+		// Estimated cardinalities are tracked independently of seen cardinalities.
+		stats.AddEstimatedSelectorCardinality(sc2)
+		stats.AddEstimatedSelectorCardinality(sc1)
+
+		assert.Equal(t, []SelectorCardinality{sc2, sc1}, stats.LoadEstimatedSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats.LoadSeenSelectorCardinalities(), "adding estimated cardinalities must not affect seen cardinalities")
 	})
 
 	t.Run("load returns a copy that does not alias the underlying slice", func(t *testing.T) {
 		stats, _ := ContextWithEmptyStats(context.Background())
-		stats.AddSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: 2})
 
-		loaded := stats.LoadSelectorCardinalities()
-		loaded[0].SeriesCount = 999
+		seen := stats.LoadSeenSelectorCardinalities()
+		seen[0].SeriesCount = 999
+		estimated := stats.LoadEstimatedSelectorCardinalities()
+		estimated[0].SeriesCount = 999
 
-		assert.Equal(t, uint64(1), stats.LoadSelectorCardinalities()[0].SeriesCount)
+		assert.Equal(t, uint64(1), stats.LoadSeenSelectorCardinalities()[0].SeriesCount)
+		assert.Equal(t, uint64(2), stats.LoadEstimatedSelectorCardinalities()[0].SeriesCount)
 	})
 
 	t.Run("add and load selector cardinalities nil receiver", func(t *testing.T) {
 		var stats *SafeStats
-		stats.AddSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: 1})
 
-		assert.Nil(t, stats.LoadSelectorCardinalities())
+		assert.Nil(t, stats.LoadSeenSelectorCardinalities())
+		assert.Nil(t, stats.LoadEstimatedSelectorCardinalities())
 	})
 }
 
@@ -275,7 +288,9 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddPhysicalSamplesRead(14)
 		stats1.AddRetries(2)
 		sc1 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "foo"}}, MinT: 1, MaxT: 2, SeriesCount: 10}
-		stats1.AddSelectorCardinality(sc1)
+		stats1.AddSeenSelectorCardinality(sc1)
+		esc1 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "foo"}}, MinT: 1, MaxT: 2, SeriesCount: 100}
+		stats1.AddEstimatedSelectorCardinality(esc1)
 
 		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
@@ -291,7 +306,9 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddPhysicalSamplesRead(16)
 		stats2.AddRetries(3)
 		sc2 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "bar"}}, MinT: 3, MaxT: 4, SeriesCount: 20}
-		stats2.AddSelectorCardinality(sc2)
+		stats2.AddSeenSelectorCardinality(sc2)
+		esc2 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "bar"}}, MinT: 3, MaxT: 4, SeriesCount: 200}
+		stats2.AddEstimatedSelectorCardinality(esc2)
 
 		stats1.Merge(stats2)
 
@@ -307,7 +324,8 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint64(28), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(30), stats1.LoadPhysicalSamplesRead())
 		assert.Equal(t, uint32(5), stats1.LoadRetries())
-		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats1.LoadSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats1.LoadSeenSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{esc1, esc2}, stats1.LoadEstimatedSelectorCardinalities())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -328,7 +346,8 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint64(0), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(0), stats1.LoadPhysicalSamplesRead())
 		assert.Equal(t, uint32(0), stats1.LoadRetries())
-		assert.Nil(t, stats1.LoadSelectorCardinalities())
+		assert.Nil(t, stats1.LoadSeenSelectorCardinalities())
+		assert.Nil(t, stats1.LoadEstimatedSelectorCardinalities())
 	})
 }
 
@@ -353,12 +372,20 @@ func TestStats_Copy(t *testing.T) {
 			EquivalentSamplesRead:       15,
 			PhysicalSamplesRead:         16,
 			Retries:                     17,
-			SelectorCardinalities: []SelectorCardinality{
+			SeenSelectorCardinalities: []SelectorCardinality{
 				{
 					Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "foo"}},
 					MinT:        100,
 					MaxT:        200,
 					SeriesCount: 18,
+				},
+			},
+			EstimatedSelectorCardinalities: []SelectorCardinality{
+				{
+					Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "foo"}},
+					MinT:        100,
+					MaxT:        200,
+					SeriesCount: 19,
 				},
 			},
 		},
@@ -400,7 +427,8 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 		child.AddEquivalentSamplesRead(13)
 		child.AddPhysicalSamplesRead(14)
 		child.AddRetries(2)
-		child.AddSelectorCardinality(SelectorCardinality{SeriesCount: uint64(i)})
+		child.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: uint64(i)})
+		child.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: uint64(i)})
 
 		childStats[i] = child
 	}
@@ -456,5 +484,6 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	assert.Equal(t, expectedEquivalentSamplesRead, parentStats.LoadEquivalentSamplesRead(), "EquivalentSamplesRead should be sum of all children")
 	assert.Equal(t, expectedPhysicalSamplesRead, parentStats.LoadPhysicalSamplesRead(), "PhysicalSamplesRead should be sum of all children")
 	assert.Equal(t, expectedRetries, parentStats.LoadRetries(), "Retries should be sum of all children")
-	assert.Len(t, parentStats.LoadSelectorCardinalities(), numChildren, "SelectorCardinalities should contain one entry per child")
+	assert.Len(t, parentStats.LoadSeenSelectorCardinalities(), numChildren, "SeenSelectorCardinalities should contain one entry per child")
+	assert.Len(t, parentStats.LoadEstimatedSelectorCardinalities(), numChildren, "EstimatedSelectorCardinalities should contain one entry per child")
 }

@@ -259,7 +259,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 				MaxT:        expectedMaxT,
 				SeriesCount: 3,
 			},
-		}, qs.LoadSelectorCardinalities())
+		}, qs.LoadSeenSelectorCardinalities())
 	})
 
 	t.Run("with subsets", func(t *testing.T) {
@@ -299,7 +299,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 				MaxT:        expectedMaxT,
 				SeriesCount: 1,
 			},
-		}, qs.LoadSelectorCardinalities())
+		}, qs.LoadSeenSelectorCardinalities())
 	})
 
 	t.Run("no stats in context", func(t *testing.T) {
