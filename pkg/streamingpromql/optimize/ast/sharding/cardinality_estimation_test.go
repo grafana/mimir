@@ -4,6 +4,9 @@ package sharding
 
 import (
 	"context"
+	"maps"
+	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -521,6 +524,71 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 11, c.SetCount)
+	})
+
+	t.Run("does not overwrite a cached estimate with a lower observed cardinality", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
+		cfg.MaxBucketsReadPerSelector = math.MaxInt64
+
+		ctx, qs := newCtxWithStats()
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 0, c.SetCount)
+	})
+
+	t.Run("overwrites the cached estimate when the observed cardinality is at least the estimate", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
+		cfg.MaxBucketsReadPerSelector = math.MaxInt64
+
+		ctx, qs := newCtxWithStats()
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+
+		writtenKeys := slices.Collect(maps.Keys(c.Entries))
+		expectedKey, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, `__name__="foo"`, 5, 5, 5)
+		require.NoError(t, err)
+		require.Equal(t, []string{expectedKey.hashed}, writtenKeys)
+		require.Equal(t, 1, c.SetCount)
+	})
+
+	t.Run("writes cache entries for all unseen and updated estimates", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
+		cfg.MaxBucketsReadPerSelector = math.MaxInt64
+
+		ctx, qs := newCtxWithStats()
+
+		// Seen cardinality is greater: we expect the cache entry to be updated.
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
+
+		// Seen cardinality is lower or the same: we expect the cache entry to be unchanged.
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 7, MaxT: 7, SeriesCount: 910})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 7, MaxT: 7, SeriesCount: 900})
+
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 9, MaxT: 9, SeriesCount: 915})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 9, MaxT: 9, SeriesCount: 915})
+
+		// Seen cardinality does not match any known estimate: we expect the cache entry to be written.
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 11, MaxT: 11, SeriesCount: 805})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+
+		writtenKeys := slices.Collect(maps.Keys(c.Entries))
+		expectedKeys := []string{}
+
+		for _, ts := range []int64{5, 11} {
+			expectedKey, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, `__name__="foo"`, ts, ts, ts)
+			require.NoError(t, err)
+			expectedKeys = append(expectedKeys, expectedKey.hashed)
+		}
+
+		require.ElementsMatch(t, expectedKeys, writtenKeys)
+		require.Equal(t, 2, c.SetCount)
 	})
 }
 

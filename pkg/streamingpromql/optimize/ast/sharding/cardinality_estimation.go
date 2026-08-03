@@ -283,15 +283,17 @@ func NewCardinalityStoringPostProcessor(cfg streamingpromql.CardinalityEstimatio
 	}
 }
 
+// PostProcess stores new or updated cardinality values in the cache.
 func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, originalExpression string) error {
-	queryStats := stats.FromContext(ctx)
-	cardinalities := queryStats.LoadSeenSelectorCardinalities()
-	if len(cardinalities) == 0 {
-		return nil
-	}
-
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "cardinalityStoringPostProcessor.PostProcess")
 	defer spanLogger.Finish()
+
+	queryStats := stats.FromContext(ctx)
+	seenCardinalities := queryStats.LoadSeenSelectorCardinalities()
+	if len(seenCardinalities) == 0 {
+		spanLogger.DebugLog("msg", "query stats reports no seen selector cardinalities")
+		return nil
+	}
 
 	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and time range,
 	// then aggregate within each group. Different shards of the same logical selector each report a
@@ -302,43 +304,70 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		selector   string
 		minT, maxT int64
 	}
-	groups := make(map[groupKey]map[string]uint64)
+	seenGroups := make(map[groupKey]map[string]uint64)
 
-	for _, c := range cardinalities {
+	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
 		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
 
-		byShard := groups[gk]
+		byShard := seenGroups[gk]
 		if byShard == nil {
 			byShard = make(map[string]uint64)
-			groups[gk] = byShard
+			seenGroups[gk] = byShard
 		}
 		byShard[shard] = max(byShard[shard], c.SeriesCount)
 	}
 
+	estimatedGroups := make(map[groupKey]uint64)
+	estimatedCardinalities := queryStats.LoadEstimatedSelectorCardinalities()
+	for _, c := range estimatedCardinalities {
+		selector, _ := selectorStringWithoutShardingMatcher(c.Matchers) // Estimated cardinalities should have no shard matcher.
+		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
+		estimatedGroups[gk] = c.SeriesCount
+	}
+
 	entries := make(map[string][]byte)
 
-	for gk, byShard := range groups {
+	for gk, byShard := range seenGroups {
 		var total uint64
 		for _, count := range byShard {
 			total += count
 		}
 
+		// Get all the cache keys (ie. buckets) that this seen selector maps to.
+		// We don't need to do the same thing below for the estimates, because they're read and stored in the stats exactly
+		// as they were in the cache (ie. bucketed).
 		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, gk.selector, gk.minT, gk.maxT, false, spanLogger)
 		if err != nil {
 			return err
 		}
 
 		for _, k := range keys {
+			existingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.minT, maxT: k.maxT}]
+			if total <= existingEstimate {
+				// There's already an lower or equal estimate for this selector and bucket, no need to update it.
+				continue
+			}
+
 			entry := &SelectorCardinalityStatistics{Key: k.plain, Cardinality: total}
 			data, err := entry.Marshal()
 			if err != nil {
-				level.Warn(spanLogger).Log("msg", "failed to marshal selector cardinality cache entry", "err", err)
-				continue
+				return err
 			}
 
 			entries[k.hashed] = data
 		}
+	}
+
+	spanLogger.DebugLog(
+		"msg", "writing updated cardinality estimates (if any)",
+		"seen_count", len(seenGroups),
+		"estimates_count", len(estimatedGroups),
+		"new_or_updated_estimates", len(entries),
+	)
+
+	if len(entries) == 0 {
+		return nil
 	}
 
 	return p.cfg.Backend.SetMultiAsync(ctx, entries, p.cfg.TTL)
@@ -423,7 +452,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 
 	keys := make([]cacheKey, 0, outputBucketCount)
 	for i := range outputBucketCount {
-		bucketIndex := i
+		bucketIndex := firstBucket + i
 
 		if needToApplyLimit {
 			// Space the selected buckets evenly across [firstBucket, lastBucket], rounding to the nearest
@@ -432,7 +461,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 		}
 
 		bucketMinT := bucketIndex*cfg.BucketSize.Milliseconds() - offset
-		bucketMaxT := bucketMinT + cfg.BucketSize.Milliseconds()
+		bucketMaxT := bucketMinT + cfg.BucketSize.Milliseconds() - 1
 		key, err := selectorCardinalityCacheKey(ctx, cfg, originalExpression, canonicalSelector, bucketIndex, bucketMinT, bucketMaxT)
 		if err != nil {
 			return nil, err
