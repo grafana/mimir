@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -191,6 +192,7 @@ func openPartitionTSDB(
 		HeadPostingsForMatchersCacheFactory:  headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
+		SecondaryHashFunction:                mimirpb.ShardByMetricNameLocalityLabelsFunc(tenantID),
 	}
 
 	db, err := tsdb.Open(dir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, opts, nil)

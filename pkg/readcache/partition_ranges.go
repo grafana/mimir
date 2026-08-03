@@ -3,6 +3,7 @@
 package readcache
 
 import (
+	"slices"
 	"sort"
 	"sync"
 
@@ -106,12 +107,15 @@ func newPartitionRangeEWMA() *util_math.EwmaRate {
 // range splits across rounds, both halves appear separately so the
 // rebalancer can score each independently. Counts for ranges still in
 // the working set (current ∪ historical) are retained; counts for
-// ranges that fell out of both sets are discarded.
-func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
+// ranges that fell out of both sets are discarded. It returns true
+// when the current range assignment materially changed.
+func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) bool {
 	sortedNew := sortedNonOverlappingCopy(newRanges)
 
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
+
+	changed := !slices.Equal(pr.currentRanges, sortedNew)
 
 	// Hash space that this partition just lost.
 	removed := rangeDiff(pr.currentRanges, sortedNew)
@@ -160,6 +164,7 @@ func (pr *partitionRanges) setRanges(newRanges []assignment.HashRange) {
 			}
 		}
 	}
+	return changed
 }
 
 // rangesSnapshot returns the current working set of ranges (current ∪
