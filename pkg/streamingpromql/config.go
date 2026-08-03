@@ -119,6 +119,7 @@ type CardinalityEstimationConfig struct {
 	BucketSize                time.Duration `yaml:"bucket_size" category:"experimental"`
 	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
 	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
+	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -154,6 +155,7 @@ func (cfg *CardinalityEstimationConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.BucketSize, "querier.mimir-query-engine.cardinality-estimation.bucket-size", 4*time.Hour, "The duration of each bucket used to store cardinality estimates per selector."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.DurationVar(&cfg.TTL, "querier.mimir-query-engine.cardinality-estimation.ttl", 7*24*time.Hour, "The time-to-live of each cached cardinality estimate."+onlyAppliesIfSplittingAndCachingInsideMQE)
 	f.Int64Var(&cfg.MaxBucketsReadPerSelector, "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector", 168, "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (ie. the resolution is reduced)."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.Float64Var(&cfg.EstimateUpdateThreshold, "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold", 0.1, "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (eg. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate)."+onlyAppliesIfSplittingAndCachingInsideMQE)
 }
 
 func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator) {
@@ -161,8 +163,36 @@ func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, ca
 	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", 1), cachePrefixGenerator)
 }
 
+func (cfg *CardinalityEstimationConfig) Validate() error {
+	if cfg.BucketSize <= 0 {
+		return fmt.Errorf("cardinality estimation bucket size must be greater than zero")
+	}
+
+	if cfg.TTL <= 0 {
+		return fmt.Errorf("cardinality estimation TTL must be greater than zero")
+	}
+
+	if cfg.MaxBucketsReadPerSelector <= 0 {
+		return fmt.Errorf("cardinality estimation max buckets read per selector must be greater than zero")
+	}
+
+	if cfg.EstimateUpdateThreshold < 0 {
+		return fmt.Errorf("cardinality estimation update threshold must not be negative")
+	}
+
+	return nil
+}
+
 func (o *EngineOpts) Validate() error {
-	return o.RangeVectorSplitting.Validate()
+	if err := o.RangeVectorSplitting.Validate(); err != nil {
+		return err
+	}
+
+	if err := o.CardinalityEstimation.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // PrometheusEngineOpts returns the options for constructing the Prometheus engine, whether it is

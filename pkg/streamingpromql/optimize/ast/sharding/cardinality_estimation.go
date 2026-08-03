@@ -343,8 +343,10 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 
 		for _, k := range keys {
 			existingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.minT, maxT: k.maxT}]
-			if total <= existingEstimate {
-				// There's already an lower or equal estimate for this selector and bucket, no need to update it.
+			updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
+			if existingEstimate > 0 && float64(total) < updateThreshold {
+				// The existing estimate is not above the threshold to write an updated entry,
+				// so leave it as-is.
 				continue
 			}
 

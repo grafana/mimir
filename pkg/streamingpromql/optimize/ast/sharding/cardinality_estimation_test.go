@@ -538,14 +538,14 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.Equal(t, 0, c.SetCount)
 	})
 
-	t.Run("overwrites the cached estimate when the observed cardinality is at least the estimate", func(t *testing.T) {
+	t.Run("overwrites the cached estimate when the observed cardinality is above the update threshold", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
 		cfg.MaxBucketsReadPerSelector = math.MaxInt64
 
 		ctx, qs := newCtxWithStats()
 		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
-		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1100})
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 
 		writtenKeys := slices.Collect(maps.Keys(c.Entries))
@@ -553,6 +553,18 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{expectedKey.hashed}, writtenKeys)
 		require.Equal(t, 1, c.SetCount)
+	})
+
+	t.Run("does not overwrite a cached estimate when the observed cardinality is not higher than the update threshold", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
+		cfg.MaxBucketsReadPerSelector = math.MaxInt64
+
+		ctx, qs := newCtxWithStats()
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1099})
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 0, c.SetCount)
 	})
 
 	t.Run("writes cache entries for all unseen and updated estimates", func(t *testing.T) {
@@ -564,7 +576,7 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 
 		// Seen cardinality is greater: we expect the cache entry to be updated.
 		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
-		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1100})
 
 		// Seen cardinality is lower or the same: we expect the cache entry to be unchanged.
 		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 7, MaxT: 7, SeriesCount: 910})
