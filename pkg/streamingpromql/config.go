@@ -164,8 +164,8 @@ func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, ca
 }
 
 func (cfg *CardinalityEstimationConfig) Validate() error {
-	if cfg.BucketSize <= 0 {
-		return fmt.Errorf("cardinality estimation bucket size must be greater than zero")
+	if cfg.BucketSize < time.Millisecond {
+		return fmt.Errorf("cardinality estimation bucket size must be at least 1ms")
 	}
 
 	if cfg.TTL <= 0 {
