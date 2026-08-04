@@ -93,6 +93,10 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"left_vector + on(__name__) fill_right(0) right_vector":           "'fill' modifier with __name__ in the 'on' clause",
 		// A name-retaining operator (NEQ without the bool modifier acts as a filter) hits the same guard.
 		"left_vector != on(__name__, instance) fill_left(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		// '== bool' does not retain the metric name, unlike '!=' without 'bool'. These cases cover the
+		// other side of the RetainsMetricName split.
+		"left_vector == bool on(__name__, instance) fill_left(0) right_vector":  "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector == bool on(__name__, instance) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
 		// The grammar also accepts fill_left and fill_right together.
 		"left_vector + on(__name__, instance) fill_left(0) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
 

@@ -7,6 +7,7 @@
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
+* [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
 
 ### Mixin
 
@@ -110,7 +111,6 @@
 * [ENHANCEMENT] Query-frontend: Add `query-frontend.cardinality-sharding-max-sharded-queries` to optionally limit sharding for `cardinality/active_series` and `cardinality/active_native_histogram_metrics` endpoints separately from `query-frontend.query-sharding-max-sharded-queries`. #15922
 * [ENHANCEMENT] MQE: Extended the "remove statically empty expressions" optimization pass to descend into subqueries. Previously it skipped subqueries. #16038
 * [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.write-timeout-overhead` to configure the overhead added on top of the Kafka write timeout (default 2s, unchanged). #16023
-* [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
 * [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in binary operations that use `ignoring` or no `on`/`ignoring` clause. #15178
 * [ENHANCEMENT] Query-frontend: Add experimental flags to broaden subquery spin-off. `-query-frontend.subquery-spin-off-simple-subqueries=true` spins off subqueries whose inner expression was previously considered too simple to spin off and `-query-frontend.subquery-spin-off-with-excess-downstream-queries=true` spins off subqueries when the rewritten query contains more downstream queries than spun-off subqueries. All are disabled by default and require subquery spin-off to be enabled with `-query-frontend.subquery-spin-off-enabled=true`. #16211
 * [ENHANCEMENT] Block-builder: Disable authentication for AssignJob and UpdateJob gRPC methods as they are control-plane methods that don't have an inherent orgID. #16222
