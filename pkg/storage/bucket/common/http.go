@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore/exthttp"
+	"golang.org/x/net/http2"
 )
 
 // HTTPConfig stores the http.Transport configuration for an object storage client
@@ -53,6 +54,50 @@ func (cfg *HTTPConfig) ToExtHTTP() exthttp.HTTPConfig {
 		Transport:             cfg.Transport,
 		TLSConfig:             cfg.TLSConfig.ToExtHTTP(),
 	}
+}
+
+const (
+	// http2ReadIdleTimeout is the interval after which a health-check ping is sent on an
+	// HTTP/2 connection with no frame activity. It matches the value configured by
+	// google.golang.org/api/transport/http for the default Google Cloud HTTP/2 transport,
+	// which the thanos-io/objstore providers bypass by injecting their own HTTP client.
+	http2ReadIdleTimeout = 31 * time.Second
+
+	// http2PingTimeout is how long to wait for a health-check ping response before
+	// closing the HTTP/2 connection. This is the golang.org/x/net/http2 default, set
+	// explicitly for clarity.
+	http2PingTimeout = 15 * time.Second
+)
+
+// NewHTTP2Transport builds the same http.Transport the thanos-io/objstore providers build
+// from this config via exthttp.DefaultTransport, then enables HTTP/2 on it with the
+// connection health-check ping settings used by the Google Cloud client libraries.
+// HTTP/2 must be enabled explicitly here: Go's automatic HTTP/2 support is disabled for
+// any transport with a custom TLSClientConfig or DialContext, and exthttp.DefaultTransport
+// sets both, so object storage clients built from it are otherwise HTTP/1.1-only.
+func NewHTTP2Transport(cfg HTTPConfig) (*http.Transport, error) {
+	transport, err := exthttp.DefaultTransport(cfg.ToExtHTTP())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := configureHTTP2(transport); err != nil {
+		return nil, err
+	}
+	return transport, nil
+}
+
+// configureHTTP2 enables HTTP/2 on the transport and tunes connection health-check pings,
+// mirroring the unexported configureHTTP2 in google.golang.org/api/transport/http.
+// Without pings, a black-holed HTTP/2 connection stalls every stream multiplexed on it
+// until a request-level timeout fires.
+func configureHTTP2(transport *http.Transport) (*http2.Transport, error) {
+	transport2, err := http2.ConfigureTransports(transport)
+	if err != nil {
+		return nil, err
+	}
+	transport2.ReadIdleTimeout = http2ReadIdleTimeout
+	transport2.PingTimeout = http2PingTimeout
+	return transport2, nil
 }
 
 // TLSConfig configures the options for TLS connections.

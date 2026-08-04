@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // To run against a real GCS bucket, set GCS_BENCH_BUCKET
-// and populate benchBlocks in a git-ignored file Go file in this package.
+// and populate benchBlocks in a git-ignored Go file in this package.
 //
 //	GCS_BENCH_BUCKET=<your-gcs-bucket> \
 //	  go test ./pkg/storage/bucket/gcs/ \
 //	  -test.v -test.run='^$' -test.bench='^\QBenchmarkGetRangeGCS\E$' -test.benchtime=1x
+//
+// The bucket client is built through the same newBucketConfig path Mimir ships, so the
+// measured configuration is the shipped configuration. Environment variables tweak the
+// client and load shape, defaulting to the shipped Mimir defaults:
+//
+//	BENCH_HTTP2                    enable HTTP/2 (default: the -gcs.http2-enabled flag default)
+//	BENCH_CONCURRENCY              concurrent GetRange goroutines (default 32)
+//	BENCH_TOTAL_CALLS              total GetRange calls (default 10000, ~150s run time)
+//	BENCH_MAX_CONNS_PER_HOST       cap on TCP connections to GCS, 0 = unlimited (default 0)
+//	BENCH_MAX_IDLE_CONNS_PER_HOST  idle (keep-alive) connection pool size per host (default 100)
+//	BENCH_HEDGE_AT                 hedge GETs slower than this duration, e.g. 750ms; 0 = disabled
+//	BENCH_HEDGE_UP_TO              max total attempts per GET when hedging (default 2)
 //
 // Auth uses the standard GCP credential chain.
 package gcs
@@ -18,14 +30,18 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/require"
 	thanosgcs "github.com/thanos-io/objstore/providers/gcs"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/storage/bucket/common"
 )
 
 // indexFile describes one TSDB block index object in GCS.
@@ -34,23 +50,11 @@ type indexFile struct {
 	sizeBytes int64
 }
 
-// benchBlocks is populated by bench_blocks_test.go (not committed).
-// If empty, the benchmark skips. See bench_blocks_test.go.example for the format.
+// benchBlocks is populated by gcs_blocks_bench_test.go (not committed).
+// If empty, the benchmark skips.
 var benchBlocks []indexFile
 
-const (
-	readSize = 1 << 20 // 1 MiB
-
-	totalCalls  = 10_000 // ~150 seconds run time
-	concurrency = 32
-
-	// maxConnsPerHost caps the number of TCP connections to GCS. 0 = unlimited,
-	// letting Go's HTTP/2 transport open connections as needed when GCS's
-	// SETTINGS_MAX_CONCURRENT_STREAMS limit is reached or a GOAWAY is received.
-	// Restricting this concentrates GOAWAY reconnect latency onto fewer connections.
-	// 0 is the default on thanosgcs.DefaultConfig.HTTPConfig.
-	maxConnsPerHost = 0
-)
+const readSize = 1 << 20 // 1 MiB
 
 // countingTransport counts new TCP connections via a wrapped DialContext.
 type countingTransport struct {
@@ -74,7 +78,8 @@ type benchResult struct {
 }
 
 // BenchmarkGetRangeGCS measures random 1 MiB GetRange header latency against real GCS
-// index files. It makes totalCalls requests across concurrency goroutines and reports:
+// index files. It makes BENCH_TOTAL_CALLS requests across BENCH_CONCURRENCY goroutines
+// and reports:
 //   - hdr latency:    time until GetRange returns (server response, any retry backoff)
 //   - new_tcp_conns:  TCP connections opened during the run
 //
@@ -85,25 +90,39 @@ func BenchmarkGetRangeGCS(b *testing.B) {
 		b.Skip("set GCS_BENCH_BUCKET to run against a real GCS bucket")
 	}
 	if len(benchBlocks) == 0 {
-		b.Skip("benchBlocks is empty — populate bench_blocks_test.go")
+		b.Skip("benchBlocks is empty — populate gcs_blocks_bench_test.go")
 	}
+
+	totalCalls := envInt(b, "BENCH_TOTAL_CALLS", 10_000)
+	concurrency := envInt(b, "BENCH_CONCURRENCY", 32)
 
 	ctx := context.Background()
 
-	ct := &countingTransport{}
-	httpCfg := thanosgcs.DefaultConfig.HTTPConfig
-	httpCfg.MaxConnsPerHost = maxConnsPerHost
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.BucketName = bucket
+	cfg.HTTP2Enabled = envBool(b, "BENCH_HTTP2", cfg.HTTP2Enabled)
+	cfg.HTTP.MaxConnsPerHost = envInt(b, "BENCH_MAX_CONNS_PER_HOST", cfg.HTTP.MaxConnsPerHost)
+	cfg.HTTP.MaxIdleConnsPerHost = envInt(b, "BENCH_MAX_IDLE_CONNS_PER_HOST", cfg.HTTP.MaxIdleConnsPerHost)
+	cfg.HedgeRequestsAt = envDuration(b, "BENCH_HEDGE_AT", cfg.HedgeRequestsAt)
+	cfg.HedgeRequestsUpTo = envInt(b, "BENCH_HEDGE_UP_TO", cfg.HedgeRequestsUpTo)
 
-	bucketCfg := thanosgcs.Config{
-		Bucket:     bucket,
-		MaxRetries: 20,
-		HTTPConfig: httpCfg,
-	}
-	bkt, err := thanosgcs.NewBucketWithConfig(ctx, log.NewNopLogger(), bucketCfg, "bench",
+	bucketConfig, err := newBucketConfig(cfg)
+	require.NoError(b, err)
+
+	ct := &countingTransport{}
+	bkt, err := thanosgcs.NewBucketWithConfig(ctx, log.NewNopLogger(), bucketConfig, "bench",
 		func(rt http.RoundTripper) http.RoundTripper {
 			// Wrap DialContext on the base transport to count new TCP connections.
 			// This fires once per TCP handshake, not per HTTP request or stream.
-			if t, ok := rt.(*http.Transport); ok {
+			// HTTP/2 connections are dialed through the same DialContext, so the count
+			// covers both protocols. The mutation is in place, so it also applies when
+			// the base transport sits inside the hedging round tripper.
+			base := rt
+			if hrt, ok := base.(*common.HedgingRoundTripper); ok {
+				base = hrt.Next
+			}
+			if t, ok := base.(*http.Transport); ok {
 				orig := t.DialContext
 				t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 					ct.newConns.Add(1)
@@ -205,4 +224,46 @@ func reportDurationPercentiles(b *testing.B, prefix string, samples []time.Durat
 	b.ReportMetric(ms(0.99), prefix+"_p99_ms")
 	b.ReportMetric(ms(0.999), prefix+"_p999_ms")
 	b.ReportMetric(samples[len(samples)-1].Seconds()*1000, prefix+"_max_ms")
+}
+
+// envInt returns the integer value of the named environment variable, or def if unset.
+func envInt(b *testing.B, name string, def int) int {
+	b.Helper()
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		b.Fatalf("invalid %s value %q: %v", name, v, err)
+	}
+	return i
+}
+
+// envDuration returns the duration value of the named environment variable, or def if unset.
+func envDuration(b *testing.B, name string, def time.Duration) time.Duration {
+	b.Helper()
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		b.Fatalf("invalid %s value %q: %v", name, v, err)
+	}
+	return d
+}
+
+// envBool returns the boolean value of the named environment variable, or def if unset.
+func envBool(b *testing.B, name string, def bool) bool {
+	b.Helper()
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	bv, err := strconv.ParseBool(v)
+	if err != nil {
+		b.Fatalf("invalid %s value %q: %v", name, v, err)
+	}
+	return bv
 }

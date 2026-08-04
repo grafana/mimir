@@ -8,23 +8,25 @@ package gcs
 import (
 	"context"
 	"io"
+	"net/http"
 
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/exthttp"
 	"github.com/thanos-io/objstore/providers/gcs"
+
+	"github.com/grafana/mimir/pkg/storage/bucket/common"
 )
 
 // NewBucketClient creates a new GCS bucket client.
 // If cfg.EnableUploadRetries is true, all Upload operations will automatically be retried
 // on transient errors using the GCS RetryAlways policy.
 func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
-	bucketConfig := gcs.Config{
-		Bucket:         cfg.BucketName,
-		ServiceAccount: cfg.ServiceAccount.String(),
-		HTTPConfig:     cfg.HTTP.ToExtHTTP(),
-		MaxRetries:     cfg.MaxRetries,
+	bucketConfig, err := newBucketConfig(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "NewBucketClient: build bucket config")
 	}
 	gcsBucket, err := gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name, nil)
 	if err != nil {
@@ -43,6 +45,41 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 		Bucket:    gcsBucket,
 		bkt:       gcsBucket.Handle().Retryer(retryOpts...),
 		chunkSize: bucketConfig.ChunkSizeBytes,
+	}, nil
+}
+
+// newBucketConfig returns the thanos gcs.Config for the given Mimir GCS config.
+// When cfg.HTTP2Enabled is set, it injects an HTTP/2-enabled transport, since the
+// transport the objstore GCS provider builds by default is HTTP/1.1-only. When
+// cfg.HedgeRequestsAt is set, the transport is wrapped so slow GET requests are hedged.
+// A transport already injected through cfg.HTTP.Transport is left untouched.
+func newBucketConfig(cfg Config) (gcs.Config, error) {
+	httpConfig := cfg.HTTP.ToExtHTTP()
+	if httpConfig.Transport == nil && (cfg.HTTP2Enabled || cfg.HedgeRequestsAt > 0) {
+		var transport http.RoundTripper
+		var err error
+		if cfg.HTTP2Enabled {
+			transport, err = common.NewHTTP2Transport(cfg.HTTP)
+		} else {
+			transport, err = exthttp.DefaultTransport(httpConfig)
+		}
+		if err != nil {
+			return gcs.Config{}, err
+		}
+		if cfg.HedgeRequestsAt > 0 {
+			transport = &common.HedgingRoundTripper{
+				Next:  transport,
+				Delay: cfg.HedgeRequestsAt,
+				UpTo:  cfg.HedgeRequestsUpTo,
+			}
+		}
+		httpConfig.Transport = transport
+	}
+	return gcs.Config{
+		Bucket:         cfg.BucketName,
+		ServiceAccount: cfg.ServiceAccount.String(),
+		HTTPConfig:     httpConfig,
+		MaxRetries:     cfg.MaxRetries,
 	}, nil
 }
 
