@@ -81,43 +81,17 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	spanLogger.SetTag("lookbackDelta", lookbackDelta)
 
 	queryStats := stats.FromContext(ctx)
-	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
-	if len(selectorRanges) == 0 {
+	selectors, keys, err := e.determineSelectorsToUseForEstimation(ctx, originalExpression, expr, timeRange, lookbackDelta, spanLogger)
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		spanLogger.DebugLog("msg", "no selectors found in expression")
 		return nil, nil
 	}
 
-	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
-	// that we can take the maximum per selector afterwards.
-	type selectorLookup struct {
-		matchers  []stats.LabelMatcher
-		selector  string
-		cacheKeys []cacheKey
-	}
-	selectorsToLookUp := make([]selectorLookup, 0, len(selectorRanges))
-	keysToLookUp := make(map[string]struct{})
-
-	for _, sr := range selectorRanges {
-		selector := selectorString(sr.matchers)
-		cacheKeys, err := selectorCardinalityCacheKeys(ctx, e.cfg, originalExpression, selector, sr.minT, sr.maxT, true, spanLogger)
-		if err != nil {
-			return nil, err
-		}
-		selectorsToLookUp = append(selectorsToLookUp, selectorLookup{
-			matchers:  toStatsMatchers(sr.matchers),
-			selector:  selector,
-			cacheKeys: cacheKeys,
-		})
-
-		for _, k := range cacheKeys {
-			if _, ok := keysToLookUp[k.hashed]; ok {
-				continue
-			}
-			keysToLookUp[k.hashed] = struct{}{}
-		}
-	}
-
 	// Fetch all cache entries in a single request.
-	res, err := e.cfg.Backend.GetMulti(ctx, slices.Collect(maps.Keys(keysToLookUp)))
+	res, err := e.cfg.Backend.GetMulti(ctx, keys)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +115,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	var overallEstimate uint64
 	sawAllSelectors := true
 
-	for _, s := range selectorsToLookUp {
+	for _, s := range selectors {
 		hitCount := 0
 		var selectorEstimate uint64
 
@@ -203,10 +177,66 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	return &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}, nil
 }
 
+func (e *cacheCardinalityEstimator) determineSelectorsToUseForEstimation(ctx context.Context, originalExpression string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, spanLogger *spanlogger.SpanLogger) ([]selectorForEstimation, []string, error) {
+	selectorRanges := collectSelectorTimeRanges(expr, timeRange, lookbackDelta)
+	if len(selectorRanges) == 0 {
+		return nil, nil, nil
+	}
+
+	// Build the set of cache keys to look up, keeping track of which keys belong to which selector so
+	// that we can take the maximum per selector afterwards.
+	selectorsToLookUp := make([]selectorForEstimation, 0, len(selectorRanges))
+	keysToLookUp := make(map[string]struct{}, len(selectorRanges))
+
+	// Only return each unique selector once, so we don't over-count selectors that will be deduplicated by CSE.
+	seenSelectors := make(map[selectorTimeRangeDeduplicationKey]struct{}, len(selectorRanges))
+
+	for _, sr := range selectorRanges {
+		selector := selectorString(sr.matchers)
+		deduplicationKey := selectorTimeRangeDeduplicationKey{selector: selector, minT: sr.minT, maxT: sr.maxT}
+		if _, seen := seenSelectors[deduplicationKey]; seen {
+			continue
+		}
+
+		seenSelectors[deduplicationKey] = struct{}{}
+
+		cacheKeys, err := selectorCardinalityCacheKeys(ctx, e.cfg, originalExpression, selector, sr.minT, sr.maxT, true, spanLogger)
+		if err != nil {
+			return nil, nil, err
+		}
+		selectorsToLookUp = append(selectorsToLookUp, selectorForEstimation{
+			matchers:  toStatsMatchers(sr.matchers),
+			selector:  selector,
+			cacheKeys: cacheKeys,
+		})
+
+		for _, k := range cacheKeys {
+			if _, ok := keysToLookUp[k.hashed]; ok {
+				continue
+			}
+			keysToLookUp[k.hashed] = struct{}{}
+		}
+	}
+
+	return selectorsToLookUp, slices.Collect(maps.Keys(keysToLookUp)), nil
+}
+
+type selectorForEstimation struct {
+	matchers  []stats.LabelMatcher
+	selector  string
+	cacheKeys []cacheKey
+}
+
 // selectorTimeRange is a selector's matchers together with the time range it queries from storage.
 type selectorTimeRange struct {
 	matchers   []*labels.Matcher
 	minT, maxT int64
+}
+
+type selectorTimeRangeDeduplicationKey struct {
+	selector string
+	minT     int64
+	maxT     int64
 }
 
 // collectSelectorTimeRanges returns the selectors in expr, each with the time range it queries from

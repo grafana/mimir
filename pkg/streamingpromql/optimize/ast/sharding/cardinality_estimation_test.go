@@ -221,6 +221,28 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
 	})
 
+	t.Run("does not count repeated selectors multiple times", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		originalExpression := "foo + foo"
+		expr, err := promqlext.NewPromQLParser().ParseExpr(originalExpression)
+		require.NoError(t, err)
+
+		minT, maxT := selectors.ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+		expectedEstimatesInStats := writeSelectorCardinalityToAllBuckets(t, ctx, cfg, originalExpression, fooMatchers, minT, maxT, 100)
+
+		estimator := NewCacheCardinalityEstimator(cfg, log.NewNopLogger())
+		qs, ctx := stats.ContextWithEmptyStats(ctx)
+		result, err := estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(100), result.EstimatedSeriesCount)
+		require.Equal(t, 1, c.GetCount)
+		require.Equal(t, 1, c.KeysCount)
+
+		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
+		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
+	})
+
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		originalExpression := "foo + bar"
