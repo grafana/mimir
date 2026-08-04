@@ -166,8 +166,8 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 
 			queryStats.AddEstimatedSelectorCardinality(stats.SelectorCardinality{
 				Matchers:    s.matchers,
-				MinT:        k.minT,
-				MaxT:        k.maxT,
+				MinT:        k.bucketMinT,
+				MaxT:        k.bucketMaxT,
 				SeriesCount: entry.Cardinality,
 			})
 		}
@@ -344,7 +344,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		}
 
 		for _, k := range keys {
-			existingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.minT, maxT: k.maxT}]
+			existingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.bucketMinT, maxT: k.bucketMaxT}]
 			updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
 			if existingEstimate > 0 && float64(total) < updateThreshold {
 				// The existing estimate is not above the threshold to write an updated entry,
@@ -478,7 +478,7 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	return keys, nil
 }
 
-func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, bucketIndex int64, minT, maxT int64) (cacheKey, error) {
+func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.CardinalityEstimationConfig, originalExpression string, canonicalSelector string, bucketIndex int64, bucketMinT, bucketMaxT int64) (cacheKey, error) {
 	suffix := bytes.Join([][]byte{
 		[]byte(originalExpression),
 		[]byte(canonicalSelector),
@@ -491,16 +491,16 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 	}
 
 	return cacheKey{
-		plain:  plain,
-		hashed: hashed,
-		minT:   minT,
-		maxT:   maxT,
+		plain:      plain,
+		hashed:     hashed,
+		bucketMinT: bucketMinT,
+		bucketMaxT: bucketMaxT,
 	}, nil
 }
 
 type cacheKey struct {
 	plain  []byte
-	hashed string
-	minT   int64
-	maxT   int64
+	hashed     string
+	bucketMinT int64
+	bucketMaxT int64
 }

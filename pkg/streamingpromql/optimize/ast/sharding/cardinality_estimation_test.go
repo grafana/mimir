@@ -388,8 +388,8 @@ func TestSelectorCardinalityCacheKeys(t *testing.T) {
 
 			// Clear the time ranges: they're not important for this test, and this makes it easier to construct the expected values below.
 			for idx := range actualKeys {
-				actualKeys[idx].minT = 0
-				actualKeys[idx].maxT = 0
+				actualKeys[idx].bucketMinT = 0
+				actualKeys[idx].bucketMaxT = 0
 			}
 
 			expectedKeys := make([]cacheKey, 0, len(testCase.expectedBucketIndices))
@@ -630,8 +630,8 @@ func writeSelectorCardinalityEntry(t *testing.T, ctx context.Context, cfg stream
 
 	return stats.SelectorCardinality{
 		Matchers:    matchers,
-		MinT:        key.minT,
-		MaxT:        key.maxT,
+		MinT:        key.bucketMinT,
+		MaxT:        key.bucketMaxT,
 		SeriesCount: cardinality,
 	}
 }
