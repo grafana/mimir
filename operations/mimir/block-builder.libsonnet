@@ -18,6 +18,10 @@
       // When false: only the block-builder produces blocks; ingesters stop shipping.
       // Set to false only when fully migrating to block-builder architecture.
       ingester_tsdb_ship_blocks_enabled: true,
+
+      autoscaling_enabled: false,
+      autoscaling_min_replicas: 1,
+      autoscaling_max_replicas: 10,
     },
   },
 
@@ -109,8 +113,67 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('25%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
+  // Scale formula: median job completion time * outstanding jobs / target time of 1 hour.
+  // Targets enough replicas to drain the outstanding backlog within a 1-hour window.
+  newBlockBuilderScaledObject(service_name, min_replicas, max_replicas, target_kind, scheduler_container='block-builder-scheduler', blockbuilder_container='block-builder', scheduler_extra_matchers='', blockbuilder_extra_matchers='')::
+    local blockbuilder_filter = ', container="' + blockbuilder_container + '"' + (if blockbuilder_extra_matchers != '' then ', ' + blockbuilder_extra_matchers else '');
+    local scheduler_filter = ', container="' + scheduler_container + '"' + (if scheduler_extra_matchers != '' then ', ' + scheduler_extra_matchers else '');
+    local config = {
+      min_replica_count: min_replicas,
+      max_replica_count: max_replicas,
+      triggers: [
+        {
+          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(service_name, '-', '_'), std.strReplace($._config.namespace, '-', '_')],
+          query: |||
+            avg(
+              histogram_avg(sum(rate(cortex_blockbuilder_consume_job_duration_seconds{success="true", namespace="%(namespace)s"%(blockbuilder_filter)s}[1h])))
+            )
+            * max(
+                max_over_time(cortex_blockbuilder_scheduler_outstanding_jobs{namespace="%(namespace)s"%(scheduler_filter)s}[1h])
+            )
+            / vector(60 * 60)
+          ||| % {
+            namespace: $._config.namespace,
+            blockbuilder_filter: blockbuilder_filter,
+            scheduler_filter: scheduler_filter,
+          },
+          threshold: '1',
+          metric_type: 'AverageValue',
+        },
+      ],
+    };
+    self.newScaledObject(service_name, $._config.namespace, config, kind=target_kind) + {
+      spec+: {
+        advanced: {
+          horizontalPodAutoscalerConfig: {
+            behavior: {
+              scaleUp: {
+                policies: [{ type: 'Percent', value: 25, periodSeconds: $.util.parseDuration('15m') }],
+                selectPolicy: 'Min',
+                stabilizationWindowSeconds: $.util.parseDuration('10m'),
+              },
+              scaleDown: {
+                policies: [{ type: 'Percent', value: 10, periodSeconds: $.util.parseDuration('30m') }],
+                selectPolicy: 'Max',
+                stabilizationWindowSeconds: $.util.parseDuration('1h'),
+              },
+            },
+          },
+        },
+      },
+    },
+
   block_builder_deployment: if !$._config.block_builder.enabled then null else
-    self.newBlockBuilderDeployment('block-builder', $.block_builder_container, $.block_builder_node_affinity_matchers),
+    self.newBlockBuilderDeployment('block-builder', $.block_builder_container, $.block_builder_node_affinity_matchers) +
+    (if !$._config.block_builder.autoscaling_enabled then {} else $.removeReplicasFromSpec),
+
+  block_builder_scaled_object: if !$._config.block_builder.enabled || !$._config.block_builder.autoscaling_enabled then null else
+    $.newBlockBuilderScaledObject(
+      service_name='block-builder',
+      min_replicas=$._config.block_builder.autoscaling_min_replicas,
+      max_replicas=$._config.block_builder.autoscaling_max_replicas,
+      target_kind='Deployment',
+    ),
 
   block_builder_pdb: if !$._config.block_builder.enabled then null else
     $.newMimirPdb('block-builder'),
