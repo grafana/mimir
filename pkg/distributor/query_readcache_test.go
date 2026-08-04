@@ -136,6 +136,25 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		assert.Less(t, len(got), len(partitions), "named query must not fan out to all partitions")
 	})
 
+	t.Run("exact aggregation matcher uses metric-scoped routing", func(t *testing.T) {
+		d := readcacheTestDistributor(t, now, partitions, ownerFor)
+
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{
+			mustEqualMatcher("__aggregation__", "some_metric:count"),
+		})
+		require.NoError(t, err)
+
+		lo, hi := mimirpb.MetricNameHashRange(userID, "some_metric")
+		want := d.nautilusLog.Load().ActiveTable(now).PartitionsOverlapping(lo, hi)
+		var got []int32
+		for _, rs := range sets {
+			require.Len(t, rs.Instances, 1)
+			got = append(got, partitionByInstance[rs.Instances[0].Id])
+		}
+		assert.ElementsMatch(t, want, got)
+		assert.Less(t, len(sets), len(partitions), "aggregation query must not fan out to all partitions")
+	})
+
 	t.Run("missing assignment log is a hard failure with no ingester fallback", func(t *testing.T) {
 		d := &Distributor{
 			now:    func() time.Time { return now },

@@ -129,8 +129,8 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			partitionByInstance map[string]int32
 		)
 		if d.shouldRouteReadToReadcache(ctx) {
-			_, hasExactMetricName := extractExactMetricName(matchers)
-			if hasExactMetricName {
+			_, hasRoutingMetricName := extractMetricNameForReadcacheRouting(matchers)
+			if hasRoutingMetricName {
 				observeReadcacheHits = true
 			} else {
 				d.queryReadcacheFullFanout.Inc()
@@ -277,6 +277,28 @@ func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 	return "", false
 }
 
+// extractMetricNameForReadcacheRouting returns the metric name that determines
+// the Nautilus locality hash range. Query aggregation rewrites may replace an
+// exact __name__ matcher with an exact __aggregation__="<metric>:<aggregation>"
+// matcher, so recognize the aggregation forms emitted by that middleware.
+func extractMetricNameForReadcacheRouting(matchers []*labels.Matcher) (string, bool) {
+	if metricName, ok := extractExactMetricName(matchers); ok {
+		return metricName, true
+	}
+
+	for _, m := range matchers {
+		if m.Name != "__aggregation__" || m.Type != labels.MatchEqual {
+			continue
+		}
+		for _, suffix := range [...]string{":sum:counter", ":sum", ":count", ":min", ":max"} {
+			if metricName, ok := strings.CutSuffix(m.Value, suffix); ok && metricName != "" {
+				return metricName, true
+			}
+		}
+	}
+	return "", false
+}
+
 // getReadcacheReplicationSetsForQuery builds the replication sets for
 // a read on a nautilus-only tenant. It is the read-path analogue of
 // the write path's getKeysByAssignment: partitions are resolved from
@@ -291,10 +313,11 @@ func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 // partition that owned the hashrange across any range->partition move
 // inside the query interval (not just the partition that owns it at
 // the current instant):
-//   - An exact __name__ matcher narrows the query to the metric
-//     name's hash range [lo, hi] (mimirpb.MetricNameHashRange) and
-//     only the partitions whose tiles overlapped that range during the
-//     window are queried (PartitionsOverlappingInterval).
+//   - An exact __name__ matcher, or an exact generated __aggregation__
+//     matcher, narrows the query to the metric name's hash range [lo, hi]
+//     (mimirpb.MetricNameHashRange) and only the partitions whose tiles
+//     overlapped that range during the window are queried
+//     (PartitionsOverlappingInterval).
 //   - Otherwise the query fans out to every partition that owned any
 //     part of the keyspace during the window (AllPartitionsDuring).
 //
@@ -338,7 +361,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	}
 
 	var partitionIDs []int32
-	metricName, named := extractExactMetricName(matchers)
+	metricName, named := extractMetricNameForReadcacheRouting(matchers)
 	if named {
 		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
 		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
