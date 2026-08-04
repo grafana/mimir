@@ -66,10 +66,7 @@ type cacheCardinalityEstimator struct {
 }
 
 // NewCacheCardinalityEstimator returns a CardinalityEstimator that estimates a query's cardinality
-// from the per-selector cardinality cache. noStepSubqueryIntervalFn must match the value used by the
-// engine, and the lookback delta passed to EstimateSeriesCount must be the query's lookback delta, so
-// that the queried time ranges (and therefore the cache keys) line up with those used when writing
-// the cache entries.
+// from the per-selector cardinality cache.
 func NewCacheCardinalityEstimator(cfg streamingpromql.CardinalityEstimationConfig, logger log.Logger) CardinalityEstimator {
 	return &cacheCardinalityEstimator{
 		cfg:    cfg,
