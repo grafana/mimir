@@ -87,11 +87,43 @@ func (t *readcacheHitTracker) count() int {
 	return len(t.instances)
 }
 
+// readcacheAssignmentState is the atomically-published pair of
+// assignment log + replica map from one WatchReadcacheAssignments
+// message. Storing them together prevents querier/ruler read-path
+// goroutines from observing a new logical-ID log against a stale map.
+type readcacheAssignmentState struct {
+	log        *readcacheassignment.Log
+	replicaMap readcacheassignment.ReplicaMap
+}
+
 // GetReadcacheLog returns the current (partition -> readcache
 // instance) log streamed from the rebalancer, or nil if no snapshot
 // has been received yet (cold start or rebalancer unreachable).
 func (d *Distributor) GetReadcacheLog() *readcacheassignment.Log {
-	return d.readcacheLog.Load()
+	if s := d.readcacheAssignment.Load(); s != nil {
+		return s.log
+	}
+	return nil
+}
+
+// GetReadcacheReplicaMap returns the current logical->concrete
+// readcache replica map streamed from the rebalancer. A nil or empty
+// map means identity: the instance IDs in the assignment log are
+// themselves the concrete pods to dial (RF=1 / legacy).
+func (d *Distributor) GetReadcacheReplicaMap() readcacheassignment.ReplicaMap {
+	if s := d.readcacheAssignment.Load(); s != nil {
+		return s.replicaMap
+	}
+	return nil
+}
+
+// setReadcacheAssignment publishes log and replicaMap together.
+// replicaMap may be nil (identity). Used by the watch loop and tests.
+func (d *Distributor) setReadcacheAssignment(log *readcacheassignment.Log, replicaMap readcacheassignment.ReplicaMap) {
+	d.readcacheAssignment.Store(&readcacheAssignmentState{
+		log:        log,
+		replicaMap: replicaMap.Clone(),
+	})
 }
 
 // watchReadcacheAssignments mirrors watchNautilusAssignments for the
@@ -144,14 +176,18 @@ func (d *Distributor) consumeReadcacheStream(stream rebalancer.NautilusRebalance
 		var log *readcacheassignment.Log
 		if resp.Reset_ || first {
 			log = readcacheassignment.NewLogFromEntries(entries)
+		} else if prev := d.GetReadcacheLog(); prev != nil {
+			log = prev.MergedWithEntries(entries)
 		} else {
-			log = d.readcacheLog.Load().MergedWithEntries(entries)
+			log = readcacheassignment.NewLogFromEntries(entries)
 		}
 		if resp.PruneBeforeUnixMs > 0 {
 			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
 		}
 		first = false
-		d.readcacheLog.Store(log)
+		// Publish log + map atomically so RF≥2 expansion always
+		// matches the lease IDs from the same message.
+		d.setReadcacheAssignment(log, rebalancer.ReplicaMapFromProto(resp.ReplicaSets))
 		if d.readcacheInitialSync != nil {
 			d.readcacheInitialSyncOnce.Do(func() {
 				close(d.readcacheInitialSync)
@@ -194,7 +230,7 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	if d.readcachePool == nil {
 		return nil, "", false, nil
 	}
-	log := d.readcacheLog.Load()
+	log := d.GetReadcacheLog()
 	if log == nil {
 		return nil, "", false, nil
 	}
@@ -202,14 +238,24 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	if len(owners) == 0 {
 		return nil, "", false, nil
 	}
-	// Phase 2C is single-owner-per-partition; multi-owner mode
-	// from readcacheassignment.Log is reserved for future drain/
-	// handoff work. Pick the first owner deterministically.
-	cli, err = d.readcachePool.GetClientForInstance(ctx, owners[0])
-	if err != nil {
-		return nil, "", false, err
+	// The log records one logical owner per partition; multi-owner
+	// mode from readcacheassignment.Log is reserved for drain/handoff
+	// windows. Pick the first owner deterministically, then expand it
+	// to its concrete zone replicas and dial them in order until one
+	// connects — under RF=1 the expansion is the identity, so this
+	// reduces to dialing the logged owner.
+	replicas := d.GetReadcacheReplicaMap().ConcreteIDs(owners[0])
+	for _, concrete := range replicas {
+		cli, err = d.readcachePool.GetClientForInstance(ctx, concrete)
+		if err != nil {
+			continue
+		}
+		return cli, concrete, true, nil
 	}
-	return cli, owners[0], true, nil
+	if err == nil {
+		err = fmt.Errorf("logical readcache owner %q of partition %d has no concrete replica", owners[0], partitionID)
+	}
+	return nil, "", false, err
 }
 
 // previousReadcacheOwnerForPartition returns the readcache instance
@@ -224,7 +270,7 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 //
 // Returns "", false when no eligible previous owner exists.
 func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (string, bool) {
-	log := d.readcacheLog.Load()
+	log := d.GetReadcacheLog()
 	if log == nil {
 		return "", false
 	}
@@ -264,6 +310,65 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 		return "", false
 	}
 	return best.InstanceID, true
+}
+
+// readcacheSyntheticInstanceID is the routing key the read path uses
+// for one concrete readcache pod serving one partition. A readcache
+// owns many partitions and a partition may be served by several pods
+// (zone replicas of one logical slot, or successive owners across a
+// move), so neither dimension alone is unique.
+func readcacheSyntheticInstanceID(concreteID string, partitionID int32) string {
+	return fmt.Sprintf("%s/p%d", concreteID, partitionID)
+}
+
+// readcacheReplicationSetForOwner builds the ring.ReplicationSet the
+// read path uses for one (partition, logical owner) pair: one
+// InstanceDesc per concrete zone replica of the logical slot, with
+// InstanceDesc.Addr carrying the pod to dial and Id carrying the
+// synthetic routing key.
+//
+// Zone replicas of a slot consume the same partitions and therefore
+// hold identical data, so the read only needs one of them to answer.
+// With distinct zones that is expressed with zone awareness, which
+// makes DoUntilQuorum return as soon as one zone succeeds and spill
+// to the other zone only on failure. With an empty replica map the
+// expansion is the identity and the set degenerates to the
+// single-instance, no-tolerance shape used under RF=1.
+func readcacheReplicationSetForOwner(replicaMap readcacheassignment.ReplicaMap, partitionID int32, logicalOwner string) ring.ReplicationSet {
+	if reps, known := replicaMap[logicalOwner]; known && len(reps) == 0 {
+		// The rebalancer knows this logical slot but has no live pod
+		// for it (both mirrors left the ring). Returning an empty set
+		// makes the caller fail the slot explicitly instead of
+		// dialing the logical ID, which is not a routable address.
+		return ring.ReplicationSet{}
+	}
+	replicas := replicaMap.Expand(logicalOwner)
+	set := ring.ReplicationSet{Instances: make([]ring.InstanceDesc, 0, len(replicas))}
+	zones := make(map[string]struct{}, len(replicas))
+	for _, rep := range replicas {
+		if rep.InstanceID == "" {
+			continue
+		}
+		set.Instances = append(set.Instances, ring.InstanceDesc{
+			Id:   readcacheSyntheticInstanceID(rep.InstanceID, partitionID),
+			Addr: rep.InstanceID,
+			Zone: rep.Zone,
+		})
+		if rep.Zone != "" {
+			zones[rep.Zone] = struct{}{}
+		}
+	}
+	switch {
+	case len(zones) > 1:
+		set.ZoneAwarenessEnabled = true
+		set.MaxUnavailableZones = len(zones) - 1
+	case len(set.Instances) > 1:
+		// Several replicas but no distinct zone labels: express the
+		// same "any one replica serves the read" tolerance with
+		// MaxErrors, which is mutually exclusive with zone awareness.
+		set.MaxErrors = len(set.Instances) - 1
+	}
+	return set
 }
 
 // queryClientForInstance returns the gRPC client the distributor's
@@ -346,11 +451,16 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 	if !ok {
 		return nil, "", false
 	}
-	cli, err := d.readcachePool.GetClientForInstance(ctx, prevID)
-	if err != nil {
-		return nil, "", false
+	// prevID is a logical slot under RF≥2; expand and take the first
+	// replica that dials.
+	for _, concrete := range d.GetReadcacheReplicaMap().ConcreteIDs(prevID) {
+		cli, err := d.readcachePool.GetClientForInstance(ctx, concrete)
+		if err != nil {
+			continue
+		}
+		return cli, concrete, true
 	}
-	return cli, prevID, true
+	return nil, "", false
 }
 
 // shouldRouteReadToReadcache reports whether the per-tenant read

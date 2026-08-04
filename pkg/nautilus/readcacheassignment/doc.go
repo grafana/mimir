@@ -27,10 +27,9 @@
 //
 // The departure from pkg/nautilus/assignment is that we allow more
 // than one entry to be active for the same PartitionID at the same
-// time — this is the "multi-owner" mode the plan calls out as a
-// future toggle for ranged failover (a partition can be served by N
-// readcache instances in parallel during a transition). For Phase 2
-// the rebalancer defaults to one owner per partition; the data
-// structure is permissive of multi-owner only insofar as Lookup
-// returns the full list.
+// time — used for (a) time-bounded handoff overlap during a move and
+// (b) historically multi-owner. Steady-state RF=2 does NOT put two
+// lease rows per partition: the log names a single logical slot ID
+// and ReplicaMap expands that to concrete zone pods (see
+// replica_map.go). Lookup still returns the logical owner list.
 package readcacheassignment

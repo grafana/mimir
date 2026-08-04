@@ -19,6 +19,12 @@ type readcacheUpdate struct {
 	entries     []readcacheassignment.LogEntry
 	reset       bool
 	pruneBefore time.Time
+	// replicaMap expands the logical instance IDs named in entries to
+	// their concrete zone pods. Nil/empty means identity (RF=1): the
+	// lease instance ID is also the dial target. Sent in full on
+	// every update because it is small (O(slots × zones)) and
+	// subscribers treat it as a wholesale replacement.
+	replicaMap readcacheassignment.ReplicaMap
 }
 
 // readcacheLogStore is the (partition -> readcache instance) parallel
@@ -33,6 +39,11 @@ type readcacheLogStore struct {
 	// lastBroadcast / lastPruneBefore mirror logStore; see there.
 	lastBroadcast   []readcacheassignment.LogEntry
 	lastPruneBefore time.Time
+
+	// replicaMap is the current logical->concrete expansion published
+	// alongside every broadcast. Owned by the rebalancer's rebalance
+	// loop via setReplicaMap.
+	replicaMap readcacheassignment.ReplicaMap
 
 	// ready flips to true on the first apply() call. Until then,
 	// subscribe() returns nil initial and the gRPC handler skips its
@@ -104,13 +115,51 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 		switch {
 		case !sub.wantsDeltas || !sub.primed:
 			sub.primed = true
-			conflateSendReadcache(sub.ch, readcacheUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore})
+			conflateSendReadcache(sub.ch, readcacheUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap})
 		case len(delta) == 0:
 		default:
-			conflateSendReadcache(sub.ch, readcacheUpdate{entries: delta, pruneBefore: s.lastPruneBefore})
+			conflateSendReadcache(sub.ch, readcacheUpdate{entries: delta, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap})
 		}
 	}
 	return changed
+}
+
+// setReplicaMap installs m as the current logical->concrete expansion.
+// When the map changes, every subscriber is re-primed with a full
+// snapshot carrying the new map: a replica-map change (a zone pod
+// joining or leaving) does not necessarily change any lease, so
+// piggy-backing on apply() alone would leave clients dialing stale
+// concrete pods until the next lease rotation.
+//
+// The rebroadcast is skipped until the store is ready (first apply),
+// for the same reason subscribe() withholds its initial snapshot: a
+// freshly-restarted rebalancer must not publish a pre-apply view.
+func (s *readcacheLogStore) setReplicaMap(m readcacheassignment.ReplicaMap) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.replicaMap.Equal(m) {
+		return
+	}
+	s.replicaMap = m.Clone()
+	if !s.ready {
+		return
+	}
+	full := s.log.Entries()
+	s.lastBroadcast = full
+	for sub := range s.subscribers {
+		sub.primed = true
+		conflateSendReadcache(sub.ch, readcacheUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap})
+	}
+}
+
+// getReplicaMap returns the current logical->concrete expansion. The
+// returned map is the store's own instance and must not be mutated;
+// setReplicaMap always replaces it wholesale.
+func (s *readcacheLogStore) getReplicaMap() readcacheassignment.ReplicaMap {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.replicaMap
 }
 
 // diffReadcacheEntries mirrors diffAssignmentEntries for the
@@ -175,7 +224,7 @@ func (s *readcacheLogStore) subscribe(wantsDeltas bool) (initial *readcacheUpdat
 	s.mu.Lock()
 	if s.ready {
 		sub.primed = true
-		initial = &readcacheUpdate{entries: s.log.Entries(), reset: true, pruneBefore: s.lastPruneBefore}
+		initial = &readcacheUpdate{entries: s.log.Entries(), reset: true, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap}
 	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
@@ -227,6 +276,10 @@ func coalesceReadcacheUpdates(pending, next readcacheUpdate) readcacheUpdate {
 		entries:     merged.Entries(),
 		reset:       pending.reset,
 		pruneBefore: pruneBefore,
+		// Every update carries the store's map as of when it was
+		// built, so the later one is always at least as fresh —
+		// including the transition back to nil (RF=1).
+		replicaMap: next.replicaMap,
 	}
 }
 
@@ -241,6 +294,56 @@ func ReadcacheEntriesToProto(es []readcacheassignment.LogEntry) []ReadcacheLogEn
 			FromUnixMs:  e.From.UnixMilli(),
 			ToUnixMs:    e.To.UnixMilli(),
 		}
+	}
+	return out
+}
+
+// ReplicaMapToProto converts a ReplicaMap into its wire form. Logical
+// IDs are emitted in sorted order so the encoded message is stable
+// across broadcasts (the map itself has no ordering). Returns nil for
+// an empty map, which the wire contract reads as identity (RF=1).
+func ReplicaMapToProto(m readcacheassignment.ReplicaMap) []ReadcacheReplicaSet {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]ReadcacheReplicaSet, 0, len(m))
+	for _, logical := range m.SortedLogicalIDs() {
+		reps := m[logical]
+		set := ReadcacheReplicaSet{LogicalId: logical}
+		if len(reps) > 0 {
+			set.Replicas = make([]ReadcacheReplica, len(reps))
+			for i, rep := range reps {
+				set.Replicas[i] = ReadcacheReplica{InstanceId: rep.InstanceID, Zone: rep.Zone}
+			}
+		}
+		out = append(out, set)
+	}
+	return out
+}
+
+// ReplicaMapFromProto converts wire replica sets back into a
+// ReplicaMap. Returns nil for an empty slice so consumers keep the
+// identity behaviour.
+func ReplicaMapFromProto(sets []ReadcacheReplicaSet) readcacheassignment.ReplicaMap {
+	if len(sets) == 0 {
+		return nil
+	}
+	out := make(readcacheassignment.ReplicaMap, len(sets))
+	for _, set := range sets {
+		if set.LogicalId == "" {
+			continue
+		}
+		var reps []readcacheassignment.Replica
+		if len(set.Replicas) > 0 {
+			reps = make([]readcacheassignment.Replica, len(set.Replicas))
+			for i, rep := range set.Replicas {
+				reps[i] = readcacheassignment.Replica{InstanceID: rep.InstanceId, Zone: rep.Zone}
+			}
+		}
+		out[set.LogicalId] = reps
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

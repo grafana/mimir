@@ -447,6 +447,16 @@ func (a *API) RegisterReadcache(r client.IngesterServer) {
 	client.RegisterIngesterServer(a.server.GRPC, r)
 }
 
+// RegisterReadcacheLifecycle registers the readcache endpoints the
+// rollout-operator drives during scale-down. Kept separate from
+// RegisterReadcache for the same reason as RegisterReadcacheAdmin: the
+// gRPC registration goes through the abstract IngesterServer
+// interface, while these handlers are specific to a real
+// *readcache.Readcache.
+func (a *API) RegisterReadcacheLifecycle(prepareInstanceRingDownscale http.Handler) {
+	a.RegisterRoute("/readcache/prepare-instance-ring-downscale", prepareInstanceRingDownscale, false, true, "GET", "POST", "DELETE")
+}
+
 // RegisterReadcacheAdmin registers the readcache admin HTML page.
 // Kept separate from RegisterReadcache because the gRPC registration
 // uses the abstract IngesterServer interface (so test/mock servers

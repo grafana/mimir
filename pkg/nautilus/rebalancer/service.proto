@@ -119,6 +119,24 @@ message WatchReadcacheAssignmentsResponse {
   repeated ReadcacheLogEntry entries = 1 [(gogoproto.nullable) = false];
   bool reset = 2;
   int64 prune_before_unix_ms = 3;
+  // replica_sets maps each logical instance_id used in entries to its
+  // concrete zone replicas. Empty means identity (RF=1 / legacy): the
+  // lease instance_id is also the concrete dial target. Always sent
+  // in full on every message (the map is small: O(slots × zones)).
+  repeated ReadcacheReplicaSet replica_sets = 4 [(gogoproto.nullable) = false];
+}
+
+// ReadcacheReplicaSet describes the concrete pods that serve one
+// logical slot. logical_id matches LogEntry.instance_id under RF≥2.
+message ReadcacheReplicaSet {
+  string logical_id = 1;
+  repeated ReadcacheReplica replicas = 2 [(gogoproto.nullable) = false];
+}
+
+// ReadcacheReplica is one concrete readcache pod in a replica set.
+message ReadcacheReplica {
+  string instance_id = 1;
+  string zone = 2;
 }
 
 // ReadcacheLogEntry is the wire representation of a single

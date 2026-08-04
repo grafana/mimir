@@ -60,7 +60,7 @@ func readcacheTestDistributor(t *testing.T, now time.Time, partitions []int32, o
 			To:          now.Add(5 * time.Minute),
 		})
 	}
-	d.readcacheLog.Store(readcacheassignment.NewLogFromEntries(entries))
+	d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(entries), nil)
 
 	return d
 }
@@ -250,10 +250,10 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 			{Range: full, PartitionID: 0, From: now.Add(-2 * time.Hour), To: now.Add(-time.Hour)},
 			{Range: full, PartitionID: 1, From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
 		}))
-		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
 			{PartitionID: 0, InstanceID: "rc-a", From: now.Add(-2 * time.Hour), To: now.Add(5 * time.Minute)},
 			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
-		}))
+		}), nil)
 		return d
 	}
 
@@ -319,9 +319,9 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 			{Range: full, PartitionID: 2, From: now.Add(90 * time.Second), To: now.Add(90*time.Second + 5*time.Minute)},
 		}))
 		// The readcache log knows nothing about P2 yet.
-		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
 			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
-		}))
+		}), nil)
 
 		got := resolvedPartitions(t, d, mt(now.Add(-15*time.Minute)), mt(now))
 		assert.Equal(t, []int32{1}, got, "only the current owner must be queried; the future lease holds no data yet")
@@ -338,9 +338,9 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 		d.nautilusLog.Store(assignment.NewLogFromEntries([]assignment.LogEntry{
 			{Range: full, PartitionID: 0, From: now, To: now.Add(5 * time.Minute)},
 		}))
-		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
 			{PartitionID: 0, InstanceID: "rc-a", From: now, To: now.Add(5 * time.Minute)},
-		}))
+		}), nil)
 
 		got := resolvedPartitions(t, d, mt(now), mt(now))
 		assert.Equal(t, []int32{0}, got)

@@ -69,6 +69,12 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		instanceID string
 		partition  int32
 	}
+	// Log owners are logical slot IDs under RF≥2, which are not
+	// dialable: expand them to the concrete mirrors. Both mirrors
+	// report the same ranges and the (partition, range) dedup below
+	// collapses the duplicates. With an empty replica map the
+	// expansion is the identity.
+	replicaMap := r.readcacheStore.getReplicaMap()
 	var ownerships []ownership
 	uniqueInstances := make(map[string]struct{})
 	now := r.now()
@@ -76,8 +82,10 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 		if !entry.ActiveAt(now) {
 			continue
 		}
-		ownerships = append(ownerships, ownership{instanceID: entry.InstanceID, partition: entry.PartitionID})
-		uniqueInstances[entry.InstanceID] = struct{}{}
+		for _, concrete := range replicaMap.ConcreteIDs(entry.InstanceID) {
+			ownerships = append(ownerships, ownership{instanceID: concrete, partition: entry.PartitionID})
+			uniqueInstances[concrete] = struct{}{}
+		}
 	}
 	if len(ownerships) == 0 {
 		level.Info(r.logger).Log("msg", "reconstructAssignmentFromReadcache: empty log, falling back to even split")
@@ -349,10 +357,10 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 // partition has no active owner at `at`, its ranges are skipped this
 // round; the next round's slicer pass will assign one.
 func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.Assignment, at time.Time) {
-	// Build partition -> readcache instance ID from the live
-	// readcache log. Single-owner mode means each pid maps to one
-	// instance; if multi-owner gets enabled later we'd push to all
-	// owners.
+	// Build partition -> readcache owner from the live readcache log.
+	// The owner recorded in the log is a logical slot ID under RF≥2
+	// and a concrete instance ID under RF=1; either way it is kept
+	// verbatim here and expanded below.
 	ownerByPartition := make(map[int32]string)
 	for _, entry := range r.readcacheStore.snapshot() {
 		if entry.ActiveAt(at) {
@@ -360,10 +368,17 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 		}
 	}
 
-	// Group hash ranges per readcache instance ID by walking the
+	// Group hash ranges per concrete readcache instance by walking the
 	// assignment entries. The partition id travels with the range
 	// entry so the receiving readcache can route each range into the
 	// per-partition bookkeeping that backs HashRangeStats.
+	//
+	// Every concrete replica of a logical slot consumes the same
+	// partitions and must therefore hold the same hash ranges, so the
+	// push fans out across the whole replica set. With an empty
+	// replica map ConcreteIDs is the identity and this reduces to the
+	// RF=1 behaviour of one push per logged owner.
+	replicaMap := r.readcacheStore.getReplicaMap()
 	rangesByInstance := make(map[string][]ingester_client.HashRangeEntry)
 	partitionsInAssignment := make(map[int32]struct{})
 	for _, e := range a.Entries {
@@ -372,8 +387,10 @@ func (r *Rebalancer) pushRangesToReadcache(ctx context.Context, a *assignment.As
 		if !ok || owner == "" {
 			continue
 		}
-		rangesByInstance[owner] = append(rangesByInstance[owner],
-			ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID})
+		hr := ingester_client.HashRangeEntry{Lo: e.Range.Lo, Hi: e.Range.Hi, PartitionId: e.PartitionID}
+		for _, concrete := range replicaMap.ConcreteIDs(owner) {
+			rangesByInstance[concrete] = append(rangesByInstance[concrete], hr)
+		}
 	}
 
 	var partitionsWithoutOwner []int32

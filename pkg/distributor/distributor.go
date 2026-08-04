@@ -58,7 +58,6 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
-	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -280,11 +279,13 @@ type Distributor struct {
 	nautilusActiveTable   syncatomic.Pointer[assignment.ActiveTable]
 	nautilusActiveTableMu sync.Mutex
 
-	// readcacheLog mirrors nautilusLog for the (partition -> readcache
-	// instance) log streamed from the rebalancer's
-	// WatchReadcacheAssignments RPC. Used by the read path to route
-	// queries to the readcache pod currently owning the partition.
-	readcacheLog syncatomic.Pointer[readcacheassignment.Log]
+	// readcacheAssignment holds the (partition -> logical instance) log
+	// and the logical->concrete replica map from the same
+	// WatchReadcacheAssignments message. They are stored together so
+	// querier/ruler read-path goroutines never observe a new log of
+	// logical IDs against a stale (empty) map, which would dial
+	// non-routable logical names under RF≥2.
+	readcacheAssignment syncatomic.Pointer[readcacheAssignmentState]
 
 	// initial assignment synchronization completes during starting(),
 	// before the distributor reports Running. This prevents embedded
