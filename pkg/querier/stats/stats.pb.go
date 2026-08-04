@@ -73,9 +73,12 @@ type Stats struct {
 	Retries uint32 `protobuf:"varint,18,opt,name=retries,proto3" json:"retries,omitempty"`
 	// SeenSelectorCardinalities records the number of series selected by each selector evaluated while
 	// processing this request, keyed by the selector's matchers and queried time range.
+	// If the query is sharded, then the selectors here may contain matchers on __query_shard__.
 	SeenSelectorCardinalities []SelectorCardinality `protobuf:"bytes,19,rep,name=seen_selector_cardinalities,json=seenSelectorCardinalities,proto3" json:"seen_selector_cardinalities"`
 	// EstimatedSelectorCardinalities records the estimated number of series selected by each selector
 	// used while preparing this request.
+	// The selectors here will never contain __query_shard__, as the estimates are for the full
+	// cardinality of the selector (i.e. summed across all shards).
 	EstimatedSelectorCardinalities []SelectorCardinality `protobuf:"bytes,20,rep,name=estimated_selector_cardinalities,json=estimatedSelectorCardinalities,proto3" json:"estimated_selector_cardinalities"`
 }
 
@@ -244,14 +247,16 @@ func (m *Stats) GetEstimatedSelectorCardinalities() []SelectorCardinality {
 	return nil
 }
 
-// SelectorCardinality records the number of series selected by a single selector over a time range.
+// SelectorCardinality records the number of series selected by a single selector over a time range,
+// or an estimate of the selector's cardinality.
 type SelectorCardinality struct {
-	// The matchers of the selector. This is the full set of matchers, including any matchers added by
-	// query sharding (for example, __query_shard__).
+	// The matchers of the selector.
 	Matchers []LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers"`
-	// The inclusive start of the time range that was queried, in milliseconds since the Unix epoch.
+	// The inclusive start of the time range that was queried (if this is a seen cardinality) or the start
+	// of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
 	MinT int64 `protobuf:"varint,2,opt,name=min_t,json=minT,proto3" json:"min_t,omitempty"`
-	// The inclusive end of the time range that was queried, in milliseconds since the Unix epoch.
+	// The inclusive end of the time range that was queried (if this is a seen cardinality) or the end
+	// of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
 	MaxT int64 `protobuf:"varint,3,opt,name=max_t,json=maxT,proto3" json:"max_t,omitempty"`
 	// The number of series selected.
 	SeriesCount uint64 `protobuf:"varint,4,opt,name=series_count,json=seriesCount,proto3" json:"series_count,omitempty"`

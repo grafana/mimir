@@ -138,7 +138,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		decoded[k] = entry
 	}
 
-	// The estimate for the whole expression is the maximum cardinality across its selectors, and the
+	// The estimate for the whole expression is the sum of the estimated cardinality of its selectors, and the
 	// cardinality of a single selector is the maximum across the buckets it spans.
 	// If there is no information available for a selector, then we return no estimate at all.
 	var overallEstimate uint64

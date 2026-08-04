@@ -67,21 +67,29 @@ message Stats {
   uint32 retries = 18;
   // SeenSelectorCardinalities records the number of series selected by each selector evaluated while
   // processing this request, keyed by the selector's matchers and queried time range.
+  // If the query is sharded, then the selectors here may contain matchers on __query_shard__.
   repeated SelectorCardinality seen_selector_cardinalities = 19 [(gogoproto.nullable) = false];
   // EstimatedSelectorCardinalities records the estimated number of series selected by each selector
   // used while preparing this request.
+  // The selectors here will never contain __query_shard__, as the estimates are for the full
+  // cardinality of the selector (i.e. summed across all shards).
   repeated SelectorCardinality estimated_selector_cardinalities = 20 [(gogoproto.nullable) = false];
 }
 
-// SelectorCardinality records the number of series selected by a single selector over a time range.
+// SelectorCardinality records the number of series selected by a single selector over a time range,
+// or an estimate of the selector's cardinality.
 message SelectorCardinality {
-  // The matchers of the selector. This is the full set of matchers, including any matchers added by
-  // query sharding (for example, __query_shard__).
+  // The matchers of the selector.
   repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
-  // The inclusive start of the time range that was queried, in milliseconds since the Unix epoch.
+
+  // The inclusive start of the time range that was queried (if this is a seen cardinality) or the start
+  // of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
   int64 min_t = 2;
-  // The inclusive end of the time range that was queried, in milliseconds since the Unix epoch.
+
+  // The inclusive end of the time range that was queried (if this is a seen cardinality) or the end
+  // of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
   int64 max_t = 3;
+
   // The number of series selected.
   uint64 series_count = 4;
 }
