@@ -70,6 +70,17 @@ func TestReadcacheExplainHandler_RendersPlan(t *testing.T) {
 	require.NotEmpty(t, fake.gotMatchers)
 }
 
+func TestBuildSelectorView_RendersMetricNameSet(t *testing.T) {
+	view := buildSelectorView(selectorInfo{}, distributor.ReadcacheQueryPlan{
+		Named:       true,
+		MetricNames: []string{"metric_a", "metric_b"},
+	})
+
+	assert.Contains(t, view.Mode, "metric-name-set")
+	assert.Contains(t, view.Mode, "metric_a, metric_b")
+	assert.NotContains(t, view.Mode, "hashrange")
+}
+
 func TestReadcacheExplainHandler_RequiresTenant(t *testing.T) {
 	h := NewReadcacheExplainHandler(&fakeExplainer{}, time.Minute, log.NewNopLogger())
 

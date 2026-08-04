@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 	t.Run("full-fanout resolves every partition to a single-instance readcache set", func(t *testing.T) {
 		d := readcacheTestDistributor(t, now, partitions, ownerFor)
 
-		// No exact __name__ matcher -> fan out to all partitions.
+		// No finite metric-name set -> fan out to all partitions.
 		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.NoError(t, err)
 		require.Len(t, sets, len(partitions))
@@ -153,6 +154,32 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		}
 		assert.ElementsMatch(t, want, got)
 		assert.Less(t, len(sets), len(partitions), "aggregation query must not fan out to all partitions")
+	})
+
+	t.Run("finite metric-name regex resolves the union of metric partitions", func(t *testing.T) {
+		d := readcacheTestDistributor(t, now, partitions, ownerFor)
+
+		nameMatcher := labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, `envoy_cluster_grpc_(2|4|13|14|15)`)
+		jobMatcher := labels.MustNewMatcher(labels.MatchRegexp, "job", `.*/cortex-gw`)
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{nameMatcher, jobMatcher})
+		require.NoError(t, err)
+
+		var want []int32
+		for _, name := range []string{"envoy_cluster_grpc_2", "envoy_cluster_grpc_4", "envoy_cluster_grpc_13", "envoy_cluster_grpc_14", "envoy_cluster_grpc_15"} {
+			lo, hi := mimirpb.MetricNameHashRange(userID, name)
+			for _, partitionID := range d.nautilusLog.Load().ActiveTable(now).PartitionsOverlapping(lo, hi) {
+				if !slices.Contains(want, partitionID) {
+					want = append(want, partitionID)
+				}
+			}
+		}
+		var got []int32
+		for _, rs := range sets {
+			require.Len(t, rs.Instances, 1)
+			got = append(got, partitionByInstance[rs.Instances[0].Id])
+		}
+		assert.ElementsMatch(t, want, got)
+		assert.Less(t, len(got), len(partitions), "finite metric-name regex must not fan out to all partitions")
 	})
 
 	t.Run("missing assignment log is a hard failure with no ingester fallback", func(t *testing.T) {
@@ -405,22 +432,30 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	assert.Equal(t, 0.0, sum, "routing failed before any readcache instance was reached")
 	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 
-	// Without an exact metric name, readcache routing must inspect every
-	// relevant partition. Count that query separately and leave the
-	// scoped instance-hit histogram unchanged.
+	// An enumerable metric-name regexp is also metric-scoped.
+	_, err = d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "foo|bar"))
+	require.Error(t, err)
+	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, 0.0, sum)
+	assert.Equal(t, 0.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
+
+	// Without a finite metric-name set, readcache routing must inspect
+	// every relevant partition. Count that query separately and leave
+	// the scoped instance-hit histogram unchanged.
 	_, err = d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, mustEqualMatcher("job", "api"))
 	require.Error(t, err)
 	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
-	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, uint64(2), count)
 	assert.Equal(t, 0.0, sum)
 	assert.Equal(t, 1.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 
-	// A regex metric-name matcher still spans more than one metric-name
-	// hash range and therefore remains a full-fanout query.
+	// An open-ended metric-name regexp cannot be reduced to a finite set
+	// and therefore remains a full-fanout query.
 	_, err = d.QueryStream(ctx, queryMetrics, recentFrom, recentTo, labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "foo.*"))
 	require.Error(t, err)
 	count, _ = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
-	assert.Equal(t, uint64(1), count)
+	assert.Equal(t, uint64(2), count)
 	assert.Equal(t, 2.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),
@@ -437,7 +472,7 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	assert.Empty(t, result.StreamingSeries)
 	assert.Empty(t, result.StreamReaders)
 	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
-	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, uint64(3), count)
 	assert.Equal(t, 0.0, sum)
 	assert.Equal(t, 2.0, testutil.ToFloat64(d.queryReadcacheFullFanout))
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),

@@ -53,8 +53,8 @@ func (e errReadcacheRoutingUnavailable) Error() string {
 // At the end of a metric-name-scoped readcache query the tracker's
 // count feeds the
 // cortex_distributor_query_readcache_instances_hit_per_query
-// histogram. Queries without an exact metric name are tracked by the
-// separate full-fanout counter.
+// histogram. Queries whose metric names cannot be reduced to a finite
+// set are tracked by the separate full-fanout counter.
 type readcacheHitTracker struct {
 	mu        sync.Mutex
 	instances map[string]struct{}
