@@ -2204,7 +2204,7 @@ mimir_query_engine:
 
     # (experimental) The maximum number of buckets to attempt to read per
     # selector. If a selector's time range queries more buckets than this limit,
-    # buckets over the entire time range are sampled (ie. the resolution is
+    # buckets over the entire time range are sampled (i.e. the resolution is
     # reduced). Only applies if running splitting and caching inside MQE is
     # enabled with
     # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
@@ -2213,7 +2213,7 @@ mimir_query_engine:
 
     # (experimental) The minimum difference from the original estimate to
     # trigger storing a new cardinality estimate in the cache. Values are a
-    # proportion of the original value (eg. a value of 0.1 means a new estimate
+    # proportion of the original value (e.g. a value of 0.1 means a new estimate
     # is only written if the new value is 10% higher than the original
     # estimate). Only applies if running splitting and caching inside MQE is
     # enabled with
