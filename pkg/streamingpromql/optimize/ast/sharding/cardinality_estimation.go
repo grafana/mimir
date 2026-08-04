@@ -509,6 +509,7 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 	suffix := bytes.Join([][]byte{
 		[]byte(originalExpression),
 		[]byte(canonicalSelector),
+		[]byte(strconv.FormatInt(cfg.BucketSize.Milliseconds(), 10)),
 		[]byte(strconv.FormatInt(bucketIndex, 10)),
 	}, []byte(":"))
 
