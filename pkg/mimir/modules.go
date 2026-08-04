@@ -961,6 +961,13 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	opts := t.createQueryFrontendPromQLEngineOptions()
 
+	// When sharding and splitting/caching run inside MQE with cardinality-based sharding, store the
+	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
+	// createQueryFrontendQueryPlanner) can use it to size shards for future queries.
+	if middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.ShardedQueries && middlewareCfg.UseMQEForSharding && middlewareCfg.CardinalityBasedShardingEnabled() {
+		opts.QueryPostProcessors = append(opts.QueryPostProcessors, sharding.NewCardinalityStoringPostProcessor(opts.CardinalityEstimation, util_log.Logger))
+	}
+
 	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
 		return nil, err
 	}
@@ -1203,7 +1210,19 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
+		// When splitting and caching run inside MQE, the cardinality-estimation middleware is not in
+		// the chain, so estimate cardinality from the per-selector cardinality cache. Otherwise, use
+		// the estimate provided by the cardinality-estimation middleware via the request hints.
+		var estimator sharding.CardinalityEstimator
+		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
+			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+				estimator = sharding.NewCacheCardinalityEstimator(opts.CardinalityEstimation, util_log.Logger)
+			} else {
+				estimator = sharding.NewRequestHintsCardinalityEstimator()
+			}
+		}
+
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, estimator, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	return nil
@@ -1236,6 +1255,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.

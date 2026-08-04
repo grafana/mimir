@@ -558,7 +558,10 @@ func newQueryMiddlewares(
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
-		if cfg.CardinalityBasedShardingEnabled() {
+		//
+		// When splitting and caching run inside MQE, this is handled by the cardinality
+		// estimator inside the sharding optimisation pass.
+		if cfg.CardinalityBasedShardingEnabled() && !cfg.UseMQEForSplittingAndCachingResults {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,

@@ -57,6 +57,16 @@ func (c *InMemoryCache) SetAsync(ctx context.Context, key string, value []byte, 
 	return nil
 }
 
+func (c *InMemoryCache) SetMultiAsync(ctx context.Context, entries map[string][]byte, ttl time.Duration) error {
+	for k, v := range entries {
+		if err := c.SetAsync(ctx, k, v, ttl); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *InMemoryCache) Reset() {
 	c.Entries = make(map[string]InMemoryCacheEntry)
 	c.SetCount = 0

@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -60,12 +61,16 @@ type Selector struct {
 	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
 
 	seriesIdx int
+
+	// The time range queried from storage, computed and used by loadSeriesSet and reused by reportCardinality.
+	queriedStartT, queriedEndT int64
 }
 
 type Subset struct {
 	Filter []*labels.Matcher
 
-	matchingSeries []bool // One entry per series. True means the corresponding series matches this subset.
+	matchingSeries      []bool // One entry per series. True means the corresponding series matches this subset.
+	matchingSeriesCount uint64 // The number of series that match this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
@@ -117,7 +122,64 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		return nil, err
 	}
 
+	s.reportCardinality(ctx, len(metadata))
+
 	return metadata, nil
+}
+
+// reportCardinality records the number of series selected by this selector (and each of its subsets)
+// in the query stats, keyed by the selector's matchers and queried time range.
+//
+// The matchers are taken from the original expression (Selector.Matchers and each subset's filter),
+// ignoring any additional matchers pushed down by callers of SeriesMetadata.
+func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
+	queryStats := stats.FromContext(ctx)
+	if queryStats == nil {
+		return
+	}
+
+	// Use the time range computed for the Select call in loadSeriesSet, rather than recomputing it.
+	minT, maxT := s.queriedStartT, s.queriedEndT
+
+	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
+		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
+		MinT:        minT,
+		MaxT:        maxT,
+		SeriesCount: uint64(seriesCount),
+	})
+
+	for _, subset := range s.Subsets {
+		queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
+			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
+			MinT:        minT,
+			MaxT:        maxT,
+			SeriesCount: subset.matchingSeriesCount,
+		})
+	}
+}
+
+// labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
+// stats.LabelMatcher representation.
+func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(base)+len(filter))
+
+	for _, m := range base {
+		out = append(out, stats.LabelMatcher{
+			Type:  m.Type,
+			Name:  m.Name,
+			Value: m.Value,
+		})
+	}
+
+	for _, m := range filter {
+		out = append(out, stats.LabelMatcher{
+			Type:  m.Type,
+			Name:  m.Name,
+			Value: m.Value,
+		})
+	}
+
+	return out
 }
 
 func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
@@ -156,11 +218,20 @@ func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
 			return err
 		}
 
+		matchCount := uint64(0)
+
 		for _, series := range metadata {
-			bitmap = append(bitmap, types.MatchersMatch(subset.Filter, series.Labels))
+			matches := types.MatchersMatch(subset.Filter, series.Labels)
+
+			if matches {
+				matchCount++
+			}
+
+			bitmap = append(bitmap, matches)
 		}
 
 		s.Subsets[idx].matchingSeries = bitmap
+		s.Subsets[idx].matchingSeriesCount = matchCount
 	}
 
 	return nil
@@ -172,6 +243,8 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	}
 
 	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
+	s.queriedStartT = startTimestamp
+	s.queriedEndT = endTimestamp
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,

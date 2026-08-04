@@ -150,6 +150,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planner:                         planner,
 		nodeMaterializers:               nodeMaterializers,
 		memoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
+		queryPostProcessors:             opts.QueryPostProcessors,
 	}, nil
 }
 
@@ -192,6 +193,7 @@ type Engine struct {
 	planner                         *QueryPlanner
 	nodeMaterializers               map[planning.NodeType]planning.NodeMaterializer
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
+	queryPostProcessors             []QueryPostProcessor
 }
 
 func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {

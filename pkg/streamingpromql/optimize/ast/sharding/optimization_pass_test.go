@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -83,7 +86,7 @@ func TestOptimizationPass(t *testing.T) {
 				maxShardedQueries:   6,
 				splitAndMergeShards: 1,
 			}
-			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
+			pass := NewOptimizationPass(limits, seriesPerShard, NewRequestHintsCardinalityEstimator(), reg, logger)
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
@@ -91,7 +94,7 @@ func TestOptimizationPass(t *testing.T) {
 
 			ctx = querymiddleware.ContextWithRequestHints(ctx, testCase.hints)
 			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
-			output, err := pass.Apply(ctx, afterRewrite, nil)
+			output, err := pass.Apply(ctx, afterRewrite, &planning.QueryParameters{})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
@@ -149,14 +152,14 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 				maxShardedQueries:   6,
 				splitAndMergeShards: 1,
 			}
-			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
+			pass := NewOptimizationPass(limits, seriesPerShard, NewRequestHintsCardinalityEstimator(), reg, logger)
 
 			input, err := promqlext.NewPromQLParser().ParseExpr(testCase.input)
 			require.NoError(t, err)
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
-			output, err := pass.Apply(ctx, input, nil)
+			output, err := pass.Apply(ctx, input, &planning.QueryParameters{TimeRange: types.NewInstantQueryTimeRange(time.Now())})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})

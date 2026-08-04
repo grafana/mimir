@@ -7,6 +7,7 @@ package stats
 
 import (
 	"context"
+	"sync"
 	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
 	"time"
 
@@ -45,6 +46,10 @@ func IsEnabled(ctx context.Context) bool {
 // SafeStats is a concurrent safe wrapper around the Stats struct.
 type SafeStats struct {
 	Stats
+
+	// selectorCardinalitiesMtx guards access to Stats.SeenSelectorCardinalities and Stats.EstimatedSelectorCardinalities, which are slices and
+	// therefore cannot be mutated safely with the atomic operations used for the scalar fields.
+	selectorCardinalitiesMtx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
@@ -315,6 +320,72 @@ func (s *SafeStats) LoadRetries() uint32 {
 	return atomic.LoadUint32(&s.Retries)
 }
 
+// AddSeenSelectorCardinality records the cardinality of a single selector.
+//
+// The caller must not mutate sc, or any slice or string it references, after calling this method.
+// In particular, any strings referenced by sc (including matcher names and values) must not alias
+// a reused request buffer, as they may outlive the request: clone them first (see the note on
+// unsafe memory tricks in the contributing guide).
+func (s *SafeStats) AddSeenSelectorCardinality(sc SelectorCardinality) {
+	if s == nil {
+		return
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	s.SeenSelectorCardinalities = append(s.SeenSelectorCardinalities, sc)
+}
+
+// LoadSeenSelectorCardinalities returns a copy of the recorded selector cardinalities.
+func (s *SafeStats) LoadSeenSelectorCardinalities() []SelectorCardinality {
+	if s == nil {
+		return nil
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	if len(s.SeenSelectorCardinalities) == 0 {
+		return nil
+	}
+
+	return append([]SelectorCardinality(nil), s.SeenSelectorCardinalities...)
+}
+
+// AddEstimatedSelectorCardinality records the estimated cardinality of a single selector.
+//
+// The caller must not mutate sc, or any slice or string it references, after calling this method.
+// In particular, any strings referenced by sc (including matcher names and values) must not alias
+// a reused request buffer, as they may outlive the request: clone them first (see the note on
+// unsafe memory tricks in the contributing guide).
+func (s *SafeStats) AddEstimatedSelectorCardinality(sc SelectorCardinality) {
+	if s == nil {
+		return
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	s.EstimatedSelectorCardinalities = append(s.EstimatedSelectorCardinalities, sc)
+}
+
+// LoadEstimatedSelectorCardinalities returns a copy of the recorded estimated selector cardinalities.
+func (s *SafeStats) LoadEstimatedSelectorCardinalities() []SelectorCardinality {
+	if s == nil {
+		return nil
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	if len(s.EstimatedSelectorCardinalities) == 0 {
+		return nil
+	}
+
+	return append([]SelectorCardinality(nil), s.EstimatedSelectorCardinalities...)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -337,6 +408,14 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
 	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 	s.AddRetries(other.LoadRetries())
+
+	for _, sc := range other.LoadSeenSelectorCardinalities() {
+		s.AddSeenSelectorCardinality(sc)
+	}
+
+	for _, sc := range other.LoadEstimatedSelectorCardinalities() {
+		s.AddEstimatedSelectorCardinality(sc)
+	}
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment
