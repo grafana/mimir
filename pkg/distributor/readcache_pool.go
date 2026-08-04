@@ -39,6 +39,15 @@ type ReadcacheConfig struct {
 	// populated by each pod's BasicLifecycler.
 	Addresses string `yaml:"addresses" category:"experimental"`
 
+	// IgnoreReplicaMapForQueries keeps query routing on the logical
+	// owner ID recorded in the assignment log (identity expansion)
+	// even when the rebalancer is publishing a replica map. Readcaches
+	// still expand the map for ownership / Kafka consume. Used during
+	// RF=1→RF=2 dual-fleet migration: zone mirrors warm while queriers
+	// keep dialing the legacy non-zonal pods. Clear the flag to cut
+	// queries over to the zone-aware expansion.
+	IgnoreReplicaMapForQueries bool `yaml:"ignore_replica_map_for_queries" category:"experimental"`
+
 	// GRPCClientConfig configures the gRPC client used to dial
 	// readcache instances. Inherits sensible defaults from the
 	// ingester client config.
@@ -48,6 +57,7 @@ type ReadcacheConfig struct {
 // RegisterFlagsWithPrefix registers the readcache pool's flags.
 func (cfg *ReadcacheConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Optional comma-separated list of instance_id=host:port pairs identifying readcache pods. When set, each listed instance overrides ring-based discovery; when empty (the default), the distributor resolves addresses from the readcache instance ring.")
+	f.BoolVar(&cfg.IgnoreReplicaMapForQueries, prefix+"ignore-replica-map-for-queries", false, "When true, query routing dials the logical owner ID from the assignment log and ignores the streamed replica map. Readcaches still use the map for ownership. Used to warm RF=2 zone mirrors without cutting queriers over yet.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
 

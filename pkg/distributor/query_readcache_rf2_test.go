@@ -167,6 +167,47 @@ func TestGetReadcacheReplicationSetsForQuery_RF2(t *testing.T) {
 			assert.Contains(t, partitionByInstance, set.Instances[0].Id)
 		}
 	})
+
+	t.Run("ignore-replica-map-for-queries keeps dialing the logical owner", func(t *testing.T) {
+		d := readcacheTestDistributor(t, now, []int32{0}, func(int32) (string, bool) { return "readcache-0", true })
+		d.cfg.Readcache.IgnoreReplicaMapForQueries = true
+		// Dual-fleet warm: map lists legacy + both zones, but queries
+		// must stay on the logical (legacy) ID until cutover.
+		m := readcacheassignment.ReplicaMap{"readcache-0": {
+			{InstanceID: "readcache-0", Zone: ""},
+			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
+			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
+		}}
+		d.setReadcacheAssignment(d.GetReadcacheLog(), m)
+
+		sets, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, anyMatcher)
+		require.NoError(t, err)
+		require.Len(t, sets, 1)
+		require.Len(t, sets[0].Instances, 1)
+		assert.Equal(t, "readcache-0", sets[0].Instances[0].Addr)
+		assert.Empty(t, sets[0].Instances[0].Zone)
+		assert.False(t, sets[0].ZoneAwarenessEnabled)
+	})
+
+	t.Run("cutover drops non-zonal replicas from the query set", func(t *testing.T) {
+		d := readcacheTestDistributor(t, now, []int32{0}, func(int32) (string, bool) { return "readcache-0", true })
+		// IgnoreReplicaMapForQueries stays false (default): once the
+		// map is used for queries, prefer zoned mirrors so the legacy
+		// STS can keep consuming without serving.
+		m := readcacheassignment.ReplicaMap{"readcache-0": {
+			{InstanceID: "readcache-0", Zone: ""},
+			{InstanceID: "readcache-zone-a-0", Zone: "zone-a"},
+			{InstanceID: "readcache-zone-b-0", Zone: "zone-b"},
+		}}
+		d.setReadcacheAssignment(d.GetReadcacheLog(), m)
+
+		sets, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, anyMatcher)
+		require.NoError(t, err)
+		require.Len(t, sets, 1)
+		assert.Equal(t, []string{"readcache-zone-a-0", "readcache-zone-b-0"}, addrsOf(sets[0]))
+		assert.True(t, sets[0].ZoneAwarenessEnabled)
+		assert.Equal(t, 1, sets[0].MaxUnavailableZones)
+	})
 }
 
 // TestGetReadcacheReplicationSetsForQuery_RF2MoveWindow proves the two
