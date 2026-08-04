@@ -57,7 +57,12 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	if r.readcacheStore == nil {
 		return ResetReadcacheResult{}, errors.New("readcache assignment store is not initialized")
 	}
-	instances := r.activeReadcacheInstances()
+	// Under DesiredReplicas > 0 the reset spreads partitions over the
+	// logical slots (what the log records), not concrete pods. The
+	// stabilized-membership variant is deliberately avoided here: an
+	// admin reset must not advance the rebalance loop's membership
+	// hysteresis counters.
+	instances := r.placementReadcacheInstancesFrom(r.activeReadcacheInstances())
 	if len(instances) == 0 {
 		return ResetReadcacheResult{}, errors.New("no active readcache instances available (check the ring and -nautilus-rebalancer.readcache-slicer.instances)")
 	}
@@ -85,6 +90,10 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 
 	next := &readcacheassignment.Assignment{Entries: entries}
 	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
+	// Publish the logical->concrete expansion alongside the new leases
+	// so subscribers can resolve the logical IDs the reset just wrote
+	// without waiting for the next rebalance round.
+	r.refreshReplicaMap()
 
 	// Reflect the reset in the slicer's cooldown bookkeeping so the
 	// next slicer round (if enabled) does not immediately try to

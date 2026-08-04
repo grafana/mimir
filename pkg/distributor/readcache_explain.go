@@ -20,10 +20,18 @@ import (
 // (partition, owner) pair returned by the readcache assignment log.
 type ReadcacheQueryStreamCall struct {
 	PartitionID int32
-	// Owner is the readcache instance address that would be dialed.
+	// Owner is the concrete readcache instance address that would be
+	// dialed. Under RF≥2 it is one zone replica of LogicalOwner.
 	Owner string
-	// InstanceID is the synthetic "owner/p<partition>" routing key used
-	// internally to keep each (owner, partition) replication set unique.
+	// LogicalOwner is the instance ID recorded in the readcache
+	// assignment log. It equals Owner under RF=1.
+	LogicalOwner string
+	// Zone is the availability zone of Owner, empty when the replica
+	// map carries no zone label for it.
+	Zone string
+	// InstanceID is the synthetic "concrete/p<partition>" routing key
+	// used internally to keep each (concrete owner, partition)
+	// replication set instance unique.
 	InstanceID string
 	// LeaseFrom/LeaseTo bound the readcache ownership lease(s) that put
 	// this owner into the fan-out for the query window. When an owner
@@ -130,6 +138,7 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 
+	replicaMap := d.GetReadcacheReplicaMap()
 	plan.Partitions = make([]ReadcachePartitionPlan, 0, len(partitionIDs))
 	for _, partID := range partitionIDs {
 		// Owners drives the actual fan-out (one QueryStream per owner),
@@ -161,15 +170,22 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 
 		pp := ReadcachePartitionPlan{PartitionID: partID, Calls: make([]ReadcacheQueryStreamCall, 0, len(owners))}
 		for _, owner := range owners {
-			call := ReadcacheQueryStreamCall{
-				PartitionID: partID,
-				Owner:       owner,
-				InstanceID:  fmt.Sprintf("%s/p%d", owner, partID),
+			// Same expansion the query path applies, so the plan
+			// enumerates the concrete pods that would actually be
+			// dialed rather than the logical slots in the log.
+			for _, inst := range readcacheReplicationSetForOwner(replicaMap, partID, owner).Instances {
+				call := ReadcacheQueryStreamCall{
+					PartitionID:  partID,
+					Owner:        inst.Addr,
+					LogicalOwner: owner,
+					Zone:         inst.Zone,
+					InstanceID:   inst.Id,
+				}
+				if span, ok := leaseSpanByOwner[owner]; ok {
+					call.LeaseFrom, call.LeaseTo = span[0], span[1]
+				}
+				pp.Calls = append(pp.Calls, call)
 			}
-			if span, ok := leaseSpanByOwner[owner]; ok {
-				call.LeaseFrom, call.LeaseTo = span[0], span[1]
-			}
-			pp.Calls = append(pp.Calls, call)
 		}
 		plan.TotalCalls += len(pp.Calls)
 		plan.Partitions = append(plan.Partitions, pp)

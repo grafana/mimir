@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	syncatomic "sync/atomic" //lint:ignore faillint generic atomic.Pointer isn't available in go.uber.org/atomic.
 	"time"
 
 	"github.com/go-kit/log"
@@ -70,6 +71,15 @@ type Readcache struct {
 	// WatchReadcacheAssignments subscriber. Nil when
 	// RebalancerAddress is empty.
 	rebalancerConn *grpc.ClientConn
+
+	// replicaMap is the logical->concrete expansion published by the
+	// rebalancer on the assignment stream. Under RF≥2 a lease names a
+	// logical slot (e.g. "readcache-5") and every zone pod in that
+	// slot's replica set owns the partition, so applyAssignment must
+	// match leases through the map rather than by exact instance ID.
+	// Nil or empty means identity (RF=1): only leases naming this
+	// instance are ours.
+	replicaMap syncatomic.Pointer[readcacheassignment.ReplicaMap]
 
 	// spotlights is the readcache's local cache of the rebalancer's
 	// spotlighted hash ranges. Populated by a background poller
@@ -1164,6 +1174,12 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 		if resp.PruneBeforeUnixMs > 0 {
 			local.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
 		}
+		// The replica map is sent in full on every message, so it is
+		// replaced wholesale — including the transition back to
+		// identity when the rebalancer clears it. Store it before
+		// applying so the reconciliation below sees the expansion
+		// matching this snapshot.
+		r.setReplicaMap(rebalancer.ReplicaMapFromProto(resp.ReplicaSets))
 		if err := r.applyAssignment(ctx, local.Entries(), time.Now()); err != nil {
 			level.Warn(r.logger).Log("msg", "applying readcache assignment", "err", err)
 			// Keep consuming: a single failed add/remove must not
@@ -1171,6 +1187,22 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 			// will reconcile.
 		}
 	}
+}
+
+// setReplicaMap installs the logical->concrete expansion published by
+// the rebalancer. Called from the assignment stream; also used by
+// tests that drive applyAssignment directly.
+func (r *Readcache) setReplicaMap(m readcacheassignment.ReplicaMap) {
+	r.replicaMap.Store(&m)
+}
+
+// getReplicaMap returns the current logical->concrete expansion, or
+// nil when none has been received (identity / RF=1).
+func (r *Readcache) getReplicaMap() readcacheassignment.ReplicaMap {
+	if m := r.replicaMap.Load(); m != nil {
+		return *m
+	}
+	return nil
 }
 
 // applyAssignment reconciles the local owned-partition set with the
@@ -1193,10 +1225,16 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 	firstReconcile := !r.startupReconcileDone.Load()
 	defer r.startupReconcileDone.Store(true)
 
+	// A lease names a logical slot under RF≥2; this pod owns the
+	// partition when it is one of that slot's concrete replicas. With
+	// no replica map OwnsLogical reduces to an exact instance-ID
+	// match, which is the RF=1 behaviour.
+	replicaMap := r.getReplicaMap()
+
 	wanted := map[int32]struct{}{}
 	var snapshotForInstance int
 	for _, e := range entries {
-		if e.InstanceID != r.cfg.InstanceID {
+		if !replicaMap.OwnsLogical(r.cfg.InstanceID, e.InstanceID) {
 			continue
 		}
 		snapshotForInstance++

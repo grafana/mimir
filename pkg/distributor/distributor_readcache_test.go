@@ -120,7 +120,7 @@ func TestPreviousReadcacheOwnerForPartition(t *testing.T) {
 				To:          now.Add(5 * time.Minute),
 			},
 		}
-		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries(entries))
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(entries), nil)
 
 		prev, ok := d.previousReadcacheOwnerForPartition(1)
 		assert.True(t, ok)
@@ -132,7 +132,7 @@ func TestPreviousReadcacheOwnerForPartition(t *testing.T) {
 			{PartitionID: 1, InstanceID: "rc-new", From: now.Add(-1 * time.Minute), To: now.Add(5 * time.Minute)},
 			{PartitionID: 2, InstanceID: "rc-other", From: now.Add(-1 * time.Minute), To: now.Add(5 * time.Minute)},
 		}
-		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries(entries))
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(entries), nil)
 
 		_, ok := d.previousReadcacheOwnerForPartition(1)
 		assert.False(t, ok, "should not return the current owner")

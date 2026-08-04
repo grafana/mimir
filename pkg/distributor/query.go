@@ -360,14 +360,21 @@ func partitionsForMetricNames(log *assignment.Log, userID string, w0, w1 time.Ti
 // at the Kafka live edge; the previous owner keeps its frozen slice).
 // The per-instance merge dedups the safety-window overlap band.
 //
-// Each (owner, partition) pair becomes its own single-instance
-// ring.ReplicationSet. InstanceDesc.Id is the synthetic
-// "owner/p<partition>" key (unique per pair, since a readcache owns
+// Each (logical owner, partition) pair becomes its own
+// ring.ReplicationSet holding one InstanceDesc per concrete zone
+// replica of that logical owner (see
+// readcacheReplicationSetForOwner). InstanceDesc.Id is the synthetic
+// "concrete/p<partition>" key (unique per pair, since a readcache owns
 // many partitions and a partition may have several owners across the
 // window); InstanceDesc.Addr carries the real readcache instance to
-// dial, so queryClientForInstance dials that specific owner rather
+// dial, so queryClientForInstance dials that specific pod rather
 // than re-resolving to a single current owner. partitionByInstance
 // maps the synthetic Id to the partition for the QueryAttributionHint.
+//
+// Owners resolved from the log are logical slot IDs under RF≥2 and
+// concrete instance IDs under RF=1; the replica map streamed
+// alongside the log expands the former and is the identity for the
+// latter.
 //
 // Any inability to resolve (no live assignment log, no live readcache
 // log, an uncovered partition, or a partition with no owner during the
@@ -402,6 +409,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
 	}
 
+	replicaMap := d.GetReadcacheReplicaMap()
 	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
 	partitionByInstance := make(map[string]int32, len(partitionIDs))
 	distinctOwners := make(map[string]struct{})
@@ -409,22 +417,22 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		// Every readcache that owned partID during the window, not
 		// just the owner at `now`: a query spanning a partition move
 		// must reach both the previous owner (frozen slice) and the
-		// current owner (live slice).
+		// current owner (live slice). Each owner keeps its own
+		// replication set so a move window still fans out to both.
 		owners := rcLog.OwnersDuring(partID, w0, w1)
 		if len(owners) == 0 {
 			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d had no readcache owner during the query window", partID))
 		}
 		for _, owner := range owners {
-			// Synthetic, (owner, partition)-unique instance ID: a
-			// readcache owns multiple partitions and a partition may
-			// have several owners across the window, so the key must
-			// combine both. Addr carries the real instance to dial.
-			instanceID := fmt.Sprintf("%s/p%d", owner, partID)
-			sets = append(sets, ring.ReplicationSet{
-				Instances: []ring.InstanceDesc{{Id: instanceID, Addr: owner}},
-			})
-			partitionByInstance[instanceID] = partID
-			distinctOwners[owner] = struct{}{}
+			set := readcacheReplicationSetForOwner(replicaMap, partID, owner)
+			if len(set.Instances) == 0 {
+				return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("logical readcache owner %q of partition %d has no concrete replica", owner, partID))
+			}
+			sets = append(sets, set)
+			for _, inst := range set.Instances {
+				partitionByInstance[inst.Id] = partID
+				distinctOwners[inst.Addr] = struct{}{}
+			}
 		}
 	}
 
@@ -667,20 +675,26 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
-			// If readcache says it's still warming, try the
-			// partition's previous lease owner before giving up.
-			// For experimental tenants there is no ingester
-			// fallback (see plan section 2C.4); a failure here
-			// surfaces as 503 to the caller, matching the
-			// failure semantics of a full ingester outage. The
-			// previous owner is also a readcache pod, so it
-			// receives the same partition-hinted request.
+			// If readcache says it's still warming:
+			//   - RF≥2: the replication set already contains the peer
+			//     zone mirror; return the error so DoUntilQuorum can
+			//     try it. Do NOT jump to the previous lease owner —
+			//     that skips the warm peer of the current slot.
+			//   - RF=1 (single concrete replica for this logical
+			//     owner): fall back to the previous lease owner, which
+			//     still holds the frozen pre-move head.
 			if readcache.IsStillWarming(err) && hasPart {
-				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
-					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
-					hits.record(prevID)
-					queryStats.AddReadcacheQueryStreamCalls(1)
-					stream, err = prev.QueryStream(ctx, streamReq)
+				logical := ing.Addr
+				if id, ok := d.GetReadcacheReplicaMap().LogicalForConcrete(ing.Addr); ok {
+					logical = id
+				}
+				if len(d.GetReadcacheReplicaMap().Expand(logical)) <= 1 {
+					if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+						level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+						hits.record(prevID)
+						queryStats.AddReadcacheQueryStreamCalls(1)
+						stream, err = prev.QueryStream(ctx, streamReq)
+					}
 				}
 			}
 			if err != nil {

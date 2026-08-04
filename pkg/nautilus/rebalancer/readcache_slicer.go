@@ -78,6 +78,20 @@ type ReadcacheSlicerConfig struct {
 	// interval may still be appropriate to absorb fleet and traffic
 	// churn rather than merely waiting for the EWMA to settle.
 	RoundInterval time.Duration `yaml:"round_interval"`
+
+	// DesiredReplicas is the number of logical readcache slots
+	// (0..N-1) the slicer places onto. When > 0, placement is sticky
+	// to these logical IDs and does not shrink when a concrete zone
+	// mirror leaves the ring (RF=2). When 0 (default), placement
+	// follows ring/static membership as before (RF=1 / legacy).
+	DesiredReplicas int `yaml:"desired_replicas"`
+
+	// LogicalIDPrefix is the prefix used to build logical slot IDs
+	// when DesiredReplicas > 0, e.g. prefix "readcache" →
+	// "readcache-0" .. "readcache-(N-1)". Must match the zone-stripped
+	// form of concrete StatefulSet names (readcache-zone-a-0 →
+	// readcache-0) so existing assignment-log rows stay valid.
+	LogicalIDPrefix string `yaml:"logical_id_prefix"`
 }
 
 // RegisterFlagsWithPrefix registers the slicer's flags on f under
@@ -91,6 +105,8 @@ func (cfg *ReadcacheSlicerConfig) RegisterFlagsWithPrefix(prefix string, f *flag
 	f.Float64Var(&cfg.LoadHysteresis, prefix+"load-hysteresis", 0.05, "Fractional no-op band around target readcache load. The slicer requires a source above target*(1+band) and a source/destination gap wider than twice the band. Must be in [0, 1); 0 disables.")
 	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 5*time.Minute, "Minimum time between consecutive moves of the same partition.")
 	f.DurationVar(&cfg.RoundInterval, prefix+"round-interval", 0, "Minimum wall-clock interval between consecutive readcache slicer rounds. When >0, the tier-1 (hash-range) slicer still runs every rebalance tick, but the tier-2 (partition->readcache) slicer only fires after this interval has elapsed since the last successful fire or after a readcache membership change is observed for two consecutive rounds. Decouples tier-2 churn from tier-1 cadence so destination readcaches can fully build their per-partition EWMAs before tier-1 next consults them. 0 (the default) preserves the legacy behavior of running both tiers on every tick.")
+	f.IntVar(&cfg.DesiredReplicas, prefix+"desired-replicas", 0, "Number of logical readcache slots for sticky RF≥2 placement. When >0, the slicer assigns partitions onto logical IDs <logical-id-prefix>-0 .. -N-1 and does not reshuffle when a single zone mirror is absent from the ring. When 0 (default), placement follows ring/static membership (legacy RF=1).")
+	f.StringVar(&cfg.LogicalIDPrefix, prefix+"logical-id-prefix", "readcache", "Prefix for logical slot IDs when desired-replicas > 0. Concrete pods named <prefix>-zone-<z>-<ordinal> map to logical <prefix>-<ordinal>.")
 }
 
 // readcachePlanInput is the input the rebalancer collects each round

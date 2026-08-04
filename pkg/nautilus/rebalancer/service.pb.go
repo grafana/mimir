@@ -302,6 +302,11 @@ type WatchReadcacheAssignmentsResponse struct {
 	Entries           []ReadcacheLogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
 	Reset_            bool                `protobuf:"varint,2,opt,name=reset,proto3" json:"reset,omitempty"`
 	PruneBeforeUnixMs int64               `protobuf:"varint,3,opt,name=prune_before_unix_ms,json=pruneBeforeUnixMs,proto3" json:"prune_before_unix_ms,omitempty"`
+	// replica_sets maps each logical instance_id used in entries to its
+	// concrete zone replicas. Empty means identity (RF=1 / legacy): the
+	// lease instance_id is also the concrete dial target. Always sent
+	// in full on every message (the map is small: O(slots × zones)).
+	ReplicaSets []ReadcacheReplicaSet `protobuf:"bytes,4,rep,name=replica_sets,json=replicaSets,proto3" json:"replica_sets"`
 }
 
 func (m *WatchReadcacheAssignmentsResponse) Reset()      { *m = WatchReadcacheAssignmentsResponse{} }
@@ -357,6 +362,118 @@ func (m *WatchReadcacheAssignmentsResponse) GetPruneBeforeUnixMs() int64 {
 	return 0
 }
 
+func (m *WatchReadcacheAssignmentsResponse) GetReplicaSets() []ReadcacheReplicaSet {
+	if m != nil {
+		return m.ReplicaSets
+	}
+	return nil
+}
+
+// ReadcacheReplicaSet describes the concrete pods that serve one
+// logical slot. logical_id matches LogEntry.instance_id under RF≥2.
+type ReadcacheReplicaSet struct {
+	LogicalId string             `protobuf:"bytes,1,opt,name=logical_id,json=logicalId,proto3" json:"logical_id,omitempty"`
+	Replicas  []ReadcacheReplica `protobuf:"bytes,2,rep,name=replicas,proto3" json:"replicas"`
+}
+
+func (m *ReadcacheReplicaSet) Reset()      { *m = ReadcacheReplicaSet{} }
+func (*ReadcacheReplicaSet) ProtoMessage() {}
+func (*ReadcacheReplicaSet) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{5}
+}
+func (m *ReadcacheReplicaSet) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ReadcacheReplicaSet) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ReadcacheReplicaSet.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ReadcacheReplicaSet) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ReadcacheReplicaSet.Merge(m, src)
+}
+func (m *ReadcacheReplicaSet) XXX_Size() int {
+	return m.Size()
+}
+func (m *ReadcacheReplicaSet) XXX_DiscardUnknown() {
+	xxx_messageInfo_ReadcacheReplicaSet.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ReadcacheReplicaSet proto.InternalMessageInfo
+
+func (m *ReadcacheReplicaSet) GetLogicalId() string {
+	if m != nil {
+		return m.LogicalId
+	}
+	return ""
+}
+
+func (m *ReadcacheReplicaSet) GetReplicas() []ReadcacheReplica {
+	if m != nil {
+		return m.Replicas
+	}
+	return nil
+}
+
+// ReadcacheReplica is one concrete readcache pod in a replica set.
+type ReadcacheReplica struct {
+	InstanceId string `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Zone       string `protobuf:"bytes,2,opt,name=zone,proto3" json:"zone,omitempty"`
+}
+
+func (m *ReadcacheReplica) Reset()      { *m = ReadcacheReplica{} }
+func (*ReadcacheReplica) ProtoMessage() {}
+func (*ReadcacheReplica) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a0b84a42fa06f626, []int{6}
+}
+func (m *ReadcacheReplica) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ReadcacheReplica) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ReadcacheReplica.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ReadcacheReplica) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ReadcacheReplica.Merge(m, src)
+}
+func (m *ReadcacheReplica) XXX_Size() int {
+	return m.Size()
+}
+func (m *ReadcacheReplica) XXX_DiscardUnknown() {
+	xxx_messageInfo_ReadcacheReplica.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ReadcacheReplica proto.InternalMessageInfo
+
+func (m *ReadcacheReplica) GetInstanceId() string {
+	if m != nil {
+		return m.InstanceId
+	}
+	return ""
+}
+
+func (m *ReadcacheReplica) GetZone() string {
+	if m != nil {
+		return m.Zone
+	}
+	return ""
+}
+
 // ReadcacheLogEntry is the wire representation of a single
 // (partition -> readcache instance) ownership lease valid during
 // [from_unix_ms, to_unix_ms). The schema mirrors LogEntry except the
@@ -378,7 +495,7 @@ type ReadcacheLogEntry struct {
 func (m *ReadcacheLogEntry) Reset()      { *m = ReadcacheLogEntry{} }
 func (*ReadcacheLogEntry) ProtoMessage() {}
 func (*ReadcacheLogEntry) Descriptor() ([]byte, []int) {
-	return fileDescriptor_a0b84a42fa06f626, []int{5}
+	return fileDescriptor_a0b84a42fa06f626, []int{7}
 }
 func (m *ReadcacheLogEntry) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -441,7 +558,7 @@ type GetSpotlightedRangesRequest struct {
 func (m *GetSpotlightedRangesRequest) Reset()      { *m = GetSpotlightedRangesRequest{} }
 func (*GetSpotlightedRangesRequest) ProtoMessage() {}
 func (*GetSpotlightedRangesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_a0b84a42fa06f626, []int{6}
+	return fileDescriptor_a0b84a42fa06f626, []int{8}
 }
 func (m *GetSpotlightedRangesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -481,7 +598,7 @@ type GetSpotlightedRangesResponse struct {
 func (m *GetSpotlightedRangesResponse) Reset()      { *m = GetSpotlightedRangesResponse{} }
 func (*GetSpotlightedRangesResponse) ProtoMessage() {}
 func (*GetSpotlightedRangesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_a0b84a42fa06f626, []int{7}
+	return fileDescriptor_a0b84a42fa06f626, []int{9}
 }
 func (m *GetSpotlightedRangesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -546,7 +663,7 @@ type SpotlightedRange struct {
 func (m *SpotlightedRange) Reset()      { *m = SpotlightedRange{} }
 func (*SpotlightedRange) ProtoMessage() {}
 func (*SpotlightedRange) Descriptor() ([]byte, []int) {
-	return fileDescriptor_a0b84a42fa06f626, []int{8}
+	return fileDescriptor_a0b84a42fa06f626, []int{10}
 }
 func (m *SpotlightedRange) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -637,6 +754,8 @@ func init() {
 	proto.RegisterType((*LogEntry)(nil), "nautilus.rebalancer.LogEntry")
 	proto.RegisterType((*WatchReadcacheAssignmentsRequest)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsRequest")
 	proto.RegisterType((*WatchReadcacheAssignmentsResponse)(nil), "nautilus.rebalancer.WatchReadcacheAssignmentsResponse")
+	proto.RegisterType((*ReadcacheReplicaSet)(nil), "nautilus.rebalancer.ReadcacheReplicaSet")
+	proto.RegisterType((*ReadcacheReplica)(nil), "nautilus.rebalancer.ReadcacheReplica")
 	proto.RegisterType((*ReadcacheLogEntry)(nil), "nautilus.rebalancer.ReadcacheLogEntry")
 	proto.RegisterType((*GetSpotlightedRangesRequest)(nil), "nautilus.rebalancer.GetSpotlightedRangesRequest")
 	proto.RegisterType((*GetSpotlightedRangesResponse)(nil), "nautilus.rebalancer.GetSpotlightedRangesResponse")
@@ -646,50 +765,56 @@ func init() {
 func init() { proto.RegisterFile("service.proto", fileDescriptor_a0b84a42fa06f626) }
 
 var fileDescriptor_a0b84a42fa06f626 = []byte{
-	// 687 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0xcf, 0x4f, 0x13, 0x4d,
-	0x18, 0xde, 0x69, 0xa1, 0xf4, 0x7b, 0xa1, 0x14, 0xe6, 0x6b, 0xbe, 0xaf, 0x54, 0x58, 0x4a, 0x13,
-	0x91, 0x88, 0x16, 0xc4, 0xe8, 0xcd, 0x44, 0xea, 0xaf, 0x10, 0x7f, 0xc4, 0xac, 0x31, 0x26, 0x5e,
-	0x9a, 0xa1, 0x3b, 0xb4, 0x93, 0x94, 0x99, 0x65, 0x66, 0x6a, 0x30, 0x5e, 0xfc, 0x03, 0x34, 0x31,
-	0xe1, 0xe0, 0xd5, 0xa3, 0x67, 0xff, 0x0a, 0x8e, 0x1c, 0x39, 0x19, 0x59, 0x2e, 0x1e, 0xf9, 0x13,
-	0xcc, 0xce, 0x6e, 0x57, 0xd8, 0x2e, 0x28, 0x31, 0xde, 0x3a, 0xef, 0xf3, 0xbc, 0xef, 0x3b, 0xef,
-	0xf3, 0xbc, 0x3b, 0x85, 0x82, 0xa2, 0xf2, 0x15, 0x6b, 0xd1, 0xba, 0x27, 0x85, 0x16, 0xf8, 0x5f,
-	0x4e, 0x7a, 0x9a, 0x75, 0x7b, 0xaa, 0x2e, 0xe9, 0x3a, 0xe9, 0x12, 0xde, 0xa2, 0xb2, 0x52, 0x6a,
-	0x8b, 0xb6, 0x30, 0xf8, 0x52, 0xf0, 0x2b, 0xa4, 0xd6, 0x1a, 0xf0, 0xff, 0x0b, 0xa2, 0x5b, 0x9d,
-	0x55, 0xa5, 0x58, 0x9b, 0x6f, 0x52, 0xae, 0x95, 0x43, 0xb7, 0x7a, 0x54, 0x69, 0x7c, 0x09, 0x8a,
-	0xaa, 0xe7, 0x79, 0x42, 0x6a, 0xd5, 0x74, 0x69, 0x57, 0x13, 0x55, 0x46, 0x55, 0xb4, 0x90, 0x77,
-	0xc6, 0xfb, 0xe1, 0xbb, 0x26, 0x5a, 0xfb, 0x84, 0xa0, 0x3c, 0x58, 0x44, 0x79, 0x82, 0x2b, 0x8a,
-	0x6f, 0xc1, 0x08, 0xe5, 0x5a, 0x32, 0x1a, 0x64, 0x67, 0x17, 0x46, 0x57, 0x66, 0xea, 0x29, 0xb7,
-	0xab, 0x3f, 0x12, 0xed, 0x7b, 0x5c, 0xcb, 0xd7, 0x8d, 0xa1, 0xdd, 0xaf, 0xb3, 0x96, 0xd3, 0xcf,
-	0xc1, 0x25, 0x18, 0x96, 0x54, 0x51, 0x5d, 0xce, 0x98, 0xd6, 0xe1, 0x01, 0x2f, 0x41, 0xc9, 0x93,
-	0x3d, 0x4e, 0x9b, 0xeb, 0x74, 0x43, 0x48, 0xda, 0xec, 0x71, 0xb6, 0xdd, 0xdc, 0x54, 0xe5, 0x6c,
-	0x15, 0x2d, 0x64, 0x9d, 0x49, 0x83, 0x35, 0x0c, 0xf4, 0x9c, 0xb3, 0xed, 0xc7, 0xaa, 0xf6, 0x1e,
-	0x41, 0xbe, 0xdf, 0x02, 0x8f, 0x43, 0xa6, 0x2b, 0xcc, 0x2c, 0x05, 0x27, 0xd3, 0x15, 0xc1, 0xb9,
-	0xc3, 0x4c, 0x83, 0x82, 0x93, 0xe9, 0x30, 0x3c, 0x07, 0x63, 0x1e, 0x91, 0x9a, 0x69, 0x26, 0x78,
-	0x93, 0xb9, 0xa6, 0xea, 0xb0, 0x33, 0x1a, 0xc7, 0xd6, 0x5c, 0x5c, 0x85, 0xb1, 0x0d, 0x29, 0x36,
-	0xe3, 0xc6, 0x43, 0xa6, 0x31, 0x04, 0xb1, 0xb0, 0x23, 0x9e, 0x06, 0xd0, 0x22, 0xc6, 0x87, 0x0d,
-	0x9e, 0xd7, 0x22, 0xba, 0xcf, 0x43, 0xa8, 0x1a, 0xc5, 0x1c, 0x4a, 0xdc, 0x16, 0x69, 0x75, 0xe8,
-	0x9f, 0xe8, 0xff, 0x05, 0xc1, 0xdc, 0x19, 0xd5, 0x22, 0x23, 0xee, 0x27, 0x8d, 0x98, 0x4f, 0x35,
-	0x22, 0xae, 0xf1, 0x97, 0x1d, 0xf9, 0x88, 0x60, 0x72, 0xa0, 0xd7, 0x80, 0xf4, 0x68, 0x50, 0xfa,
-	0x59, 0x18, 0x65, 0x5c, 0xe9, 0xe0, 0xb6, 0x01, 0x23, 0xb8, 0xc5, 0x3f, 0x0e, 0xf4, 0x43, 0x29,
-	0xde, 0x64, 0x7f, 0xe1, 0xcd, 0x50, 0xc2, 0x9b, 0x19, 0xb8, 0xf0, 0x80, 0xea, 0x67, 0x9e, 0xd0,
-	0x5d, 0xd6, 0xee, 0x68, 0xea, 0x3a, 0x84, 0xb7, 0x69, 0xdf, 0x96, 0x5a, 0x0b, 0xa6, 0xd3, 0xe1,
-	0x48, 0xe7, 0x3b, 0x90, 0x93, 0x26, 0x12, 0xc9, 0x7c, 0x31, 0x55, 0xe6, 0x64, 0x7e, 0xa4, 0x72,
-	0x94, 0x5a, 0xdb, 0xc9, 0xc0, 0x44, 0x92, 0x82, 0xa7, 0x20, 0xaf, 0x25, 0x09, 0xc7, 0x46, 0x66,
-	0xec, 0x11, 0x73, 0x5e, 0x73, 0xa3, 0x95, 0xce, 0x24, 0x56, 0x3a, 0x1b, 0xaf, 0xf4, 0x22, 0x60,
-	0xa5, 0x89, 0xd4, 0xd4, 0x6d, 0x12, 0x9d, 0x98, 0xbc, 0x18, 0x21, 0xab, 0x3a, 0x92, 0x67, 0x11,
-	0x30, 0xdd, 0xf6, 0x98, 0xa4, 0xea, 0x38, 0x39, 0x5c, 0xe1, 0x62, 0x84, 0xc4, 0xe4, 0xcb, 0x30,
-	0x69, 0xd4, 0x3e, 0x61, 0x5b, 0xce, 0xd8, 0x56, 0x0c, 0x80, 0xa7, 0xc7, 0xac, 0x9b, 0x87, 0xa2,
-	0x16, 0x27, 0x99, 0x23, 0x86, 0x59, 0xd0, 0xe2, 0x38, 0xef, 0x3f, 0xc8, 0x49, 0x4a, 0x94, 0xe0,
-	0xe5, 0xbc, 0x19, 0x33, 0x3a, 0xad, 0xec, 0x64, 0x01, 0x3f, 0x89, 0xc4, 0x74, 0x62, 0x2d, 0xf1,
-	0x16, 0x4c, 0x24, 0x9f, 0x1f, 0x7c, 0x25, 0x55, 0xf5, 0x53, 0x9e, 0xba, 0xca, 0xd5, 0xdf, 0x64,
-	0x87, 0x16, 0x2f, 0x23, 0xfc, 0x0e, 0xc1, 0xd4, 0xa9, 0x9f, 0x1c, 0xbe, 0x71, 0x7a, 0xb9, 0x33,
-	0x3e, 0xf8, 0xca, 0xcd, 0xf3, 0xa6, 0xc5, 0xd7, 0x79, 0x03, 0xa5, 0xb4, 0x9d, 0xc4, 0xcb, 0xa9,
-	0x15, 0xcf, 0xd8, 0xee, 0xca, 0xb5, 0x73, 0x64, 0x84, 0xed, 0x1b, 0xb7, 0xf7, 0x0e, 0x6c, 0x6b,
-	0xff, 0xc0, 0xb6, 0x8e, 0x0e, 0x6c, 0xf4, 0xd6, 0xb7, 0xd1, 0x67, 0xdf, 0x46, 0xbb, 0xbe, 0x8d,
-	0xf6, 0x7c, 0x1b, 0x7d, 0xf3, 0x6d, 0xf4, 0xdd, 0xb7, 0xad, 0x23, 0xdf, 0x46, 0x1f, 0x0e, 0x6d,
-	0x6b, 0xef, 0xd0, 0xb6, 0xf6, 0x0f, 0x6d, 0xeb, 0x25, 0xfc, 0x2c, 0xbf, 0x9e, 0x33, 0xff, 0x45,
-	0xd7, 0x7f, 0x04, 0x00, 0x00, 0xff, 0xff, 0x46, 0xc5, 0xc6, 0x2f, 0xc7, 0x06, 0x00, 0x00,
+	// 778 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0x4d, 0x4f, 0xe3, 0x46,
+	0x18, 0xce, 0x38, 0x21, 0x84, 0x37, 0x84, 0xc0, 0x10, 0xb5, 0x21, 0x05, 0x13, 0x2c, 0x95, 0x46,
+	0xa5, 0x0d, 0x94, 0xaa, 0xbd, 0x55, 0x2a, 0xe9, 0x07, 0x8a, 0xfa, 0xa1, 0xd6, 0xa8, 0xaa, 0xd4,
+	0x4b, 0x64, 0xec, 0x21, 0x19, 0xc9, 0x78, 0xcc, 0xcc, 0xa4, 0xa2, 0xad, 0x2a, 0xf5, 0xd2, 0x5b,
+	0x2b, 0x55, 0xe2, 0xd0, 0xeb, 0x1e, 0xf7, 0xa7, 0x70, 0xe4, 0xc8, 0x69, 0xb5, 0x84, 0xcb, 0x1e,
+	0xf9, 0x09, 0x2b, 0x4f, 0x26, 0x26, 0x38, 0x26, 0x0b, 0x5a, 0xed, 0xcd, 0xf3, 0x7e, 0x3d, 0xaf,
+	0x9f, 0xe7, 0x19, 0x1b, 0x4a, 0x82, 0xf0, 0x5f, 0xa9, 0x4b, 0x9a, 0x21, 0x67, 0x92, 0xe1, 0xe5,
+	0xc0, 0xe9, 0x4b, 0xea, 0xf7, 0x45, 0x93, 0x93, 0x43, 0xc7, 0x77, 0x02, 0x97, 0xf0, 0x5a, 0xa5,
+	0xcb, 0xba, 0x4c, 0xe5, 0xb7, 0xa3, 0xa7, 0x61, 0xa9, 0xd5, 0x82, 0xb7, 0x7f, 0x76, 0xa4, 0xdb,
+	0xdb, 0x13, 0x82, 0x76, 0x83, 0x63, 0x12, 0x48, 0x61, 0x93, 0x93, 0x3e, 0x11, 0x12, 0xbf, 0x07,
+	0x65, 0xd1, 0x0f, 0x43, 0xc6, 0xa5, 0xe8, 0x78, 0xc4, 0x97, 0x8e, 0xa8, 0xa2, 0x3a, 0x6a, 0x14,
+	0xec, 0x85, 0x51, 0xf8, 0x4b, 0x15, 0xb5, 0x9e, 0x20, 0xa8, 0x4e, 0x0e, 0x11, 0x21, 0x0b, 0x04,
+	0xc1, 0x9f, 0xc1, 0x2c, 0x09, 0x24, 0xa7, 0x24, 0xea, 0xce, 0x36, 0x8a, 0xbb, 0x6b, 0xcd, 0x94,
+	0xed, 0x9a, 0xdf, 0xb2, 0xee, 0x57, 0x81, 0xe4, 0xbf, 0xb5, 0x72, 0xe7, 0xcf, 0xd6, 0x33, 0xf6,
+	0xa8, 0x07, 0x57, 0x60, 0x86, 0x13, 0x41, 0x64, 0xd5, 0x50, 0xd0, 0xc3, 0x03, 0xde, 0x86, 0x4a,
+	0xc8, 0xfb, 0x01, 0xe9, 0x1c, 0x92, 0x23, 0xc6, 0x49, 0xa7, 0x1f, 0xd0, 0xd3, 0xce, 0xb1, 0xa8,
+	0x66, 0xeb, 0xa8, 0x91, 0xb5, 0x97, 0x54, 0xae, 0xa5, 0x52, 0x3f, 0x05, 0xf4, 0xf4, 0x3b, 0x61,
+	0xfd, 0x8b, 0xa0, 0x30, 0x82, 0xc0, 0x0b, 0x60, 0xf8, 0x4c, 0xbd, 0x4b, 0xc9, 0x36, 0x7c, 0x16,
+	0x9d, 0x7b, 0x54, 0x01, 0x94, 0x6c, 0xa3, 0x47, 0xf1, 0x06, 0xcc, 0x87, 0x0e, 0x97, 0x54, 0x52,
+	0x16, 0x74, 0xa8, 0xa7, 0xa6, 0xce, 0xd8, 0xc5, 0x38, 0xd6, 0xf6, 0x70, 0x1d, 0xe6, 0x8f, 0x38,
+	0x3b, 0x8e, 0x81, 0x73, 0x0a, 0x18, 0xa2, 0xd8, 0x10, 0x11, 0xaf, 0x02, 0x48, 0x16, 0xe7, 0x67,
+	0x54, 0xbe, 0x20, 0x99, 0xde, 0xe7, 0x1b, 0xa8, 0x2b, 0xc6, 0x6c, 0xe2, 0x78, 0xae, 0xe3, 0xf6,
+	0xc8, 0xeb, 0xf0, 0xff, 0xb7, 0x01, 0x1b, 0x53, 0xa6, 0x69, 0x21, 0xbe, 0x4e, 0x0a, 0xb1, 0x99,
+	0x2a, 0x44, 0x3c, 0xe3, 0xcd, 0x2a, 0x82, 0x7f, 0x84, 0x79, 0x4e, 0x42, 0x9f, 0xba, 0x4e, 0x47,
+	0x10, 0x19, 0x31, 0x18, 0xed, 0xd4, 0x98, 0xbe, 0x93, 0x3d, 0xec, 0x38, 0x20, 0x52, 0x6f, 0x55,
+	0xe4, 0x71, 0x44, 0x58, 0x7f, 0xc2, 0x72, 0x4a, 0x25, 0x5e, 0x03, 0xf0, 0x59, 0x97, 0xba, 0x8e,
+	0x1f, 0x89, 0x19, 0x51, 0x38, 0x67, 0xcf, 0xe9, 0x48, 0xdb, 0xc3, 0xfb, 0x50, 0xd0, 0x43, 0x44,
+	0xd5, 0x50, 0x4b, 0xbc, 0xfb, 0xa0, 0x25, 0xf4, 0x06, 0x71, 0xb3, 0xb5, 0x0f, 0x8b, 0xc9, 0x1a,
+	0xbc, 0x0e, 0x45, 0x1a, 0x08, 0x19, 0x4d, 0xb8, 0x05, 0x87, 0x51, 0xa8, 0xed, 0x61, 0x0c, 0xb9,
+	0xdf, 0x59, 0x40, 0x14, 0x99, 0x73, 0xb6, 0x7a, 0xb6, 0xfe, 0x47, 0xb0, 0x34, 0x21, 0xc3, 0x84,
+	0x2b, 0xd1, 0xa4, 0x2b, 0x13, 0x68, 0xc6, 0x04, 0x5a, 0xd2, 0xb6, 0xd9, 0x57, 0xd8, 0x36, 0x97,
+	0xb0, 0xed, 0x1a, 0xbc, 0xb3, 0x4f, 0xe4, 0x41, 0xc8, 0xa4, 0x4f, 0xbb, 0x3d, 0x49, 0x3c, 0xdb,
+	0x09, 0xba, 0x64, 0xe4, 0x58, 0xcb, 0x85, 0xd5, 0xf4, 0xb4, 0xb6, 0xe0, 0x17, 0x90, 0xe7, 0x2a,
+	0xa2, 0x1d, 0x98, 0x4e, 0x74, 0xb2, 0x5f, 0x13, 0xad, 0x5b, 0xad, 0x33, 0x03, 0x16, 0x93, 0x25,
+	0x78, 0x05, 0x0a, 0x92, 0x3b, 0xe3, 0x24, 0xcf, 0xaa, 0x73, 0xdb, 0xd3, 0xb7, 0xdd, 0x48, 0xdc,
+	0xf6, 0x6c, 0x7c, 0xdb, 0xb7, 0x00, 0x0b, 0xe9, 0x70, 0x49, 0xbc, 0x8e, 0x23, 0x13, 0x6f, 0x5e,
+	0xd6, 0x99, 0x3d, 0xa9, 0xe9, 0xd9, 0x02, 0x4c, 0x4e, 0x43, 0xca, 0x89, 0x18, 0x2f, 0x1e, 0xde,
+	0xee, 0xb2, 0xce, 0xc4, 0xc5, 0xef, 0xc3, 0x92, 0x62, 0xfb, 0x8e, 0x6c, 0x79, 0x25, 0x5b, 0x39,
+	0x4a, 0xfc, 0x30, 0x26, 0xdd, 0x26, 0x94, 0x25, 0xbb, 0x5b, 0x39, 0xab, 0x2a, 0x4b, 0x92, 0x8d,
+	0xd7, 0xbd, 0x05, 0x79, 0x4e, 0x1c, 0xc1, 0x82, 0x6a, 0x41, 0xbd, 0xa6, 0x3e, 0xed, 0x9e, 0x65,
+	0x01, 0x7f, 0xaf, 0xc9, 0xb4, 0x63, 0x2e, 0xf1, 0x09, 0x2c, 0x26, 0xbf, 0xcc, 0xf8, 0x83, 0x54,
+	0xd6, 0xef, 0xf9, 0x0b, 0xd4, 0x3e, 0x7c, 0x60, 0xf5, 0x50, 0xe2, 0x1d, 0x84, 0xff, 0x41, 0xb0,
+	0x72, 0xef, 0xd7, 0x08, 0x7f, 0x72, 0xff, 0xb8, 0x29, 0xdf, 0xc2, 0xda, 0xa7, 0x8f, 0x6d, 0x8b,
+	0xd7, 0xf9, 0x03, 0x2a, 0x69, 0x9e, 0xc4, 0x3b, 0xa9, 0x13, 0xa7, 0xb8, 0xbb, 0xf6, 0xd1, 0x23,
+	0x3a, 0x86, 0xf0, 0xad, 0xcf, 0x2f, 0xae, 0xcc, 0xcc, 0xe5, 0x95, 0x99, 0xb9, 0xb9, 0x32, 0xd1,
+	0x5f, 0x03, 0x13, 0x3d, 0x1d, 0x98, 0xe8, 0x7c, 0x60, 0xa2, 0x8b, 0x81, 0x89, 0x9e, 0x0f, 0x4c,
+	0xf4, 0x62, 0x60, 0x66, 0x6e, 0x06, 0x26, 0xfa, 0xef, 0xda, 0xcc, 0x5c, 0x5c, 0x9b, 0x99, 0xcb,
+	0x6b, 0x33, 0xf3, 0x0b, 0xdc, 0x8e, 0x3f, 0xcc, 0xab, 0xdf, 0xf4, 0xc7, 0x2f, 0x03, 0x00, 0x00,
+	0xff, 0xff, 0x24, 0x05, 0x14, 0xd5, 0xe2, 0x07, 0x00, 0x00,
 }
 
 func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
@@ -842,6 +967,73 @@ func (this *WatchReadcacheAssignmentsResponse) Equal(that interface{}) bool {
 		return false
 	}
 	if this.PruneBeforeUnixMs != that1.PruneBeforeUnixMs {
+		return false
+	}
+	if len(this.ReplicaSets) != len(that1.ReplicaSets) {
+		return false
+	}
+	for i := range this.ReplicaSets {
+		if !this.ReplicaSets[i].Equal(&that1.ReplicaSets[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *ReadcacheReplicaSet) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ReadcacheReplicaSet)
+	if !ok {
+		that2, ok := that.(ReadcacheReplicaSet)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.LogicalId != that1.LogicalId {
+		return false
+	}
+	if len(this.Replicas) != len(that1.Replicas) {
+		return false
+	}
+	for i := range this.Replicas {
+		if !this.Replicas[i].Equal(&that1.Replicas[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *ReadcacheReplica) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ReadcacheReplica)
+	if !ok {
+		that2, ok := that.(ReadcacheReplica)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.InstanceId != that1.InstanceId {
+		return false
+	}
+	if this.Zone != that1.Zone {
 		return false
 	}
 	return true
@@ -1030,7 +1222,7 @@ func (this *WatchReadcacheAssignmentsResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&rebalancer.WatchReadcacheAssignmentsResponse{")
 	if this.Entries != nil {
 		vs := make([]ReadcacheLogEntry, len(this.Entries))
@@ -1041,6 +1233,41 @@ func (this *WatchReadcacheAssignmentsResponse) GoString() string {
 	}
 	s = append(s, "Reset_: "+fmt.Sprintf("%#v", this.Reset_)+",\n")
 	s = append(s, "PruneBeforeUnixMs: "+fmt.Sprintf("%#v", this.PruneBeforeUnixMs)+",\n")
+	if this.ReplicaSets != nil {
+		vs := make([]ReadcacheReplicaSet, len(this.ReplicaSets))
+		for i := range vs {
+			vs[i] = this.ReplicaSets[i]
+		}
+		s = append(s, "ReplicaSets: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ReadcacheReplicaSet) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&rebalancer.ReadcacheReplicaSet{")
+	s = append(s, "LogicalId: "+fmt.Sprintf("%#v", this.LogicalId)+",\n")
+	if this.Replicas != nil {
+		vs := make([]ReadcacheReplica, len(this.Replicas))
+		for i := range vs {
+			vs[i] = this.Replicas[i]
+		}
+		s = append(s, "Replicas: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ReadcacheReplica) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&rebalancer.ReadcacheReplica{")
+	s = append(s, "InstanceId: "+fmt.Sprintf("%#v", this.InstanceId)+",\n")
+	s = append(s, "Zone: "+fmt.Sprintf("%#v", this.Zone)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1547,6 +1774,20 @@ func (m *WatchReadcacheAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (i
 	_ = i
 	var l int
 	_ = l
+	if len(m.ReplicaSets) > 0 {
+		for iNdEx := len(m.ReplicaSets) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ReplicaSets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintService(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
 	if m.PruneBeforeUnixMs != 0 {
 		i = encodeVarintService(dAtA, i, uint64(m.PruneBeforeUnixMs))
 		i--
@@ -1575,6 +1816,87 @@ func (m *WatchReadcacheAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (i
 			i--
 			dAtA[i] = 0xa
 		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadcacheReplicaSet) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadcacheReplicaSet) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ReadcacheReplicaSet) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Replicas) > 0 {
+		for iNdEx := len(m.Replicas) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Replicas[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintService(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.LogicalId) > 0 {
+		i -= len(m.LogicalId)
+		copy(dAtA[i:], m.LogicalId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.LogicalId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadcacheReplica) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadcacheReplica) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ReadcacheReplica) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Zone) > 0 {
+		i -= len(m.Zone)
+		copy(dAtA[i:], m.Zone)
+		i = encodeVarintService(dAtA, i, uint64(len(m.Zone)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.InstanceId) > 0 {
+		i -= len(m.InstanceId)
+		copy(dAtA[i:], m.InstanceId)
+		i = encodeVarintService(dAtA, i, uint64(len(m.InstanceId)))
+		i--
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -1849,6 +2171,48 @@ func (m *WatchReadcacheAssignmentsResponse) Size() (n int) {
 	if m.PruneBeforeUnixMs != 0 {
 		n += 1 + sovService(uint64(m.PruneBeforeUnixMs))
 	}
+	if len(m.ReplicaSets) > 0 {
+		for _, e := range m.ReplicaSets {
+			l = e.Size()
+			n += 1 + l + sovService(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ReadcacheReplicaSet) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.LogicalId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
+	if len(m.Replicas) > 0 {
+		for _, e := range m.Replicas {
+			l = e.Size()
+			n += 1 + l + sovService(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ReadcacheReplica) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.InstanceId)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
+	l = len(m.Zone)
+	if l > 0 {
+		n += 1 + l + sovService(uint64(l))
+	}
 	return n
 }
 
@@ -1999,10 +2363,43 @@ func (this *WatchReadcacheAssignmentsResponse) String() string {
 		repeatedStringForEntries += strings.Replace(strings.Replace(f.String(), "ReadcacheLogEntry", "ReadcacheLogEntry", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForEntries += "}"
+	repeatedStringForReplicaSets := "[]ReadcacheReplicaSet{"
+	for _, f := range this.ReplicaSets {
+		repeatedStringForReplicaSets += strings.Replace(strings.Replace(f.String(), "ReadcacheReplicaSet", "ReadcacheReplicaSet", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForReplicaSets += "}"
 	s := strings.Join([]string{`&WatchReadcacheAssignmentsResponse{`,
 		`Entries:` + repeatedStringForEntries + `,`,
 		`Reset_:` + fmt.Sprintf("%v", this.Reset_) + `,`,
 		`PruneBeforeUnixMs:` + fmt.Sprintf("%v", this.PruneBeforeUnixMs) + `,`,
+		`ReplicaSets:` + repeatedStringForReplicaSets + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ReadcacheReplicaSet) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForReplicas := "[]ReadcacheReplica{"
+	for _, f := range this.Replicas {
+		repeatedStringForReplicas += strings.Replace(strings.Replace(f.String(), "ReadcacheReplica", "ReadcacheReplica", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForReplicas += "}"
+	s := strings.Join([]string{`&ReadcacheReplicaSet{`,
+		`LogicalId:` + fmt.Sprintf("%v", this.LogicalId) + `,`,
+		`Replicas:` + repeatedStringForReplicas + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ReadcacheReplica) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ReadcacheReplica{`,
+		`InstanceId:` + fmt.Sprintf("%v", this.InstanceId) + `,`,
+		`Zone:` + fmt.Sprintf("%v", this.Zone) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2579,6 +2976,270 @@ func (m *WatchReadcacheAssignmentsResponse) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ReplicaSets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ReplicaSets = append(m.ReplicaSets, ReadcacheReplicaSet{})
+			if err := m.ReplicaSets[len(m.ReplicaSets)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ReadcacheReplicaSet) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ReadcacheReplicaSet: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ReadcacheReplicaSet: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LogicalId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.LogicalId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Replicas", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Replicas = append(m.Replicas, ReadcacheReplica{})
+			if err := m.Replicas[len(m.Replicas)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipService(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthService
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ReadcacheReplica) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowService
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ReadcacheReplica: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ReadcacheReplica: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InstanceId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.InstanceId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Zone", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthService
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthService
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Zone = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])

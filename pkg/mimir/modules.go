@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"time"
@@ -1756,6 +1757,7 @@ func (t *Mimir) initReadcache() (services.Service, error) {
 	}
 	t.Readcache = r
 	t.API.RegisterReadcache(r)
+	t.API.RegisterReadcacheLifecycle(http.HandlerFunc(r.PrepareInstanceRingDownscaleHandler))
 	t.API.RegisterReadcacheAdmin(readcache.AdminPathPrefix, r)
 	return r, nil
 }

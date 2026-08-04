@@ -703,8 +703,9 @@ func (r *Rebalancer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsReq
 
 func readcacheUpdateToProto(u readcacheUpdate) *WatchReadcacheAssignmentsResponse {
 	resp := &WatchReadcacheAssignmentsResponse{
-		Entries: ReadcacheEntriesToProto(u.entries),
-		Reset_:  u.reset,
+		Entries:     ReadcacheEntriesToProto(u.entries),
+		Reset_:      u.reset,
+		ReplicaSets: ReplicaMapToProto(u.replicaMap),
 	}
 	if !u.pruneBefore.IsZero() {
 		resp.PruneBeforeUnixMs = u.pruneBefore.UnixMilli()
@@ -769,7 +770,18 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	now := r.now()
+	// stabilizedReadcacheInstances advances the membership tracker's
+	// hysteresis, and its unavailable() set feeds the tier-2 exclusion
+	// list below, so it runs once per round regardless of which set
+	// tier-2 actually places onto.
 	stableReadcacheInstances := r.stabilizedReadcacheInstances()
+	// Under DesiredReplicas > 0 the slicer places partitions onto
+	// sticky logical slots rather than concrete ring members, and the
+	// replica map published to readcaches and queriers expands those
+	// slots to the concrete zone pods. Refresh it every round so a
+	// zone pod joining or leaving reaches clients promptly.
+	placementInstances := r.placementReadcacheInstancesFrom(stableReadcacheInstances)
+	replicaMap := r.refreshReplicaMap()
 	current := r.store.latestActiveAssignment(now)
 	if current == nil {
 		// Cold start: try to reconstruct the assignment from whatever
@@ -807,7 +819,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// slicer with empty load signals just produces an even
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
-			if instances := stableReadcacheInstances; len(instances) > 0 {
+			if instances := placementInstances; len(instances) > 0 {
 				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
@@ -1066,11 +1078,19 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	// finds zero owners; see refreshReadcacheLeases for the full
 	// failure mode.
 	if r.cfg.ReadcacheSlicer.Enabled {
-		instances := stableReadcacheInstances
+		instances := placementInstances
 		if len(instances) > 0 {
 			decision := shouldFireTier2(r.cfg.ReadcacheSlicer.RoundInterval, now, r.lastTier2RoundAt, instances, r.lastTier2Instances)
 			if decision.fire {
-				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, failedReadcaches)
+				// failedReadcaches names concrete pods. Under RF≥2
+				// the slicer places onto logical slots, and a slot
+				// stays a valid target as long as one of its zone
+				// mirrors is still answering.
+				excludedTargets := failedReadcaches
+				if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
+					excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
+				}
+				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets)
 				// Update the gating state regardless of whether the
 				// slicer produced changes: even a no-op tier-2 round
 				// observed the current instance set and load, so the
