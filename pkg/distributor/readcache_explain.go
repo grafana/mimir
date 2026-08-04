@@ -110,7 +110,7 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 
-	metricName, named := extractExactMetricName(matchers)
+	metricName, named := extractMetricNameForReadcacheRouting(matchers)
 	plan.MetricName, plan.Named = metricName, named
 
 	var partitionIDs []int32
