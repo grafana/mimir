@@ -201,6 +201,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	}
 
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
+	queryStats.AddEstimatedSeriesCount(overallEstimate)
 
 	return &querymiddleware.EstimatedSeriesCount{EstimatedSeriesCount: overallEstimate}, nil
 }

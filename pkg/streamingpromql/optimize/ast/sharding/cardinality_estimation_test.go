@@ -171,6 +171,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, 1, c.KeysCount)
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
+		require.Zero(t, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("returns the cardinality of a single selector", func(t *testing.T) {
@@ -192,6 +193,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, 1, c.KeysCount)
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
+		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("returns the total cardinality across selectors", func(t *testing.T) {
@@ -216,6 +218,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, 2, c.KeysCount)
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
+		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("returns no estimate when some selectors are not cached", func(t *testing.T) {
@@ -237,6 +240,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, 2, c.KeysCount)
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
+		require.Zero(t, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("returns the maximum cardinality across the buckets of a single selector", func(t *testing.T) {
@@ -273,6 +277,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, len(keys), c.KeysCount)
 
 		require.Equal(t, expectedEstimatesInStats, qs.LoadEstimatedSelectorCardinalities(), "should store estimated cardinality in stats")
+		require.Equal(t, result.EstimatedSeriesCount, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("ignores entries whose stored selector does not match (hash collision)", func(t *testing.T) {
@@ -300,6 +305,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.Equal(t, 1, c.KeysCount)
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
+		require.Zero(t, qs.LoadEstimatedSeriesCount())
 	})
 
 	t.Run("queries no more than the maximum allowed number of buckets, even if the selector queries a longer time range", func(t *testing.T) {
@@ -320,6 +326,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 		require.EqualValues(t, cfg.MaxBucketsReadPerSelector, c.KeysCount)
 
 		require.Empty(t, qs.LoadEstimatedSelectorCardinalities())
+		require.Zero(t, qs.LoadEstimatedSeriesCount())
 	})
 }
 
