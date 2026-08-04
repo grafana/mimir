@@ -425,7 +425,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d had no readcache owner during the query window", partID))
 		}
 		for _, owner := range owners {
-			set := readcacheReplicationSetForOwner(replicaMap, partID, owner)
+			set := readcacheReplicationSetForOwner(replicaMap, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries)
 			if len(set.Instances) == 0 {
 				return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("logical readcache owner %q of partition %d has no concrete replica", owner, partID))
 			}

@@ -174,7 +174,7 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 			// Same expansion the query path applies, so the plan
 			// enumerates the concrete pods that would actually be
 			// dialed rather than the logical slots in the log.
-			for _, inst := range readcacheReplicationSetForOwner(replicaMap, partID, owner).Instances {
+			for _, inst := range readcacheReplicationSetForOwner(replicaMap, partID, owner, d.cfg.Readcache.IgnoreReplicaMapForQueries).Instances {
 				call := ReadcacheQueryStreamCall{
 					PartitionID:  partID,
 					Owner:        inst.Addr,

@@ -250,13 +250,12 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	// to its concrete zone replicas and dial them in order until one
 	// connects — under RF=1 the expansion is the identity, so this
 	// reduces to dialing the logged owner.
-	replicas := rcState.replicaMap.ConcreteIDs(owners[0])
-	for _, concrete := range replicas {
-		cli, err = d.readcachePool.GetClientForInstance(ctx, concrete)
+	for _, rep := range expandReadcacheReplicasForQuery(rcState.replicaMap, owners[0], d.cfg.Readcache.IgnoreReplicaMapForQueries) {
+		cli, err = d.readcachePool.GetClientForInstance(ctx, rep.InstanceID)
 		if err != nil {
 			continue
 		}
-		return cli, concrete, true, nil
+		return cli, rep.InstanceID, true, nil
 	}
 	if err == nil {
 		err = fmt.Errorf("logical readcache owner %q of partition %d has no concrete replica", owners[0], partitionID)
@@ -325,6 +324,37 @@ func readcacheSyntheticInstanceID(concreteID string, partitionID int32) string {
 	return fmt.Sprintf("%s/p%d", concreteID, partitionID)
 }
 
+// expandReadcacheReplicasForQuery returns the concrete pods the read
+// path should dial for logicalOwner.
+//
+// When ignoreMap is true (RF=1→RF=2 warm stage), expansion is the
+// identity so queriers keep dialing the legacy non-zonal pod while
+// zone mirrors consume via the real replica map.
+//
+// When ignoreMap is false and the map lists any zoned replica,
+// non-zonal entries are dropped so a dual-fleet cutover can leave the
+// old STS consuming without serving. An explicitly empty map entry
+// (both mirrors down) is handled by the caller before Expand.
+func expandReadcacheReplicasForQuery(replicaMap readcacheassignment.ReplicaMap, logicalOwner string, ignoreMap bool) []readcacheassignment.Replica {
+	if logicalOwner == "" {
+		return nil
+	}
+	if ignoreMap {
+		return []readcacheassignment.Replica{{InstanceID: logicalOwner}}
+	}
+	replicas := replicaMap.Expand(logicalOwner)
+	zoned := make([]readcacheassignment.Replica, 0, len(replicas))
+	for _, rep := range replicas {
+		if rep.Zone != "" {
+			zoned = append(zoned, rep)
+		}
+	}
+	if len(zoned) > 0 {
+		return zoned
+	}
+	return replicas
+}
+
 // readcacheReplicationSetForOwner builds the ring.ReplicationSet the
 // read path uses for one (partition, logical owner) pair: one
 // InstanceDesc per concrete zone replica of the logical slot, with
@@ -338,15 +368,20 @@ func readcacheSyntheticInstanceID(concreteID string, partitionID int32) string {
 // to the other zone only on failure. With an empty replica map the
 // expansion is the identity and the set degenerates to the
 // single-instance, no-tolerance shape used under RF=1.
-func readcacheReplicationSetForOwner(replicaMap readcacheassignment.ReplicaMap, partitionID int32, logicalOwner string) ring.ReplicationSet {
-	if reps, known := replicaMap[logicalOwner]; known && len(reps) == 0 {
-		// The rebalancer knows this logical slot but has no live pod
-		// for it (both mirrors left the ring). Returning an empty set
-		// makes the caller fail the slot explicitly instead of
-		// dialing the logical ID, which is not a routable address.
-		return ring.ReplicationSet{}
+//
+// ignoreMap forces identity expansion (legacy pod) even when a
+// replica map is present — used for dual-fleet warm before query cutover.
+func readcacheReplicationSetForOwner(replicaMap readcacheassignment.ReplicaMap, partitionID int32, logicalOwner string, ignoreMap bool) ring.ReplicationSet {
+	if !ignoreMap {
+		if reps, known := replicaMap[logicalOwner]; known && len(reps) == 0 {
+			// The rebalancer knows this logical slot but has no live pod
+			// for it (both mirrors left the ring). Returning an empty set
+			// makes the caller fail the slot explicitly instead of
+			// dialing the logical ID, which is not a routable address.
+			return ring.ReplicationSet{}
+		}
 	}
-	replicas := replicaMap.Expand(logicalOwner)
+	replicas := expandReadcacheReplicasForQuery(replicaMap, logicalOwner, ignoreMap)
 	set := ring.ReplicationSet{Instances: make([]ring.InstanceDesc, 0, len(replicas))}
 	zones := make(map[string]struct{}, len(replicas))
 	for _, rep := range replicas {
@@ -461,12 +496,12 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 	}
 	// prevID is a logical slot under RF≥2; expand and take the first
 	// replica that dials.
-	for _, concrete := range rcState.replicaMap.ConcreteIDs(prevID) {
-		cli, err := d.readcachePool.GetClientForInstance(ctx, concrete)
+	for _, rep := range expandReadcacheReplicasForQuery(rcState.replicaMap, prevID, d.cfg.Readcache.IgnoreReplicaMapForQueries) {
+		cli, err := d.readcachePool.GetClientForInstance(ctx, rep.InstanceID)
 		if err != nil {
 			continue
 		}
-		return cli, concrete, true
+		return cli, rep.InstanceID, true
 	}
 	return nil, "", false
 }
