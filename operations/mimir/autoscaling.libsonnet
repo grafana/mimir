@@ -72,6 +72,11 @@
     autoscaling_compactor_scheduler_drain_target_seconds: 3600,
     // Lookback window for the rate-based processing-speed estimates that drive the drain-time autoscaler.
     autoscaling_compactor_scheduler_estimation_lookback: '3h',
+    // An optional PromQL term to use as a bytes/second throughput estimate for compaction jobs, to be used for autoscaling.
+    // The query must return series by compaction_type, with no other labels.
+    autoscaling_compactor_scheduler_compaction_bytes_per_second_query: '',
+    // An optional PromQL term to use as a seconds/job estimate for plan jobs. The query must return a single series with no labels.
+    autoscaling_compactor_scheduler_plan_job_seconds_query: '',
     // Lag trigger: bumps the desired replica count by +10% for every hour the pending queue stays non-empty, capped at +100%.
     autoscaling_compactor_scheduler_lag_trigger_enabled: true,
     // When enabled, the lag trigger uses the last-empty timestamp straight from the
@@ -961,6 +966,32 @@
     local promql_scheduler_matchers = if scheduler_matchers == '' then '' else ', %s' % scheduler_matchers;
     local promql_compactor_matchers = if compactor_matchers == '' then '' else ', %s' % compactor_matchers;
 
+    local estimate(override, default) =
+      if override != '' then override
+      else default % {
+        namespace: $._config.namespace,
+        promql_compactor_matchers: promql_compactor_matchers,
+        lookback: lookback,
+        min_duration_samples: min_duration_samples,
+      };
+
+    local compaction_bytes_per_second_query = $._config.autoscaling_compactor_scheduler_compaction_bytes_per_second_query;
+
+    local compaction_speed = estimate(if compaction_bytes_per_second_query == '' then '' else '/ (%s > 0)' % compaction_bytes_per_second_query, |||
+      * (
+        sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+        / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+        and sum by (compaction_type) (histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d
+      )
+    |||);
+
+    local plan_job_seconds = estimate($._config.autoscaling_compactor_scheduler_plan_job_seconds_query, |||
+      histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+      and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
+    |||);
+
+    local indented(expr, spaces) = std.strReplace(std.rstripChars(expr, '\n'), '\n', '\n' + std.repeat(' ', spaces));
+
     // Lag trigger: multiplies the drain-time signal by a factor that grows the longer the pending
     // queue stays non-empty. Starts at 1, grows by `lag_period_increase` per period the queue has
     // been continuously non-empty, capped at `lag_max_multiplier`.
@@ -1034,11 +1065,7 @@
             sum(
               (
                 sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s})
-                * (
-                  sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-                  / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-                  and sum by (compaction_type) (histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d
-                )
+                %(compaction_speed)s
               )
               or
               sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s}) * %(default_compaction_seconds_per_byte)g
@@ -1047,8 +1074,7 @@
             # Plan jobs: pending jobs * seconds/job.
             sum(cortex_compactor_scheduler_pending_jobs{namespace="%(namespace)s", job_type="plan"%(promql_scheduler_matchers)s})
             * (
-              histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-              and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
+              %(plan_job_seconds)s
               or on() vector(%(default_plan_job_seconds)d)
             )
           )
@@ -1059,13 +1085,12 @@
     ||| % {
       namespace: $._config.namespace,
       drain_target_seconds: $._config.autoscaling_compactor_scheduler_drain_target_seconds,
-      min_duration_samples: min_duration_samples,
+      compaction_speed: indented(compaction_speed, 10),
+      plan_job_seconds: indented(plan_job_seconds, 8),
       default_compaction_seconds_per_byte: default_compaction_seconds_per_byte,
       default_plan_job_seconds: default_plan_job_seconds,
-      lookback: lookback,
       peak_window: peak_window,
       promql_scheduler_matchers: promql_scheduler_matchers,
-      promql_compactor_matchers: promql_compactor_matchers,
       lag_multiplier:
         if !$._config.autoscaling_compactor_scheduler_lag_trigger_enabled then ''
         else if $._config.autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric then lag_multiplier_last_empty
