@@ -11,6 +11,12 @@ weight: 50
 
 # Configure Grafana Mimir high-availability deduplication
 
+{{< admonition type="note" >}}
+If you use Grafana Cloud, HA deduplication is enabled by default for your tenant, using the default label names described on this page (`cluster` and `__replica__`). You don't need to configure anything to use this feature.
+
+If you need custom cluster or replica label names for your tenant, [contact Grafana Support](/docs/grafana-cloud/account-management/support/).
+{{< /admonition >}}
+
 You can have more than one Prometheus instance that scrapes the same metrics for redundancy. Grafana Mimir already performs replication for redundancy,
 so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.
 
