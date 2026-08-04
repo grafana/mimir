@@ -15,6 +15,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -alertmanager-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.azure.http.insecure-skip-verify
@@ -51,6 +53,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -alertmanager-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.gcs.http.insecure-skip-verify
@@ -91,6 +95,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -alertmanager-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.s3.http.insecure-skip-verify
@@ -395,6 +401,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.azure.http.insecure-skip-verify
@@ -695,6 +703,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -blocks-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.gcs.http.insecure-skip-verify
@@ -733,6 +743,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -blocks-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.s3.http.insecure-skip-verify
@@ -935,6 +947,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -common.storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.azure.http.insecure-skip-verify
@@ -971,6 +985,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -common.storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.gcs.http.insecure-skip-verify
@@ -1009,6 +1025,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -common.storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.s3.http.insecure-skip-verify
@@ -3109,6 +3127,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -ruler-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.azure.http.insecure-skip-verify
@@ -3187,6 +3207,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -ruler-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.gcs.http.insecure-skip-verify
@@ -3227,6 +3249,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -ruler-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.s3.http.insecure-skip-verify

@@ -63,6 +63,7 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#63](https://github.com/thanos-io/objstore/pull/63) Implement a `IterWithAttributes` method on the bucket client.
 - [#155](https://github.com/thanos-io/objstore/pull/155) Add a `Provider` method on `objstore.Client`.
 - [#163](https://github.com/thanos-io/objstore/pull/145) Add a `NewBucketFromConfig` constructor method for creating a client from an existing `BucketConfig` object.
+- [#266](https://github.com/thanos-io/objstore/pull/266) *: Add `force_attempt_http2` option to `http_config` to re-enable HTTP/2 for the custom transport.
 
 
 ### Changed

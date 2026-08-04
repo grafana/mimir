@@ -7371,6 +7371,12 @@ http:
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.s3.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7478,6 +7484,12 @@ http:
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.gcs.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7583,6 +7595,12 @@ http:
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
+
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.azure.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
 
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
