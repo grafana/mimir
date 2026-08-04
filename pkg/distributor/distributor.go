@@ -738,15 +738,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		queryReadcacheInstancesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_distributor_query_readcache_instances_hit_per_query",
 			// One observation per readcache-routed Distributor.QueryStream call
-			// with an exact, non-empty __name__ matcher. The count is the number
-			// of *distinct* readcache instances the distributor committed to
-			// using (deduped across partitions).
+			// scoped to a finite set of metric names. The count is the number of
+			// *distinct* readcache instances the distributor committed to using
+			// (deduped across partitions).
 			Help:    "Number of distinct readcache instances queried while serving a metric-name-scoped Distributor.QueryStream call.",
 			Buckets: prometheus.LinearBuckets(0, 2, 129),
 		}),
 		queryReadcacheFullFanout: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_distributor_query_readcache_full_fanout_queries_total",
-			Help: "Total number of readcache-routed Distributor.QueryStream calls without an exact, non-empty __name__ matcher, requiring fanout to every relevant partition.",
+			Help: "Total number of readcache-routed Distributor.QueryStream calls whose metric names cannot be reduced to a finite set, requiring fanout to every relevant partition.",
 		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",

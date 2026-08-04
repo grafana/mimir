@@ -30,6 +30,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/readcache"
@@ -106,7 +107,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	// Allocate the per-query readcache hit tracker outside the
-	// instrument.CollectedRequest closure so named readcache queries
+	// instrument.CollectedRequest closure so metric-scoped readcache queries
 	// can observe it on every exit path after routing is selected.
 	hits := newReadcacheHitTracker()
 	observeReadcacheHits := false
@@ -129,8 +130,8 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			partitionByInstance map[string]int32
 		)
 		if d.shouldRouteReadToReadcache(ctx) {
-			_, hasRoutingMetricName := extractMetricNameForReadcacheRouting(matchers)
-			if hasRoutingMetricName {
+			_, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
+			if metricScoped {
 				observeReadcacheHits = true
 			} else {
 				d.queryReadcacheFullFanout.Inc()
@@ -277,13 +278,16 @@ func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 	return "", false
 }
 
-// extractMetricNameForReadcacheRouting returns the metric name that determines
-// the Nautilus locality hash range. Query aggregation rewrites may replace an
-// exact __name__ matcher with an exact __aggregation__="<metric>:<aggregation>"
-// matcher, so recognize the aggregation forms emitted by that middleware.
-func extractMetricNameForReadcacheRouting(matchers []*labels.Matcher) (string, bool) {
+// extractMetricNamesForReadcacheRouting returns a finite set of metric names
+// whose Nautilus locality hash ranges cover the query. Query aggregation
+// rewrites may replace an exact __name__ matcher with an exact
+// __aggregation__="<metric>:<aggregation>" matcher, so recognize the
+// aggregation forms emitted by that middleware. Enumerable __name__ regexps
+// are also safe to restrict; among several, use the smallest set and let TSDB
+// apply all original matchers.
+func extractMetricNamesForReadcacheRouting(matchers []*labels.Matcher) ([]string, bool) {
 	if metricName, ok := extractExactMetricName(matchers); ok {
-		return metricName, true
+		return []string{metricName}, true
 	}
 
 	for _, m := range matchers {
@@ -292,11 +296,38 @@ func extractMetricNameForReadcacheRouting(matchers []*labels.Matcher) (string, b
 		}
 		for _, suffix := range [...]string{":sum:counter", ":sum", ":count", ":min", ":max"} {
 			if metricName, ok := strings.CutSuffix(m.Value, suffix); ok && metricName != "" {
-				return metricName, true
+				return []string{metricName}, true
 			}
 		}
 	}
-	return "", false
+
+	var metricNames []string
+	for _, m := range matchers {
+		if m.Name != model.MetricNameLabel || m.Type != labels.MatchRegexp {
+			continue
+		}
+		if matches := m.SetMatches(); len(matches) > 0 && (metricNames == nil || len(matches) < len(metricNames)) {
+			metricNames = matches
+		}
+	}
+	return metricNames, len(metricNames) > 0
+}
+
+func partitionsForMetricNames(log *assignment.Log, userID string, w0, w1 time.Time, metricNames []string) []int32 {
+	partitionSet := make(map[int32]struct{}, len(metricNames))
+	for _, metricName := range metricNames {
+		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
+		for _, partitionID := range log.PartitionsOverlappingInterval(w0, w1, lo, hi) {
+			partitionSet[partitionID] = struct{}{}
+		}
+	}
+
+	partitionIDs := make([]int32, 0, len(partitionSet))
+	for partitionID := range partitionSet {
+		partitionIDs = append(partitionIDs, partitionID)
+	}
+	slices.Sort(partitionIDs)
+	return partitionIDs
 }
 
 // getReadcacheReplicationSetsForQuery builds the replication sets for
@@ -313,11 +344,11 @@ func extractMetricNameForReadcacheRouting(matchers []*labels.Matcher) (string, b
 // partition that owned the hashrange across any range->partition move
 // inside the query interval (not just the partition that owns it at
 // the current instant):
-//   - An exact __name__ matcher, or an exact generated __aggregation__
-//     matcher, narrows the query to the metric name's hash range [lo, hi]
-//     (mimirpb.MetricNameHashRange) and only the partitions whose tiles
-//     overlapped that range during the window are queried
-//     (PartitionsOverlappingInterval).
+//   - An exact __name__ matcher, an exact generated __aggregation__
+//     matcher, or an enumerable __name__ regexp narrows the query to the
+//     union of the metric names' hash ranges (mimirpb.MetricNameHashRange).
+//     Only partitions whose tiles overlapped those ranges during the window
+//     are queried (PartitionsOverlappingInterval).
 //   - Otherwise the query fans out to every partition that owned any
 //     part of the keyspace during the window (AllPartitionsDuring).
 //
@@ -361,10 +392,9 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	}
 
 	var partitionIDs []int32
-	metricName, named := extractMetricNameForReadcacheRouting(matchers)
-	if named {
-		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
-		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
+	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
+	if metricScoped {
+		partitionIDs = partitionsForMetricNames(log, userID, w0, w1, metricNames)
 	} else {
 		partitionIDs = log.AllPartitionsDuring(w0, w1)
 	}
@@ -399,7 +429,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	}
 
 	if d.readcacheRouteLogSeq.Inc()%readcacheRouteLogEvery == 1 {
-		d.logReadcacheRoutingDecision(userID, metricName, named, from, to, w0, w1, partitionIDs, len(sets), len(distinctOwners), rcLog)
+		d.logReadcacheRoutingDecision(userID, metricNames, metricScoped, from, to, w0, w1, partitionIDs, len(sets), len(distinctOwners), rcLog)
 	}
 
 	return sets, partitionByInstance, nil
@@ -453,7 +483,7 @@ const readcacheRouteLogEvery = 100
 // the line answers "why did this query fan out to these readcaches".
 // Sampled (see readcacheRouteLogEvery) because the per-partition
 // breakdown is large on full-fanout queries.
-func (d *Distributor) logReadcacheRoutingDecision(userID, metricName string, named bool, from, to model.Time, w0, w1 time.Time, partitionIDs []int32, pairs, distinctOwners int, rcLog *readcacheassignment.Log) {
+func (d *Distributor) logReadcacheRoutingDecision(userID string, metricNames []string, metricScoped bool, from, to model.Time, w0, w1 time.Time, partitionIDs []int32, pairs, distinctOwners int, rcLog *readcacheassignment.Log) {
 	if d.log == nil {
 		return
 	}
@@ -474,14 +504,16 @@ func (d *Distributor) logReadcacheRoutingDecision(userID, metricName string, nam
 	}
 
 	mode := "full-fanout"
-	if named {
+	if len(metricNames) == 1 {
 		mode = "metric-name"
+	} else if metricScoped {
+		mode = "metric-name-set"
 	}
 	level.Info(d.log).Log(
 		"msg", "readcache routing decision (sampled)",
 		"user", userID,
 		"mode", mode,
-		"metric", metricName,
+		"metric", strings.Join(metricNames, ","),
 		"query_from", from.Time().UTC().Format(time.RFC3339),
 		"query_to", to.Time().UTC().Format(time.RFC3339),
 		"window_w0", w0.UTC().Format(time.RFC3339),

@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -57,13 +58,14 @@ type ReadcacheQueryPlan struct {
 	// ingester fallback for nautilus-only tenants).
 	Unavailable string
 
-	// MetricName / Named describe whether the query is scoped to a
-	// single metric name (an exact __name__ matcher), which narrows the
-	// fan-out to the partitions overlapping that name's hash range.
-	MetricName string
-	Named      bool
-	HashLo     uint32
-	HashHi     uint32
+	// MetricNames / Named describe whether the query is scoped to a finite
+	// set of metric names, which narrows fan-out to the union of their hash
+	// ranges. The singular fields are populated only for a one-name set.
+	MetricNames []string
+	MetricName  string
+	Named       bool
+	HashLo      uint32
+	HashHi      uint32
 
 	// From/To is the query's sample-time range; W0/W1 is the padded
 	// wall-clock window used to resolve ownership.
@@ -110,14 +112,16 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 
-	metricName, named := extractMetricNameForReadcacheRouting(matchers)
-	plan.MetricName, plan.Named = metricName, named
+	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
+	plan.MetricNames, plan.Named = slices.Clone(metricNames), metricScoped
 
 	var partitionIDs []int32
-	if named {
-		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
-		plan.HashLo, plan.HashHi = lo, hi
-		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
+	if metricScoped {
+		if len(metricNames) == 1 {
+			plan.MetricName = metricNames[0]
+			plan.HashLo, plan.HashHi = mimirpb.MetricNameHashRange(userID, metricNames[0])
+		}
+		partitionIDs = partitionsForMetricNames(log, userID, w0, w1, metricNames)
 	} else {
 		partitionIDs = log.AllPartitionsDuring(w0, w1)
 	}

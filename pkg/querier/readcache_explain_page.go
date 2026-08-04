@@ -238,10 +238,12 @@ func buildSelectorView(sel selectorInfo, plan distributor.ReadcacheQueryPlan) ex
 	if sel.offset != 0 {
 		view.OffsetStr = sel.offset.String()
 	}
-	if plan.Named {
+	if len(plan.MetricNames) > 1 {
+		view.Mode = fmt.Sprintf("metric-name-set (%d names: %s; union of hash ranges)", len(plan.MetricNames), strings.Join(plan.MetricNames, ", "))
+	} else if plan.Named {
 		view.Mode = fmt.Sprintf("metric-name (%s, hashrange [%d, %d])", plan.MetricName, plan.HashLo, plan.HashHi)
 	} else {
-		view.Mode = "full-fanout (no exact __name__ matcher)"
+		view.Mode = "full-fanout (metric names cannot be reduced to a finite set)"
 	}
 	if !plan.W0.IsZero() || !plan.W1.IsZero() {
 		view.WindowStr = fmt.Sprintf("%s → %s", plan.W0.UTC().Format(time.RFC3339), plan.W1.UTC().Format(time.RFC3339))

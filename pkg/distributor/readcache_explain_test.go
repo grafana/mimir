@@ -70,6 +70,27 @@ func TestDistributor_ExplainReadcacheQuery(t *testing.T) {
 		assert.Equal(t, plan.TotalCalls, countCalls(plan))
 	})
 
+	t.Run("finite metric-name regex explains the union routing", func(t *testing.T) {
+		d := readcacheTestDistributor(t, now, partitions, ownerFor)
+
+		plan := d.ExplainReadcacheQuery(context.Background(), userID, from, to, []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, `envoy_cluster_grpc_(2|4|13|14|15)`),
+		})
+		require.Empty(t, plan.Unavailable)
+		assert.True(t, plan.Named)
+		assert.ElementsMatch(t, []string{
+			"envoy_cluster_grpc_2",
+			"envoy_cluster_grpc_4",
+			"envoy_cluster_grpc_13",
+			"envoy_cluster_grpc_14",
+			"envoy_cluster_grpc_15",
+		}, plan.MetricNames)
+		assert.Empty(t, plan.MetricName, "a multi-name query must not report a misleading single metric")
+		assert.NotEmpty(t, plan.Partitions)
+		assert.Less(t, len(plan.Partitions), len(partitions))
+		assert.Equal(t, plan.TotalCalls, countCalls(plan))
+	})
+
 	t.Run("routing-enabled flag reflects the tenant limit", func(t *testing.T) {
 		d := readcacheTestDistributor(t, now, partitions, ownerFor)
 		d.limits = validation.NewOverrides(validation.Limits{
