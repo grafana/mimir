@@ -29,7 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func TestCanonicalSelectorString(t *testing.T) {
+func TestSelectorStringWithoutShardingMatcher(t *testing.T) {
 	t.Run("sorts matchers and formats like labels.Matcher", func(t *testing.T) {
 		matchers := []stats.LabelMatcher{
 			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
