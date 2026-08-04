@@ -27,6 +27,19 @@
     autoscaling_store_gateway_min_replicas_per_compartment_zone: 3,
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 10,
 
+    // Read compartment indexes whose KEDA autoscaling is disabled: the compartment's zone-a leader
+    // ScaledObject is not rendered, none of its zones get the autoscaling annotations, and its
+    // primary-zone StatefulSets run the static replica count configured below (backup zones keep
+    // their base 0 replicas). Only subtractive within an enabled component — it cannot re-enable
+    // single compartments when autoscaling_store_gateway_enabled is false.
+    autoscaling_store_gateway_disabled_compartments: [],
+
+    // Explicit replica count (per primary zone) per disabled compartment, e.g. { compartment_0: 3 }.
+    // Required for every compartment listed above (the render fails otherwise). When first
+    // disabling a compartment, pick a count >= its current live replicas to avoid an immediate
+    // uncoordinated downscale; shrink deliberately afterwards.
+    store_gateway_compartment_static_replicas: {},
+
     // Give more time if lazy-loading is disabled.
     store_gateway_automated_downscale_min_time_between_zones: if $._config.store_gateway_lazy_loading_enabled then '15m' else '60m',
   },
@@ -204,19 +217,30 @@
   //
 
   local compartmentsStoreGatewayAutoscalingEnabled = $._config.compartments_store_gateway_enabled && $._config.autoscaling_store_gateway_enabled,
+  local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.autoscaling_store_gateway_disabled_compartments, compartment),
+  local compartmentStaticReplicas(compartment) = $._config.store_gateway_compartment_static_replicas['compartment_%d' % compartment],
 
   // Applied to every per-compartment StatefulSet: the autoscaler owns the replicas and the rollout-operator
   // drives safe downscales via the prepare-shutdown endpoint (zones follow their leader per compartment).
   local storeGatewayCompartmentAutoscaleMixin(zone) = function(compartmentIdx)
-    $.removeReplicasFromSpec +
-    prepareDownscaleLabelsAnnotations +
-    storeGatewayDownscaleLeaderMixin(zone, compartmentIdx),
+    if isCompartmentAutoscalingDisabled(compartmentIdx) then
+      // Autoscaling is disabled for this compartment: mirror the component-level disable — no
+      // replica strip and no rollout-operator annotations. Primary zones run an explicit static
+      // replica count; backup zones keep their base 0 replicas (they exist to follow an autoscaled
+      // leader on spot nodes, which this compartment no longer has).
+      (if zone == 'a-backup' || zone == 'b-backup' then {} else statefulSet.mixin.spec.withReplicas(compartmentStaticReplicas(compartmentIdx)))
+    else
+      $.removeReplicasFromSpec +
+      prepareDownscaleLabelsAnnotations +
+      storeGatewayDownscaleLeaderMixin(zone, compartmentIdx),
 
   // Per-compartment store-gateways always use prepare-downscale when autoscaled (the shutdown endpoint removes
-  // them from the ring), so disable auto-forget.
-  local storeGatewayCompartmentAutoForgetArgs = if !compartmentsStoreGatewayAutoscalingEnabled then {} else {
-    'store-gateway.sharding-ring.auto-forget-enabled': false,
-  },
+  // them from the ring), so disable auto-forget. Compartments with autoscaling disabled keep the default
+  // auto-forget behavior, exactly like the component-level disable.
+  local storeGatewayCompartmentAutoForgetArgs = function(compartmentIdx)
+    if !compartmentsStoreGatewayAutoscalingEnabled || isCompartmentAutoscalingDisabled(compartmentIdx) then {} else {
+      'store-gateway.sharding-ring.auto-forget-enabled': false,
+    },
 
   store_gateway_zone_a_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_a_compartments_args, storeGatewayCompartmentAutoForgetArgs),
   store_gateway_zone_b_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_b_compartments_args, storeGatewayCompartmentAutoForgetArgs),
@@ -238,5 +262,17 @@
       $._config.autoscaling_store_gateway_max_replicas_per_compartment_zone,
       $._config.autoscaling_store_gateway_disk_usage_threshold,
       'store-gateway-data-store-gateway-zone-.*-rc-%d-.*' % c,
-    )),
+    ), $._config.autoscaling_store_gateway_disabled_compartments),
+
+  // Config validation.
+  local storeGatewayDisabledKnobsError = if !$._config.compartments_store_gateway_enabled then null else $.validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'autoscaling_store_gateway_disabled_compartments',
+    $._config.autoscaling_store_gateway_disabled_compartments,
+    'store_gateway_compartment_static_replicas',
+    $._config.store_gateway_compartment_static_replicas,
+    $._config.compartments_read_count,
+    'autoscaling_store_gateway_enabled',
+    $._config.autoscaling_store_gateway_enabled,
+  ),
+  assert storeGatewayDisabledKnobsError == null : storeGatewayDisabledKnobsError,
 }

@@ -234,11 +234,22 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
-func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+// inspectOTLPResourceMetrics observes ResourceMetrics/ScopeMetrics/Metrics
+// array lengths and reports whether any ResourceMetrics carries "job" or
+// "instance" as a resource attribute key.
+func inspectOTLPResourceMetrics(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) (hasJobOrInstanceResourceAttr bool) {
 	resourceMetricsSlice := req.Metrics().ResourceMetrics()
 	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
+		if !hasJobOrInstanceResourceAttr {
+			attrs := resourceMetrics.Resource().Attributes()
+			if _, ok := attrs.Get("job"); ok {
+				hasJobOrInstanceResourceAttr = true
+			} else if _, ok := attrs.Get("instance"); ok {
+				hasJobOrInstanceResourceAttr = true
+			}
+		}
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
@@ -247,6 +258,7 @@ func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequ
 			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
 		}
 	}
+	return hasJobOrInstanceResourceAttr
 }
 
 func newOTLPParser(
@@ -420,7 +432,9 @@ func newOTLPParser(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
 		pushMetrics.IncOTLPContentType(contentType)
-		observeOTLPFieldsCount(pushMetrics, otlpReq)
+		if inspectOTLPResourceMetrics(pushMetrics, otlpReq) {
+			pushMetrics.IncOTLPRequestWithJobOrInstanceResourceAttribute(tenantID)
+		}
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
