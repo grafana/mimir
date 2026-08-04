@@ -112,6 +112,7 @@
 * [BUGFIX] Query-frontend: Fail queries with a clear error, rather than planning them against an invalid maximum supported query plan version, when the querier ring contains only unhealthy queriers. #16333
 * [BUGFIX] Query-frontend: Fix `cortex_query_frontend_queries_in_progress` drifting permanently below zero. The response body returned to the middleware chain is closed more than once, and every close decremented the gauge against a single increment. #16429
 * [BUGFIX] Query-frontend: Stop the `query stats` log from corrupting queries that span multiple lines. Line breaks in query parameters were removed rather than replaced, so when a line break was the only separator between two tokens the tokens were fused together, leaving a logged `param_query` that no longer parsed. #16462
+* [BUGFIX] Ingest storage: Keep split Remote Write 2.0 Kafka records within the configured producer record size when multiple series fit near the limit, and preserve write-request settings across splits. #16295
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
 * [BUGFIX] Compactor: Abandon a compaction job in scheduler mode when a source block file is missing from object storage rather than attempting to retry the job. #16538
