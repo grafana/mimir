@@ -100,7 +100,7 @@ type readcacheAssignmentState struct {
 // instance) log streamed from the rebalancer, or nil if no snapshot
 // has been received yet (cold start or rebalancer unreachable).
 func (d *Distributor) GetReadcacheLog() *readcacheassignment.Log {
-	if s := d.readcacheAssignment.Load(); s != nil {
+	if s := d.loadReadcacheAssignment(); s != nil {
 		return s.log
 	}
 	return nil
@@ -111,10 +111,16 @@ func (d *Distributor) GetReadcacheLog() *readcacheassignment.Log {
 // map means identity: the instance IDs in the assignment log are
 // themselves the concrete pods to dial (RF=1 / legacy).
 func (d *Distributor) GetReadcacheReplicaMap() readcacheassignment.ReplicaMap {
-	if s := d.readcacheAssignment.Load(); s != nil {
+	if s := d.loadReadcacheAssignment(); s != nil {
 		return s.replicaMap
 	}
 	return nil
+}
+
+// loadReadcacheAssignment returns the atomically-published log+map
+// pair, or nil when no snapshot has arrived yet.
+func (d *Distributor) loadReadcacheAssignment() *readcacheAssignmentState {
+	return d.readcacheAssignment.Load()
 }
 
 // setReadcacheAssignment publishes log and replicaMap together.
@@ -230,11 +236,11 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	if d.readcachePool == nil {
 		return nil, "", false, nil
 	}
-	log := d.GetReadcacheLog()
-	if log == nil {
+	rcState := d.loadReadcacheAssignment()
+	if rcState == nil || rcState.log == nil {
 		return nil, "", false, nil
 	}
-	owners := log.Lookup(d.now(), partitionID)
+	owners := rcState.log.Lookup(d.now(), partitionID)
 	if len(owners) == 0 {
 		return nil, "", false, nil
 	}
@@ -244,7 +250,7 @@ func (d *Distributor) resolveReadcacheClientForPartition(ctx context.Context, pa
 	// to its concrete zone replicas and dial them in order until one
 	// connects — under RF=1 the expansion is the identity, so this
 	// reduces to dialing the logged owner.
-	replicas := d.GetReadcacheReplicaMap().ConcreteIDs(owners[0])
+	replicas := rcState.replicaMap.ConcreteIDs(owners[0])
 	for _, concrete := range replicas {
 		cli, err = d.readcachePool.GetClientForInstance(ctx, concrete)
 		if err != nil {
@@ -274,7 +280,10 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 	if log == nil {
 		return "", false
 	}
-	now := d.now()
+	return previousReadcacheOwnerFromLog(log, d.now(), partitionID)
+}
+
+func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, partitionID int32) (string, bool) {
 	currentOwners := map[string]struct{}{}
 	for _, id := range log.Lookup(now, partitionID) {
 		currentOwners[id] = struct{}{}
@@ -296,11 +305,6 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 		if _, isCurrent := currentOwners[e.InstanceID]; isCurrent {
 			continue
 		}
-		// e.From <= now and e.InstanceID != current owner.
-		// Acceptable as a fallback if its To is "recent enough".
-		// The rebalancer's cool-down policy (≈ 2x warmup) caps how
-		// stale a previous-owner can be; we trust the log's
-		// retention rather than checking explicit recency here.
 		if !bestFound || e.To.After(best.To) {
 			best = e
 			bestFound = true
@@ -447,13 +451,17 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 	if d.readcachePool == nil {
 		return nil, "", false
 	}
-	prevID, ok := d.previousReadcacheOwnerForPartition(partitionID)
+	rcState := d.loadReadcacheAssignment()
+	if rcState == nil || rcState.log == nil {
+		return nil, "", false
+	}
+	prevID, ok := previousReadcacheOwnerFromLog(rcState.log, d.now(), partitionID)
 	if !ok {
 		return nil, "", false
 	}
 	// prevID is a logical slot under RF≥2; expand and take the first
 	// replica that dials.
-	for _, concrete := range d.GetReadcacheReplicaMap().ConcreteIDs(prevID) {
+	for _, concrete := range rcState.replicaMap.ConcreteIDs(prevID) {
 		cli, err := d.readcachePool.GetClientForInstance(ctx, concrete)
 		if err != nil {
 			continue

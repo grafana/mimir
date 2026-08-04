@@ -393,10 +393,12 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	if log == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
 	}
-	rcLog := d.GetReadcacheLog()
-	if rcLog == nil {
+	rcState := d.loadReadcacheAssignment()
+	if rcState == nil || rcState.log == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
 	}
+	rcLog := rcState.log
+	replicaMap := rcState.replicaMap
 
 	var partitionIDs []int32
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
@@ -409,7 +411,6 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
 	}
 
-	replicaMap := d.GetReadcacheReplicaMap()
 	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
 	partitionByInstance := make(map[string]int32, len(partitionIDs))
 	distinctOwners := make(map[string]struct{})

@@ -114,11 +114,13 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		plan.Unavailable = "no live nautilus assignment log snapshot is available"
 		return plan
 	}
-	rcLog := d.GetReadcacheLog()
-	if rcLog == nil {
+	rcState := d.loadReadcacheAssignment()
+	if rcState == nil || rcState.log == nil {
 		plan.Unavailable = "no live readcache assignment log snapshot is available"
 		return plan
 	}
+	rcLog := rcState.log
+	replicaMap := rcState.replicaMap
 
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
 	plan.MetricNames, plan.Named = slices.Clone(metricNames), metricScoped
@@ -138,7 +140,6 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 
-	replicaMap := d.GetReadcacheReplicaMap()
 	plan.Partitions = make([]ReadcachePartitionPlan, 0, len(partitionIDs))
 	for _, partID := range partitionIDs {
 		// Owners drives the actual fan-out (one QueryStream per owner),
