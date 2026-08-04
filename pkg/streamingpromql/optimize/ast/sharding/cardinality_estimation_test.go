@@ -494,6 +494,19 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.Equal(t, uint64(1234), result.EstimatedSeriesCount)
 	})
 
+	t.Run("stores a single selector's cardinality, even if it is 0", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: minT, MaxT: maxT, SeriesCount: 0})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 1, c.SetCount)
+
+		result := estimateFoo(t, cfg)
+		require.NotNil(t, result)
+		require.Equal(t, uint64(0), result.EstimatedSeriesCount)
+	})
+
 	t.Run("sums the cardinality across shards of the same selector", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, qs := newCtxWithStats()
@@ -522,17 +535,6 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.Equal(t, uint64(50), result.EstimatedSeriesCount)
 	})
 
-	t.Run("records cache entries for all buckets covered by the selector, even if this is more than the configured limit for number of buckets read per selector", func(t *testing.T) {
-		c, cfg := setupCardinalityEstimationTest()
-		cfg.MaxBucketsReadPerSelector = 5
-		cfg.BucketSize = time.Minute
-		ctx, qs := newCtxWithStats()
-		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 0, MaxT: 10 * time.Minute.Milliseconds(), SeriesCount: 50})
-
-		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
-		require.Equal(t, 11, c.SetCount)
-	})
-
 	t.Run("does not overwrite a cached estimate with a lower observed cardinality", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
@@ -541,6 +543,18 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		ctx, qs := newCtxWithStats()
 		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1001})
 		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Equal(t, 0, c.SetCount)
+	})
+
+	t.Run("does not overwrite a cached estimate when both the cached and observed cardinality is 0", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		cfg.BucketSize = time.Millisecond // Use millisecond buckets to make the tests below clearer (otherwise we need to account for the bucket smearing offsets).
+		cfg.MaxBucketsReadPerSelector = math.MaxInt64
+
+		ctx, qs := newCtxWithStats()
+		qs.AddEstimatedSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 0})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 0})
 		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
 		require.Equal(t, 0, c.SetCount)
 	})

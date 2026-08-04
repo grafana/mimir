@@ -344,11 +344,11 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		}
 
 		for _, k := range keys {
-			existingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.bucketMinT, maxT: k.bucketMaxT}]
+			existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.bucketMinT, maxT: k.bucketMaxT}]
 			updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
-			if existingEstimate > 0 && float64(total) < updateThreshold {
+			if haveExistingEstimate && (total == 0 || float64(total) < updateThreshold) {
 				// The existing estimate is not above the threshold to write an updated entry,
-				// so leave it as-is.
+				// or both are 0, so leave it as-is.
 				ignoredUpdates++
 				continue
 			}
@@ -499,7 +499,7 @@ func selectorCardinalityCacheKey(ctx context.Context, cfg streamingpromql.Cardin
 }
 
 type cacheKey struct {
-	plain  []byte
+	plain      []byte
 	hashed     string
 	bucketMinT int64
 	bucketMaxT int64
