@@ -966,29 +966,35 @@
     local promql_scheduler_matchers = if scheduler_matchers == '' then '' else ', %s' % scheduler_matchers;
     local promql_compactor_matchers = if compactor_matchers == '' then '' else ', %s' % compactor_matchers;
 
-    local estimate(override, default) =
-      if override != '' then override
-      else default % {
-        namespace: $._config.namespace,
-        promql_compactor_matchers: promql_compactor_matchers,
-        lookback: lookback,
-        min_duration_samples: min_duration_samples,
-      };
+    local estimation_vars = {
+      namespace: $._config.namespace,
+      promql_compactor_matchers: promql_compactor_matchers,
+      lookback: lookback,
+      min_duration_samples: min_duration_samples,
+    };
 
-    local compaction_bytes_per_second_query = $._config.autoscaling_compactor_scheduler_compaction_bytes_per_second_query;
+    local compaction_query = $._config.autoscaling_compactor_scheduler_compaction_bytes_per_second_query;
+    local plan_query = $._config.autoscaling_compactor_scheduler_plan_job_seconds_query;
 
-    local compaction_speed = estimate(if compaction_bytes_per_second_query == '' then '' else '/ (%s > 0)' % compaction_bytes_per_second_query, |||
-      * (
-        sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-        / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-        and sum by (compaction_type) (histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d
-      )
-    |||);
+    // Turns outstanding bytes into seconds of work: divide by a configured throughput, or multiply by the seconds/byte we measure ourselves.
+    local bytes_to_seconds =
+      if compaction_query != '' then
+        '/ (%s > 0)' % compaction_query
+      else |||
+        * (
+          sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+          / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+          and sum by (compaction_type) (histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d
+        )
+      ||| % estimation_vars;
 
-    local plan_job_seconds = estimate($._config.autoscaling_compactor_scheduler_plan_job_seconds_query, |||
-      histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
-      and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
-    |||);
+    local plan_job_seconds =
+      if plan_query != '' then
+        plan_query
+      else |||
+        histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+        and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
+      ||| % estimation_vars;
 
     local indented(expr, spaces) = std.strReplace(std.rstripChars(expr, '\n'), '\n', '\n' + std.repeat(' ', spaces));
 
@@ -1065,7 +1071,7 @@
             sum(
               (
                 sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s})
-                %(compaction_speed)s
+                %(bytes_to_seconds)s
               )
               or
               sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s}) * %(default_compaction_seconds_per_byte)g
@@ -1085,7 +1091,7 @@
     ||| % {
       namespace: $._config.namespace,
       drain_target_seconds: $._config.autoscaling_compactor_scheduler_drain_target_seconds,
-      compaction_speed: indented(compaction_speed, 10),
+      bytes_to_seconds: indented(bytes_to_seconds, 10),
       plan_job_seconds: indented(plan_job_seconds, 8),
       default_compaction_seconds_per_byte: default_compaction_seconds_per_byte,
       default_plan_job_seconds: default_plan_job_seconds,
