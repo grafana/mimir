@@ -333,7 +333,7 @@ func TestCacheCardinalityEstimator(t *testing.T) {
 	t.Run("queries no more than the maximum allowed number of buckets, even if the selector queries a longer time range", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		cfg.MaxBucketsReadPerSelector = 4
-		cfg.BucketSize = 5 * time.Minute
+		cfg.BucketSize = time.Second
 
 		originalExpression := "foo"
 		expr, err := promqlext.NewPromQLParser().ParseExpr(originalExpression)
