@@ -418,9 +418,11 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	// and does not discard it. So the operator uses all left series. In that case leave leftSeriesUsed
 	// nil. InstantVectorOperatorBuffer reads a nil "used" slice as "the operator needs all series".
 	// This is correct and removes the need to get and fill an all-true slice.
-	// Do not apply the same optimization to rightSeriesUsed with fillLeft.
-	// addUnmatchedRightGroupsWithFilledLeftSides can skip a right group on a filled-labels collision
-	// (see the comment there). So a right series can stay unused even with fillLeft set.
+	//
+	// With fillLeft the operator uses every right series in the same way. Every unmatched right group
+	// makes output, and addUnmatchedRightGroupsWithFilledLeftSides never skips a group.
+	// TODO: the nil "all used" optimization now also applies to rightSeriesUsed with fillLeft. A later
+	// change can apply it.
 	var (
 		leftSeriesUsed []bool
 		err            error
@@ -521,7 +523,17 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 		// If two left series produce the same output labels (possible for comparison filters, which retain __name__),
 		// we merge them into one output series (appending leftSeriesIndex below) and let them compete per-timestep.
-		// For arithmetic operators the output labels are 1:1 with the match group key, so this never happens.
+		//
+		// Two left series of different match groups can also produce the same output labels when on(...)
+		// lists __name__. The match group key keeps __name__, but the output labels always drop it.
+		// The merged output series keeps only the first group's right side. The operator never reads
+		// the right side of the other colliding groups. So the result is incomplete when the left
+		// series of the colliding groups have samples at different steps. At a step where two of those
+		// left series have a sample, the per-timestep code reports a duplicate series error, and
+		// Prometheus reports an error too. This problem does not come from the fill modifiers and
+		// exists without them. The planner rejects only the fill variants of this case (see
+		// pkg/streamingpromql/planning.go). The two fill passes below cannot merge such a collision
+		// (see addUnmatchedRightGroupsWithFilledLeftSides).
 		if !exists {
 			if rightSide.outputSeriesCount == 0 {
 				// First output series the right side has matched to.
@@ -615,11 +627,11 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 // series that has no matching group on the right side. It uses the RHS fill value. The evaluator
 // builds the right side of each such output series at evaluation time.
 //
-// The caller runs this after it registers every matched series. So an existing output series with the
-// same labels is either a matched series or another filled-right series. Only the fillRight path
-// reaches this function. With fillRight the operator uses every left series, so this function does not
-// track leftSeriesUsed. The caller leaves leftSeriesUsed nil and sets lastLeftSeriesUsedIndex to the
-// final index.
+// The caller runs this after it registers every matched series, and after the fill-left pass. So an
+// existing output series with the same labels is a matched series, a filled-left series, or another
+// filled-right series. Only the fillRight path reaches this function. With fillRight the operator uses
+// every left series, so this function does not track leftSeriesUsed. The caller leaves leftSeriesUsed
+// nil and sets lastLeftSeriesUsedIndex to the final index.
 //
 // outputSeriesLabelsBytes is a scratch buffer reused across calls.
 func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRightSides(
@@ -636,22 +648,37 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 
 		if exists {
 			if !outputSeries.series.fillMissingRight {
-				// Collision with a matched (left-derived) output series. Do not merge this filled-right
-				// series into it. The matched series has a real right side. Appending this left index
-				// would evaluate this unmatched left series against the wrong right side. Keep the matched
-				// series and skip this one.
+				// This branch is unreachable. A collision here means a bug in the query engine.
 				//
-				// Only operators that retain __name__ reach this branch (comparison filters without the
-				// bool modifier, or trim operators). A degenerate empty-__name__ case can produce two
-				// left-side groups whose filled labels collide, one matched and one unmatched.
+				// The operator could not merge into the existing series anyway. The existing series is a
+				// matched (left-derived) output series or a filled-left series. A matched series has a
+				// real right side. Appending this left index would evaluate this unmatched left series
+				// against that wrong right side. The caller runs the fill-left pass before the
+				// fill-right pass, so the existing series can also be a filled-left series
+				// (fillMissingLeft). Such a series holds the right side of a group that this left series
+				// does not match. It also has no leftSeriesIndices at all.
 				//
-				// Operators that do not retain __name__ (arithmetic operators) cannot reach this branch.
-				// A collision here means a bug in the query engine.
-				if !promqlext.RetainsMetricName(b.Op, b.ReturnBool) {
-					return fmt.Errorf("unexpected output series collision during right-side fill for operator %v that does not retain __name__; this indicates a bug in the query engine", b.Op)
-				}
-
-				continue
+				// The collision itself cannot happen. This left series has no right group, so its match
+				// group holds no right series. The match group of a matched series or of a filled-left
+				// series does hold right series. So the two groups differ. Now take each matching shape
+				// in turn and show that the two sets of output labels cannot be equal.
+				//   - With on(...), labelsFunc and fillLabelsFunc both keep the listed labels and drop
+				//     __name__. Equal output labels then give equal match key labels, and so equal group
+				//     keys. That makes the two groups one group. Only __name__ in on(...) breaks this
+				//     step, and the planner rejects that shape together with a fill value (see
+				//     pkg/streamingpromql/planning.go).
+				//   - With ignoring() or without and a dropped __name__, both label functions return the
+				//     match key labels. The same group key argument applies.
+				//   - With ignoring() or without and a retained __name__, labelsFunc adds __name__ to
+				//     the match key labels. A matched series then holds the same match key labels as
+				//     this left series, so the same group key argument applies. A filled-left series
+				//     carries no __name__, so equal labels need this left series to carry no __name__
+				//     either. Both series then reduce to the match key labels, and the same group key
+				//     argument applies.
+				//
+				// labels.Labels holds no label with an empty value. So no __name__="" label defeats the
+				// last step.
+				return fmt.Errorf("unexpected output series collision during right-side fill for operator %v: this indicates a bug in the query engine", b.Op)
 			}
 
 			// Collision with another filled-right series. Both build their right side from the same RHS
@@ -709,7 +736,9 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 //   - The sibling's labels are the group's match key labels. A matched output series of another group
 //     carries that other group's match key labels, plus a metric name unless its left series has none.
 //     Two different groups never have equal match key labels, because the group key is a canonical
-//     encoding of exactly those labels.
+//     encoding of exactly those labels. This holds because splitFillLeftName is false for on(...), so
+//     this function only runs for ignoring() or without matching. With on(...) the group key can keep
+//     __name__ while the match key labels drop it, and then two groups can share match key labels.
 //   - addUnmatchedRightGroupsWithFilledLeftSides skips every matched group, so it never creates a
 //     series with this group's match key labels.
 //   - addUnmatchedLeftSeriesWithFilledRightSides only handles left series whose group has no right
@@ -799,21 +828,33 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedRightGroupsWithFilledL
 		*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
 
 		if _, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
-			// Collision with a left-derived output series. A fill-left series can't be merged into it
-			// (it has no leftSeriesIndices), and overwriting would discard real data.
+			// This branch is unreachable. A collision here means a bug in the query engine.
 			//
-			// This is only legitimately reachable for operators that retain __name__ (comparison
-			// filters used without the bool modifier, or trim operators): a degenerate empty-__name__
-			// case can produce two right-side groups whose filled labels collide. In that case we keep
-			// the existing series and intentionally skip this one.
+			// The operator could not merge into the existing series anyway. A fill-left series has no
+			// leftSeriesIndices, and an overwrite would discard real data.
 			//
-			// For operators that do not retain __name__ (arithmetic operators) this collision is
-			// impossible, so reaching it indicates a bug in the query engine.
-			if !promqlext.RetainsMetricName(b.Op, b.ReturnBool) {
-				return -1, fmt.Errorf("unexpected output series collision during left-side fill for operator %v that does not retain __name__; this indicates a bug in the query engine", b.Op)
-			}
-
-			continue
+			// The collision itself cannot happen. The existing series is a matched (left-derived) output
+			// series or another fill-left series that this loop added. The loop skips every matched
+			// group above, so a matched series belongs to a different group than this one.
+			// rightSideGroupsMap also holds one entry per group, so this loop visits each group once.
+			// Either way the two series belong to different groups. Now take each matching shape in turn
+			// and show that the two sets of output labels cannot be equal.
+			//   - With on(...), labelsFunc and fillLabelsFunc both keep the listed labels and drop
+			//     __name__. Equal output labels then give equal match key labels, and so equal group
+			//     keys. That makes the two groups one group. Only __name__ in on(...) breaks this step,
+			//     and the planner rejects that shape together with a fill value (see
+			//     pkg/streamingpromql/planning.go).
+			//   - With ignoring() or without and a dropped __name__, both label functions return the
+			//     match key labels. The same group key argument applies.
+			//   - With ignoring() or without and a retained __name__, labelsFunc adds __name__ to the
+			//     match key labels. This fill-left series carries no __name__, so equal labels need the
+			//     matched series to carry no __name__ either. Both series then reduce to the match key
+			//     labels, and the same group key argument applies. Two fill-left series always reduce to
+			//     the match key labels, so the same argument applies to them.
+			//
+			// labels.Labels holds no label with an empty value. So no __name__="" label defeats the last
+			// step.
+			return -1, fmt.Errorf("unexpected output series collision during left-side fill for operator %v: this indicates a bug in the query engine", b.Op)
 		}
 
 		for _, rightSeriesIndex := range rightSide.rightSeriesIndices {

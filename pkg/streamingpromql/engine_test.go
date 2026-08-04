@@ -82,7 +82,21 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
 		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
 		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
-		"start_timestamp(vector(0))":                                       "'start_timestamp' function",
+
+		// Fills with __name__ in the 'on' clause are not supported yet: two match groups that
+		// differ only by __name__ produce the same filled output series.
+		"left_vector + on(__name__, instance) fill_left(0) right_vector":  "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__, instance) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__, instance) fill(0) right_vector":       "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill(0) right_vector":                 "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill_left(0) right_vector":            "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill_right(0) right_vector":           "'fill' modifier with __name__ in the 'on' clause",
+		// A name-retaining operator (NEQ without the bool modifier acts as a filter) hits the same guard.
+		"left_vector != on(__name__, instance) fill_left(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		// The grammar also accepts fill_left and fill_right together.
+		"left_vector + on(__name__, instance) fill_left(0) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+
+		"start_timestamp(vector(0))": "'start_timestamp' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {

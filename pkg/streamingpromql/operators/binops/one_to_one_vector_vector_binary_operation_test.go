@@ -1103,9 +1103,8 @@ func TestOneToOneVectorVectorBinaryOperation_FillModifiers_SeriesUsed(t *testing
 	// This removes the need to get and fill an all-true slice.
 	//
 	// With fill_left, the operator uses every right series. All rightSeriesUsed entries are true,
-	// because unmatched right groups still make output. rightSeriesUsed keeps its explicit form.
-	// The collision path in addUnmatchedRightGroupsWithFilledLeftSides can leave a right series
-	// unused. So the nil optimization does not apply to the right side.
+	// because unmatched right groups still make output. rightSeriesUsed keeps its explicit form today.
+	// The nil optimization also applies to the right side, but computeOutputSeries does not use it yet.
 	//
 	// The test also checks that the last-used index equals the final input index for a full side.
 	fillZero := 0.0
@@ -1211,18 +1210,21 @@ func TestOneToOneVectorVectorBinaryOperation_FillModifiers_SeriesUsed(t *testing
 	}
 }
 
-func TestOneToOneVectorVectorBinaryOperation_FillLeft_CollisionLeavesRightSeriesUnused(t *testing.T) {
-	// This test drives the filled-labels collision path in addUnmatchedRightGroupsWithFilledLeftSides.
-	// This path is the reason the "all right series used with fill_left" optimization does not apply
-	// to rightSeriesUsed. A later change that sets rightSeriesUsed to nil ("all used") with fill_left
-	// makes this test fail, because one right series stays unused here.
+func TestOneToOneVectorVectorBinaryOperation_FillLeft_FilledLabelsCollisionIsAnEngineBug(t *testing.T) {
+	// The invariant: addUnmatchedRightGroupsWithFilledLeftSides never sees a filled-labels collision,
+	// so it reports one as a query engine bug and never skips the right group.
 	//
-	// The test uses on(__name__) matching, a name-retaining operator, and fill_left. The operator is
-	// NEQ without the bool modifier, so it acts as a filter and keeps the name. The two unmatched
-	// right series differ only in __name__. The group key keeps only __name__, so the two series go
-	// to different match groups. The filled labels drop __name__, so both groups fill to empty
-	// labels. The second group collides with the output series that the first group made. The
-	// operator skips the second group, so it never marks the second right series as used.
+	// The test uses on(__name__) matching and fill_left. The two unmatched right series differ only in
+	// __name__. The group key keeps only __name__, so the two series go to different match groups. The
+	// filled labels drop __name__, so both groups fill to empty labels. The second group then collides
+	// with the output series that the first group made.
+	//
+	// The operator is NEQ without the bool modifier, so it acts as a filter and retains __name__. That
+	// choice matters. The operator must report the collision for a name-retaining operator too.
+	//
+	// The planner rejects this query shape today. It returns a "not supported" error for a 'fill'
+	// modifier with __name__ in the 'on' clause (see pkg/streamingpromql/planning.go). This test
+	// builds the operator directly, so it drives the operator invariant on its own.
 	fillZero := 0.0
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
@@ -1245,8 +1247,7 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_CollisionLeavesRightSeries
 	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 
-	// parser.NEQ without the bool modifier keeps the metric name. The operator needs this to reach
-	// the collision branch and not the "this indicates a bug" error.
+	// parser.NEQ without the bool modifier retains the metric name.
 	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -1255,45 +1256,39 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_CollisionLeavesRightSeries
 	o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 
-	allMetadata, _, _, _, rightSeriesUsed, _, err := o.computeOutputSeries()
-	require.NoError(t, err)
-
-	// The operator makes only one output series, because both right groups fill to the same empty
-	// labels. The two right groups collided. So one right series stays unused. This invariant makes
-	// the nil optimization unsafe for the right side with fill_left.
-	require.Len(t, allMetadata, 1)
-	require.Equal(t, labels.EmptyLabels(), allMetadata[0].Labels)
-
-	require.Len(t, rightSeriesUsed, len(rightSeries))
-	usedCount := 0
-	for _, used := range rightSeriesUsed {
-		if used {
-			usedCount++
-		}
-	}
-	require.Equal(t, 1, usedCount, "expected exactly one right series to be used, rightSeriesUsed=%v", rightSeriesUsed)
+	// The operator must not build output for the colliding group and must not skip it either. It must
+	// report the collision as a query engine bug.
+	_, _, _, _, _, _, err = o.computeOutputSeries()
+	require.EqualError(t, err, "unexpected output series collision during left-side fill for operator !=: this indicates a bug in the query engine")
 
 	require.NoError(t, o.FinishedReading(ctx))
 	o.Close()
 }
 
-func TestOneToOneVectorVectorBinaryOperation_FillRight_CollisionKeepsMatchedSeries(t *testing.T) {
-	// This test drives the filled-labels collision path in addUnmatchedLeftSeriesWithFilledRightSides.
+func TestOneToOneVectorVectorBinaryOperation_FillRight_FilledLabelsCollisionIsAnEngineBug(t *testing.T) {
+	// The invariant: addUnmatchedLeftSeriesWithFilledRightSides never sees a labels collision with an
+	// output series that it cannot merge into. It reports one as a query engine bug and never skips the
+	// left series.
 	//
-	// The test uses on(__name__) matching, a name-retaining operator (NEQ without the bool modifier,
-	// so it acts as a filter and keeps the name), and fill_right. The group key keeps only __name__,
-	// so left series with different names go to different match groups. The filled labels drop
-	// __name__ (on(...) keeps only the matching labels, which is empty after removing __name__), so
-	// every left series produces empty output labels.
+	// The test uses on(__name__) matching and fill_right. The group key keeps only __name__, so left
+	// series with different names go to different match groups. The filled labels drop __name__
+	// (on(...) keeps only the matching labels, which is empty after removing __name__), so every left
+	// series produces empty output labels.
 	//
 	// One left series ("matched") has a right group of the same name, so it becomes a real matched
 	// output series. The other left series ("unmatched") has no right group and takes the fill-right
-	// path. Its filled labels collide with the matched series' empty labels. The operator must keep the
-	// matched series with its real right side and skip the unmatched left series. It must not merge the
-	// unmatched left index into the matched series, which would evaluate it against the wrong right
-	// side. It must not turn the matched series into a filled-right series.
+	// path. Its output labels collide with the matched series' empty labels. The operator cannot merge
+	// the unmatched left index into the matched series, because that would evaluate the left series
+	// against the wrong right side.
 	//
-	// The test runs both iteration orders to confirm a matched series always wins the collision.
+	// The operator is NEQ without the bool modifier, so it acts as a filter and retains __name__. That
+	// choice matters. The operator must report the collision for a name-retaining operator too.
+	//
+	// The test runs both iteration orders. The operator must report the collision in both.
+	//
+	// The planner rejects this query shape today. It returns a "not supported" error for a 'fill'
+	// modifier with __name__ in the 'on' clause (see pkg/streamingpromql/planning.go). This test
+	// builds the operator directly, so it drives the operator invariant on its own.
 	fillZero := 0.0
 
 	testCases := map[string]struct {
@@ -1333,8 +1328,7 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_CollisionKeepsMatchedSeri
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 
-			// parser.NEQ without the bool modifier keeps the metric name. The operator needs this to
-			// reach the collision branch and not the "this indicates a bug" error.
+			// parser.NEQ without the bool modifier retains the metric name.
 			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
@@ -1343,23 +1337,10 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_CollisionKeepsMatchedSeri
 			o.rightMetadata, err = right.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
-			allMetadata, allSeries, _, _, _, _, err := o.computeOutputSeries()
-			require.NoError(t, err)
-
-			// Both left groups fill to the same empty labels, so there is exactly one output series.
-			require.Len(t, allMetadata, 1)
-			require.Equal(t, labels.EmptyLabels(), allMetadata[0].Labels)
-			require.Len(t, allSeries, 1)
-
-			// The surviving output series must be the matched one. It keeps its real right side and the
-			// operator does not treat it as a filled-right series. Only the matched left series index is
-			// present. The operator skipped the unmatched left series and did not merge it in.
-			matchedLeftIndex := slices.IndexFunc(testCase.leftSeries, func(l labels.Labels) bool {
-				return l.Get(model.MetricNameLabel) == "matched"
-			})
-			require.False(t, allSeries[0].fillMissingRight, "output series must keep its real right side, not be treated as filled-right")
-			require.NotNil(t, allSeries[0].rightSide, "output series must have a real right side")
-			require.Equal(t, []int{matchedLeftIndex}, allSeries[0].leftSeriesIndices, "only the matched left series must be attached to the output series")
+			// The operator must not merge the unmatched left series into the matched series and must not
+			// skip it either. It must report the collision as a query engine bug.
+			_, _, _, _, _, _, err = o.computeOutputSeries()
+			require.EqualError(t, err, "unexpected output series collision during right-side fill for operator !=: this indicates a bug in the query engine")
 
 			require.NoError(t, o.FinishedReading(ctx))
 			o.Close()

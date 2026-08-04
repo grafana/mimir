@@ -1820,6 +1820,19 @@ eval instant at 0 a + on (__name__, env) group_left a
 eval_fail instant at 0 {__name__=~"a|b"} + on (__name__, env) group_left {__name__=~"a|b"}
   expected_fail_regexp (vector cannot contain metrics with the same labelset|multiple matches for labels: grouping labels must ensure unique matches)
 
+# MQE rejects a 'fill' modifier with __name__ in the 'on' clause, because the filled output labels
+# drop __name__ and so two match groups can collide. See TestUnsupportedPromQLFeatures.
+# The two queries below set no fill value. In each one, the extra left series has no matching right
+# group. The operator drops that series, so the output labels never collide. Other queries without a
+# fill value can still collide.
+eval instant at 0 {__name__=~"a|b"} + on (__name__, env) a
+  {env="prod"} 20
+  {env="test"} 24
+
+eval instant at 0 a + on (__name__, env) {__name__=~"a|b"}
+  {env="prod"} 20
+  {env="test"} 24
+
 clear
 
 # Test the behavior of the "narrow binary selectors" optimization pass. Ensure that it
