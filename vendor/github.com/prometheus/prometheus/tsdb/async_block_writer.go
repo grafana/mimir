@@ -37,6 +37,9 @@ type asyncBlockWriter struct {
 	chunkw ChunkWriter
 	indexw IndexWriter
 
+	// observer, when non-nil, receives every written series. See SeriesStatsObserver.
+	observer SeriesStatsObserver
+
 	closeSemaphore *semaphore.Weighted
 
 	seriesChan chan seriesToWrite
@@ -56,11 +59,12 @@ type seriesToWrite struct {
 	chks []chunks.Meta
 }
 
-func newAsyncBlockWriter(chunkPool chunkenc.Pool, chunkw ChunkWriter, indexw IndexWriter, closeSema *semaphore.Weighted) *asyncBlockWriter {
+func newAsyncBlockWriter(chunkPool chunkenc.Pool, chunkw ChunkWriter, indexw IndexWriter, closeSema *semaphore.Weighted, observer SeriesStatsObserver) *asyncBlockWriter {
 	bw := &asyncBlockWriter{
 		chunkPool:      chunkPool,
 		chunkw:         chunkw,
 		indexw:         indexw,
+		observer:       observer,
 		seriesChan:     make(chan seriesToWrite, 64),
 		finishedCh:     make(chan asyncBlockWriterResult, 1),
 		closeSemaphore: closeSema,
@@ -99,6 +103,11 @@ func (bw *asyncBlockWriter) loop() (res asyncBlockWriterResult) {
 			case chunkenc.EncXOR, chunkenc.EncXOR2:
 				stats.NumFloatSamples += samples
 			}
+		}
+
+		// The observer must be called before chunks are returned to the pool below.
+		if bw.observer != nil {
+			bw.observer.Add(sw.lbls, sw.chks)
 		}
 
 		for _, chk := range sw.chks {

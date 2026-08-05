@@ -99,6 +99,7 @@ type LeveledCompactor struct {
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
 	concurrencyOpts             LeveledCompactorConcurrencyOptions
+	seriesStatsObserverFactory  SeriesStatsObserverFactory
 }
 
 type CompactorMetrics struct {
@@ -189,6 +190,10 @@ type LeveledCompactorOptions struct {
 	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
 
+	// SeriesStatsObserverFactory, when set, is invoked for every output block to create
+	// an observer that receives each series written to that block. See SeriesStatsObserver.
+	SeriesStatsObserverFactory SeriesStatsObserverFactory
+
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
@@ -202,6 +207,36 @@ type LeveledCompactorOptions struct {
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
 type BlockExcludeFilterFunc func(meta *BlockMeta) bool
+
+// SeriesStatsObserver observes every series written to an output block during
+// compaction or head-to-block writing. Downstream projects can use it to derive
+// per-block statistics (e.g. per-series sample counts) as a by-product of the
+// write pass, without re-reading the finished block.
+//
+// Add is called once per output series, in write order, from the block writer
+// goroutine of a single output block. The labels and chunk metas (including chunk
+// contents) are only valid during the call: chunks are returned to a pool right
+// after, and labels may reference reused buffers. Implementations must copy
+// anything they retain and must not use the chunks after returning.
+//
+// Done is called at most once, after all series of the output block have been
+// added and block population succeeded. It is called from a different goroutine
+// than Add, but never concurrently with it. Implementations may use it to write
+// derived artifacts into the block directory passed to the factory; that directory
+// is the block's temporary build directory, whose contents are atomically moved
+// into the final block directory afterwards (or deleted if the block turns out
+// empty or compaction fails). Errors must be handled by the implementation itself:
+// a failing observer must not affect the block write.
+type SeriesStatsObserver interface {
+	Add(lbls labels.Labels, chks []chunks.Meta)
+	Done()
+}
+
+// SeriesStatsObserverFactory returns a SeriesStatsObserver for one output block,
+// given the block's meta and the directory the block is being built in. Returning
+// nil disables observation for that block. The factory may be called concurrently
+// for different output blocks.
+type SeriesStatsObserverFactory func(meta *BlockMeta, blockDir string) SeriesStatsObserver
 
 func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
@@ -253,6 +288,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		seriesStatsObserverFactory:  opts.SeriesStatsObserverFactory,
 	}, nil
 }
 
@@ -641,6 +677,9 @@ type shardedBlock struct {
 	tmpDir   string // Temp directory used when block is being built (= blockDir + temp suffix)
 	chunkw   ChunkWriter
 	indexw   IndexWriter
+
+	// seriesStatsObserver, when non-nil, receives every series written to this block. See SeriesStatsObserver.
+	seriesStatsObserver SeriesStatsObserver
 }
 
 func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string, open []*Block, blockPopulator BlockPopulator, shardCount uint64) (_ []ulid.ULID, err error) {
@@ -980,6 +1019,10 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 			return err
 		}
 
+		if c.seriesStatsObserverFactory != nil {
+			outBlocks[ix].seriesStatsObserver = c.seriesStatsObserverFactory(outBlocks[ix].meta, tmp)
+		}
+
 		// Populate chunk and index files into temporary directory with
 		// data of all blocks.
 		var chunkw ChunkWriter
@@ -1262,7 +1305,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 	blockWriters := make([]*asyncBlockWriter, len(outBlocks))
 	for ix := range outBlocks {
-		blockWriters[ix] = newAsyncBlockWriter(chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
+		blockWriters[ix] = newAsyncBlockWriter(chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema, outBlocks[ix].seriesStatsObserver)
 	}
 	defer func() {
 		// Stop all async writers.
@@ -1338,6 +1381,10 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		}
 
 		outBlocks[ix].meta.Stats = stats
+
+		if outBlocks[ix].seriesStatsObserver != nil {
+			outBlocks[ix].seriesStatsObserver.Done()
+		}
 	}
 
 	return nil

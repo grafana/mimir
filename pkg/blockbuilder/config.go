@@ -27,6 +27,8 @@ type Config struct {
 
 	GenerateSparseIndexHeaders bool `yaml:"generate_sparse_index_headers" category:"experimental"`
 
+	GenerateSeriesRateStats bool `yaml:"generate_series_rate_stats" category:"experimental"`
+
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
@@ -63,6 +65,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
 	f.IntVar(&cfg.ApplyMaxGlobalSeriesPerUserBelow, "block-builder.apply-max-global-series-per-user-below", 0, "Apply the global series limit per partition if the global series limit for the user is <= this given value. 0 means limits are disabled. If a user's limit is more than the given value, then the limits are not applied as well.")
 	f.BoolVar(&cfg.GenerateSparseIndexHeaders, "block-builder.generate-sparse-index-headers", false, "Construct and upload sparse index headers to object storage as part of block creation. This makes the sparse headers available to store-gateways when loading uncompacted blocks.")
+	f.BoolVar(&cfg.GenerateSeriesRateStats, "block-builder.generate-series-rate-stats", false, "Generate and upload a per-block series sample rate statistics sidecar as part of block creation. The sidecar holds a summary of the block's per-series sample rate distribution plus individual entries for outlier series.")
 
 	cfg.SchedulerConfig.RegisterFlags(f)
 }

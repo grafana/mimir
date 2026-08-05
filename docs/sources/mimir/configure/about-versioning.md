@@ -68,6 +68,11 @@ The following features are currently experimental:
     - `-compactor.max-lookback`
   - Limit how many block indexes are validated for health concurrently during a compaction job.
     - `-compactor.block-health-validation-concurrency`
+  - Generate a per-block series sample rate statistics sidecar for every compacted block.
+    - `-compactor.generate-series-rate-stats`
+- Block builder
+  - Generate a per-block series sample rate statistics sidecar for every built block.
+    - `-block-builder.generate-series-rate-stats`
 - Compactor scheduler
   - Coordinate compactors through a shared job queue and expose additional metrics about pending and active compaction work.
     - `-compactor-scheduler.*`

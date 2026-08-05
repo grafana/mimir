@@ -366,6 +366,12 @@ type Options struct {
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 
+	// SeriesStatsObserverFactory, when set, is invoked for every block written by the
+	// default compactor to create an observer that receives each written series.
+	// It's passed down to the TSDB compactor; ignored when NewCompactorFunc is set.
+	// See SeriesStatsObserver.
+	SeriesStatsObserverFactory SeriesStatsObserverFactory
+
 	// BlockReloadInterval is the interval at which blocks are reloaded.
 	BlockReloadInterval time.Duration
 
@@ -1219,6 +1225,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 			FloatChunkEncoding:          db.floatChunkEncoding,
+			SeriesStatsObserverFactory:  opts.SeriesStatsObserverFactory,
 		})
 	}
 	if err != nil {

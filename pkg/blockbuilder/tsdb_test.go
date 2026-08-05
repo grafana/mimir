@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/seriesratestats"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -230,6 +231,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 				config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 				config.GenerateSparseIndexHeaders = genSparseHeaders
+				config.GenerateSeriesRateStats = genSparseHeaders
 
 				logger := log.NewNopLogger()
 				registry := prometheus.NewPedanticRegistry()
@@ -298,6 +300,16 @@ func TestTSDBBuilder(t *testing.T) {
 					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
 					for _, b := range blocks {
 						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
+					}
+				}
+
+				if builder.cfg.GenerateSeriesRateStats {
+					// Every block gets a series rate stats sidecar, and its summary matches the block's own stats.
+					for _, b := range blocks {
+						stats, err := seriesratestats.ReadFromDir(path.Join(shipperDir, b.Meta().ULID.String()))
+						require.NoError(t, err)
+						require.Equal(t, b.Meta().Stats.NumSeries, stats.Summary.NumSeries)
+						require.Equal(t, b.Meta().Stats.NumSamples, stats.Summary.NumSamples)
 					}
 				}
 

@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/seriesratestats"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -339,6 +340,11 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		udb.maxGlobalSeriesLimit = userLimit
 	}
 
+	var seriesStatsObserverFactory tsdb.SeriesStatsObserverFactory
+	if b.cfg.GenerateSeriesRateStats {
+		seriesStatsObserverFactory = seriesratestats.NewObserverFactory(seriesratestats.DefaultConfig(), userLogger)
+	}
+
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    0,
 		MinBlockDuration:                     blockRanges[0],
@@ -361,6 +367,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil), // No need for these metrics; no one queries tsdb through block-builder
 		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
+		SeriesStatsObserverFactory:           seriesStatsObserverFactory,
 	}, nil)
 	if err != nil {
 		return nil, err

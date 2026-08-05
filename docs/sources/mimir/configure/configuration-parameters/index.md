@@ -6700,6 +6700,13 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-skip-future-max-time
 [first_level_compaction_skip_future_max_time: <boolean> | default = false]
 
+# (experimental) Generate and upload a per-block series sample rate statistics
+# sidecar for every compacted block. The sidecar holds a summary of the block's
+# per-series sample rate distribution plus individual entries for outlier
+# series.
+# CLI flag: -compactor.generate-series-rate-stats
+[generate_series_rate_stats: <boolean> | default = false]
+
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
 # CLI flag: -compactor.cleanup-interval

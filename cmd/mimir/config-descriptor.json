@@ -13354,6 +13354,17 @@
         },
         {
           "kind": "field",
+          "name": "generate_series_rate_stats",
+          "required": false,
+          "desc": "Generate and upload a per-block series sample rate statistics sidecar for every compacted block. The sidecar holds a summary of the block's per-series sample rate distribution plus individual entries for outlier series.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.generate-series-rate-stats",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cleanup_interval",
           "required": false,
           "desc": "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.",

@@ -25,6 +25,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/seriesratestats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -806,4 +807,62 @@ func convertMetasMapToSlice(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 		out = append(out, m)
 	}
 	return out
+}
+
+func TestSplitAndMergeCompactorFactory_GeneratesSeriesRateStatsSidecar(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.GenerateSeriesRateStats = true
+
+	compactor, _, err := splitAndMergeCompactorFactory(context.Background(), cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	// Create two source blocks covering the same time range, so that they get merged.
+	const numSeries = 10
+	series := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		series = append(series, labels.FromStrings("__name__", "test_metric", "idx", strconv.Itoa(i)))
+	}
+
+	workDir := t.TempDir()
+	id1, err := block.CreateBlock(t.Context(), workDir, series, 100, 0, 2*time.Hour.Milliseconds(), labels.EmptyLabels())
+	require.NoError(t, err)
+	id2, err := block.CreateBlock(t.Context(), workDir, series, 100, 0, 2*time.Hour.Milliseconds(), labels.EmptyLabels())
+	require.NoError(t, err)
+
+	sourceDirs := []string{filepath.Join(workDir, id1.String()), filepath.Join(workDir, id2.String())}
+
+	// Merge without splitting: the output block gets a sidecar whose summary matches the block's stats.
+	ids, err := compactor.Compact(workDir, sourceDirs, nil)
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+
+	meta, err := block.ReadMetaFromDir(filepath.Join(workDir, ids[0].String()))
+	require.NoError(t, err)
+	stats, err := seriesratestats.ReadFromDir(filepath.Join(workDir, ids[0].String()))
+	require.NoError(t, err)
+	require.Equal(t, meta.Stats.NumSeries, stats.Summary.NumSeries)
+	require.Equal(t, meta.Stats.NumSamples, stats.Summary.NumSamples)
+
+	// Split compaction: every non-empty output shard gets its own sidecar, and the
+	// shard sidecars sum up to the merged block's totals.
+	shardIDs, err := compactor.CompactWithSplitting(workDir, sourceDirs, nil, 2)
+	require.NoError(t, err)
+
+	var totalSeries, totalSamples uint64
+	nonEmptyShards := 0
+	for _, id := range shardIDs {
+		if id.Compare(ulid.ULID{}) == 0 {
+			// Empty shards produce no block.
+			continue
+		}
+		nonEmptyShards++
+		shardStats, err := seriesratestats.ReadFromDir(filepath.Join(workDir, id.String()))
+		require.NoError(t, err)
+		totalSeries += shardStats.Summary.NumSeries
+		totalSamples += shardStats.Summary.NumSamples
+	}
+	require.NotZero(t, nonEmptyShards)
+	require.Equal(t, uint64(numSeries), totalSeries)
+	require.Equal(t, meta.Stats.NumSamples, totalSamples)
 }

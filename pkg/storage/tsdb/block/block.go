@@ -37,6 +37,8 @@ const (
 	IndexHeaderFilename = "index-header"
 	// SparseIndexHeaderFilename is the canonical name for sparse index header file that stores abbreviated slices of index-header.
 	SparseIndexHeaderFilename = "sparse-index-header"
+	// SeriesRateStatsFilename is the canonical name for the optional per-block series sample rate statistics sidecar.
+	SeriesRateStatsFilename = "series-rate-stats"
 	// ChunksDirname is the known dir name for chunks with compressed samples.
 	ChunksDirname = "chunks"
 
@@ -50,6 +52,7 @@ const (
 	FileTypeMeta              FileType = "meta"
 	FileTypeIndex             FileType = "index"
 	FileTypeSparseIndexHeader FileType = "sparse_index_header"
+	FileTypeSeriesRateStats   FileType = "series_rate_stats"
 	FileTypeChunks            FileType = "chunks"
 	FileTypeUnknown           FileType = "unknown"
 )
@@ -177,6 +180,23 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		})
 	} else {
 		level.Debug(logger).Log("msg", "sparse index header entry not found, skipping upload", "block", id.String())
+	}
+
+	hasSeriesRateStats := false
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == SeriesRateStatsFilename {
+			hasSeriesRateStats = true
+			break
+		}
+	}
+
+	if hasSeriesRateStats {
+		eg.Go(func() (err error) {
+			if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, SeriesRateStatsFilename), path.Join(id.String(), SeriesRateStatsFilename)); err != nil {
+				return &UploadError{err, FileTypeSeriesRateStats}
+			}
+			return nil
+		})
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -383,6 +403,17 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 		}
 	} else {
 		res = append(res, File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
+
+	// The series rate stats sidecar is optional as well: it only exists when its generation
+	// is enabled in the component that built the block. Upload skips it when absent.
+	seriesRateStatsInfo, err := os.Stat(filepath.Join(blockDir, SeriesRateStatsFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SeriesRateStatsFilename))
+		}
+	} else {
+		res = append(res, File{RelPath: seriesRateStatsInfo.Name(), SizeBytes: seriesRateStatsInfo.Size()})
 	}
 
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
