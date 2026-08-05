@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/promqlext"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -79,10 +78,29 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"left_vector + fill_right(0) right_vector": "'fill' modifier",
-		"left_vector + fill(0) right_vector":       "'fill' modifier",
-		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
-		"start_timestamp(vector(0))":               "'start_timestamp' function",
+		// Grouped (group_left/group_right) fills are not supported yet.
+		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)",
+
+		// Fills with __name__ in the 'on' clause are not supported yet: two match groups that
+		// differ only by __name__ produce the same filled output series.
+		"left_vector + on(__name__, instance) fill_left(0) right_vector":  "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__, instance) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__, instance) fill(0) right_vector":       "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill(0) right_vector":                 "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill_left(0) right_vector":            "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector + on(__name__) fill_right(0) right_vector":           "'fill' modifier with __name__ in the 'on' clause",
+		// A name-retaining operator (NEQ without the bool modifier acts as a filter) hits the same guard.
+		"left_vector != on(__name__, instance) fill_left(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		// '== bool' does not retain the metric name, unlike '!=' without 'bool'. These cases cover the
+		// other side of the RetainsMetricName split.
+		"left_vector == bool on(__name__, instance) fill_left(0) right_vector":  "'fill' modifier with __name__ in the 'on' clause",
+		"left_vector == bool on(__name__, instance) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+		// The grammar also accepts fill_left and fill_right together.
+		"left_vector + on(__name__, instance) fill_left(0) fill_right(0) right_vector": "'fill' modifier with __name__ in the 'on' clause",
+
+		"start_timestamp(vector(0))": "'start_timestamp' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -118,11 +136,7 @@ func requireQueryIsUnsupported(t *testing.T, expression string, expectedError st
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
-	parserOpts := promqlext.NewPromQLParserOptions()
-	parserOpts.EnableBinopFillModifiers = true
-
 	opts := NewTestEngineOpts()
-	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -136,11 +150,7 @@ func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedErr
 }
 
 func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
-	parserOpts := promqlext.NewPromQLParserOptions()
-	parserOpts.EnableBinopFillModifiers = true
-
 	opts := NewTestEngineOpts()
-	opts.CommonOpts.Parser = parser.NewParser(parserOpts)
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)

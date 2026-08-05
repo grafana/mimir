@@ -1,0 +1,639 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# These tests exercise the experimental one-to-one 'fill', 'fill_left' and 'fill_right' binary
+# operator modifiers. They are gated behind the parser's EnableBinopFillModifiers option, which the
+# test runner enables for test files whose name contains "fill". Grouped (group_left/group_right)
+# fills are not covered here.
+#
+# Semantics reference:
+# https://promlabs.com/blog/2026/03/05/filling-in-missing-series-in-binary-operator-matching/.
+
+# ---------- Partial overlap: default matching ----------
+
+load 5m
+  left_metric{label="a"} 10
+  left_metric{label="b"} 20
+  left_metric{label="c"} 30
+  right_metric{label="a"} 100
+  right_metric{label="b"} 200
+  right_metric{label="d"} 400
+
+# fill(0): fill both sides.
+eval instant at 0m left_metric + fill(0) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 30
+  {label="d"} 400
+
+# fill_left(0): only fill left side, so only unmatched right-side groups get a result.
+eval instant at 0m left_metric + fill_left(0) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="d"} 400
+
+# fill_right(0): only fill right side, so only unmatched left-side groups get a result.
+eval instant at 0m left_metric + fill_right(0) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 30
+
+# fill_left and fill_right with different values.
+eval instant at 0m left_metric + fill_left(5) fill_right(7) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 37
+  {label="d"} 405
+
+# fill with NaN.
+eval instant at 0m left_metric + fill(NaN) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} NaN
+  {label="d"} NaN
+
+# fill with Inf.
+eval instant at 0m left_metric + fill(Inf) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} +Inf
+  {label="d"} +Inf
+
+# fill with -Inf.
+eval instant at 0m left_metric + fill(-Inf) right_metric
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} -Inf
+  {label="d"} -Inf
+
+# ---------- Comparison operators with fill ----------
+
+# Comparison filters keep the metric name of the present series for matched groups, but a filled
+# series takes only the match-group labels (no metric name), matching upstream Caveat 2.
+eval instant at 0m left_metric == fill(30) right_metric
+  left_metric{label="c"} 30
+
+eval instant at 0m left_metric != fill(30) right_metric
+  left_metric{label="a"} 10
+  left_metric{label="b"} 20
+  {label="d"} 30
+
+eval instant at 0m left_metric > fill(25) right_metric
+  left_metric{label="c"} 30
+
+# ---------- Comparison operators with bool modifier and fill ----------
+
+eval instant at 0m left_metric == bool fill(30) right_metric
+  {label="a"} 0
+  {label="b"} 0
+  {label="c"} 1
+  {label="d"} 0
+
+eval instant at 0m left_metric != bool fill(30) right_metric
+  {label="a"} 1
+  {label="b"} 1
+  {label="c"} 0
+  {label="d"} 1
+
+eval instant at 0m left_metric > bool fill(25) right_metric
+  {label="a"} 0
+  {label="b"} 0
+  {label="c"} 1
+  {label="d"} 0
+
+# ---------- fill with on() and ignoring() (one-to-one) ----------
+
+clear
+
+load 5m
+  left_metric{job="foo", instance="a"} 10
+  left_metric{job="foo", instance="b"} 20
+  left_metric{job="bar", instance="c"} 30
+  right_metric{job="foo", instance="a"} 100
+  right_metric{job="foo", instance="d"} 300
+
+# on(job, instance) keeps matching one-to-one because the (job, instance) pairs are unique.
+eval instant at 0m left_metric + on(job, instance) fill(0) right_metric
+  {job="foo", instance="a"} 110
+  {job="foo", instance="b"} 20
+  {job="bar", instance="c"} 30
+  {job="foo", instance="d"} 300
+
+eval instant at 0m left_metric + on(job, instance) fill_right(0) right_metric
+  {job="foo", instance="a"} 110
+  {job="foo", instance="b"} 20
+  {job="bar", instance="c"} 30
+
+eval instant at 0m left_metric + on(job, instance) fill_left(0) right_metric
+  {job="foo", instance="a"} 110
+  {job="foo", instance="d"} 300
+
+# ignoring(job): the remaining labels (instance) are unique on each side, so still one-to-one.
+eval instant at 0m left_metric + ignoring(job) fill(0) right_metric
+  {instance="a"} 110
+  {instance="b"} 20
+  {instance="c"} 30
+  {instance="d"} 300
+
+eval instant at 0m left_metric + ignoring(job) fill_right(0) right_metric
+  {instance="a"} 110
+  {instance="b"} 20
+  {instance="c"} 30
+
+eval instant at 0m left_metric + ignoring(job) fill_left(0) right_metric
+  {instance="a"} 110
+  {instance="d"} 300
+
+# ---------- No overlap at all ----------
+
+clear
+
+load 5m
+  only_left{label="a"} 10
+  only_left{label="b"} 20
+  only_right{label="c"} 30
+  only_right{label="d"} 40
+
+# No overlap - fill creates all results.
+eval instant at 0m only_left + fill(0) only_right
+  {label="a"} 10
+  {label="b"} 20
+  {label="c"} 30
+  {label="d"} 40
+
+# No overlap - fill_left only creates right side results.
+eval instant at 0m only_left + fill_left(0) only_right
+  {label="c"} 30
+  {label="d"} 40
+
+# No overlap - fill_right only creates left side results.
+eval instant at 0m only_left + fill_right(0) only_right
+  {label="a"} 10
+  {label="b"} 20
+
+# ---------- Complete overlap ----------
+
+clear
+
+load 5m
+  complete_left{label="a"} 10
+  complete_left{label="b"} 20
+  complete_right{label="a"} 100
+  complete_right{label="b"} 200
+
+# Complete overlap - fill has no effect.
+eval instant at 0m complete_left + fill(99) complete_right
+  {label="a"} 110
+  {label="b"} 220
+
+# ---------- Range queries ----------
+
+clear
+
+load 5m
+  range_left{label="a"} 1 2 3 4 5
+  range_left{label="b"} 10 20 30 40 50
+  range_right{label="a"} 100 200 300 400 500
+  range_right{label="c"} 1000 2000 3000 4000 5000
+
+eval range from 0 to 20m step 5m range_left + fill(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="b"} 10 20 30 40 50
+  {label="c"} 1000 2000 3000 4000 5000
+
+eval range from 0 to 20m step 5m range_left + fill_right(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="b"} 10 20 30 40 50
+
+eval range from 0 to 20m step 5m range_left + fill_left(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="c"} 1000 2000 3000 4000 5000
+
+# ---------- Range queries where a group is present on only one side ----------
+
+clear
+
+load 5m
+  side_left{label="a"}  1  2  3  4  5
+  side_left{label="b"}  10 20 30 40 50
+  side_right{label="a"} 100 200 300 400 500
+  side_right{label="c"} 1000 2000 3000 4000 5000
+
+# Group "b" exists only on the left; group "c" only on the right. fill_right keeps "b", fill_left keeps "c".
+eval range from 0 to 20m step 5m side_left + fill_right(0) side_right
+  {label="a"} 101 202 303 404 505
+  {label="b"} 10 20 30 40 50
+
+eval range from 0 to 20m step 5m side_left + fill_left(0) side_right
+  {label="a"} 101 202 303 404 505
+  {label="c"} 1000 2000 3000 4000 5000
+
+# ---------- Range queries with intermittently present series (per-timestep fill) ----------
+#
+# Here a matched group's series are present on both sides but at *different* timesteps, so the fill
+# must be applied per-timestep within the matched group: at each step where only one side has a
+# sample, the other side takes the fill value (or is dropped, if that side is not being filled).
+
+clear
+
+load 5m
+  intermittent_left{label="a"}  1  _  3  _  5
+  intermittent_left{label="b"}  _  20 _  40 _
+  intermittent_right{label="a"} _  200 _ 400 _
+  intermittent_right{label="b"} 100 _  300 _ 500
+
+# fill(0): output at every step where either side is present.
+eval range from 0 to 20m step 5m intermittent_left + fill(0) intermittent_right
+  {label="a"} 1 200 3 400 5
+  {label="b"} 100 20 300 40 500
+
+# fill_right(0): output only where the LEFT side is present (right filled with 0 if missing).
+eval range from 0 to 20m step 5m intermittent_left + fill_right(0) intermittent_right
+  {label="a"} 1 _ 3 _ 5
+  {label="b"} _ 20 _ 40 _
+
+# fill_left(0): output only where the RIGHT side is present (left filled with 0 if missing).
+eval range from 0 to 20m step 5m intermittent_left + fill_left(0) intermittent_right
+  {label="a"} _ 200 _ 400 _
+  {label="b"} 100 _ 300 _ 500
+
+# fill_left and fill_right with distinct values applied per-timestep within a matched group.
+eval range from 0 to 20m step 5m intermittent_left + fill_left(7) fill_right(3) intermittent_right
+  {label="a"} 4 207 6 407 8
+  {label="b"} 107 23 307 43 507
+
+# ---------- Trailing / leading-only presence (per-timestep fill at the extremes) ----------
+#
+# A matched group where one side only has a sample at the very first step and the other only at the
+# very last step exercises the tail handling after one iterator is exhausted.
+
+clear
+
+load 5m
+  edge_left{label="a"}  9 _ _ _ _
+  edge_right{label="a"} _ _ _ _ 4
+
+eval range from 0 to 20m step 5m edge_left + fill(0) edge_right
+  {label="a"} 9 _ _ _ 4
+
+eval range from 0 to 20m step 5m edge_left + fill_right(0) edge_right
+  {label="a"} 9 _ _ _ _
+
+eval range from 0 to 20m step 5m edge_left + fill_left(0) edge_right
+  {label="a"} _ _ _ _ 4
+
+# ---------- Comparison operators on intermittent data ----------
+
+clear
+
+load 5m
+  cmp_left{label="a"}  5 _ 30 _ 5
+  cmp_right{label="a"} _ 20 10 _ 50
+
+# '>' with fill(0): at steps where only one side is present the missing operand is 0.
+#   step 0: 5 > 0    -> keep 5   (right filled -> keeps the left metric name)
+#   step 1: 0 > 20   -> dropped  (left filled)
+#   step 2: 30 > 10  -> keep 30  (both present -> keeps the left metric name)
+#   step 3: no data on either side
+#   step 4: 5 > 50   -> dropped  (both present)
+# Every kept step here is either both-present or right-filled, so every result comes from a real left
+# sample and keeps the left metric name. (A kept *left*-filled step would instead drop the metric
+# name. See the '!=' case below.)
+eval range from 0 to 20m step 5m cmp_left > fill(0) cmp_right
+  cmp_left{label="a"} 5 _ 30 _ _
+
+# '>' with bool and fill(0): every step where at least one side is present yields 0 or 1.
+eval range from 0 to 20m step 5m cmp_left > bool fill(0) cmp_right
+  {label="a"} 1 0 1 _ 0
+
+# fill_right only: output only where the left side is present (right filled with 0 if missing).
+#   step 0: 5 > 0 -> 1; step 2: 30 > 10 -> 1; step 4: 5 > 50 -> 0.
+eval range from 0 to 20m step 5m cmp_left > bool fill_right(0) cmp_right
+  {label="a"} 1 _ 1 _ 0
+
+# ---------- Name-retaining comparison filter with fill_left on intermittent data ----------
+#
+# A name-retaining comparison filter (== != > < >= <= without the bool modifier) with ignoring()
+# (default) matching keeps the left series' __name__ for a *matched* group. Prometheus evaluates
+# matching per timestep. It builds the missing left operand from the right series' match labels only,
+# which drops __name__. So a kept *left-filled* step (left missing, right present) has no metric name.
+# A both-present step keeps the name. Over a range, one match group therefore splits into two output
+# series. One has __name__ (both-present steps). One has no __name__ (left-filled steps).
+
+clear
+
+load 5m
+  ir_left{label="a"}  100 _   300 _   500
+  ir_right{label="a"} _   1   2   3   _
+
+#   step 0: left 100 present, right missing -> no fill_right -> dropped
+#   step 1: left missing -> fill 0 -> 0 != 1 -> true, kept -> no __name__ (synthetic left)
+#   step 2: both present -> 300 != 2 -> true, kept -> keeps __name__ (real left)
+#   step 3: left missing -> fill 0 -> 0 != 3 -> true, kept -> no __name__ (synthetic left)
+#   step 4: left 500 present, right missing -> no fill_right -> dropped
+eval range from 0 to 20m step 5m ir_left != fill_left(0) ir_right
+  ir_left{label="a"} _ _ 300 _ _
+  {label="a"} _ 0 _ 0 _
+
+# With on(...) matching the output labels never include __name__, so there is no split. The
+# both-present step and the left-filled steps all carry the same (name-dropped) labels.
+#   step 1: 0 != 1 -> 0 (kept). step 2: 300 != 2 -> 300 (kept). step 3: 0 != 3 -> 0 (kept).
+eval range from 0 to 20m step 5m ir_left != on(label) fill_left(0) ir_right
+  {label="a"} _ 0 300 0 _
+
+# With the bool modifier the metric name is always dropped, so again there is no split.
+eval range from 0 to 20m step 5m ir_left != bool fill_left(0) ir_right
+  {label="a"} _ 1 1 1 _
+
+# ---------- Name-retaining comparison filter with fill_left and two differently named left series ----------
+#
+# Default matching ignores __name__, so two left series with different metric names can belong to the
+# same match group. Here they are never present at the same step, so there is no duplicate-series
+# conflict.
+#
+# Prometheus matches per timestep and treats the left side of the group as a whole. It fills the left
+# operand only at a step where NO left series of the group has a sample. A step that comes from a real
+# left sample keeps that series' __name__. A left-filled step has no __name__, because the synthetic
+# left operand takes only the match group labels.
+
+clear
+
+load 5m
+  multi_a{label="a"} 100 _   _
+  multi_b{label="a"} _   200 _
+  multi_r{label="a"} 1   2   3
+
+#   step 0: multi_a=100 present -> 100 != 1 -> kept, keeps __name__ multi_a
+#   step 1: multi_b=200 present -> 200 != 2 -> kept, keeps __name__ multi_b
+#   step 2: no left series of the group is present -> fill 0 -> 0 != 3 -> kept, no __name__
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != fill_left(0) multi_r
+  multi_a{label="a"} 100 _ _
+  multi_b{label="a"} _ 200 _
+  {label="a"} _ _ 0
+
+# Control: with on(...) the output labels never include __name__, so the group produces one series and
+# there is no split.
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != on(label) fill_left(0) multi_r
+  {label="a"} 100 200 0
+
+# Control: with the bool modifier the operator always drops the metric name. So again there is no
+# split.
+eval range from 0 to 10m step 5m {__name__=~"multi_a|multi_b"} != bool fill_left(0) multi_r
+  {label="a"} 1 1 1
+
+# The two left series together cover every step where the right side has a sample. The left fill
+# therefore never applies, and no name-dropped output series exists.
+
+clear
+
+load 5m
+  cover_a{label="a"} 100 _
+  cover_b{label="a"} _   200
+  cover_r{label="a"} 1   2
+
+eval range from 0 to 5m step 5m {__name__=~"cover_a|cover_b"} != fill_left(0) cover_r
+  cover_a{label="a"} 100 _
+  cover_b{label="a"} _   200
+
+# Three differently named left series in one match group. Only the last step has no left sample.
+
+clear
+
+load 5m
+  three_a{label="a"} 100 _   _   _
+  three_b{label="a"} _   200 _   _
+  three_c{label="a"} _   _   300 _
+  three_r{label="a"} 1   2   3   4
+
+eval range from 0 to 15m step 5m {__name__=~"three_a|three_b|three_c"} != fill_left(0) three_r
+  three_a{label="a"} 100 _ _ _
+  three_b{label="a"} _ 200 _ _
+  three_c{label="a"} _ _ 300 _
+  {label="a"} _ _ _ 0
+
+# ---------- Name-retaining comparison filter with fill_left and a left series with no __name__ ----------
+#
+# Default matching ignores __name__. So a left series with no __name__ belongs to the same match group
+# as a left series with a __name__. The left-filled steps of a group carry the match group labels.
+# Here those labels are exactly the labels of the unnamed left series. So the group produces no extra
+# output series. The output series of the unnamed left series carries the group's left-filled steps as
+# well.
+
+clear
+
+load 5m
+  named_a{group="g"} 100 _   _
+  {group="g"}        _   200 _
+  named_r{group="g"} 1   2   3
+
+#   step 0: named_a=100 present -> 100 != 1 -> kept, keeps __name__ named_a
+#   step 1: the unnamed left series is present -> 200 != 2 -> kept, labels {group="g"}
+#   step 2: no left series of the group is present -> fill 0 -> 0 != 3 -> kept, labels {group="g"}
+eval range from 0 to 10m step 5m {group="g", __name__!="named_r"} != fill_left(0) named_r
+  named_a{group="g"} 100 _ _
+  {group="g"} _ 200 0
+
+# Control: with on(...) the output labels never include __name__, so the whole group produces one
+# series.
+eval range from 0 to 10m step 5m {group="g", __name__!="named_r"} != on(group) fill_left(0) named_r
+  {group="g"} 100 200 0
+
+# The two left series together cover every step where the right side has a sample. So the left fill
+# never applies. The output series of the unnamed left series holds only its own points.
+
+clear
+
+load 5m
+  covered_a{group="g"} 100 _   300
+  {group="g"}          _   200 _
+  covered_r{group="g"} 1   2   3
+
+eval range from 0 to 10m step 5m {group="g", __name__!="covered_r"} != fill_left(0) covered_r
+  covered_a{group="g"} 100 _ 300
+  {group="g"} _ 200 _
+
+# Three left series in one match group, one of them with no __name__.
+
+clear
+
+load 5m
+  trio_a{group="g"} 100 _   _   _
+  trio_b{group="g"} _   200 _   _
+  {group="g"}       _   _   300 _
+  trio_r{group="g"} 1   2   3   4
+
+eval range from 0 to 15m step 5m {group="g", __name__!="trio_r"} != fill_left(0) trio_r
+  trio_a{group="g"} 100 _ _ _
+  trio_b{group="g"} _ 200 _ _
+  {group="g"} _ _ 300 0
+
+# A match group whose only left series has no __name__. The matched steps and the left-filled steps
+# then already share the same labels, so there is no split at all.
+
+clear
+
+load 5m
+  {group="g"}       100 _
+  solo_r{group="g"} 1   2
+
+eval range from 0 to 5m step 5m {group="g", __name__!="solo_r"} != fill_left(0) solo_r
+  {group="g"} 100 0
+
+# A match group whose left series all have no __name__ and differ only in an ignored label. They all
+# merge into one matched output series. That series reads the whole left side of the group. It emits
+# the group's left-filled steps itself.
+
+clear
+
+load 5m
+  {l="x",pod="1"} 100 _   _
+  {l="x",pod="2"} _   200 _
+  ur{l="x"}       1   2   3
+
+eval range from 0 to 10m step 5m {l="x",__name__!="ur"} != ignoring(pod) fill_left(0) ur
+  {l="x"} 100 200 0
+
+# ---------- Annotations must come only from a step that the operator emits a point for ----------
+#
+# The operator evaluates a match group with several left series once per matched output series. Only
+# the last of those evaluations knows the whole left side of the group. So only that evaluation can
+# decide which steps the left fill applies to. An engine must not raise an annotation from a step that
+# it discards afterwards.
+
+clear
+
+load 5m
+  hla{l="x"} {{schema:0 sum:1 count:1}} _
+  hlb{l="x"} _                          {{schema:0 sum:3 count:3}}
+  hr{l="x"}  {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}}
+
+# The two left series together cover every step where the right side has a sample. So the left fill
+# never applies. No step combines the float fill value with a right-side histogram, so there is no
+# annotation.
+#   step 0: hla present -> the two histograms differ -> kept, keeps __name__ hla
+#   step 1: hlb present -> the two histograms differ -> kept, keeps __name__ hlb
+eval range from 0 to 5m step 5m {__name__=~"hla|hlb"} != fill_left(0) hr
+  hla{l="x"} {{schema:0 sum:1 count:1}} _
+  hlb{l="x"} _ {{schema:0 sum:3 count:3}}
+  expect no_info
+  expect no_warn
+
+# The same shape with a left series that has no __name__. That series' output series carries the
+# group's left-filled steps, and again there are none.
+
+clear
+
+load 5m
+  hna{l="x"} {{schema:0 sum:1 count:1}} _
+  {l="x"}    _                          {{schema:0 sum:3 count:3}}
+  hnr{l="x"} {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}}
+
+eval range from 0 to 5m step 5m {l="x",__name__!="hnr"} != fill_left(0) hnr
+  hna{l="x"} {{schema:0 sum:1 count:1}} _
+  {l="x"} _ {{schema:0 sum:3 count:3}}
+  expect no_info
+  expect no_warn
+
+# Control: a step that no left series of the group covers is a real left-filled step. The float fill
+# value then meets a right-side histogram. That pair is incompatible. So the operator drops the point
+# and raises the info annotation.
+
+clear
+
+load 5m
+  hma{l="x"} {{schema:0 sum:1 count:1}} _                          _
+  hmb{l="x"} _                          {{schema:0 sum:3 count:3}} _
+  hmr{l="x"} {{schema:0 sum:2 count:2}} {{schema:0 sum:4 count:4}} {{schema:0 sum:5 count:5}}
+
+eval range from 0 to 10m step 5m {__name__=~"hma|hmb"} != fill_left(0) hmr
+  hma{l="x"} {{schema:0 sum:1 count:1}} _ _
+  hmb{l="x"} _ {{schema:0 sum:3 count:3}} _
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "!=": float != histogram
+  expect no_warn
+
+# ---------- fill(NaN) / fill(Inf) at intermittent steps ----------
+
+clear
+
+load 5m
+  special_left{label="a"}  1 _ 3 _ 5
+  special_right{label="a"} _ 2 _ 4 _
+
+# fill(NaN): filled steps produce NaN; matched steps have no overlap here so all steps are filled.
+eval range from 0 to 20m step 5m special_left + fill(NaN) special_right
+  {label="a"} NaN NaN NaN NaN NaN
+
+# fill(Inf): left present + Inf on right -> +Inf; right present + Inf on left -> +Inf.
+eval range from 0 to 20m step 5m special_left + fill(Inf) special_right
+  {label="a"} +Inf +Inf +Inf +Inf +Inf
+
+# fill_right(Inf): output only where left is present, right filled with +Inf.
+eval range from 0 to 20m step 5m special_left * fill_right(Inf) special_right
+  {label="a"} +Inf _ +Inf _ +Inf
+
+# ---------- One side empty ----------
+
+clear
+
+load 5m
+  non_empty{label="a"} 10
+  non_empty{label="b"} 20
+
+# Empty right side - fill_right has no effect (nothing to add).
+eval instant at 0m non_empty + fill_right(0) nonexistent
+  {label="a"} 10
+  {label="b"} 20
+
+# Empty right side - fill_left creates nothing (no right side labels to use).
+eval instant at 0m non_empty + fill_left(0) nonexistent
+
+# Empty left side - fill_left has no effect.
+eval instant at 0m nonexistent + fill_left(0) non_empty
+  {label="a"} 10
+  {label="b"} 20
+
+# Empty left side - fill_right creates nothing.
+eval instant at 0m nonexistent + fill_right(0) non_empty
+
+# fill both sides with one side empty.
+eval instant at 0m non_empty + fill(0) nonexistent
+  {label="a"} 10
+  {label="b"} 20
+
+eval instant at 0m nonexistent + fill(0) non_empty
+  {label="a"} 10
+  {label="b"} 20
+
+# ---------- Native histogram present + float fill value ----------
+#
+# When the present side is a native histogram and the missing side is filled with a float, the
+# arithmetic operator cannot combine a histogram with a float. The engine emits an "incompatible
+# types" info annotation and drops that output point (no sample for that step / series).
+
+clear
+
+load 5m
+  hist_left{label="a"}   {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  float_right{label="b"} 20
+
+# fill(0): both sides filled.
+#   {label="a"}: left histogram present, right missing -> filled with float 0 -> histogram + float is
+#     incompatible, so the point is dropped (no output for this series).
+#   {label="b"}: right float present, left missing -> filled with float 0 -> 0 + 20 = 20 (both float).
+eval instant at 0m hist_left + fill(0) float_right
+  {label="b"} 20
+  expect info
+  expect no_warn
+
+# fill_right(0): only the right side is filled. The left histogram series has no right match, so its
+# right operand is filled with float 0 -> histogram + float is incompatible -> point dropped. The
+# unmatched right float series is not filled (fill_left is unset), so it produces no output.
+eval instant at 0m hist_left + fill_right(0) float_right
+  expect info
+  expect no_warn
+
+# fill_left(0): only the left side is filled. The unmatched right float series has its left operand
+# filled with float 0 -> 0 + 20 = 20. The left histogram series is not filled, so no output for it.
+eval instant at 0m hist_left + fill_left(0) float_right
+  {label="b"} 20
+  expect no_info
+  expect no_warn

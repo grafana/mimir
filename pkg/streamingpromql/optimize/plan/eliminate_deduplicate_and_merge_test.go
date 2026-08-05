@@ -1269,6 +1269,7 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 
 			testScript := string(b)
 			opts := streamingpromql.NewTestEngineOpts()
+
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)

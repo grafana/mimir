@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -541,7 +542,25 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 	case *parser.BinaryExpr:
 		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
-			return nil, compat.NewNotSupportedError("'fill' modifier")
+			// Only one-to-one matching supports the 'fill' modifier so far.
+			// Grouped (group_left/group_right) fills remain unsupported.
+			// The parser rejects a fill on a set operator before the query reaches here.
+			if expr.VectorMatching.Card != parser.CardOneToOne {
+				return nil, compat.NewNotSupportedError("'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)")
+			}
+
+			// The match group key keeps __name__ when the query lists it in on(...), but the output
+			// labels of a filled series always drop __name__. So two match groups that differ only
+			// by __name__ produce the same output labels. The engine then needs one output series
+			// that draws from several match groups. MQE does not support that yet.
+			//
+			// This guard runs at plan build time only. A plan that MQE decodes from protobuf does not
+			// pass through here, because MaterializeBinaryExpression in
+			// pkg/streamingpromql/planning/core/binary_expression.go applies no fill check. The
+			// group_left guard above has the same property.
+			if expr.VectorMatching.On && slices.Contains(expr.VectorMatching.MatchingLabels, model.MetricNameLabel) {
+				return nil, compat.NewNotSupportedError("'fill' modifier with __name__ in the 'on' clause")
+			}
 		}
 
 		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)

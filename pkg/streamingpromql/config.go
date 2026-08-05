@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
@@ -221,6 +222,9 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 }
 
 func NewTestEngineOpts() EngineOpts {
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
 			Logger:                   nil,
@@ -230,7 +234,7 @@ func NewTestEngineOpts() EngineOpts {
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
-			Parser:                   promqlext.NewPromQLParser(),
+			Parser:                   parser.NewParser(parserOpts),
 		},
 
 		Pedantic: true,
