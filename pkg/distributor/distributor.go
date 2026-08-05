@@ -1346,19 +1346,70 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	})
 }
 
-// prePushMergeSeenEntry tracks, for one label-set hash, the indexes of the
-// already-kept timeseries with that hash. more is nil on the happy path and
-// grows only on a hash collision between distinct (label set, created timestamp)
-// pairs.
+// prePushMergeSeenKey identifies a merge candidate by label-set hash and created
+// timestamp. The created timestamp is part of the key, not just of the equality
+// check, because a client can send many objects that share a label set but carry
+// distinct created timestamps: keying on the hash alone would funnel all of them
+// into one bucket and make the overflow scan below quadratic in their count.
+type prePushMergeSeenKey struct {
+	labelsHash       uint64
+	createdTimestamp int64
+}
+
+// prePushMergeSeenEntry tracks, for one prePushMergeSeenKey, the indexes of the
+// already-kept timeseries with that key. more is nil on the happy path and grows
+// only on a NonStableHash collision between different label sets.
 type prePushMergeSeenEntry struct {
 	index int
 	more  []int
 }
 
+const (
+	// prePushMergeMaxCollisionCandidates bounds how many distinct label sets are
+	// tracked, and therefore compared, per prePushMergeSeenKey bucket. It counts
+	// the whole bucket: one primary index plus at most
+	// prePushMergeMaxCollisionCandidates-1 overflow indexes. NonStableHash is not
+	// collision resistant, and its name\xffvalue\xff encoding is ambiguous for
+	// label strings that themselves contain 0xff, which the write request decoder
+	// accepts without validating: {a="b\xffc\xffd"} and {a="b", c="d"} hash
+	// identically. A client can therefore fill one bucket with an unbounded number
+	// of distinct label sets, and comparing each new timeseries against all of
+	// them would be quadratic. Merging is an optimization rather than a
+	// correctness requirement, so once a bucket is full the middleware stops
+	// tracking new label sets and leaves them exactly as the client sent them,
+	// which is the same behaviour as having the limit disabled.
+	prePushMergeMaxCollisionCandidates = 8
+
+	// prePushMergeMaxPooledSeenEntries bounds the size of the lookup maps kept in
+	// prePushMergeSeenPool. A Go map never releases its buckets, and clear() both
+	// keeps and scans that retained capacity, so pooling a map that one huge
+	// request grew to N entries would poison the pool: every later request that
+	// picked it up would pay O(N) to clear it and hold its memory alive, no matter
+	// how few timeseries that request carried. Maps grown past this are dropped
+	// for the garbage collector instead. The bound matches
+	// maxPreallocatedTimeseriesRW2, the equivalent per-request cap in mimirpb,
+	// because this map holds at most one entry per timeseries.
+	prePushMergeMaxPooledSeenEntries = 10000
+)
+
 // prePushMergeSeenPool reuses the per-request lookup map across pushes to keep
-// prePushMergeMiddleware allocation-free on the no-duplicate happy path.
-var prePushMergeSeenPool = sync.Pool{
-	New: func() any { return make(map[uint64]prePushMergeSeenEntry) },
+// prePushMergeMiddleware allocation-free on the no-duplicate happy path. It is a
+// pointer so that tests can substitute a pool they control.
+var prePushMergeSeenPool = &sync.Pool{
+	New: func() any { return make(map[prePushMergeSeenKey]prePushMergeSeenEntry) },
+}
+
+// reusePrePushMergeSeen returns seen to prePushMergeSeenPool, unless the request
+// that just used it grew it past prePushMergeMaxPooledSeenEntries. Maps in the
+// pool are always empty: this clears them on the way in rather than on the way
+// out, so no request ever pays to clear capacity that a larger one left behind.
+func reusePrePushMergeSeen(seen map[prePushMergeSeenKey]prePushMergeSeenEntry) {
+	if len(seen) > prePushMergeMaxPooledSeenEntries {
+		return
+	}
+
+	clear(seen)
+	prePushMergeSeenPool.Put(seen)
 }
 
 // prePushMergeMiddleware merges timeseries objects that share the same label set
@@ -1376,6 +1427,10 @@ var prePushMergeSeenPool = sync.Pool{
 // zero sample. After this middleware, each (label set, created timestamp) pair
 // appears in at most one timeseries object, and the existing within-timeseries
 // dedup then handles any timestamp collisions that result from the merge.
+//
+// The merge is opt-in per tenant, gated behind the experimental
+// -distributor.merge-duplicate-timeseries flag. When it is disabled the
+// middleware is a no-op.
 func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
@@ -1383,62 +1438,82 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if len(req.Timeseries) <= 1 {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(req.Timeseries) <= 1 || !d.limits.MergeDuplicateTimeseries(userID) {
 			return next(ctx, pushReq)
 		}
 
-		// seen maps a label-set hash to the indexes of the already-kept timeseries
-		// with that hash. Almost always a hash maps to a single index, so the happy
-		// path stores just that index and allocates nothing extra. When several kept
-		// series share a hash (a rare hash collision between different label sets, or
-		// the same label set carried with different created timestamps), the extra
-		// indexes are tracked in more (allocated only then), so every distinct
-		// (label set, created timestamp) is still deduplicated independently.
+		// seen maps a (label-set hash, created timestamp) key to the indexes of the
+		// already-kept timeseries with that key. Almost always a key maps to a single
+		// index, so the happy path stores just that index and allocates nothing extra.
+		// When several kept series share a key (a NonStableHash collision between
+		// different label sets), the remaining indexes are tracked in more
+		// (allocated only then) up to prePushMergeMaxCollisionCandidates per key, so
+		// every distinct label set is still deduplicated independently.
 		//
 		// The map is pooled and reused across requests because this runs on the
 		// distributor's hottest path: a fresh map per push would allocate one bucket
 		// (and its overflow buckets) for every series even when nothing is merged.
-		seen := prePushMergeSeenPool.Get().(map[uint64]prePushMergeSeenEntry)
-		clear(seen)
-		defer prePushMergeSeenPool.Put(seen)
-		var removeTsIndexes []int
+		// Maps in the pool are always empty, so there is nothing to clear here.
+		seen := prePushMergeSeenPool.Get().(map[prePushMergeSeenKey]prePushMergeSeenEntry)
+		defer reusePrePushMergeSeen(seen)
+
+		// Surviving timeseries are compacted towards the front of req.Timeseries as
+		// the scan proceeds, and kept counts them, so the whole middleware is a single
+		// pass linear in len(req.Timeseries). Collecting the duplicate indexes and
+		// removing them at the end with util.RemoveSliceIndexes would be quadratic
+		// instead: that helper shifts the trailing elements once per non-contiguous
+		// range of indexes, and the client chooses the order of the timeseries, so a
+		// request shaped [A,A,B,B,C,C,...] leaves every second index to remove and
+		// forces roughly N²/4 element copies.
+		kept := 0
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
-			hash := mimirpb.NonStableHash(ts.Labels)
-
-			e, exists := seen[hash]
-			if !exists {
-				seen[hash] = prePushMergeSeenEntry{index: tsIdx}
-				continue
+			key := prePushMergeSeenKey{
+				labelsHash:       mimirpb.NonStableHash(ts.Labels),
+				createdTimestamp: ts.CreatedTimestamp,
 			}
 
-			// A later timeseries merges into a kept one only when both its label set
-			// and its created timestamp match, since the created timestamp is part of
-			// the series' ingestion identity. Check the first index and then any
-			// collision overflow.
-			sameSeries := func(keptIdx int) bool {
-				return req.Timeseries[keptIdx].CreatedTimestamp == ts.CreatedTimestamp &&
-					slices.Equal(req.Timeseries[keptIdx].Labels, ts.Labels)
-			}
+			// A later timeseries merges into a kept one only when their label sets
+			// match. The created timestamp is part of the series' ingestion identity
+			// too, but it is already part of the key, so only the labels are compared
+			// here. Check the first index and then any collision overflow.
+			e, exists := seen[key]
 			firstIdx := -1
-			if sameSeries(e.index) {
-				firstIdx = e.index
-			} else {
-				for _, candidate := range e.more {
-					if sameSeries(candidate) {
-						firstIdx = candidate
-						break
+			if exists {
+				if slices.Equal(req.Timeseries[e.index].Labels, ts.Labels) {
+					firstIdx = e.index
+				} else {
+					for _, candidate := range e.more {
+						if slices.Equal(req.Timeseries[candidate].Labels, ts.Labels) {
+							firstIdx = candidate
+							break
+						}
 					}
 				}
 			}
+
 			if firstIdx < 0 {
-				// No kept series shares this label set and created timestamp (a hash
-				// collision with a different label set, or the same label set carried
-				// with a different created timestamp): track this index too so its own
-				// later duplicates still merge.
-				e.more = append(e.more, tsIdx)
-				seen[hash] = e
+				// Keep this timeseries: either the key is new, or its label set
+				// collided under NonStableHash with kept ones without matching any of
+				// them. Record its compacted index so its own later duplicates still
+				// merge, unless the bucket is already full.
+				switch {
+				case !exists:
+					seen[key] = prePushMergeSeenEntry{index: kept}
+				// The bucket already holds a primary index, so len(e.more)+1 is how
+				// many label sets it tracks today.
+				case len(e.more)+1 < prePushMergeMaxCollisionCandidates:
+					e.more = append(e.more, kept)
+					seen[key] = e
+				}
+				req.Timeseries[kept] = ts
+				kept++
 				continue
 			}
 
@@ -1453,23 +1528,18 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			// merged histograms/exemplars.
 			req.Timeseries[firstIdx].SamplesUpdated()
 
-			removeTsIndexes = append(removeTsIndexes, tsIdx)
+			// Nil out slices that were shallow-copied into the surviving timeseries
+			// BEFORE returning the source to the pool. Without this, the pool can
+			// reuse the source's backing arrays while the surviving timeseries still
+			// references them, corrupting histogram/exemplar data under concurrent
+			// pool reuse.
+			req.Timeseries[tsIdx].Samples = nil
+			req.Timeseries[tsIdx].Histograms = nil
+			req.Timeseries[tsIdx].Exemplars = nil
+			mimirpb.ReusePreallocTimeseries(&req.Timeseries[tsIdx])
 		}
 
-		if len(removeTsIndexes) > 0 {
-			for _, removeTsIndex := range removeTsIndexes {
-				// Nil out slices that were shallow-copied into the surviving
-				// timeseries BEFORE returning the source to the pool. Without
-				// this, the pool can reuse the source's backing arrays while
-				// the surviving timeseries still references them, corrupting
-				// histogram/exemplar data under concurrent pool reuse.
-				req.Timeseries[removeTsIndex].Samples = nil
-				req.Timeseries[removeTsIndex].Histograms = nil
-				req.Timeseries[removeTsIndex].Exemplars = nil
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
-			}
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
-		}
+		req.Timeseries = req.Timeseries[:kept]
 
 		return next(ctx, pushReq)
 	})

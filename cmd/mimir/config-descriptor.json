@@ -5624,6 +5624,17 @@
         },
         {
           "kind": "field",
+          "name": "merge_duplicate_timeseries",
+          "required": false,
+          "desc": "Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by the ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.merge-duplicate-timeseries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ha_cluster_label",
           "required": false,
           "desc": "Prometheus label to look for in samples to identify a Prometheus HA cluster.",
