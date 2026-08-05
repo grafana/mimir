@@ -89,6 +89,78 @@ func TestCollectRatesFromReadcaches_MirrorsAggregateWithMax(t *testing.T) {
 	assert.Equal(t, load[1], load[0], "mirror count must not affect a partition's apparent load")
 }
 
+// TestCollectRatesFromReadcaches_WarmingMirrorRateIgnored covers the
+// state every mirror passes through when a zonal fleet is scaled up:
+// the new pod replays a Kafka backlog as fast as it can be served
+// (3-4x live on mimir-dev-30), so its sample-rate EWMA reads far
+// above the true rate. Taken at face value under max, that single
+// replaying mirror overrides the correct readings of its warm peers
+// and the slicer plans moves against a hotspot that will evaporate as
+// soon as the pod catches up.
+//
+// Head series are a different matter: replay builds real ones, so
+// they still count.
+func TestCollectRatesFromReadcaches_WarmingMirrorRateIgnored(t *testing.T) {
+	hr := assignment.HashRange{Lo: 0, Hi: 999}
+
+	h := newHarness(t, harnessOpts{})
+
+	warm := h.addReadcache("readcache-0")
+	warm.owned[0] = []assignment.HashRange{hr}
+	warm.setLoad(0, hr, 100, 400)
+	warm.pQuery[0] = 700
+
+	// Same logical slot, mid-replay: rate an order of magnitude
+	// above live. Series are set above the warm peer's so that the
+	// cardinality assertions below can only pass if the warm filter
+	// left the replaying mirror's series alone — replay appends real
+	// head series, and dropping them would understate the partition.
+	replaying := h.addReadcache("readcache-zone-a-0")
+	replaying.owned[0] = []assignment.HashRange{hr}
+	replaying.setLoad(0, hr, 1500, 1000)
+	replaying.pQuery[0] = 9000
+	replaying.setWarming(0)
+
+	rates, _, partitionTotals, partitionQuerySamples, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	require.NoError(t, err)
+	require.Len(t, rates, 1)
+
+	assert.Equal(t, 100.0, rates[0].sampleRate, "replay throughput must not be read as live ingest rate")
+	assert.Equal(t, int64(1000), rates[0].series, "head series survive the warm filter")
+	assert.Equal(t, 700.0, partitionQuerySamples[0], "a replaying mirror serves no queries")
+	assert.Equal(t, int64(1000), partitionTotals[0])
+}
+
+// TestCollectRatesFromReadcaches_AllMirrorsWarmingReadsZero pins what
+// happens when no reporter has caught up yet: the partition reads as
+// carrying no movable load rather than as the hottest thing in the
+// fleet. It still holds head series, so it lands in the rate-zero
+// exclusion set — which is what stops the slicer from reading a
+// replaying partition as a cold target and piling more onto it.
+func TestCollectRatesFromReadcaches_AllMirrorsWarmingReadsZero(t *testing.T) {
+	hr := assignment.HashRange{Lo: 0, Hi: 999}
+
+	h := newHarness(t, harnessOpts{})
+
+	for _, id := range []string{"readcache-zone-a-0", "readcache-zone-b-0"} {
+		rc := h.addReadcache(id)
+		rc.owned[0] = []assignment.HashRange{hr}
+		rc.setLoad(0, hr, 1500, 400)
+		rc.setWarming(0)
+	}
+
+	rates, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	require.NoError(t, err)
+	require.Len(t, rates, 1)
+	assert.Zero(t, rates[0].sampleRate)
+
+	load := partitionLoadFromRates(rates, []int32{0})
+	assert.Zero(t, load[0])
+
+	excluded := computeRateZeroExclusions(load, map[int32]int64{0: 400}, []int32{0})
+	assert.True(t, excluded[0], "a partition with head series but no rate must not read as an idle target")
+}
+
 // TestCollectRatesFromReadcaches_ResidueStaysSeparate guards the
 // boundary of the deduplication above: reports that share a hash
 // range but carry different partition IDs are distinct keys, not

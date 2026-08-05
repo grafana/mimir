@@ -134,6 +134,22 @@ message PartitionQueryLoad {
 message PartitionActiveSeries {
   int32 partition_id = 1;
   int64 active_series = 2;
+  // warming reports that the reporter has not yet consumed this
+  // partition through a live-edge offset, i.e. it is replaying a
+  // Kafka backlog. Every rate-shaped signal it reports for the
+  // partition (HashRangeRate.sample_rate,
+  // PartitionQueryLoad.samples_ewma) then describes catch-up
+  // throughput rather than live load, and the rebalancer drops those
+  // signals so a replaying zone mirror cannot win the cross-mirror
+  // max over its warm peers.
+  //
+  // Stated as "warming" rather than "warm" so that the absent-field
+  // default (false) reads as "not replaying". A rebalancer that has
+  // rolled ahead of the readcache fleet then keeps trusting the older
+  // pods' signals, instead of reading every one of them as a replay
+  // and zeroing the fleet's entire load signal. Always false for
+  // ingester reporters, which have no warm-up concept.
+  bool warming = 3;
 }
 
 message HashRangeEntry {

@@ -82,6 +82,7 @@ type fakeReadcache struct {
 	series  map[partitionRangeKey]int64      // optional per-(P,R) series count
 	pSeries map[int32]int64                  // optional per-partition total head series
 	pQuery  map[int32]float64                // optional per-partition query-samples EWMA
+	warming map[int32]struct{}               // partitions this pod reports as still replaying
 	unnamed float64                          // optional unnamed query EWMA
 
 	// Failure-injection knobs. Setting any of these makes the
@@ -102,7 +103,17 @@ func newFakeReadcache(id string) *fakeReadcache {
 		series:  make(map[partitionRangeKey]int64),
 		pSeries: make(map[int32]int64),
 		pQuery:  make(map[int32]float64),
+		warming: make(map[int32]struct{}),
 	}
+}
+
+// setWarming makes this readcache report pid as still replaying its
+// Kafka backlog, the way a freshly-scaled zone mirror does before it
+// reaches the live edge.
+func (f *fakeReadcache) setWarming(pid int32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.warming[pid] = struct{}{}
 }
 
 // setLoad sets the sample-rate and series-count this readcache will
@@ -146,9 +157,11 @@ func (f *fakeReadcache) HashRangeStats(_ context.Context, _ *ingester_client.Has
 			})
 			resp.TotalActiveSeries += f.series[k]
 		}
+		_, isWarming := f.warming[pid]
 		resp.PartitionActiveSeries = append(resp.PartitionActiveSeries, ingester_client.PartitionActiveSeries{
 			PartitionId:  pid,
 			ActiveSeries: f.pSeries[pid],
+			Warming:      isWarming,
 		})
 		if v, ok := f.pQuery[pid]; ok {
 			resp.PartitionQueryLoads = append(resp.PartitionQueryLoads, ingester_client.PartitionQueryLoad{

@@ -5,6 +5,7 @@ package readcache
 import (
 	"context"
 	"flag"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -533,4 +534,77 @@ func TestStartKafkaReader_RollsBackMetricsRegistryOnFailure(t *testing.T) {
 	}
 	assert.Zero(t, readerPartitionSeries, "failed start must unregister per-partition metrics from the main registerer")
 	assert.NoError(t, err, "failed start must not leave duplicate per-partition collectors on the main registerer")
+}
+
+// TestPartitionPusher_WarmGatesSampleRate covers the signal a
+// readcache reports while it is catching up. Catch-up replays a Kafka
+// backlog as fast as the brokers will serve it, so counting those
+// batches toward the per-range samples-per-second EWMA describes
+// replay throughput, not the live ingest pressure the rebalancer
+// balances on. The rebalancer takes the max across a logical slot's
+// zone mirrors, so one replaying mirror would otherwise override the
+// correct readings of its warm peers.
+func TestPartitionPusher_WarmGatesSampleRate(t *testing.T) {
+	const tenantID = "user-1"
+
+	cfg := newTestConfig(t, true, 4)
+	cfg.OwnedPartitions = "0"
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	// Keep the background series walker off the per-range
+	// bookkeeping for the duration of the test; see
+	// TestReadcache_HashRangeStats_ResidueOnFormerOwner for why this
+	// has to be taken before the service starts.
+	r.seriesWalkMu.Lock()
+	defer r.seriesWalkMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
+
+	r.partitionMu.RLock()
+	p := r.partitions[0]
+	r.partitionMu.RUnlock()
+	require.NotNil(t, p)
+
+	// One range covering the whole hash space, so every pushed
+	// series is attributable and a zero rate can only come from the
+	// warm gate.
+	full := []client.HashRangeEntry{{Lo: 0, Hi: math.MaxUint32, PartitionId: 0}}
+	_, err = r.setHashRanges(ctx, &client.SetHashRangesRequest{Ranges: full})
+	require.NoError(t, err)
+
+	pusher := &partitionPusher{rc: r, partitionID: 0, ranges: p.ranges, warm: &p.warm}
+	pushCtx := user.InjectOrgID(ctx, tenantID)
+
+	push := func(metricName string, samples int) {
+		t.Helper()
+		req := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{makeTSForHash(metricName, samples)},
+		}
+		require.NoError(t, pusher.PushToStorageAndReleaseRequest(pushCtx, req))
+	}
+	currentRate := func() float64 {
+		t.Helper()
+		p.ranges.tickSampleRates()
+		current, _ := p.ranges.adminSnapshot()
+		require.Len(t, current, 1)
+		return current[0].SampleRate
+	}
+
+	// Replay: the partition has not reached the live edge yet. A
+	// live-edge join marks itself warm at startup, so put it back
+	// into the state a fresh adoption with a catch-up period is in.
+	p.warm.Store(false)
+	push("metric_replay", 100)
+	assert.Zero(t, currentRate(), "backlog replay must not register as live ingest rate")
+
+	// Caught up: the same push now counts.
+	p.warm.Store(true)
+	push("metric_live", 30)
+	assert.Greater(t, currentRate(), 0.0, "live pushes after warm-up must advance the EWMA")
 }
