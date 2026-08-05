@@ -62,8 +62,7 @@ type Selector struct {
 
 	seriesIdx int
 
-	// The time range queried from storage, computed and used by loadSeriesSet and reused by reportCardinality.
-	queriedStartT, queriedEndT int64
+	haveReportedCardinality bool
 }
 
 type Subset struct {
@@ -133,13 +132,14 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 // The matchers are taken from the original expression (Selector.Matchers and each subset's filter),
 // ignoring any additional matchers pushed down by callers of SeriesMetadata.
 func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
+	s.haveReportedCardinality = true
+
 	queryStats := stats.FromContext(ctx)
 	if queryStats == nil {
 		return
 	}
 
-	// Use the time range computed for the Select call in loadSeriesSet, rather than recomputing it.
-	minT, maxT := s.queriedStartT, s.queriedEndT
+	minT, maxT := s.getQueriedTimeRange()
 
 	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
 		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
@@ -242,9 +242,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
-	s.queriedStartT = startTimestamp
-	s.queriedEndT = endTimestamp
+	startTimestamp, endTimestamp := s.getQueriedTimeRange()
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
@@ -287,6 +285,10 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	}
 
 	return nil
+}
+
+func (s *Selector) getQueriedTimeRange() (int64, int64) {
+	return ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
 }
 
 func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration, anchored bool, smoothed bool) (int64, int64) {
@@ -338,6 +340,17 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 func (s *Selector) updateSeriesSubsetBitmap() {
 	for subsetIdx, subset := range s.Subsets {
 		s.seriesSubsetBitmap[subsetIdx] = subset.matchingSeries[s.seriesIdx]
+	}
+}
+
+func (s *Selector) FinishedReading(ctx context.Context) {
+	if !s.haveReportedCardinality {
+		// If SeriesMetadata was never called, but FinishedReading was called, this means the query succeeded
+		// without needing to read this selector (eg. because a binary operation meant no series from this selector were needed).
+		// Report cardinality 0 so that cardinality estimates are more accurate.
+		// This also ensures a cardinality estimate can be generated next time this expression is evaluated (no estimate can be
+		// generated if any selector's cardinality is not cached).
+		s.reportCardinality(ctx, 0)
 	}
 }
 

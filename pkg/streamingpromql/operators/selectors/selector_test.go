@@ -239,81 +239,143 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 	baseMatchers := types.Matchers{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
 	expectedMinT, expectedMaxT := ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 
-	t.Run("without subsets", func(t *testing.T) {
-		qs, ctx := stats.ContextWithEmptyStats(context.Background())
-		s := &Selector{
+	newSelector := func(ctx context.Context) *Selector {
+		return &Selector{
 			Queryable:                storage,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 baseMatchers,
 			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
 		}
+	}
 
-		_, err := s.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
+	t.Run("without subsets", func(t *testing.T) {
+		t.Run("SeriesMetadata() called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			defer s.Close()
 
-		require.Equal(t, []stats.SelectorCardinality{
-			{
-				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
-				MinT:        expectedMinT,
-				MaxT:        expectedMaxT,
-				SeriesCount: 3,
-			},
-		}, qs.LoadSeenSelectorCardinalities())
+			_, err := s.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 3,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+
+		t.Run("SeriesMetadata() not called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			defer s.Close()
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
 	})
 
 	t.Run("with subsets", func(t *testing.T) {
-		qs, ctx := stats.ContextWithEmptyStats(context.Background())
-		s := &Selector{
-			Queryable:     storage,
-			TimeRange:     timeRange,
-			LookbackDelta: lookbackDelta,
-			Matchers:      baseMatchers,
-			Subsets: []Subset{
+		t.Run("SeriesMetadata() called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			s.Subsets = []Subset{
 				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
 				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
-			},
-			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
-		}
-		defer s.Close()
+			}
 
-		_, err := s.SeriesMetadata(ctx, nil)
-		require.NoError(t, err)
+			defer s.Close()
 
-		require.Equal(t, []stats.SelectorCardinality{
-			{
-				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
-				MinT:        expectedMinT,
-				MaxT:        expectedMaxT,
-				SeriesCount: 3,
-			},
-			{
-				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
-				MinT:        expectedMinT,
-				MaxT:        expectedMaxT,
-				SeriesCount: 2,
-			},
-			{
-				Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
-				MinT:        expectedMinT,
-				MaxT:        expectedMaxT,
-				SeriesCount: 1,
-			},
-		}, qs.LoadSeenSelectorCardinalities())
+			_, err := s.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 3,
+				},
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 2,
+				},
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 1,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+
+		t.Run("SeriesMetadata() not called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			s.Subsets = []Subset{
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+			}
+
+			defer s.Close()
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
 	})
 
 	t.Run("no stats in context", func(t *testing.T) {
-		s := &Selector{
-			Queryable:                storage,
-			TimeRange:                timeRange,
-			LookbackDelta:            lookbackDelta,
-			Matchers:                 baseMatchers,
-			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()),
-		}
+		for _, callSeriesMetadata := range []bool{true, false} {
+			t.Run(fmt.Sprintf("SeriesMetadata() called = %v", callSeriesMetadata), func(t *testing.T) {
+				// Should not panic when there are no stats in the context.
+				ctx := context.Background()
+				s := newSelector(ctx)
 
-		// Should not panic when there are no stats in the context.
-		_, err := s.SeriesMetadata(context.Background(), nil)
-		require.NoError(t, err)
+				if callSeriesMetadata {
+					_, err := s.SeriesMetadata(ctx, nil)
+					require.NoError(t, err)
+				}
+
+				s.FinishedReading(ctx)
+			})
+		}
 	})
 }
 
