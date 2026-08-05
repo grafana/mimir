@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -31,12 +32,20 @@ type partitionPusher struct {
 	// ranges is a direct reference to the partitionState.ranges
 	// owned by this partition. Capturing it on the pusher avoids an
 	// extra partitionMu RLock per push just to look the
-	// partitionState back up; the partitionState (and therefore
-	// ranges) is guaranteed to outlive the pusher because the
-	// reader stop path runs before partitionState is dropped from
-	// r.partitions (see Readcache.removePartition for the ordering
-	// invariant).
+	// partitionState back up.
+	//
+	// The referent outlives the pusher even though removePartition
+	// drops the partitionState from r.partitions *before* tearing
+	// the reader down: it hands the same *partitionState to
+	// freezePartition, and stopPartition does not return until the
+	// Kafka reader has terminated, which is the point after which no
+	// goroutine is still inside PushToStorageAndReleaseRequest. The
+	// pointer held here keeps the object reachable throughout.
 	ranges *partitionRanges
+	// warm points at the owning partitionState.warm. It gates the
+	// per-range sample-rate EWMA: see PushToStorageAndReleaseRequest.
+	// Same lifetime argument as ranges above.
+	warm *atomic.Bool
 	// samplesIngested is the pre-resolved CounterVec child for this
 	// partition. Resolving WithLabelValues once at construction time
 	// avoids a map lookup on every Kafka batch on the hot ingest
@@ -139,7 +148,27 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	// is safe to call after Append: it only reads ts.Labels (deep
 	// copied into the head's intern pool by Append) and counts —
 	// no references are retained after the call returns.
-	if p.ranges != nil {
+	//
+	// Batches consumed while the partition is still warming are
+	// deliberately excluded. The EWMA is a samples-per-second rate
+	// meant to describe live ingest pressure, but catch-up replays a
+	// backlog as fast as Kafka will serve it (measured at 3-4x live
+	// on mimir-dev-30), so a warming partition reports a rate that
+	// no steady state will ever match. The rebalancer balances on
+	// exactly this signal (Alpha weights it, Beta defaults to 0) and
+	// takes the max across a logical slot's mirrors, so a single
+	// replaying mirror otherwise overrides its warm peers' correct
+	// readings and the slicer plans moves against a phantom hotspot
+	// — observed as a 2.6x jump in readcache_instance_load when the
+	// zone-b fleet warmed.
+	//
+	// The cost is that a warming partition reads 0 until it catches
+	// up, then ramps over a few EWMA half-lives (60s). Under RF>=2
+	// the warm mirrors cover the gap via the max. Under RF=1 this
+	// matches what a freshly adopted range already reported while
+	// its EWMA was uninitialised, and the slicer treats 0 as "no
+	// movable load", so it does not yank ranges around.
+	if p.ranges != nil && (p.warm == nil || p.warm.Load()) {
 		p.ranges.recordSampleBatch(userID, req.Timeseries)
 	}
 	if res.FirstPartialErr != nil {
@@ -290,7 +319,7 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	}
 	p.joinedAtLiveEdge = joinedAtLiveEdge
 
-	pusher := &partitionPusher{rc: r, partitionID: p.partitionID, ranges: p.ranges}
+	pusher := &partitionPusher{rc: r, partitionID: p.partitionID, ranges: p.ranges, warm: &p.warm}
 	if r.samplesIngestedTotal != nil {
 		pusher.samplesIngested = r.samplesIngestedTotal.WithLabelValues(strconv.Itoa(int(p.partitionID)))
 	}

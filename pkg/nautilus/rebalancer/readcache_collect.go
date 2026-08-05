@@ -231,11 +231,18 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // "correct" it. Max keeps every signal on the 1x scale that
 // partitionL and the movable budget already use.
 //
+// Rate-shaped signals are additionally dropped from any reporter that
+// says the partition is still warming: replay runs at several times
+// the live rate, so a catching-up mirror reports a rate no steady
+// state will match, and under max it would override its warm peers.
+//
 // Source-of-truth contract:
 //
 //   - rates: per (partition, hash range), max across the readcache
 //     pods that report it. With one owner per partition and no
-//     mirrors the max reduces to a passthrough.
+//     mirrors the max reduces to a passthrough. sample_rate is zeroed
+//     for reporters that are still warming the partition;
+//     active_series is kept (replay builds real head series).
 //   - instanceTotals: readcache instance ID -> sum of head series
 //     across that pod's owned partitions. Per concrete pod, so
 //     mirrors stay distinct. Used for observability; partition-level
@@ -243,7 +250,7 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 //   - partitionTotals: per-partition head series, max across pods
 //     that reported each partition.
 //   - partitionQuerySamples: per-partition query-load EWMA, max
-//     across pods that report the partition.
+//     across the pods that report the partition warm.
 //   - unnamedPerInstance: per-readcache unnamed query EWMA, surfaced
 //     for observability but not fed into the slicer.
 //   - failedInstances: the set of instance IDs whose client lookup or
@@ -335,8 +342,35 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		if res.instanceID == "" {
 			continue
 		}
+		// Rate-shaped signals from a partition this pod is still
+		// replaying describe catch-up throughput, not live load, so
+		// they are dropped before the cross-mirror max — otherwise
+		// one replaying mirror overrides the correct readings of its
+		// warm peers. Cardinality signals are kept: head series
+		// accumulated during replay are real.
+		//
+		// Readcache already gates the write-rate EWMA on warm at the
+		// source (see partitionPusher.PushToStorageAndReleaseRequest),
+		// so for that signal this is a second line of defence against
+		// a reporter that claims to be warming while still publishing
+		// a rate. The query-load EWMA has no such source-side gate,
+		// so this is the only place it is filtered.
+		var warming map[int32]struct{}
+		for _, p := range res.partitionSeries {
+			if !p.Warming {
+				continue
+			}
+			if warming == nil {
+				warming = make(map[int32]struct{}, 1)
+			}
+			warming[p.PartitionId] = struct{}{}
+		}
+
 		instanceTotals[res.instanceID] = res.totalSeries
 		for _, rr := range res.rates {
+			if _, isWarming := warming[rr.partitionID]; isWarming {
+				rr.sampleRate = 0
+			}
 			k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
 			i, seen := rateAt[k]
 			if !seen {
@@ -357,6 +391,9 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 			}
 		}
 		for _, p := range res.partitionLoad {
+			if _, isWarming := warming[p.PartitionId]; isWarming {
+				continue
+			}
 			if p.SamplesEwma > partitionQuerySamples[p.PartitionId] {
 				partitionQuerySamples[p.PartitionId] = p.SamplesEwma
 			}

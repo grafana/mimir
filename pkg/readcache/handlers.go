@@ -797,11 +797,23 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 
 	partSnap := r.partitionSeries.Snapshot()
 
+	// A partition we no longer hold cannot be replaying, so anything
+	// missing from parts (head residue left behind by a partition
+	// that moved away) reports as not warming.
+	warming := make(map[int32]struct{}, len(parts))
+	for _, p := range parts {
+		if !p.warm.Load() {
+			warming[p.partitionID] = struct{}{}
+		}
+	}
+
 	partitionSeries := make([]client.PartitionActiveSeries, len(partSnap.Partitions))
 	for i, e := range partSnap.Partitions {
+		_, stillWarming := warming[e.PartitionID]
 		partitionSeries[i] = client.PartitionActiveSeries{
 			PartitionId:  e.PartitionID,
 			ActiveSeries: e.ActiveSeries,
+			Warming:      stillWarming,
 		}
 	}
 
