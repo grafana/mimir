@@ -59,7 +59,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/grafana/warpstream-go v0.0.0-20260710130640-f4258f6a3f82
+	github.com/grafana/warpstream-go v0.0.0-20260803024255-99c65a1bf2bd
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -76,10 +76,10 @@ require (
 	github.com/tjhop/slog-gokit v0.2.0
 	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260515175617-8268a5d078c0
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260729023516-cc159eb5ddb9
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
-	github.com/twmb/franz-go/plugin/kprom v1.4.0
+	github.com/twmb/franz-go/plugin/kprom v1.5.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
 	go.etcd.io/bbolt v1.5.0
