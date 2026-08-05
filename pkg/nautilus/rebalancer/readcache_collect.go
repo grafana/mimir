@@ -219,17 +219,30 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 // collectRatesFromReadcaches queries all healthy readcache pods for
 // per-range ingestion rates and per-partition totals.
 //
+// Every per-partition signal is aggregated across reporting pods by
+// taking the max, never the sum. Under RF>=2 a logical slot's zone
+// mirrors each hold a full copy of the partition and each answer
+// HashRangeStats for it, so summing would scale the load signal by
+// the replication factor. That is worse than a constant-factor error
+// on a gauge: the number of live mirrors per slot varies during a
+// rollout, when a mirror's stats RPC fails, and while a mirror is
+// still warming, so the inflation is uneven across slots and the
+// slicer reads it as genuine imbalance and moves partitions to
+// "correct" it. Max keeps every signal on the 1x scale that
+// partitionL and the movable budget already use.
+//
 // Source-of-truth contract:
 //
-//   - rates: per hash range, summed across the readcache pods that
-//     report it. In single-owner-per-partition mode each range
-//     appears on exactly one pod, so the sum reduces to a passthrough.
+//   - rates: per (partition, hash range), max across the readcache
+//     pods that report it. With one owner per partition and no
+//     mirrors the max reduces to a passthrough.
 //   - instanceTotals: readcache instance ID -> sum of head series
-//     across that pod's owned partitions. Used for observability;
-//     partition-level L uses partitionTotals instead.
+//     across that pod's owned partitions. Per concrete pod, so
+//     mirrors stay distinct. Used for observability; partition-level
+//     L uses partitionTotals instead.
 //   - partitionTotals: per-partition head series, max across pods
-//     that reported each partition (normally exactly one owner).
-//   - partitionQuerySamples: per-partition query-load EWMA, summed
+//     that reported each partition.
+//   - partitionQuerySamples: per-partition query-load EWMA, max
 //     across pods that report the partition.
 //   - unnamedPerInstance: per-readcache unnamed query EWMA, surfaced
 //     for observability but not fed into the slicer.
@@ -309,6 +322,11 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 	})
 
 	var all []rangeRate
+	// Index into all, so a (partition, range) reported by several
+	// mirrors is merged in place. Merging in place rather than
+	// rebuilding from a map keeps all in first-reporter order, which
+	// is deterministic because results is indexed by instance.
+	rateAt := map[partitionRangeKey]int{}
 	instanceTotals := make(map[string]int64, len(instances))
 	partitionTotals := map[int32]int64{}
 	partitionQuerySamples := map[int32]float64{}
@@ -318,14 +336,30 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 			continue
 		}
 		instanceTotals[res.instanceID] = res.totalSeries
-		all = append(all, res.rates...)
+		for _, rr := range res.rates {
+			k := partitionRangeKey{partitionID: rr.partitionID, hr: rr.hr}
+			i, seen := rateAt[k]
+			if !seen {
+				rateAt[k] = len(all)
+				all = append(all, rr)
+				continue
+			}
+			if rr.series > all[i].series {
+				all[i].series = rr.series
+			}
+			if rr.sampleRate > all[i].sampleRate {
+				all[i].sampleRate = rr.sampleRate
+			}
+		}
 		for _, p := range res.partitionSeries {
 			if p.ActiveSeries > partitionTotals[p.PartitionId] {
 				partitionTotals[p.PartitionId] = p.ActiveSeries
 			}
 		}
 		for _, p := range res.partitionLoad {
-			partitionQuerySamples[p.PartitionId] += p.SamplesEwma
+			if p.SamplesEwma > partitionQuerySamples[p.PartitionId] {
+				partitionQuerySamples[p.PartitionId] = p.SamplesEwma
+			}
 		}
 		if res.unnamedLoad > 0 {
 			unnamedPerInstance[res.instanceID] = res.unnamedLoad

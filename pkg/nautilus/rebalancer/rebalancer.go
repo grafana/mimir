@@ -2299,14 +2299,15 @@ func filterRatesByCurrentOwnership(rates []rangeRate, owned map[partitionRangeKe
 }
 
 // partitionLoadFromRates returns the per-partition sum of
-// sample-rate EWMAs, restricted to the active partition set. The
-// caller is responsible for ensuring rates were aggregated by
-// (partition, range) — passing raw per-reporter rangeRate slices
-// over-counts ranges that appear on multiple reporters; in practice
-// the readcache path emits at most one entry per (partition, range)
-// so this is a non-issue today. activePartitions seeds zero
-// entries so the slicer's iteration order is deterministic even
-// for partitions with no reported load yet.
+// sample-rate EWMAs, restricted to the active partition set. Summing
+// is correct across the ranges of one partition but not across
+// reporters: the caller must pass rates already deduplicated by
+// (partition, range), or every range a partition's zone mirrors both
+// report is counted once per mirror. collectRatesFromReadcaches
+// enforces that by merging duplicate keys with max before returning.
+// activePartitions seeds zero entries so the slicer's iteration
+// order is deterministic even for partitions with no reported load
+// yet.
 func partitionLoadFromRates(rates []rangeRate, activePartitions []int32) map[int32]float64 {
 	out := make(map[int32]float64, len(activePartitions))
 	for _, pid := range activePartitions {
@@ -2333,9 +2334,9 @@ type loadMap struct {
 // owners report counts for the same partition (mirrored ingester
 // replicas), they are mirrors and summing would scale the per-range
 // signal by the replication factor while `partitionL` is on a 1×
-// (max-over-owners) scale. In the readcache path each (partition,
-// range) is reported by at most one instance so max reduces to
-// passthrough.
+// (max-over-owners) scale. In the readcache path
+// collectRatesFromReadcaches has already merged mirror reports by
+// the same rule, so max reduces to passthrough there.
 //
 // Note that this is keyed by (partition, range), NOT just range:
 // residue on a previous owner's partition is reported with that
