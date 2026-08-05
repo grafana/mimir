@@ -47,6 +47,54 @@ func addrsOf(set ring.ReplicationSet) []string {
 	return out
 }
 
+func TestReadcacheWarmFallbackStates(t *testing.T) {
+	t.Run("RF1 falls back immediately", func(t *testing.T) {
+		const instanceID = "readcache-0/partition-0"
+		states := readcacheWarmFallbackStates(
+			[]ring.ReplicationSet{{Instances: []ring.InstanceDesc{{Id: instanceID}}}},
+			map[string]int32{instanceID: 0},
+		)
+
+		require.Contains(t, states, instanceID)
+		assert.True(t, states[instanceID].claimFallback(instanceID))
+		assert.False(t, states[instanceID].claimFallback(instanceID), "fallback may only be claimed once")
+	})
+
+	t.Run("RF2 tries the peer before falling back", func(t *testing.T) {
+		const zoneA = "readcache-zone-a-0/partition-0"
+		const zoneB = "readcache-zone-b-0/partition-0"
+		states := readcacheWarmFallbackStates(
+			[]ring.ReplicationSet{{Instances: []ring.InstanceDesc{{Id: zoneA}, {Id: zoneB}}}},
+			map[string]int32{zoneA: 0, zoneB: 0},
+		)
+
+		require.Same(t, states[zoneA], states[zoneB])
+		assert.False(t, states[zoneA].claimFallback(zoneA), "one warming mirror must spill to its current peer")
+		assert.False(t, states[zoneA].claimFallback(zoneA), "duplicate callbacks must not count as another mirror")
+		assert.True(t, states[zoneB].claimFallback(zoneB), "both warming mirrors should fall back to the previous owner")
+		assert.False(t, states[zoneA].claimFallback(zoneA), "fallback may only be claimed once")
+	})
+
+	t.Run("different logical-owner sets do not share warming state", func(t *testing.T) {
+		const currentA = "readcache-zone-a-1/partition-0"
+		const currentB = "readcache-zone-b-1/partition-0"
+		const previousA = "readcache-zone-a-0/partition-0"
+		const previousB = "readcache-zone-b-0/partition-0"
+		states := readcacheWarmFallbackStates(
+			[]ring.ReplicationSet{
+				{Instances: []ring.InstanceDesc{{Id: currentA}, {Id: currentB}}},
+				{Instances: []ring.InstanceDesc{{Id: previousA}, {Id: previousB}}},
+			},
+			map[string]int32{currentA: 0, currentB: 0, previousA: 0, previousB: 0},
+		)
+
+		assert.False(t, states[currentA].claimFallback(currentA))
+		assert.False(t, states[previousA].claimFallback(previousA))
+		assert.True(t, states[currentB].claimFallback(currentB))
+		assert.True(t, states[previousB].claimFallback(previousB))
+	})
+}
+
 // TestGetReadcacheReplicationSetsForQuery_RF2 covers the read-path
 // expansion: each partition resolves to one replication set holding
 // both zone mirrors of its logical owner, zone-aware so a single zone

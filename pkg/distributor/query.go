@@ -15,6 +15,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -593,6 +594,57 @@ type ingesterQueryResult struct {
 	streamingSeries seriesChunksStream
 }
 
+// readcacheWarmFallbackState coordinates the per-replica callbacks for one
+// readcache replication set. A previous-owner fallback may satisfy quorum, so
+// it must only be attempted after every current replica reports still_warming.
+// Otherwise a restarting mirror could fall back to stale frozen data before
+// DoUntilQuorum gets a chance to query its warm peer.
+type readcacheWarmFallbackState struct {
+	mu              sync.Mutex
+	replicas        int
+	warming         map[string]struct{}
+	fallbackClaimed bool
+}
+
+func (s *readcacheWarmFallbackState) claimFallback(instanceID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.fallbackClaimed {
+		return false
+	}
+	s.warming[instanceID] = struct{}{}
+	if len(s.warming) < s.replicas {
+		return false
+	}
+	s.fallbackClaimed = true
+	return true
+}
+
+func readcacheWarmFallbackStates(replicationSets []ring.ReplicationSet, partitionByInstance map[string]int32) map[string]*readcacheWarmFallbackState {
+	states := make(map[string]*readcacheWarmFallbackState, len(partitionByInstance))
+	for _, set := range replicationSets {
+		var readcacheInstances []string
+		for _, instance := range set.Instances {
+			if _, ok := partitionByInstance[instance.Id]; ok {
+				readcacheInstances = append(readcacheInstances, instance.Id)
+			}
+		}
+		if len(readcacheInstances) == 0 {
+			continue
+		}
+
+		state := &readcacheWarmFallbackState{
+			replicas: len(readcacheInstances),
+			warming:  make(map[string]struct{}, len(readcacheInstances)),
+		}
+		for _, instanceID := range readcacheInstances {
+			states[instanceID] = state
+		}
+	}
+	return states
+}
+
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 //
 // When partitionByInstance is non-nil and a readcache pool is
@@ -615,6 +667,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
 	reqStats := stats.FromContext(ctx)
+	warmFallbackStates := readcacheWarmFallbackStates(replicationSets, partitionByInstance)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
@@ -676,20 +729,26 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
-			// If readcache says it's still warming, fall back to the
-			// previous lease owner, which still holds the frozen
-			// pre-move head.
+			// If every current replica says it's still warming, fall
+			// back to the previous lease owner, which still holds the
+			// frozen pre-move head. Waiting for every replica matters
+			// under RF≥2: one mirror may be warming after an isolated
+			// restart while its peer is already warm. Returning the
+			// first mirror's previous-owner response would satisfy
+			// quorum before DoUntilQuorum tries that warm peer.
 			//
-			// This holds under RF≥2 as well: both zone mirrors of a
-			// logical slot adopt the partition from the same lease
-			// row, so a move leaves them warming in lockstep and
-			// spilling to the peer (via MinimizeRequests / hedging)
-			// has nothing warmer to offer. The peer is still dialed
-			// by DoUntilQuorum on failure or after the hedging delay,
-			// which covers the other case — one mirror restarting on
-			// its own while its peer stayed warm.
+			// During a partition move both mirrors adopt from the same
+			// lease row and warm in lockstep, so the last warming
+			// callback claims the single previous-owner fallback.
+			// RF=1 and dual-fleet warm have one effective replica and
+			// therefore fall back immediately.
 			if readcache.IsStillWarming(err) && hasPart {
-				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+				state := warmFallbackStates[ing.Id]
+				if state != nil && state.claimFallback(ing.Id) {
+					prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID)
+					if !ok {
+						return result, err
+					}
 					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
 					hits.record(prevID)
 					queryStats.AddReadcacheQueryStreamCalls(1)
