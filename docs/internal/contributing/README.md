@@ -12,6 +12,8 @@ When you open a PR as a draft, add a short description of what you’re still wo
 
 There is an automated GitHub action which closes PRs after 180 days of inactivity to keep the PR list clean. 30 days before closing, the GitHub action will add `stale` label to the PR. If you need more time, please remove the `stale` label.
 
+Keep each pull request focused on a single coherent topic. Move independently useful changes into separate pull requests unless they are required for the primary change to work correctly.
+
 Before a piece of work is finished:
 
 - Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
@@ -151,6 +153,8 @@ You have to commit the changes to `go.mod` and `go.sum` before submitting the pu
 ## Design patterns and Code conventions
 
 Please see the dedicated "[Design patterns and Code conventions](design-patterns-and-conventions.md)" page.
+
+Prefer inlining unexported functions and local helpers used at only one call site. Keep a single-caller helper only when inlining would make the caller materially harder to read, such as by making it too long.
 
 For new Go code that combines multiple errors, prefer the standard library `errors.Join` over project-specific multi-error helpers unless surrounding APIs or existing local patterns require a specific error type or formatting.
 
