@@ -676,26 +676,24 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
-			// If readcache says it's still warming:
-			//   - RF≥2: the replication set already contains the peer
-			//     zone mirror; return the error so DoUntilQuorum can
-			//     try it. Do NOT jump to the previous lease owner —
-			//     that skips the warm peer of the current slot.
-			//   - RF=1 (single concrete replica for this logical
-			//     owner): fall back to the previous lease owner, which
-			//     still holds the frozen pre-move head.
+			// If readcache says it's still warming, fall back to the
+			// previous lease owner, which still holds the frozen
+			// pre-move head.
+			//
+			// This holds under RF≥2 as well: both zone mirrors of a
+			// logical slot adopt the partition from the same lease
+			// row, so a move leaves them warming in lockstep and
+			// spilling to the peer (via MinimizeRequests / hedging)
+			// has nothing warmer to offer. The peer is still dialed
+			// by DoUntilQuorum on failure or after the hedging delay,
+			// which covers the other case — one mirror restarting on
+			// its own while its peer stayed warm.
 			if readcache.IsStillWarming(err) && hasPart {
-				logical := ing.Addr
-				if id, ok := d.GetReadcacheReplicaMap().LogicalForConcrete(ing.Addr); ok {
-					logical = id
-				}
-				if len(d.GetReadcacheReplicaMap().Expand(logical)) <= 1 {
-					if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
-						level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
-						hits.record(prevID)
-						queryStats.AddReadcacheQueryStreamCalls(1)
-						stream, err = prev.QueryStream(ctx, streamReq)
-					}
+				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+					hits.record(prevID)
+					queryStats.AddReadcacheQueryStreamCalls(1)
+					stream, err = prev.QueryStream(ctx, streamReq)
 				}
 			}
 			if err != nil {
