@@ -35,9 +35,49 @@ var identifyingLabels = []string{"instance", "job"}
 // inner series (i.e. no matching info series contributes any labels).
 const innerSeriesKey = "inner"
 
+type labelSetsHashID uint32
+
+const innerSeriesHashID labelSetsHashID = 0
+
+const noAdditionalInfoSeries = ^uint32(0)
+
 type labelsTime struct {
 	labels labels.Labels
 	time   int64
+}
+
+type infoSeriesGroups struct {
+	firstLabelSets      []labels.Labels
+	additionalHeads     []uint32
+	additionalLabelSets []labels.Labels
+	additionalNext      []uint32
+}
+
+func (g *infoSeriesGroups) addGroup(labelSet labels.Labels) labelSetsHashID {
+	groupID := labelSetsHashID(len(g.firstLabelSets))
+	g.firstLabelSets = append(g.firstLabelSets, labelSet)
+	g.additionalHeads = append(g.additionalHeads, noAdditionalInfoSeries)
+	return groupID
+}
+
+func (g *infoSeriesGroups) addToGroup(groupID labelSetsHashID, labelSet labels.Labels) {
+	additionalIndex := uint32(len(g.additionalLabelSets))
+	g.additionalLabelSets = append(g.additionalLabelSets, labelSet)
+	g.additionalNext = append(g.additionalNext, g.additionalHeads[groupID])
+	g.additionalHeads[groupID] = additionalIndex
+}
+
+func (g *infoSeriesGroups) labelSets(groupID labelSetsHashID, scratch []labels.Labels) []labels.Labels {
+	head := g.additionalHeads[groupID]
+	if head == noAdditionalInfoSeries {
+		return g.firstLabelSets[groupID : groupID+1]
+	}
+
+	scratch = append(scratch[:0], g.firstLabelSets[groupID])
+	for i := head; i != noAdditionalInfoSeries; i = g.additionalNext[i] {
+		scratch = append(scratch, g.additionalLabelSets[i])
+	}
+	return scratch
 }
 
 type InfoFunction struct {
@@ -51,9 +91,10 @@ type InfoFunction struct {
 	// dedicated buffer and scratch builder for signature
 	sigBuf []byte
 	sigLb  labels.ScratchBuilder
-	// timestamp:(signature:label sets hash) - the precomputed hash of the group of info series
-	// label sets seen for that timestamp and signature, used to route samples to split series.
-	sigTimestamps map[int64]map[string]string
+	// timestamp:(signature:label sets hash ID)
+	sigTimestamps map[int64]map[string]labelSetsHashID
+	// label sets hash ID:label sets hash; index zero is innerSeriesKey.
+	labelSetsHashesByID []string
 	// signature:(label sets hash:array of info series labels)
 	labelSets map[string]map[string][]labels.Labels
 	// inner series index - (info series label sets hash: index for ordering)
@@ -201,7 +242,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))
 	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
-	f.sigTimestamps = make(map[int64]map[string]string, f.timeRange.StepCount)
+	f.sigTimestamps = make(map[int64]map[string]labelSetsHashID, f.timeRange.StepCount)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
 	for _, metadata := range infoMetadata {
@@ -258,41 +299,66 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// Summarise the info series by recording per timestamp and labels-only signature
 	// the series labels we've seen. We do this in a second pass so the inner loop's
 	// per-(metric, sig) duplicate resolution finalises before we write the result.
-	// This intermediate structure is local: it is only needed to derive the per-(timestamp,
-	// signature) group hash below, and is discarded when this function returns.
-	tsSigLabelSets := make(map[int64]map[string][]labels.Labels, f.timeRange.StepCount)
+	// Values in f.sigTimestamps temporarily identify groups built below; finalization
+	// replaces them with interned hash IDs without allocating another timestamp map.
+	var groups infoSeriesGroups
 	for _, metricSigTimestamps := range sigTimestampsByMetric {
 		for t, sigsAtTimestamp := range metricSigTimestamps {
-			sigAtTimestamp, exists := tsSigLabelSets[t]
+			groupIDsAtTimestamp, exists := f.sigTimestamps[t]
 			if !exists {
-				sigAtTimestamp = make(map[string][]labels.Labels)
+				groupIDsAtTimestamp = make(map[string]labelSetsHashID)
 			}
 			for sig, lt := range sigsAtTimestamp {
-				sigAtTimestamp[sig] = append(sigAtTimestamp[sig], lt.labels)
+				groupID, exists := groupIDsAtTimestamp[sig]
+				if !exists {
+					groupID = groups.addGroup(lt.labels)
+					groupIDsAtTimestamp[sig] = groupID
+				} else {
+					groups.addToGroup(groupID, lt.labels)
+				}
 			}
-			tsSigLabelSets[t] = sigAtTimestamp
+			f.sigTimestamps[t] = groupIDsAtTimestamp
 		}
 	}
 
-	// Compute the group hash once per (timestamp, signature) and record it in f.sigTimestamps,
-	// so the per-sample path (getSplitResult) only needs map lookups. At the same time, summarise
-	// the label sets overall across all timestamps into f.labelSets keyed by that same hash. This
-	// is used to generate all label sets for each inner series that can actually be used, instead
-	// of generating all theoretically possible combinations which grows exponentially.
-	for t, sigAtTimestamp := range tsSigLabelSets {
-		hashesAtTimestamp := make(map[string]string, len(sigAtTimestamp))
-		for sig, labelSets := range sigAtTimestamp {
-			hash := makeLabelSetsHash(labelSets)
-			hashesAtTimestamp[sig] = hash
-			if _, exists := f.labelSets[sig]; !exists {
-				f.labelSets[sig] = make(map[string][]labels.Labels)
-			}
-			f.labelSets[sig][hash] = append([]labels.Labels(nil), labelSets...)
-		}
-		f.sigTimestamps[t] = hashesAtTimestamp
-	}
+	f.finalizeInfoSeriesGroups(&groups)
 
 	return nil
+}
+
+func (f *InfoFunction) finalizeInfoSeriesGroups(groups *infoSeriesGroups) {
+	f.labelSetsHashesByID = []string{innerSeriesKey}
+	hashIDs := map[string]labelSetsHashID{innerSeriesKey: innerSeriesHashID}
+	var scratch []labels.Labels
+
+	// Compute each group hash once and intern it, so timestamp entries retain only compact IDs.
+	// At the same time, summarise the groups across all timestamps for metadata construction.
+	for _, groupIDsAtTimestamp := range f.sigTimestamps {
+		for sig, groupID := range groupIDsAtTimestamp {
+			labelSets := groups.labelSets(groupID, scratch)
+			if len(labelSets) > 1 {
+				scratch = labelSets
+			}
+			hash := makeLabelSetsHash(labelSets)
+			hashID, exists := hashIDs[hash]
+			if !exists {
+				hashID = labelSetsHashID(len(f.labelSetsHashesByID))
+				hashIDs[hash] = hashID
+				f.labelSetsHashesByID = append(f.labelSetsHashesByID, hash)
+			}
+
+			canonicalHash := f.labelSetsHashesByID[hashID]
+			labelSetsByHash, exists := f.labelSets[sig]
+			if !exists {
+				labelSetsByHash = make(map[string][]labels.Labels)
+				f.labelSets[sig] = labelSetsByHash
+			}
+			if _, exists := labelSetsByHash[canonicalHash]; !exists {
+				labelSetsByHash[canonicalHash] = append([]labels.Labels(nil), labelSets...)
+			}
+			groupIDsAtTimestamp[sig] = hashID
+		}
+	}
 }
 
 // makeLabelSetsHash creates a hash string to identify a unique set of label sets.
@@ -708,15 +774,14 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 }
 
 func (f *InfoFunction) getSplitResult(ts int64, sig string, storedSeriesResults map[string]types.InstantVectorSeriesData, labelSetsOrder map[string]int, lenFloats, lenHistograms int) (types.InstantVectorSeriesData, string, bool, error) {
-	// Look up the precomputed group hash for this timestamp and labels-only signature. It was
-	// computed once per (timestamp, signature) in processSamplesFromInfoSeries, so the per-sample
-	// path here is a pure map lookup with no hashing or allocation.
-	labelSetsHash := innerSeriesKey // Default: use the original inner series labels unchanged.
-	if hashBySig, exists := f.sigTimestamps[ts]; exists {
-		if hash, exists := hashBySig[sig]; exists {
-			labelSetsHash = hash
+	// Look up the interned group hash for this timestamp and labels-only signature.
+	hashID := innerSeriesHashID // Default: use the original inner series labels unchanged.
+	if hashIDsBySig, exists := f.sigTimestamps[ts]; exists {
+		if id, exists := hashIDsBySig[sig]; exists {
+			hashID = id
 		}
 	}
+	labelSetsHash := f.labelSetsHashesByID[hashID]
 
 	// If this label sets hash is not in the order map, it means we shouldn't create a series for it.
 	if _, exists := labelSetsOrder[labelSetsHash]; !exists {
