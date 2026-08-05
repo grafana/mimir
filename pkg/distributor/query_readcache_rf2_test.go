@@ -320,6 +320,67 @@ func TestResolveReadcacheClientForPartition_RF2Failover(t *testing.T) {
 	})
 }
 
+// TestPreviousReadcacheClientForPartition_RF2 covers the target of the
+// still-warming fallback under RF≥2.
+//
+// Both mirrors of a logical slot adopt a partition from the same lease
+// row, so a move leaves them warming together and the peer mirror has
+// nothing warmer to serve. The fallback must therefore resolve to the
+// *previous* logical owner's mirrors, which still hold the frozen
+// pre-move head — never to the current slot's peer.
+func TestPreviousReadcacheClientForPartition_RF2(t *testing.T) {
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	// Partition 0 just moved from logical slot 0 to slot 1.
+	entries := []readcacheassignment.LogEntry{
+		{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-5 * time.Minute), To: now},
+		{PartitionID: 0, InstanceID: "readcache-1", From: now, To: now.Add(5 * time.Minute)},
+	}
+
+	newDistributor := func(t *testing.T, addresses string, ignoreMap bool) *Distributor {
+		t.Helper()
+		pool, err := newReadcachePool(ReadcacheConfig{Addresses: addresses}, nil, "", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = pool.Close() })
+
+		d := &Distributor{now: func() time.Time { return now }, readcachePool: pool}
+		d.cfg.Readcache.IgnoreReplicaMapForQueries = ignoreMap
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(entries), twoZoneReplicaMap())
+		return d
+	}
+
+	t.Run("resolves a mirror of the previous logical owner", func(t *testing.T) {
+		d := newDistributor(t, "readcache-zone-a-0=127.0.0.1:9095,readcache-zone-b-0=127.0.0.1:9096", false)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		require.True(t, ok)
+		assert.Equal(t, "readcache-zone-a-0", instanceID,
+			"must dial slot 0's mirrors (the previous owner), not slot 1's peer")
+	})
+
+	t.Run("falls through when the previous owner's first mirror is unresolvable", func(t *testing.T) {
+		d := newDistributor(t, "readcache-zone-b-0=127.0.0.1:9096", false)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		require.True(t, ok)
+		assert.Equal(t, "readcache-zone-b-0", instanceID)
+	})
+
+	t.Run("warm stage dials the previous logical owner directly", func(t *testing.T) {
+		// With ignore-replica-map-for-queries the map is bypassed, so
+		// the fallback stays on the legacy pod like the primary read.
+		d := newDistributor(t, "readcache-0=127.0.0.1:9095,readcache-zone-a-0=127.0.0.1:9096", true)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		require.True(t, ok)
+		assert.Equal(t, "readcache-0", instanceID)
+	})
+
+	t.Run("reports no fallback when no mirror resolves", func(t *testing.T) {
+		d := newDistributor(t, "readcache-zone-a-1=127.0.0.1:9097", false)
+		_, _, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		assert.False(t, ok)
+	})
+}
+
 // TestExplainReadcacheQuery_RF2 keeps the debug plan in lockstep with
 // production routing: the plan must enumerate the concrete pods that
 // would be dialed, not the logical slots recorded in the log.
