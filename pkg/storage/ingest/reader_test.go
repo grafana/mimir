@@ -97,6 +97,31 @@ func TestSingleClusterPartitionReader_RequiresOffsetFilePath(t *testing.T) {
 	assert.Contains(t, err.Error(), "offset file path must be specified")
 }
 
+func TestNewSingleClusterPartitionReader_LabelsMetricsWithTopic(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	cfg := createTestKafkaConfig("localhost", topicName)
+	_, err := NewSingleClusterPartitionReader(cfg, partitionID, "test-group", filepath.Join(t.TempDir(), "offset.json"), pusherFunc(nil), log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+		# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+		cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} -1
+
+		# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+		# TYPE cortex_ingest_storage_reader_requests_failed_total counter
+		cortex_ingest_storage_reader_requests_failed_total{cause="client",topic="test"} 0
+		cortex_ingest_storage_reader_requests_failed_total{cause="server",topic="test"} 0
+	`),
+		"cortex_ingest_storage_reader_last_consumed_offset",
+		"cortex_ingest_storage_reader_requests_failed_total"))
+}
+
 func TestSingleClusterPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	const (
 		topicName    = "test"
@@ -137,9 +162,9 @@ func TestSingleClusterPartitionReader_logFetchErrors(t *testing.T) {
 	})
 
 	assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_fetch_errors_total The number of fetch errors encountered by the consumer.
-        	# TYPE cortex_ingest_storage_reader_fetch_errors_total counter
-        	cortex_ingest_storage_reader_fetch_errors_total 1
+		# HELP cortex_ingest_storage_reader_fetch_errors_total The number of fetch errors encountered by the consumer.
+		# TYPE cortex_ingest_storage_reader_fetch_errors_total counter
+		cortex_ingest_storage_reader_fetch_errors_total{topic="test"} 1
 	`), "cortex_ingest_storage_reader_fetch_errors_total"))
 }
 
@@ -727,7 +752,7 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} -1
 					`), "cortex_ingest_storage_reader_last_consumed_offset"))
 				})
 			})
@@ -780,7 +805,7 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} -1
 					`), "cortex_ingest_storage_reader_last_consumed_offset"))
 				})
 			})
@@ -866,15 +891,15 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 						return promtest.GatherAndCompare(reg, strings.NewReader(`
 							# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 							# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-							cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+							cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 							# HELP cortex_ingest_storage_reader_records_consumed_total Total number of records successfully consumed by the partition reader.
 							# TYPE cortex_ingest_storage_reader_records_consumed_total counter
-							cortex_ingest_storage_reader_records_consumed_total{partition="1"} 2
+							cortex_ingest_storage_reader_records_consumed_total{partition="1",topic="test"} 2
 
 							# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 							# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 						`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_records_consumed_total", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 					})
 				})
@@ -967,11 +992,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 						return promtest.GatherAndCompare(reg, strings.NewReader(`
 							# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 							# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-							cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+							cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 							# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 							# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 						`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 					})
 				})
@@ -1069,11 +1094,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 								return promtest.GatherAndCompare(reg, strings.NewReader(`
 									# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 									# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-									cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 2
+									cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 2
 
 									# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 									# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-									cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+									cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 								`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 							})
 						})
@@ -1186,11 +1211,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 										return promtest.GatherAndCompare(reg, strings.NewReader(`
 										# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 										# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-										cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+										cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 										# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 										# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-										cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+										cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 									`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 									})
 								}(t)
@@ -1303,7 +1328,7 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 								return promtest.GatherAndCompare(reg, strings.NewReader(`
 									# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 									# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-									cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+									cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 								`), "cortex_ingest_storage_reader_last_consumed_offset")
 							})
 
@@ -1323,11 +1348,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 								return promtest.GatherAndCompare(reg, strings.NewReader(`
 									# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 									# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-									cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+									cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 3
 
 									# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 									# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-									cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+									cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 								`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 							})
 						})
@@ -1440,11 +1465,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 						return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 							# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 							# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-							cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+							cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} %d
 
 							# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 							# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 						`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 					})
 				})
@@ -1549,11 +1574,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 								return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} %d
 
 								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 							`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 							})
 						}(t)
@@ -1862,15 +1887,15 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 									require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 										# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 										# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-										cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+										cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} -1
 
 										# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 										# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-										cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+										cortex_ingest_storage_reader_last_committed_offset{partition="1",topic="test"} -1
 
 										# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 										# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-										cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+										cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 									`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_last_committed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total"))
 								})
 							})
@@ -1970,11 +1995,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return promtest.GatherAndCompare(reg, strings.NewReader(`
 						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 				})
 
@@ -1994,11 +2019,11 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return promtest.GatherAndCompare(reg, strings.NewReader(`
 						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 3
 
 						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 				})
 			})
@@ -2143,15 +2168,15 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 							return promtest.GatherAndCompare(reg, strings.NewReader(`
 								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 
 								# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
 								# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
-								cortex_ingest_storage_reader_buffered_fetched_records 0
+								cortex_ingest_storage_reader_buffered_fetched_records{topic="test"} 0
 							`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
 						})
 
@@ -2169,19 +2194,19 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 							return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 1
 
 								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} %d
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} %d
 
 								# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
 								# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
-								cortex_ingest_storage_reader_buffered_fetched_records %d
+								cortex_ingest_storage_reader_buffered_fetched_records{topic="test"} %d
 
 								# HELP cortex_ingest_storage_reader_buffered_fetched_bytes The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.
 								# TYPE cortex_ingest_storage_reader_buffered_fetched_bytes gauge
-								cortex_ingest_storage_reader_buffered_fetched_bytes %d
+								cortex_ingest_storage_reader_buffered_fetched_bytes{topic="test"} %d
 							`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords, tt.expectedBufferedBytes)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records", "cortex_ingest_storage_reader_buffered_fetched_bytes")
 						})
 
@@ -2204,15 +2229,15 @@ func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhen
 							return promtest.GatherAndCompare(reg, strings.NewReader(`
 								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} 3
 
 								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 
 								# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
 								# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
-								cortex_ingest_storage_reader_buffered_fetched_records 0
+								cortex_ingest_storage_reader_buffered_fetched_records{topic="test"} 0
 							`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
 						})
 					})
@@ -2551,11 +2576,11 @@ func TestSingleClusterPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBo
 							return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1",topic="test"} %d
 
 						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
-						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader",topic="test"} 0
 					`, totalProducedRecords-1)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 						})
 					})
@@ -3266,15 +3291,15 @@ func TestPartitionCommitter(t *testing.T) {
 				return promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 					# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-					cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
+					cortex_ingest_storage_reader_last_committed_offset{partition="1",topic="test-topic"} 123
 
 					# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 					# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
-					cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
+					cortex_ingest_storage_reader_offset_commit_failures_total{partition="1",topic="test-topic"} 1
 
 					# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
 					# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
-					cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 2
+					cortex_ingest_storage_reader_offset_commit_requests_total{partition="1",topic="test-topic"} 2
 				`),
 					"cortex_ingest_storage_reader_offset_commit_requests_total",
 					"cortex_ingest_storage_reader_offset_commit_failures_total",
@@ -3319,15 +3344,15 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
+			cortex_ingest_storage_reader_last_committed_offset{partition="1",topic="test-topic"} 123
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
-			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 0
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1",topic="test-topic"} 0
 
 			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
 			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
-			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 1
+			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1",topic="test-topic"} 1
 		`),
 			"cortex_ingest_storage_reader_offset_commit_requests_total",
 			"cortex_ingest_storage_reader_offset_commit_failures_total",
@@ -3360,15 +3385,15 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+			cortex_ingest_storage_reader_last_committed_offset{partition="1",topic="test-topic"} -1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
-			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1",topic="test-topic"} 1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
 			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
-			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 1
+			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1",topic="test-topic"} 1
 		`),
 			"cortex_ingest_storage_reader_offset_commit_requests_total",
 			"cortex_ingest_storage_reader_offset_commit_failures_total",
@@ -3402,15 +3427,15 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+			cortex_ingest_storage_reader_last_committed_offset{partition="1",topic="test-topic"} -1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
-			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1",topic="test-topic"} 1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
 			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
-			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1"} 1
+			cortex_ingest_storage_reader_offset_commit_requests_total{partition="1",topic="test-topic"} 1
 		`),
 			"cortex_ingest_storage_reader_offset_commit_requests_total",
 			"cortex_ingest_storage_reader_offset_commit_failures_total",
@@ -3749,11 +3774,11 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 
 	t.Cleanup(func() {
 		// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
-		assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+		assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
 			# TYPE cortex_ingest_storage_reader_missed_records_total counter
-			cortex_ingest_storage_reader_missed_records_total 0
-		`), "cortex_ingest_storage_reader_missed_records_total"))
+			cortex_ingest_storage_reader_missed_records_total{topic=%q} 0
+		`, cfg.kafka.Topic)), "cortex_ingest_storage_reader_missed_records_total"))
 	})
 
 	// Ensure the config is valid.

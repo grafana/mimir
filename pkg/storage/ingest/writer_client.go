@@ -218,10 +218,10 @@ type KafkaProducer struct {
 	// Custom metrics.
 	bufferedProduceBytes          prometheus.Summary
 	bufferedProduceBytesLimit     prometheus.Gauge
-	produceRecordsEnqueuedTotal   prometheus.Counter
+	produceRecordsEnqueuedTotal   *prometheus.CounterVec
 	produceRecordsFailedTotal     *prometheus.CounterVec
-	produceRecordsEnqueueDuration prometheus.Histogram
-	produceRemainingDeadline      prometheus.Histogram
+	produceRecordsEnqueueDuration *prometheus.HistogramVec
+	produceRemainingDeadline      *prometheus.HistogramVec
 }
 
 // NewKafkaProducer returns a new KafkaProducer.
@@ -253,30 +253,30 @@ func NewKafkaProducer(client KafkaProducerClient, maxBufferedBytes int64, reg pr
 				Name: "buffered_produce_bytes_limit",
 				Help: "The bytes limit on buffered produce records. Produce requests fail once this limit is reached.",
 			}),
-		produceRecordsEnqueuedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		produceRecordsEnqueuedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "produce_records_enqueued_total",
 			Help: "Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).",
-		}),
+		}, []string{"topic"}),
 		produceRecordsFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "produce_records_failed_total",
 			Help: "Total number of Kafka records that failed to be sent to the Kafka backend.",
-		}, []string{"reason"}),
-		produceRecordsEnqueueDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		}, []string{"reason", "topic"}),
+		produceRecordsEnqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "produce_records_enqueue_duration_seconds",
 			Help:                            "How long it takes to enqueue produced Kafka records in the client, appending them to the batches that will sent to the Kafka backend (in seconds).",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-		}),
-		produceRemainingDeadline: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		}, []string{"topic"}),
+		produceRemainingDeadline: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "produce_remaining_deadline_seconds",
 			Help:                            "The remaining deadline (in seconds) when records are requested to be produced.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-		}),
+		}, []string{"topic"}),
 	}
 
 	producer.bufferedProduceBytesLimit.Set(float64(maxBufferedBytes))
@@ -335,12 +335,13 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		done      = make(chan struct{})
 		resMx     sync.Mutex
 		res       = make(kgo.ProduceResults, 0, len(records))
+		topic     = recordsTopicLabel(records)
 	)
 
 	// Keep track of the remaining deadline before producing records.
 	// This could be useful for troubleshooting.
 	if deadline, ok := ctx.Deadline(); ok {
-		c.produceRemainingDeadline.Observe(max(0, time.Until(deadline).Seconds()))
+		c.produceRemainingDeadline.WithLabelValues(topic).Observe(max(0, time.Until(deadline).Seconds()))
 	}
 
 	// As a safety mechanism, we want to make sure that the context is not already canceled or its deadline exceeded.
@@ -349,10 +350,8 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// pull out records from a batch buffer. So, if the context is canceled, we circuit break instead of buffering
 	// records that may be sent to the Kafka backend, but that the caller will not know about because context is done.
 	if err := ctx.Err(); err != nil {
-		recordsCount := float64(len(records))
-
-		c.produceRecordsEnqueuedTotal.Add(recordsCount)
-		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
+		c.trackEnqueuedRecords(records)
+		c.trackFailedRecords(records, "cancelled-before-producing")
 
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
 		// Records haven't been handed to the Kafka client yet, so the input record pointers are
@@ -369,16 +368,14 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// use a Kafka record header instead.
 	for _, record := range records {
 		if !record.Timestamp.IsZero() {
-			recordsCount := float64(len(records))
-
-			c.produceRecordsEnqueuedTotal.Add(recordsCount)
-			c.produceRecordsFailedTotal.WithLabelValues("record-timestamp-set").Add(recordsCount)
+			c.trackEnqueuedRecords(records)
+			c.trackFailedRecords(records, "record-timestamp-set")
 
 			return newFailedProduceResultsFromRecords(records, errors.New("Kafka record Timestamp must not be set by the caller; it is reserved for the Kafka client to track produce time"))
 		}
 	}
 
-	c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
+	c.trackEnqueuedRecords(records)
 
 	// Reserve buffer space for the whole batch up front. If the reservation would exceed the configured
 	// limit, refund it and reject every record with kgo.ErrMaxBuffered. This makes admission all-or-nothing
@@ -391,7 +388,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 
 		if c.bufferedBytes.Add(batchBytes) > c.maxBufferedBytes {
 			c.bufferedBytes.Add(-batchBytes)
-			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(kgo.ErrMaxBuffered)).Add(float64(len(records)))
+			c.trackFailedRecords(records, produceErrReason(kgo.ErrMaxBuffered))
 
 			rejected := make(kgo.ProduceResults, len(records))
 			for i, record := range records {
@@ -421,7 +418,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		resMx.Unlock()
 
 		if err != nil {
-			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(err)).Inc()
+			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(err), r.Topic).Inc()
 		}
 
 		// In case of error we'll wait for all responses anyway before returning from produceSync().
@@ -450,7 +447,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 			c.client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 		}
 
-		c.produceRecordsEnqueueDuration.Observe(time.Since(enqueueStartTime).Seconds())
+		c.produceRecordsEnqueueDuration.WithLabelValues(topic).Observe(time.Since(enqueueStartTime).Seconds())
 	}
 
 	// Wait for a response or until the context has done.
@@ -464,6 +461,54 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
 		return res
 	}
+}
+
+func (c *KafkaProducer) trackEnqueuedRecords(records []*kgo.Record) {
+	if topic := recordsTopicLabel(records); topic != "mixed" {
+		if len(records) > 0 {
+			c.produceRecordsEnqueuedTotal.WithLabelValues(topic).Add(float64(len(records)))
+		}
+		return
+	}
+
+	for topic, count := range recordCountsByTopic(records) {
+		c.produceRecordsEnqueuedTotal.WithLabelValues(topic).Add(float64(count))
+	}
+}
+
+func (c *KafkaProducer) trackFailedRecords(records []*kgo.Record, reason string) {
+	if topic := recordsTopicLabel(records); topic != "mixed" {
+		if len(records) > 0 {
+			c.produceRecordsFailedTotal.WithLabelValues(reason, topic).Add(float64(len(records)))
+		}
+		return
+	}
+
+	for topic, count := range recordCountsByTopic(records) {
+		c.produceRecordsFailedTotal.WithLabelValues(reason, topic).Add(float64(count))
+	}
+}
+
+func recordCountsByTopic(records []*kgo.Record) map[string]int {
+	counts := make(map[string]int)
+	for _, record := range records {
+		counts[record.Topic]++
+	}
+	return counts
+}
+
+func recordsTopicLabel(records []*kgo.Record) string {
+	if len(records) == 0 {
+		return ""
+	}
+
+	topic := records[0].Topic
+	for _, record := range records[1:] {
+		if record.Topic != topic {
+			return "mixed"
+		}
+	}
+	return topic
 }
 
 // newFailedProduceResultsFromRecords builds a kgo.ProduceResults that reports the given error

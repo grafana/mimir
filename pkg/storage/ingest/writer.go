@@ -65,12 +65,11 @@ type Writer struct {
 	serializer recordSerializer
 
 	// Metrics.
-	writeSuccessLatency prometheus.Observer
-	writeFailureLatency prometheus.Observer
-	writeBytesTotal     prometheus.Counter
-	inputBytesTotal     prometheus.Counter
-	recordsPerRequest   prometheus.Histogram
-	serializeDuration   prometheus.Histogram
+	writeLatency      *prometheus.HistogramVec
+	writeBytesTotal   *prometheus.CounterVec
+	inputBytesTotal   *prometheus.CounterVec
+	recordsPerRequest *prometheus.HistogramVec
+	serializeDuration *prometheus.HistogramVec
 }
 
 // WriterOption customizes a Writer built by NewWriter.
@@ -90,7 +89,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
 		Buckets:                         prometheus.DefBuckets,
-	}, []string{"outcome"})
+	}, []string{"outcome", "topic"})
 
 	w := &Writer{
 		kafkaCfg:         kafkaCfg,
@@ -100,29 +99,28 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		autoCreateTopics: []string{kafkaCfg.Topic},
 
 		// Metrics.
-		writeSuccessLatency: writeLatency.WithLabelValues("success"),
-		writeFailureLatency: writeLatency.WithLabelValues("failure"),
-		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		writeLatency: writeLatency,
+		writeBytesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
 			Help: "Total number of bytes produced to the Kafka backend.",
-		}),
-		inputBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"topic"}),
+		inputBytesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_input_bytes_total",
 			Help: "Total number of bytes in write requests before conversion to the Kafka record format.",
-		}),
-		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		}, []string{"topic"}),
+		recordsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_writer_records_per_write_request",
 			Help:    "The number of records a single per-partition write request has been split into.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
-		}),
-		serializeDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		}, []string{"topic"}),
+		serializeDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_writer_serialize_duration_seconds",
 			Help:                            "Time spent serializing an incoming request to Kafka records.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 			Buckets:                         prometheus.DefBuckets,
-		}),
+		}, []string{"topic"}),
 	}
 
 	for _, opt := range opts {
@@ -189,6 +187,11 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 	}
 
 	startTime := time.Now()
+	recordsPerRequest := w.recordsPerRequest.WithLabelValues(topic)
+	writeBytesTotal := w.writeBytesTotal.WithLabelValues(topic)
+	inputBytesTotal := w.inputBytesTotal.WithLabelValues(topic)
+	writeSuccessLatency := w.writeLatency.WithLabelValues("success", topic)
+	writeFailureLatency := w.writeLatency.WithLabelValues("failure", topic)
 
 	// Serialize all partition requests into a single records slice.
 	var (
@@ -209,12 +212,12 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		// Track the number of records the given WriteRequest has been split into.
 		// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
 		// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
-		w.recordsPerRequest.Observe(float64(len(records)))
+		recordsPerRequest.Observe(float64(len(records)))
 
 		allRecords = append(allRecords, records...)
 		requestSizeBytes += reqSizeBytes
 	}
-	w.serializeDuration.Observe(time.Since(startTime).Seconds())
+	w.serializeDuration.WithLabelValues(topic).Observe(time.Since(startTime).Seconds())
 
 	// Nothing to do if all requests were empty.
 	if len(allRecords) == 0 {
@@ -233,11 +236,11 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 	// we only track success metrics when all records succeeded. This keeps cortex_ingest_storage_writer_sent_bytes_total
 	// and cortex_ingest_storage_writer_input_bytes_total consistent with each other, avoiding inflation on partial failures.
 	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count == len(allRecords) {
-		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
-		w.writeBytesTotal.Add(float64(recordsSizeBytes))
-		w.inputBytesTotal.Add(float64(requestSizeBytes))
+		writeSuccessLatency.Observe(time.Since(startTime).Seconds())
+		writeBytesTotal.Add(float64(recordsSizeBytes))
+		inputBytesTotal.Add(float64(requestSizeBytes))
 	} else {
-		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
+		writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}
 
 	return produceResultsErr(res)

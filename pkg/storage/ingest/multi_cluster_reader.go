@@ -86,15 +86,16 @@ func NewMultiClusterPartitionReader(
 	var merger *HeapMerger
 	if orderedCfg.Enabled && len(clusterConfigs) > 1 {
 		mergerLogger := log.With(logger, "component", "heap_merger")
+		topicReg := registererWithTopic(reg, clusterConfigs[0].Topic)
 		// The downstream push path is shared across all clusters, so its PusherConsumer metrics are
 		// registered once on the base registerer rather than per cluster.
-		pusherMetrics := NewPusherConsumerMetrics(reg)
+		pusherMetrics := NewPusherConsumerMetrics(topicReg)
 		pusherFactory := consumerFactoryFunc(func() RecordConsumer {
 			// clusterConfigs[0] only carries the Kafka client tunables consulted by PusherConsumer
 			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
 			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
 		})
-		merger = NewHeapMerger(orderedCfg, pusherFactory, reg, mergerLogger)
+		merger = NewHeapMerger(orderedCfg, pusherFactory, topicReg, mergerLogger)
 	}
 
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))
@@ -117,7 +118,7 @@ func NewMultiClusterPartitionReader(
 				return merger.NewSubmittingConsumer(kafkaClusterID)
 			})
 		} else {
-			pusherMetrics := NewPusherConsumerMetrics(clusterReg)
+			pusherMetrics := NewPusherConsumerMetrics(registererWithTopic(clusterReg, clusterCfg.Topic))
 			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
 				return NewPusherConsumer(pusher, clusterCfg, pusherMetrics, clusterLogger)
 			})
