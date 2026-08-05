@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"math/rand"
 	"net"
 	"strconv"
@@ -256,14 +257,13 @@ func TestMaxUncompressedPayloadSize(t *testing.T) {
 	})
 
 	t.Run("compressed payload calculation does not overflow", func(t *testing.T) {
-		maxInt := int(^uint(0) >> 1)
-		actual, err := maxUncompressedPayloadSize(maxInt, grpcgzip.Name)
+		actual, err := maxUncompressedPayloadSize(math.MaxInt, grpcgzip.Name)
 		require.NoError(t, err)
 		require.Positive(t, actual)
 
 		upperBound, ok := compressedPayloadSizeUpperBound(actual)
 		require.True(t, ok)
-		require.LessOrEqual(t, upperBound, maxInt)
+		require.LessOrEqual(t, upperBound, math.MaxInt)
 		_, ok = compressedPayloadSizeUpperBound(actual + 1)
 		require.False(t, ok)
 	})
