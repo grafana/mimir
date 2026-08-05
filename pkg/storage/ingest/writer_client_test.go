@@ -252,6 +252,35 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	runForEachKafkaBackend(t, testKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone)
 }
 
+func TestKafkaProducer_ProduceSync_ShouldTrackRecordsByTopic(t *testing.T) {
+	runForEachKafkaBackend(t, func(t *testing.T, backend string) {
+		const (
+			configuredTopic = "test"
+			topicA          = "topic-a"
+			topicB          = "topic-b"
+		)
+
+		_, clusterAddr := testkafka.CreateCluster(t, 1, configuredTopic)
+		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, configuredTopic, prometheus.NewPedanticRegistry(), nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		records := []*kgo.Record{
+			{Topic: topicA, Value: []byte("message 1")},
+			{Topic: topicB, Value: []byte("message 2")},
+			{Topic: topicA, Value: []byte("message 3")},
+		}
+		results := producer.ProduceSync(ctx, records)
+		require.ErrorIs(t, results.FirstErr(), context.Canceled)
+
+		assert.Equal(t, float64(2), promtest.ToFloat64(producer.produceRecordsEnqueuedTotal.WithLabelValues(topicA)))
+		assert.Equal(t, float64(1), promtest.ToFloat64(producer.produceRecordsEnqueuedTotal.WithLabelValues(topicB)))
+		assert.Equal(t, float64(2), promtest.ToFloat64(producer.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing", topicA)))
+		assert.Equal(t, float64(1), promtest.ToFloat64(producer.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing", topicB)))
+	})
+}
+
 func testKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.T, backend string) {
 	const (
 		numPartitions = 1
@@ -278,11 +307,11 @@ func testKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-		cortex_ingest_storage_writer_produce_records_enqueued_total{} 1
+		cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 1
 
 		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-		cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing"} 1
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing",topic="test"} 1
 	`),
 		"cortex_ingest_storage_writer_produce_records_enqueued_total",
 		"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -331,11 +360,11 @@ func testKafkaProducer_ProduceSync_ShouldRejectRecordsWithTimestampSet(t *testin
 	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-		cortex_ingest_storage_writer_produce_records_enqueued_total 2
+		cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 2
 
 		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-		cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set"} 2
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set",topic="test"} 2
 	`),
 		"cortex_ingest_storage_writer_produce_records_enqueued_total",
 		"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -381,11 +410,11 @@ func testKafkaProducer_ProduceSync_ShouldRejectWholeBatchIfBufferIsFull(t *testi
 	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-		cortex_ingest_storage_writer_produce_records_enqueued_total 3
+		cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 3
 
 		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-		cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full"} 3
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full",topic="test"} 3
 	`),
 		"cortex_ingest_storage_writer_produce_records_enqueued_total",
 		"cortex_ingest_storage_writer_produce_records_failed_total"))

@@ -45,6 +45,35 @@ func TestWriter_WriteSync(t *testing.T) {
 	runForEachKafkaBackend(t, testWriter_WriteSync)
 }
 
+func TestWriter_MetricsTrackedByTopic(t *testing.T) {
+	runForEachKafkaBackend(t, func(t *testing.T, backend string) {
+		const (
+			topicA      = "topic-a"
+			topicB      = "topic-b"
+			partitionID = 0
+			tenantID    = "user-1"
+		)
+
+		_, clusterAddr := testkafka.CreateCluster(t, 1, topicA)
+		cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicA)
+		reg := prometheus.NewPedanticRegistry()
+		writer := NewWriter(cfg, test.NewTestingLogger(t), reg, WithAutoCreateTopics([]string{topicA, topicB}))
+		require.NoError(t, services.StartAndAwaitRunning(t.Context(), writer))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer))
+		})
+
+		for _, topic := range []string{topicA, topicB} {
+			req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
+			require.NoError(t, writer.WriteSync(t.Context(), topic, partitionID, tenantID, req))
+
+			assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_records_per_write_request", 1, "topic", topic)
+			assert.Equal(t, float64(req.Size()), promtest.ToFloat64(writer.inputBytesTotal.WithLabelValues(topic)))
+			assert.Equal(t, float64(1), promtest.ToFloat64(writer.client.Load().produceRecordsEnqueuedTotal.WithLabelValues(topic)))
+		}
+	})
+}
+
 func testWriter_WriteSync(t *testing.T, backend string) {
 	const (
 		topicName     = "test"
@@ -124,29 +153,29 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
 				# TYPE cortex_ingest_storage_writer_input_bytes_total counter
-				cortex_ingest_storage_writer_input_bytes_total %d
+				cortex_ingest_storage_writer_input_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
-				cortex_ingest_storage_writer_sent_bytes_total %d
+				cortex_ingest_storage_writer_sent_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
 				# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
-				cortex_ingest_storage_writer_records_per_write_request_sum 1
-				cortex_ingest_storage_writer_records_per_write_request_count 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_sum{topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_count{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 1
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 1
 			`, inputSize, len(fetches.Records()[0].Value))),
 				"cortex_ingest_storage_writer_input_bytes_total",
 				"cortex_ingest_storage_writer_sent_bytes_total",
@@ -222,29 +251,29 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
 				# TYPE cortex_ingest_storage_writer_input_bytes_total counter
-				cortex_ingest_storage_writer_input_bytes_total %d
+				cortex_ingest_storage_writer_input_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
-				cortex_ingest_storage_writer_sent_bytes_total %d
+				cortex_ingest_storage_writer_sent_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
 				# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 0
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
-				cortex_ingest_storage_writer_records_per_write_request_sum 2
-				cortex_ingest_storage_writer_records_per_write_request_count 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1",topic="test"} 0
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_sum{topic="test"} 2
+				cortex_ingest_storage_writer_records_per_write_request_count{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 2
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 2
 			`, expectedReq.Size(), expectedSentBytes)),
 				"cortex_ingest_storage_writer_input_bytes_total",
 				"cortex_ingest_storage_writer_sent_bytes_total",
@@ -303,7 +332,7 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 2
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 2
 			`), "cortex_ingest_storage_writer_produce_records_enqueued_total"))
 		})
 	})
@@ -484,11 +513,11 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 1
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-				cortex_ingest_storage_writer_produce_records_failed_total{reason="other"} 1
+				cortex_ingest_storage_writer_produce_records_failed_total{reason="other",topic="test"} 1
 			`),
 				"cortex_ingest_storage_writer_produce_records_enqueued_total",
 				"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -533,11 +562,11 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 1
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-				cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout"} 1
+				cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout",topic="test"} 1
 			`),
 				"cortex_ingest_storage_writer_produce_records_enqueued_total",
 				"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -680,33 +709,33 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
 				# TYPE cortex_ingest_storage_writer_input_bytes_total counter
-				cortex_ingest_storage_writer_input_bytes_total 0
+				cortex_ingest_storage_writer_input_bytes_total{topic="test"} 0
 
 				# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
-				cortex_ingest_storage_writer_sent_bytes_total 0
+				cortex_ingest_storage_writer_sent_bytes_total{topic="test"} 0
 
 				# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
 				# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 0
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
-				cortex_ingest_storage_writer_records_per_write_request_sum 2
-				cortex_ingest_storage_writer_records_per_write_request_count 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1",topic="test"} 0
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_sum{topic="test"} 2
+				cortex_ingest_storage_writer_records_per_write_request_count{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 2
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 2
 
 				# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-				cortex_ingest_storage_writer_produce_records_failed_total{reason="record-too-large"} 1
+				cortex_ingest_storage_writer_produce_records_failed_total{reason="record-too-large",topic="test"} 1
 			`),
 				"cortex_ingest_storage_writer_input_bytes_total",
 				"cortex_ingest_storage_writer_sent_bytes_total",
@@ -828,12 +857,12 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-			cortex_ingest_storage_writer_produce_records_enqueued_total 10
+			cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 10
 
 			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout"} 3
+			cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full",topic="test"} 7
+			cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout",topic="test"} 3
 		`),
 				"cortex_ingest_storage_writer_produce_records_enqueued_total",
 				"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -858,12 +887,12 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-			cortex_ingest_storage_writer_produce_records_enqueued_total 13
+			cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 13
 
 			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout"} 3
+			cortex_ingest_storage_writer_produce_records_failed_total{reason="buffer-full",topic="test"} 7
+			cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout",topic="test"} 3
 		`),
 				"cortex_ingest_storage_writer_produce_records_enqueued_total",
 				"cortex_ingest_storage_writer_produce_records_failed_total"))
@@ -972,29 +1001,29 @@ func testWriter_MultiWriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
 				# TYPE cortex_ingest_storage_writer_input_bytes_total counter
-				cortex_ingest_storage_writer_input_bytes_total %d
+				cortex_ingest_storage_writer_input_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
-				cortex_ingest_storage_writer_sent_bytes_total %d
+				cortex_ingest_storage_writer_sent_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
 				# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 3
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 3
-				cortex_ingest_storage_writer_records_per_write_request_sum 3
-				cortex_ingest_storage_writer_records_per_write_request_count 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf",topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_sum{topic="test"} 3
+				cortex_ingest_storage_writer_records_per_write_request_count{topic="test"} 3
 
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 3
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 3
 			`, totalInputSize, totalSentBytes)),
 				"cortex_ingest_storage_writer_input_bytes_total",
 				"cortex_ingest_storage_writer_sent_bytes_total",
@@ -1051,29 +1080,29 @@ func testWriter_MultiWriteSync(t *testing.T, backend string) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingest_storage_writer_input_bytes_total Total number of bytes in write requests before conversion to the Kafka record format.
 				# TYPE cortex_ingest_storage_writer_input_bytes_total counter
-				cortex_ingest_storage_writer_input_bytes_total %d
+				cortex_ingest_storage_writer_input_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 				# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
-				cortex_ingest_storage_writer_sent_bytes_total %d
+				cortex_ingest_storage_writer_sent_bytes_total{topic="test"} %d
 
 				# HELP cortex_ingest_storage_writer_records_per_write_request The number of records a single per-partition write request has been split into.
 				# TYPE cortex_ingest_storage_writer_records_per_write_request histogram
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128"} 1
-				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf"} 1
-				cortex_ingest_storage_writer_records_per_write_request_sum 1
-				cortex_ingest_storage_writer_records_per_write_request_count 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="1",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="2",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="4",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="8",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="16",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="32",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="64",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="128",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_bucket{le="+Inf",topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_sum{topic="test"} 1
+				cortex_ingest_storage_writer_records_per_write_request_count{topic="test"} 1
 
 				# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
 				# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-				cortex_ingest_storage_writer_produce_records_enqueued_total 1
+				cortex_ingest_storage_writer_produce_records_enqueued_total{topic="test"} 1
 			`, inputSize, len(fetches.Records()[0].Value))),
 				"cortex_ingest_storage_writer_input_bytes_total",
 				"cortex_ingest_storage_writer_sent_bytes_total",
@@ -1807,12 +1836,12 @@ func createTestKafkaConfigForBackend(backend, clusterAddr, topicName string) Kaf
 
 // assertHistogramSampleCount asserts that the histogram metric with the given name
 // has been observed the expected number of times.
-func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricName string, expected uint64) {
+func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricName string, expected uint64, labelNamesAndValues ...string) {
 	t.Helper()
 
 	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
-	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName)
+	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName, labelNamesAndValues...)
 	require.NoError(t, err)
 	assert.Equal(t, expected, hist.GetSampleCount())
 }

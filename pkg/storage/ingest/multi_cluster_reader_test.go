@@ -94,13 +94,13 @@ func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing
 			require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
 
 			// No records were missed on any cluster. This per-cluster reader metric is registered on each
-			// reader's registerer (wrapped with a distinct write_compartment label) in both modes.
+			// reader's registerer (wrapped with distinct topic and write_compartment labels) in both modes.
 			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 				# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
 				# TYPE cortex_ingest_storage_reader_missed_records_total counter
-				cortex_ingest_storage_reader_missed_records_total{write_compartment="0"} 0
-				cortex_ingest_storage_reader_missed_records_total{write_compartment="1"} 0
-				cortex_ingest_storage_reader_missed_records_total{write_compartment="2"} 0
+				cortex_ingest_storage_reader_missed_records_total{topic="ingest-rc-0",write_compartment="0"} 0
+				cortex_ingest_storage_reader_missed_records_total{topic="ingest-rc-0",write_compartment="1"} 0
+				cortex_ingest_storage_reader_missed_records_total{topic="ingest-rc-0",write_compartment="2"} 0
 			`),
 				"cortex_ingest_storage_reader_missed_records_total"))
 		})

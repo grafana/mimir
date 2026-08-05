@@ -125,7 +125,7 @@ type SingleClusterPartitionReader struct {
 }
 
 func NewSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*SingleClusterPartitionReader, error) {
-	metrics := NewPusherConsumerMetrics(reg)
+	metrics := NewPusherConsumerMetrics(registererWithTopic(reg, kafkaCfg.Topic))
 	factory := consumerFactoryFunc(func() RecordConsumer {
 		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
@@ -153,8 +153,11 @@ func newSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, in
 	// Initialize the last seen offset with -1 to signal no offset has been consumed yet (0 is a valid offset).
 	r.lastSeenOffset.Store(-1)
 
-	kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", reg)
-	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, kpromMetrics)
+	topicReg := registererWithTopic(reg, kafkaCfg.Topic)
+	kpromMetrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, "partition-reader", topicReg)
+	r.metrics = newReaderMetrics(topicReg, r, kpromMetrics)
+	// Strong-consistency metrics already have a dynamic topic label, so register them on the base registerer.
+	r.metrics.strongConsistencyMetrics = NewStrongReadConsistencyMetrics(reg, "partition-reader", []string{kafkaCfg.Topic})
 	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
@@ -1183,17 +1186,17 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient AdmClient, partitionI
 		commitRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_reader_offset_commit_requests_total",
 			Help:        "Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).",
-			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID)), "topic": kafkaCfg.Topic},
 		}),
 		commitFailuresTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_reader_offset_commit_failures_total",
 			Help:        "Total number of failed requests to commit the last consumed offset.",
-			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID)), "topic": kafkaCfg.Topic},
 		}),
 		commitRequestsLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_offset_commit_request_duration_seconds",
 			Help:                            "The duration of requests to commit the last consumed offset.",
-			ConstLabels:                     prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+			ConstLabels:                     prometheus.Labels{"partition": strconv.Itoa(int(partitionID)), "topic": kafkaCfg.Topic},
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
@@ -1204,7 +1207,7 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient AdmClient, partitionI
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingest_storage_reader_last_committed_offset",
 		Help:        "The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.",
-		ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
+		ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID)), "topic": kafkaCfg.Topic},
 	}, func() float64 {
 		return float64(c.lastCommittedOffset.Load())
 	})
@@ -1331,8 +1334,12 @@ type ReaderMetricsSource interface {
 }
 
 func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
-	const component = "partition-reader"
+	m := newReaderMetrics(reg, metricsSource, kpromMetrics)
+	m.strongConsistencyMetrics = NewStrongReadConsistencyMetrics(reg, "partition-reader", []string{topic})
+	return m
+}
 
+func newReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSource, kpromMetrics *kprom.Metrics) ReaderMetrics {
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
 		Help:                            "Delay between producing a record and receiving it in the consumer.",
@@ -1408,8 +1415,7 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 			Help:                        "How long a consumer spent processing a batch of records from Kafka. This includes retries on server errors.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		strongConsistencyMetrics: NewStrongReadConsistencyMetrics(reg, component, []string{topic}),
-		lastConsumedOffset:       lastConsumedOffset,
+		lastConsumedOffset: lastConsumedOffset,
 		recordsConsumed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_records_consumed_total",
 			Help: "Total number of records successfully consumed by the partition reader.",
@@ -1426,6 +1432,13 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		return nil
 	}, nil).WithName("ingest-storage-partition-reader-metrics")
 	return m
+}
+
+func registererWithTopic(reg prometheus.Registerer, topic string) prometheus.Registerer {
+	if reg == nil {
+		return nil
+	}
+	return prometheus.WrapRegistererWith(prometheus.Labels{"topic": topic}, reg)
 }
 
 type StrongReadConsistencyMetrics struct {
