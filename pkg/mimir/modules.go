@@ -1195,6 +1195,9 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	for _, p := range t.ExtraASTOptimizationPasses {
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
 	}
+	for _, p := range t.ExtraQueryFrontendASTOptimizationPasses {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
+	}
 	for _, p := range t.ExtraQueryPlanOptimizationPasses {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(p)
 	}

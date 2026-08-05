@@ -1005,6 +1005,12 @@ type Mimir struct {
 	// modules initialise.
 	ExtraASTOptimizationPasses       []optimize.ASTOptimizationPass
 	ExtraQueryPlanOptimizationPasses []optimize.QueryPlanOptimizationPass
+
+	// ExtraQueryFrontendASTOptimizationPasses are registered on the query-frontend planner only (not the
+	// querier planner), so they do not affect queries planned by queriers such as ruler rule evaluations.
+	// Like ExtraASTOptimizationPasses they run after the built-in passes and before sharding/subquery-spinoff,
+	// and must be set before the query planner modules initialise.
+	ExtraQueryFrontendASTOptimizationPasses []optimize.ASTOptimizationPass
 }
 
 // New makes a new Mimir.
