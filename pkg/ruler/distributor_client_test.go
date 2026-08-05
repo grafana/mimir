@@ -210,6 +210,13 @@ func requireRequestsPerWriteMetric(t *testing.T, client *DistributorGRPCClient, 
 	require.NoError(t, client.requestsPerWriteRequest.Write(metric))
 	require.Equal(t, expectedCount, metric.GetHistogram().GetSampleCount())
 	require.Equal(t, expectedSum, metric.GetHistogram().GetSampleSum())
+
+	buckets := metric.GetHistogram().GetBucket()
+	actualUpperBounds := make([]float64, 0, len(buckets))
+	for _, bucket := range buckets {
+		actualUpperBounds = append(actualUpperBounds, bucket.GetUpperBound())
+	}
+	require.Equal(t, []float64{1, 2, 3, 4, 5, 6, 7, 8, 16, 32, 64, 128}, actualUpperBounds)
 }
 
 func compressPayload(t *testing.T, compressorName string, payload []byte) int {
