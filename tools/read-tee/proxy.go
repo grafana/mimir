@@ -224,7 +224,7 @@ func (p *Proxy) parseBackendEndpoint(endpoint string) (ProxyBackend, error) {
 	// read-tee only supports HTTP(S) backends (the query-frontend). gRPC backends are not supported.
 	switch u.Scheme {
 	case "http", "https":
-		return NewHTTPProxyBackend(name, u, p.cfg.BackendReadTimeout, p.cfg.BackendSkipTLSVerify), nil
+		return NewHTTPProxyBackend(name, u, p.cfg.BackendReadTimeout, p.cfg.BackendSkipTLSVerify, p.cfg.AsyncMaxInFlightPerBackend), nil
 	default:
 		return nil, fmt.Errorf("unsupported backend scheme %q for endpoint %s (supported: http, https)", u.Scheme, endpoint)
 	}

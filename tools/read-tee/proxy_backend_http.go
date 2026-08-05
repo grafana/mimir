@@ -31,8 +31,9 @@ type httpProxyBackend struct {
 	timeout  time.Duration
 }
 
-// NewHTTPProxyBackend makes a new httpProxyBackend
-func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, skipTLSVerify bool) ProxyBackend {
+// NewHTTPProxyBackend makes a new httpProxyBackend. maxIdleConnsPerHost sizes the connection reuse
+// pool and should be at least the expected concurrency to the backend; see the transport comment.
+func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, skipTLSVerify bool, maxIdleConnsPerHost int) ProxyBackend {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -43,8 +44,18 @@ func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
+		// Each backend is a single host, and at high amplification factors a pod can hold
+		// thousands of concurrent copies in flight to it. Keep the idle pool at least as large as
+		// that concurrency so connections are reused instead of churned (opening a fresh TCP
+		// connection per copy exhausts ephemeral ports and surfaces as backend errors).
+		//
+		// The caller derives this from -backend.async-max-in-flight, which bounds the amplified
+		// copies in flight per backend. That is a lower bound on total concurrency rather than an
+		// exact one, since the synchronous primary request shares this transport. Sizing it high
+		// is cheap: this caps how many idle connections are *retained* for reuse, not how many may
+		// be open at once, so the pool only grows to the concurrency that actually materializes.
+		MaxIdleConns:        0,                   // no global cap; per-host cap below governs
+		MaxIdleConnsPerHost: maxIdleConnsPerHost, // see https://github.com/golang/go/issues/13801
 		IdleConnTimeout:     90 * time.Second,
 		DisableCompression:  true,
 	}

@@ -178,7 +178,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			}))
 			defer server.Close()
 
-			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
 
 			route := Route{
 				Path:      "/api/v1/query",
@@ -248,7 +248,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
 
 			route := Route{
 				Path:      "/api/v1/query",
@@ -363,7 +363,7 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 			}))
 			defer server.Close()
 
-			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
 
 			route := Route{
 				Path:      "/api/v1/query",
@@ -419,7 +419,7 @@ func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
 	route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}}
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
@@ -487,7 +487,7 @@ func TestProxyEndpoint_StrongConsistency(t *testing.T) {
 			}))
 			defer server.Close()
 
-			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false)
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 			// factor 3 -> 2 copies; strong-consistency-instant-fraction 1.0 -> every copy sampled.
