@@ -14,8 +14,8 @@ import (
 // exposes only query-load observability gauges; the rebalancer itself
 // still drives off head-series counts (L_pid).
 type metrics struct {
-	// Per-partition named query load (samples-per-second EWMA) summed
-	// across owners reporting the same partition. Updated each
+	// Per-partition named query load (samples-per-second EWMA), max
+	// across the owners reporting the same partition. Updated each
 	// rebalance round from collectRates output.
 	partitionQuerySamples *prometheus.GaugeVec
 
@@ -92,7 +92,7 @@ func newMetrics(r prometheus.Registerer) *metrics {
 	m := &metrics{
 		partitionQuerySamples: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_partition_query_samples_ewma",
-			Help: "EWMA of samples-per-second scanned by named queries, summed across ingesters that reported the partition. Phase 1: observation-only; the rebalancer still balances on head-series count.",
+			Help: "EWMA of samples-per-second scanned by named queries, max across the instances that reported the partition (zone mirrors are copies of each other, not additive load).",
 		}, []string{"partition"}),
 		unnamedQuerySamples: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_unnamed_query_samples_ewma",
