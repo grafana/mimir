@@ -212,7 +212,7 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 
 	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
 
-	value, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
+	value, _, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
@@ -241,7 +241,7 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 
 	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
 
-	value, _, err := c.readClient.Query(ctx, query, ts)
+	value, _, _, err := c.readClient.Query(ctx, query, ts)
 	if err != nil {
 		return nil, err
 	}
