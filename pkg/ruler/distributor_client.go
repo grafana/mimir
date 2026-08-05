@@ -121,7 +121,7 @@ func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, 
 		requestsPerWriteRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ruler_remote_distributor_requests_per_write_request",
 			Help:    "The number of remote distributor requests a single ruler write request has been split into.",
-			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
+			Buckets: prometheus.LinearBuckets(1, 1, 8),
 		}),
 	}
 	c.Service = services.NewIdleService(c.start, c.stop).WithName("ruler distributor client")
