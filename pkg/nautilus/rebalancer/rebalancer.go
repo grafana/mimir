@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -313,8 +314,14 @@ type Rebalancer struct {
 
 	store          *logStore
 	readcacheStore *readcacheLogStore
-	admin          adminState
-	metrics        *metrics
+	// readcacheApplyMu serializes every mutation of the readcache
+	// assignment log: admin reset, refreshReadcacheLeases, and the
+	// tier-2 slicer apply. Without it an in-flight rebalance round
+	// that captured `now` before a reset can treat the reset's new
+	// leases as unwanted pre-issues and collapse them to zero length.
+	readcacheApplyMu sync.Mutex
+	admin            adminState
+	metrics          *metrics
 
 	// moveCooldowns records, for each hash range that was recently
 	// moved, the wall-clock time at which it (and any range overlapping
@@ -837,7 +844,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			// so the leases don't expire over the next few rounds
 			// before the operator (or a future enable) reseeds.
 			// Falls through silently when nothing is active.
-			r.refreshReadcacheLeases(now)
+			r.refreshReadcacheLeases()
 		}
 		return nil
 	}
@@ -1110,11 +1117,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				// existing (partition -> readcache) leases so they
 				// don't age out before the next fire. Same rationale
 				// as the disabled-slicer branch below.
-				readcacheLogChanged = r.refreshReadcacheLeases(now)
+				readcacheLogChanged = r.refreshReadcacheLeases()
 			}
 		}
 	} else {
-		readcacheLogChanged = r.refreshReadcacheLeases(now)
+		readcacheLogChanged = r.refreshReadcacheLeases()
 	}
 
 	// Compute round summary stats using L (memory series) so the admin

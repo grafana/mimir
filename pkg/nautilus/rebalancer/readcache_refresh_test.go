@@ -20,7 +20,7 @@ import (
 // in production-typical configs. logger is captured via the optional
 // logBuf so tests can assert on the warning the no-active-leases path
 // emits.
-func newTestRebalancerForRefresh(t *testing.T, logBuf *bytes.Buffer) *Rebalancer {
+func newTestRebalancerForRefresh(t *testing.T, at time.Time, logBuf *bytes.Buffer) *Rebalancer {
 	t.Helper()
 	cfg := Config{
 		LeaseDuration:  5 * time.Minute,
@@ -34,6 +34,7 @@ func newTestRebalancerForRefresh(t *testing.T, logBuf *bytes.Buffer) *Rebalancer
 	return &Rebalancer{
 		cfg:            cfg,
 		logger:         logger,
+		clock:          newFakeClock(at),
 		readcacheStore: newReadcacheLogStore(),
 	}
 }
@@ -46,20 +47,20 @@ func newTestRebalancerForRefresh(t *testing.T, logBuf *bytes.Buffer) *Rebalancer
 // Refresh must pre-issue successors for every currently-active
 // owner so the lease horizon advances by LeaseDuration on each call.
 func TestRefreshReadcacheLeases_ExtendsLeaseHorizonForActiveOwners(t *testing.T) {
-	r := newTestRebalancerForRefresh(t, nil)
+	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, nil)
 
 	// Seed the log with two owners whose leases will expire within
 	// the lookahead window. seedFromEntries deliberately bypasses
 	// apply so r.readcacheStore.ready stays false at this point —
 	// the refresh must flip ready and pre-issue successors.
-	t0 := time.Unix(10_000, 0)
 	originalTo := t0.Add(time.Minute) // < t0 + LeaseLookahead, so a successor is due.
 	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: originalTo},
 		{PartitionID: 1, InstanceID: "rc-b", From: t0.Add(-time.Minute), To: originalTo},
 	})
 
-	require.True(t, r.refreshReadcacheLeases(t0),
+	require.True(t, r.refreshReadcacheLeases(),
 		"refresh must mutate the log when leases are within the lookahead window")
 
 	// After refresh, both (partition, instance) pairs should have
@@ -93,16 +94,15 @@ func TestRefreshReadcacheLeases_ExtendsLeaseHorizonForActiveOwners(t *testing.T)
 // what the operator who disabled the slicer is explicitly trying to
 // avoid.
 func TestRefreshReadcacheLeases_PreservesOwnership(t *testing.T) {
-	r := newTestRebalancerForRefresh(t, nil)
-
 	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, nil)
 	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 		{PartitionID: 1, InstanceID: "rc-b", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 		{PartitionID: 2, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 	})
 
-	r.refreshReadcacheLeases(t0)
+	r.refreshReadcacheLeases()
 
 	// Ownership at the moment of refresh — and at the lease horizon
 	// — must still be exactly what was seeded. Any successor entry
@@ -137,16 +137,15 @@ func TestRefreshReadcacheLeases_PreservesOwnership(t *testing.T) {
 // the source.
 func TestRefreshReadcacheLeases_NoActiveLeasesEmitsWarning(t *testing.T) {
 	var buf bytes.Buffer
-	r := newTestRebalancerForRefresh(t, &buf)
+	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, &buf)
 
 	// All entries expired before t0.
 	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
 		{PartitionID: 0, InstanceID: "rc-a", From: time.Unix(0, 0), To: time.Unix(100, 0)},
 		{PartitionID: 1, InstanceID: "rc-b", From: time.Unix(0, 0), To: time.Unix(100, 0)},
 	})
-
-	t0 := time.Unix(10_000, 0)
-	assert.False(t, r.refreshReadcacheLeases(t0),
+	assert.False(t, r.refreshReadcacheLeases(),
 		"refresh must report no change when there are no active leases")
 
 	logged := buf.String()
@@ -162,10 +161,9 @@ func TestRefreshReadcacheLeases_NoActiveLeasesEmitsWarning(t *testing.T) {
 // entries (if any) are loaded.
 func TestRefreshReadcacheLeases_EmptyStoreIsSafeNoOp(t *testing.T) {
 	var buf bytes.Buffer
-	r := newTestRebalancerForRefresh(t, &buf)
-
 	t0 := time.Unix(10_000, 0)
-	assert.False(t, r.refreshReadcacheLeases(t0))
+	r := newTestRebalancerForRefresh(t, t0, &buf)
+	assert.False(t, r.refreshReadcacheLeases())
 
 	// Same expected warning as the all-expired case: from the
 	// helper's POV both states look identical (no ActiveAt(now)
@@ -178,9 +176,9 @@ func TestRefreshReadcacheLeases_EmptyStoreIsSafeNoOp(t *testing.T) {
 // readcacheStore is wired (defensively, even though production wiring
 // always installs one). The helper must not panic.
 func TestRefreshReadcacheLeases_NilStoreReturnsFalse(t *testing.T) {
-	r := newTestRebalancerForRefresh(t, nil)
+	r := newTestRebalancerForRefresh(t, time.Unix(10_000, 0), nil)
 	r.readcacheStore = nil
-	assert.False(t, r.refreshReadcacheLeases(time.Unix(10_000, 0)))
+	assert.False(t, r.refreshReadcacheLeases())
 }
 
 // TestRefreshReadcacheLeases_DedupesMultiOwnerKeys covers the
@@ -191,9 +189,8 @@ func TestRefreshReadcacheLeases_NilStoreReturnsFalse(t *testing.T) {
 // semantically wrong (Apply de-dupes too) but it pollutes the
 // AssignmentEntry slice and grows the log churn for no reason.
 func TestRefreshReadcacheLeases_DedupesMultiOwnerKeys(t *testing.T) {
-	r := newTestRebalancerForRefresh(t, nil)
-
 	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, nil)
 	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
 		// P0 has two active owners (multi-owner mode).
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
@@ -203,7 +200,7 @@ func TestRefreshReadcacheLeases_DedupesMultiOwnerKeys(t *testing.T) {
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-30 * time.Second), To: t0.Add(2 * time.Minute)},
 	})
 
-	require.True(t, r.refreshReadcacheLeases(t0),
+	require.True(t, r.refreshReadcacheLeases(),
 		"with two (P0, *) pairs needing successors, refresh must mutate the log")
 
 	// Count distinct (P, I) pairs in the post-refresh snapshot
@@ -231,9 +228,8 @@ func TestRefreshReadcacheLeases_DedupesMultiOwnerKeys(t *testing.T) {
 // rebalance round would receive no initial snapshot until the next
 // round.
 func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
-	r := newTestRebalancerForRefresh(t, nil)
-
 	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, nil)
 	r.readcacheStore.seedFromEntries([]readcacheassignment.LogEntry{
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 	})
@@ -243,7 +239,7 @@ func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
 	require.Nil(t, initial,
 		"sanity: subscribe before any apply must return nil initial")
 
-	r.refreshReadcacheLeases(t0)
+	r.refreshReadcacheLeases()
 
 	select {
 	case u := <-updates:
@@ -261,9 +257,8 @@ func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
 // must not log a misleading "extended" success line.
 func TestRefreshReadcacheLeases_NoOpWhenHorizonAlreadyBeyondLookahead(t *testing.T) {
 	var buf bytes.Buffer
-	r := newTestRebalancerForRefresh(t, &buf)
-
 	t0 := time.Unix(10_000, 0)
+	r := newTestRebalancerForRefresh(t, t0, &buf)
 	// Lease horizon = t0 + 10min > t0 + LeaseLookahead (4min), so
 	// Log.Apply finds the "successor already pre-issued" branch and
 	// leaves the log alone.
@@ -281,7 +276,7 @@ func TestRefreshReadcacheLeases_NoOpWhenHorizonAlreadyBeyondLookahead(t *testing
 	}, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 
 	buf.Reset()
-	assert.False(t, r.refreshReadcacheLeases(t0),
+	assert.False(t, r.refreshReadcacheLeases(),
 		"with horizon already past lookahead, refresh must be a true no-op")
 
 	assert.NotContains(t, buf.String(), "readcache leases refreshed",

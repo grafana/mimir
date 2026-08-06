@@ -292,3 +292,47 @@ func rebuildAllOnOne(t *testing.T, r *Rebalancer, at time.Time, numPartitions in
 	}
 	r.readcacheStore.apply(at, a, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 }
+
+// TestRefreshDoesNotClobberAdminReset is the H9 concurrency
+// regression: a rebalance round that captured `now` before an admin
+// reset must not, on its later refreshReadcacheLeases call, treat the
+// reset's new leases as unwanted pre-issues and collapse them.
+func TestRefreshDoesNotClobberAdminReset(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	clock := newFakeClock(t0)
+	r := newTestRebalancerForReset(t, 6, []string{"rc-a", "rc-b", "rc-c"})
+	r.clock = clock
+	r.cfg.MinRebalanceInterval = 30 * time.Second
+	r.cfg.ReadcacheMoveSafetyWindow = 2 * time.Minute
+
+	rebuildAllOnOne(t, r, t0, 6, "rc-a")
+
+	// Round would have captured t0; wall clock then advances and reset
+	// lands; refresh must use the fresh clock under its lock.
+	clock.Advance(time.Second)
+	resetAt := clock.Now()
+	res, err := r.ResetReadcacheAssignment(resetAt)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int{"rc-a": 2, "rc-b": 2, "rc-c": 2}, res.PerInstance)
+
+	// Refresh as the in-flight round would — previously this used the
+	// stale t0 and annihilated the reset.
+	r.refreshReadcacheLeases()
+
+	owner := make(map[int32]string)
+	for _, e := range r.readcacheStore.snapshot() {
+		if e.From.Equal(resetAt) && !e.To.After(e.From) {
+			t.Fatalf("reset lease collapsed to zero length: %+v", e)
+		}
+		if e.ActiveAt(resetAt) {
+			owner[e.PartitionID] = e.InstanceID
+		}
+	}
+	require.Len(t, owner, 6)
+	counts := map[string]int{}
+	for _, id := range owner {
+		counts[id]++
+	}
+	assert.Equal(t, map[string]int{"rc-a": 2, "rc-b": 2, "rc-c": 2}, counts,
+		"refresh must preserve the reset's round-robin ownership")
+}

@@ -44,10 +44,19 @@ import (
 // Returns true if Log.Apply mutated the log (i.e., a successor was
 // pre-issued or a stale entry preempted), matching the bool semantics
 // of runReadcacheSlicer.
-func (r *Rebalancer) refreshReadcacheLeases(now time.Time) bool {
+func (r *Rebalancer) refreshReadcacheLeases() bool {
 	if r.readcacheStore == nil {
 		return false
 	}
+
+	r.readcacheApplyMu.Lock()
+	defer r.readcacheApplyMu.Unlock()
+
+	// Always sample under the lock. An admin reset that completed
+	// after the round captured its `now` must be visible to ActiveAt;
+	// a stale timestamp treats the reset's leases (From = resetAt) as
+	// not-yet-active and Apply kills them as unwanted pre-issues.
+	now := r.now()
 
 	// Build the next-assignment from currently-active log entries.
 	// readcacheStore.snapshot() returns every entry (including

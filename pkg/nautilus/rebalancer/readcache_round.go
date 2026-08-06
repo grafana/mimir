@@ -52,6 +52,13 @@ func (r *Rebalancer) runReadcacheSlicer(
 ) bool {
 	cfg := r.cfg.ReadcacheSlicer
 
+	// Serialize against admin reset and lease refresh for the whole
+	// plan→apply so a reset cannot land between a plan computed on
+	// pre-reset ownership and an apply that would undo it.
+	r.readcacheApplyMu.Lock()
+	defer r.readcacheApplyMu.Unlock()
+	now = r.now()
+
 	// Build the load function: alpha * write rate + beta * query rate.
 	loadByPartition := make(map[int32]float64, len(activePartitions))
 	for _, pid := range activePartitions {

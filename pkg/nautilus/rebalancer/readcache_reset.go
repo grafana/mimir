@@ -57,6 +57,10 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	if r.readcacheStore == nil {
 		return ResetReadcacheResult{}, errors.New("readcache assignment store is not initialized")
 	}
+
+	r.readcacheApplyMu.Lock()
+	defer r.readcacheApplyMu.Unlock()
+
 	// Under DesiredReplicas > 0 the reset spreads partitions over the
 	// logical slots (what the log records), not concrete pods. The
 	// stabilized-membership variant is deliberately avoided here: an
@@ -89,7 +93,9 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	}
 
 	next := &readcacheassignment.Assignment{Entries: entries}
-	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
+	// Use the same padded lookahead as the round paths so a reset
+	// does not leave a shorter successor runway than a normal tick.
+	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.readcacheLeaseLookahead(), r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 	// Publish the logical->concrete expansion alongside the new leases
 	// so subscribers can resolve the logical IDs the reset just wrote
 	// without waiting for the next rebalance round.

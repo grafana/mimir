@@ -232,6 +232,7 @@ func TestRunReadcacheSlicer_PassesUnknownLoadExclusionsToPlanner(t *testing.T) {
 			},
 		},
 		logger:             log.NewNopLogger(),
+		clock:              newFakeClock(now),
 		readcacheStore:     newReadcacheLogStore(),
 		readcacheCooldowns: make(readcacheMoveCooldowns),
 		metrics:            newMetrics(nil),
@@ -271,6 +272,7 @@ func TestRunReadcacheSlicer_PassesUnknownLoadExclusionsToPlanner(t *testing.T) {
 // instances should each receive ~50% of the total write rate even
 // though all four partitions have the same active-series count.
 func TestRunReadcacheSlicer_AlphaWeightsSampleRate(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
 	r := &Rebalancer{
 		cfg: Config{
 			LeaseDuration:  5 * time.Minute,
@@ -284,6 +286,7 @@ func TestRunReadcacheSlicer_AlphaWeightsSampleRate(t *testing.T) {
 			},
 		},
 		logger:             log.NewNopLogger(),
+		clock:              newFakeClock(now),
 		readcacheStore:     newReadcacheLogStore(),
 		readcacheCooldowns: make(readcacheMoveCooldowns),
 		metrics:            newMetrics(nil),
