@@ -27,6 +27,7 @@
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
 * [BUGFIX] Recording rules: Add the `image!=""` selector to the `cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate` recording rule, consistently with the memory one. Where cAdvisor sandbox and parent cgroup series are not dropped at scrape time, CPU usage was counted twice, which also inflated the replica count recommended by the Scaling dashboard. #16320
 * [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #16329
+* [ENHANCEMENT] Recording rules: Add the `_config.mimir_scaling_rules_selector` config option (empty by default) to restrict the `mimir_scaling_rules` group to the Mimir workloads, e.g. `namespace=~"mimir.*"`. Without it, the group aggregates the kube-state-metrics and cAdvisor series of every workload the Prometheus scrapes, which produces far more output series than Mimir needs when Prometheus isn't dedicated to Mimir. #16323
 
 ### Jsonnet
 

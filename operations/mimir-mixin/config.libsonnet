@@ -358,6 +358,22 @@
         |||,
       },
     },
+    // Optional label matchers restricting the scaling recording rules (the "mimir_scaling_rules"
+    // group) to the Mimir workloads. The mixin assumes a Prometheus dedicated to Mimir, so by
+    // default these rules aggregate the kube-state-metrics and cAdvisor series of every workload
+    // the Prometheus scrapes. On a Prometheus shared with other workloads, set this to a matcher
+    // selecting the namespaces Mimir runs in, e.g. 'namespace=~"mimir.*"'.
+    //
+    // Empty by default, which keeps the previous behaviour. Only applies to the "kubernetes"
+    // deployment type, because the "baremetal" rules are already scoped by their job and
+    // namespace matchers.
+    mimir_scaling_rules_selector: '',
+
+    // Computed from mimir_scaling_rules_selector, don't set these directly. The first is used on
+    // series which have no other label matcher, the second on series which already have one.
+    mimir_scaling_rules_matcher: if self.mimir_scaling_rules_selector == '' then '' else '{%s}' % self.mimir_scaling_rules_selector,
+    mimir_scaling_rules_extra_matcher: if self.mimir_scaling_rules_selector == '' then '' else ',%s' % self.mimir_scaling_rules_selector,
+
     mimir_scaling_rules: {
       kubernetes: {
         actual_replicas_count:
@@ -373,7 +389,7 @@
               label_replace(
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
                   label_replace(
-                    kube_deployment_spec_replicas,
+                    kube_deployment_spec_replicas%(mimir_scaling_rules_matcher)s,
                     # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
                     # always matches everything and the (optional) zone is not removed.
                     "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
@@ -381,7 +397,7 @@
                 )
                 or
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
-                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                  label_replace(kube_statefulset_replicas%(mimir_scaling_rules_matcher)s, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
                 ),
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
@@ -395,7 +411,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""}[%(rate_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""%(mimir_scaling_rules_extra_matcher)s}[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -419,7 +435,7 @@
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    kube_pod_container_resource_requests_cpu_cores,
+                    kube_pod_container_resource_requests_cpu_cores%(mimir_scaling_rules_matcher)s,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -435,7 +451,7 @@
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    kube_pod_container_resource_requests{resource="cpu"},
+                    kube_pod_container_resource_requests{resource="cpu"%(mimir_scaling_rules_extra_matcher)s},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -465,7 +481,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  container_memory_usage_bytes{image!=""},
+                  container_memory_usage_bytes{image!=""%(mimir_scaling_rules_extra_matcher)s},
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -489,7 +505,7 @@
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    kube_pod_container_resource_requests_memory_bytes,
+                    kube_pod_container_resource_requests_memory_bytes%(mimir_scaling_rules_matcher)s,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -505,7 +521,7 @@
               sum by (%(alert_aggregation_labels)s, deployment) (
                 label_replace(
                   label_replace(
-                    kube_pod_container_resource_requests{resource="memory"},
+                    kube_pod_container_resource_requests{resource="memory"%(mimir_scaling_rules_extra_matcher)s},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
