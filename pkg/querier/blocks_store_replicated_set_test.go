@@ -64,13 +64,14 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 	registeredAt := time.Now()
 
 	tests := map[string]struct {
-		tenantShardSize   int
-		replicationFactor int
-		setup             func(*ring.Desc)
-		queryBlocks       bucketindex.Blocks
-		exclude           map[ulid.ULID][]string
-		expectedClients   map[string][][]ulid.ULID
-		expectedErr       error
+		tenantShardSize          int
+		replicationFactor        int
+		maxBlocksPerStoreRequest int
+		setup                    func(*ring.Desc)
+		queryBlocks              bucketindex.Blocks
+		exclude                  map[ulid.ULID][]string
+		expectedClients          map[string][][]ulid.ULID
+		expectedErr              error
 	}{
 		"shard size 0, single instance in the ring with RF = 1": {
 			tenantShardSize:   0,
@@ -326,6 +327,18 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			},
 			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID1.String()),
 		},
+		"max blocks per store request splits a single store-gateway's blocks into partitions": {
+			tenantShardSize:          0,
+			replicationFactor:        1,
+			maxBlocksPerStoreRequest: 2,
+			setup: func(d *ring.Desc) {
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+			},
+			queryBlocks: []*bucketindex.Block{block1, block2, block3, block4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}, {blockID3, blockID4}},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -354,6 +367,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 
 			limits := &blocksStoreLimitsMock{
 				storeGatewayTenantShardSize: testData.tenantShardSize,
+				maxBlocksPerStoreRequest:    testData.maxBlocksPerStoreRequest,
 			}
 
 			reg := prometheus.NewPedanticRegistry()
