@@ -92,6 +92,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
 )
 
@@ -724,6 +725,10 @@ func (l *Limits) Validate() error {
 
 	if l.HATrackerUpdateTimeoutJitterMax < 0 {
 		return errNegativeUpdateTimeoutJitterMax
+	}
+
+	if l.MaxBlocksPerStoreRequest < 0 {
+		return errNegativeMaxBlocksPerStoreRequest
 	}
 
 	switch l.FloatChunkEncoding {
