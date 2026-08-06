@@ -179,6 +179,29 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
+	// DIAGNOSTIC (unknown-series-refs investigation): measure, at the source, the
+	// decision that creates orphaned samples — a series record dropped by keep() while
+	// samples for that same ref are retained (T >= mint). droppedSeriesRefs records refs
+	// whose series record we dropped; noteKeptOrphanSample counts retained samples that
+	// reference one of them. Series records precede their samples in WAL read order, so
+	// a drop is already recorded by the time we see the samples. (A ref both kept and
+	// dropped within one pass could over-count, but series records normally appear once.)
+	// Remove once the investigation concludes.
+	droppedSeriesRefs := make(map[chunks.HeadSeriesRef]struct{})
+	var keptSamplesForDroppedSeries int
+	orphanExampleRefs := make([]chunks.HeadSeriesRef, 0, 10)
+	noteKeptOrphanSample := func(ref chunks.HeadSeriesRef, t int64) {
+		if t < mint {
+			return
+		}
+		if _, dropped := droppedSeriesRefs[ref]; !dropped {
+			return
+		}
+		keptSamplesForDroppedSeries++
+		if len(orphanExampleRefs) < cap(orphanExampleRefs) {
+			orphanExampleRefs = append(orphanExampleRefs, ref)
+		}
+	}
 	for r.Next() {
 		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
 
@@ -199,6 +222,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, s := range series {
 				if keep(s.Ref) {
 					repl = append(repl, s)
+				} else {
+					droppedSeriesRefs[s.Ref] = struct{}{}
 				}
 			}
 			if len(repl) > 0 {
@@ -217,6 +242,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, s := range samples {
 				if s.T >= mint {
 					repl = append(repl, s)
+					noteKeptOrphanSample(s.Ref, s.T)
 				}
 			}
 			if len(repl) > 0 {
@@ -235,6 +261,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, h := range histogramSamples {
 				if h.T >= mint {
 					repl = append(repl, h)
+					noteKeptOrphanSample(h.Ref, h.T)
 				}
 			}
 			if len(repl) > 0 {
@@ -263,6 +290,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, h := range histogramSamples {
 				if h.T >= mint {
 					repl = append(repl, h)
+					noteKeptOrphanSample(h.Ref, h.T)
 				}
 			}
 			if len(repl) > 0 {
@@ -280,6 +308,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, fh := range floatHistogramSamples {
 				if fh.T >= mint {
 					repl = append(repl, fh)
+					noteKeptOrphanSample(fh.Ref, fh.T)
 				}
 			}
 			if len(repl) > 0 {
@@ -308,6 +337,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			for _, fh := range floatHistogramSamples {
 				if fh.T >= mint {
 					repl = append(repl, fh)
+					noteKeptOrphanSample(fh.Ref, fh.T)
 				}
 			}
 			if len(repl) > 0 {
@@ -432,6 +462,19 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, fmt.Errorf("rename checkpoint directory: %w", err)
+	}
+
+	// DIAGNOSTIC (unknown-series-refs investigation): this is the smoking gun at the
+	// source — a checkpoint that dropped a series record while retaining samples for
+	// that same ref. Those samples become "unknown series references" on replay.
+	if keptSamplesForDroppedSeries > 0 {
+		logger.Warn("DIAGNOSTIC checkpoint retained samples for dropped series records",
+			"to_segment", to,
+			"mint", mint,
+			"dropped_series_records", len(droppedSeriesRefs),
+			"kept_samples_for_dropped_series", keptSamplesForDroppedSeries,
+			"example_refs", fmt.Sprintf("%v", orphanExampleRefs),
+		)
 	}
 
 	return stats, nil
