@@ -507,6 +507,7 @@ type discardedMetrics struct {
 	sampleTooOld           *prometheus.CounterVec
 	sampleTooFarInFuture   *prometheus.CounterVec
 	newValueForTimestamp   *prometheus.CounterVec
+	sameValueForTimestamp  *prometheus.CounterVec
 	perUserSeriesLimit     *prometheus.CounterVec
 	perMetricSeriesLimit   *prometheus.CounterVec
 	invalidNativeHistogram *prometheus.CounterVec
@@ -520,6 +521,7 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
 		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
 		newValueForTimestamp:   validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		sameValueForTimestamp:  validation.DiscardedSamplesCounter(r, reasonSameValueForTimestamp),
 		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
 		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogram),
@@ -533,6 +535,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.sampleTooOld.DeletePartialMatch(filter)
 	m.sampleTooFarInFuture.DeletePartialMatch(filter)
 	m.newValueForTimestamp.DeletePartialMatch(filter)
+	m.sameValueForTimestamp.DeletePartialMatch(filter)
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
 	m.invalidNativeHistogram.DeletePartialMatch(filter)
@@ -545,6 +548,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.sampleTooOld.DeleteLabelValues(userID, group)
 	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
 	m.newValueForTimestamp.DeleteLabelValues(userID, group)
+	m.sameValueForTimestamp.DeleteLabelValues(userID, group)
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
 	m.invalidNativeHistogram.DeleteLabelValues(userID, group)
