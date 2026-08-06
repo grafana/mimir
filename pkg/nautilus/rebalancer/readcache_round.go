@@ -48,6 +48,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	partitionQuerySamples map[int32]float64,
 	activeInstances []string,
 	failedInstances map[string]struct{},
+	excludedPartitions map[int32]bool,
 ) bool {
 	cfg := r.cfg.ReadcacheSlicer
 
@@ -70,12 +71,13 @@ func (r *Rebalancer) runReadcacheSlicer(
 
 	r.readcacheCooldowns.prune(now)
 	plan := planReadcacheAssignment(cfg, readcachePlanInput{
-		partitions:      activePartitions,
-		loadByPartition: loadByPartition,
-		instances:       activeInstances,
-		currentOwner:    currentOwner,
-		recentlyMoved:   r.readcacheCooldowns.stillCooling(now),
-		excludedTargets: failedInstances,
+		partitions:         activePartitions,
+		loadByPartition:    loadByPartition,
+		instances:          activeInstances,
+		currentOwner:       currentOwner,
+		recentlyMoved:      r.readcacheCooldowns.stillCooling(now),
+		excludedTargets:    failedInstances,
+		excludedPartitions: excludedPartitions,
 	})
 	if len(failedInstances) > 0 {
 		ids := make([]string, 0, len(failedInstances))

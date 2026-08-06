@@ -9,6 +9,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
 
 func TestPlanReadcacheAssignment_ColdStartBalancesEvenly(t *testing.T) {
@@ -140,6 +142,128 @@ func TestPlanReadcacheAssignment_RespectsMoveCooldown(t *testing.T) {
 	assert.Empty(t, plan.Moves, "cooldowns should suppress all moves this round")
 }
 
+func TestPlanReadcacheAssignment_UnknownLoadOwnerIsNotAPileTarget(t *testing.T) {
+	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 1.0}
+	in := readcachePlanInput{
+		partitions:         []int32{0, 1, 2},
+		loadByPartition:    map[int32]float64{0: 0, 1: 100, 2: 100},
+		instances:          []string{"rc-a", "rc-b"},
+		currentOwner:       map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-b"},
+		recentlyMoved:      map[int32]struct{}{},
+		excludedPartitions: map[int32]bool{0: true},
+	}
+
+	plan := planReadcacheAssignment(cfg, in)
+
+	assert.Empty(t, plan.Moves,
+		"rc-a's zero load is unknown while partition 0 warms, so rc-a must not receive rc-b's work")
+}
+
+func TestPlanReadcacheAssignment_UnknownLoadOwnerIsNotAColdPlacementTarget(t *testing.T) {
+	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 0}
+	in := readcachePlanInput{
+		partitions:         []int32{0, 1, 2},
+		loadByPartition:    map[int32]float64{0: 0, 1: 100, 2: 10},
+		instances:          []string{"rc-a", "rc-b", "rc-c"},
+		currentOwner:       map[int32]string{0: "rc-a", 1: "rc-b"},
+		recentlyMoved:      map[int32]struct{}{},
+		excludedPartitions: map[int32]bool{0: true},
+	}
+
+	plan := planReadcacheAssignment(cfg, in)
+
+	owners := map[int32]string{}
+	for _, entry := range plan.Assignment.Entries {
+		owners[entry.PartitionID] = entry.InstanceID
+	}
+	assert.Equal(t, "rc-c", owners[2],
+		"unassigned work must avoid rc-a while its aggregate load is unknown")
+}
+
+func TestPlanReadcacheAssignment_UnknownLoadOwnerDoesNotPauseKnownOwners(t *testing.T) {
+	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 1.0}
+	in := readcachePlanInput{
+		partitions:         []int32{0, 1, 2, 3},
+		loadByPartition:    map[int32]float64{0: 0, 1: 100, 2: 100, 3: 0},
+		instances:          []string{"rc-a", "rc-b", "rc-c"},
+		currentOwner:       map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-b", 3: "rc-c"},
+		recentlyMoved:      map[int32]struct{}{},
+		excludedPartitions: map[int32]bool{0: true},
+	}
+
+	plan := planReadcacheAssignment(cfg, in)
+
+	require.Len(t, plan.Moves, 1)
+	assert.Equal(t, "rc-b", plan.Moves[0].From)
+	assert.Equal(t, "rc-c", plan.Moves[0].To)
+	assert.NotEqual(t, int32(0), plan.Moves[0].PartitionID)
+}
+
+func TestPlanReadcacheAssignment_UnknownLoadOwnerMayShedKnownPartitions(t *testing.T) {
+	cfg := ReadcacheSlicerConfig{Alpha: 1.0, MovementBudget: 1.0}
+	in := readcachePlanInput{
+		partitions:         []int32{0, 1, 2, 3},
+		loadByPartition:    map[int32]float64{0: 0, 1: 200, 2: 100, 3: 0},
+		instances:          []string{"rc-a", "rc-b"},
+		currentOwner:       map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-a", 3: "rc-b"},
+		recentlyMoved:      map[int32]struct{}{},
+		excludedPartitions: map[int32]bool{0: true},
+	}
+
+	plan := planReadcacheAssignment(cfg, in)
+
+	require.Len(t, plan.Moves, 1)
+	assert.Equal(t, "rc-a", plan.Moves[0].From)
+	assert.Equal(t, "rc-b", plan.Moves[0].To)
+	assert.Equal(t, int32(1), plan.Moves[0].PartitionID)
+}
+
+func TestRunReadcacheSlicer_PassesUnknownLoadExclusionsToPlanner(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	r := &Rebalancer{
+		cfg: Config{
+			LeaseDuration:  5 * time.Minute,
+			LeaseLookahead: 90 * time.Second,
+			EntryRetention: 24 * time.Hour,
+			ReadcacheSlicer: ReadcacheSlicerConfig{
+				Enabled:        true,
+				Alpha:          1,
+				MovementBudget: 1,
+			},
+		},
+		logger:             log.NewNopLogger(),
+		readcacheStore:     newReadcacheLogStore(),
+		readcacheCooldowns: make(readcacheMoveCooldowns),
+		metrics:            newMetrics(nil),
+	}
+	r.readcacheStore.apply(now, &readcacheassignment.Assignment{
+		Entries: []readcacheassignment.AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-a"},
+			{PartitionID: 1, InstanceID: "rc-b"},
+			{PartitionID: 2, InstanceID: "rc-b"},
+		},
+	}, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, 0)
+
+	changed := r.runReadcacheSlicer(
+		now,
+		[]int32{0, 1, 2},
+		map[int32]float64{0: 0, 1: 100, 2: 100},
+		nil,
+		[]string{"rc-a", "rc-b"},
+		nil,
+		map[int32]bool{0: true},
+	)
+
+	assert.False(t, changed)
+	owners := map[int32]string{}
+	for _, entry := range r.readcacheStore.snapshot() {
+		if entry.ActiveAt(now) {
+			owners[entry.PartitionID] = entry.InstanceID
+		}
+	}
+	assert.Equal(t, map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-b"}, owners)
+}
+
 // TestRunReadcacheSlicer_AlphaWeightsSampleRate confirms that the
 // second-tier slicer's load function uses partitionRateByPID (the
 // samples-per-second EWMA) as the Alpha-weighted term — the v5
@@ -180,7 +304,7 @@ func TestRunReadcacheSlicer_AlphaWeightsSampleRate(t *testing.T) {
 	}
 	instances := []string{"rc-a", "rc-b"}
 
-	r.runReadcacheSlicer(time.Unix(1_000_000, 0), partitions, partitionRate, nil /*query*/, instances, nil /*failed*/)
+	r.runReadcacheSlicer(time.Unix(1_000_000, 0), partitions, partitionRate, nil /*query*/, instances, nil /*failed*/, nil /*unknown*/)
 
 	// After the round, the readcache store must hold the planned
 	// assignment. Whichever instance owns partition 0 should be the

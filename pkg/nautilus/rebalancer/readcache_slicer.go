@@ -133,6 +133,13 @@ type readcachePlanInput struct {
 	// not yet expired. Excluded from this round's movable set.
 	recentlyMoved map[int32]struct{}
 
+	// excludedPartitions have an unknown load this round (for example,
+	// all mirrors are still replaying and therefore suppress their rate
+	// signal). They cannot move, and their current owners cannot receive
+	// more work: a zero must not be mistaken for cold. Known partitions
+	// may still move away from such an owner.
+	excludedPartitions map[int32]bool
+
 	// excludedTargets is the set of instance IDs that must NOT be
 	// chosen as a destination this round. The canonical case is an
 	// instance whose HashRangeStats RPC failed during stats
@@ -223,19 +230,36 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 		}
 	}
 
+	// Owners of unknown-load partitions must not attract either cold
+	// placement or balancing moves. Start with currently assigned unknown
+	// partitions; pass 2 extends this set when it places an unassigned
+	// unknown partition.
+	excludedTargets := make(map[string]struct{}, len(in.excludedTargets)+len(in.excludedPartitions))
+	for instance := range in.excludedTargets {
+		excludedTargets[instance] = struct{}{}
+	}
+	for pid := range in.excludedPartitions {
+		if owner := proposed[pid]; owner != "" {
+			excludedTargets[owner] = struct{}{}
+		}
+	}
+
 	// Pass 2: assign unassigned partitions to the lightest instance.
 	for _, pid := range unassigned {
-		target := lightestInstance(loadByInstance, in.instances, in.excludedTargets)
+		target := lightestInstance(loadByInstance, in.instances, excludedTargets)
 		proposed[pid] = target
 		loadByInstance[target] += in.loadByPartition[pid]
+		if in.excludedPartitions[pid] {
+			excludedTargets[target] = struct{}{}
+		}
 	}
 
 	// Pass 3: rebalance. Compute mean and migrate from over-target
 	// instances to under-target instances until movement budget is
 	// exhausted or all instances are within target.
 	var totalLoad float64
-	for _, l := range loadByInstance {
-		totalLoad += l
+	for _, load := range loadByInstance {
+		totalLoad += load
 	}
 	target := totalLoad / float64(len(in.instances))
 	upperTarget := target * (1 + cfg.LoadHysteresis)
@@ -247,7 +271,13 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 
 	for movedLoad < moveBudgetAbs {
 		src := heaviestInstance(loadByInstance, in.instances)
-		dst := lightestInstance(loadByInstance, in.instances, in.excludedTargets)
+		dst := lightestInstance(loadByInstance, in.instances, excludedTargets)
+		if _, excluded := excludedTargets[dst]; excluded {
+			// lightestInstance only returns an excluded target when all
+			// candidates are excluded. Existing assignments stay intact;
+			// there is no trustworthy destination for a balancing move.
+			break
+		}
 		if src == dst {
 			break
 		}
@@ -262,6 +292,9 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 				continue
 			}
 			if _, cooling := in.recentlyMoved[pid]; cooling {
+				continue
+			}
+			if in.excludedPartitions[pid] {
 				continue
 			}
 			if l := in.loadByPartition[pid]; l > bestLoad {
@@ -295,10 +328,14 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 		movedLoad += bestLoad
 	}
 
-	// Build the output assignment, sorted by partition ID for
-	// determinism.
-	out := &readcacheassignment.Assignment{Entries: make([]readcacheassignment.AssignmentEntry, 0, len(in.partitions))}
-	for _, pid := range in.partitions {
+	return buildReadcachePlan(in.partitions, proposed, loadByInstance, moves)
+}
+
+// buildReadcachePlan builds the output assignment, sorted by partition ID
+// for determinism.
+func buildReadcachePlan(partitions []int32, proposed map[int32]string, loadByInstance map[string]float64, moves []readcacheMove) readcachePlan {
+	out := &readcacheassignment.Assignment{Entries: make([]readcacheassignment.AssignmentEntry, 0, len(partitions))}
+	for _, pid := range partitions {
 		out.Entries = append(out.Entries, readcacheassignment.AssignmentEntry{PartitionID: pid, InstanceID: proposed[pid]})
 	}
 

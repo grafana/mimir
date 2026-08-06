@@ -820,7 +820,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
 			if instances := placementInstances; len(instances) > 0 {
-				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil) {
+				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil, nil) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
 				// Initialize tier-2 gating state so RoundInterval
@@ -1090,7 +1090,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
 					excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
 				}
-				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets)
+				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets, excludedFromSlicer)
 				// Update the gating state regardless of whether the
 				// slicer produced changes: even a no-op tier-2 round
 				// observed the current instance set and load, so the
