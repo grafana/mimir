@@ -326,6 +326,39 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		return nil
 	}
 
+	seenGroups, err := p.summariseSeenCardinality(ctx, seenCardinalities, originalExpression, spanLogger)
+	if err != nil {
+		return err
+	}
+
+	existingEstimates, err := p.summariseExistingEstimates(queryStats.LoadEstimatedSelectorCardinalities())
+	if err != nil {
+		return err
+	}
+
+	return p.writeUpdatedCacheEntries(ctx, seenGroups, existingEstimates, spanLogger)
+}
+
+type bucketedSelector struct {
+	selector               string
+	bucketMinT, bucketMaxT int64
+}
+
+type bucketedSelectorCardinality struct {
+	// cardinalityByShardingFactor contains one entry per sharding factor, and the value contains an element per shard.
+	// For example, if a selector was sharded into 3 shards (with 100, 200 and 300 series in each of the shards),
+	// and also sharded into 5 shards in a subquery (with 10, 20, 30, 40 and 50 series in each of the shards),
+	// then the map would contain:
+	//	3: [100, 200, 300],
+	//  5: [10, 20, 30, 40, 50]
+	cardinalityByShardingFactor map[uint64][]uint64
+
+	unshardedCardinality uint64
+	cacheKey             cacheKey
+}
+
+// summariseSeenCardinality determines the overall cardinality of a selector to store in the cache for each cache bucket.
+func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.Context, seenCardinalities []stats.SelectorCardinality, originalExpression string, spanLogger *spanlogger.SpanLogger) (map[bucketedSelector]*bucketedSelectorCardinality, error) {
 	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and bucket time range,
 	// then aggregate within each group.
 	//
@@ -340,23 +373,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	//
 	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
 	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
-	type groupKey struct {
-		selector               string
-		bucketMinT, bucketMaxT int64
-	}
-	type selectorInfo struct {
-		// cardinalityByShardingFactor contains one entry per sharding factor, and the value contains an element per shard.
-		// For example, if a selector was sharded into 3 shards (with 100, 200 and 300 series in each of the shards),
-		// and also sharded into 5 shards in a subquery (with 10, 20, 30, 40 and 50 series in each of the shards),
-		// then the map would contain:
-		//	3: [100, 200, 300],
-		//  5: [10, 20, 30, 40, 50]
-		cardinalityByShardingFactor map[uint64][]uint64
-
-		unshardedCardinality uint64
-		cacheKey             cacheKey
-	}
-	seenGroups := make(map[groupKey]*selectorInfo)
+	seenGroups := make(map[bucketedSelector]*bucketedSelectorCardinality)
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
@@ -364,15 +381,15 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		// Get all the cache keys (ie. buckets) that this seen selector maps to.
 		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, selector, c.MinT, c.MaxT, false, spanLogger)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, k := range keys {
-			gk := groupKey{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
+			gk := bucketedSelector{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
 
 			group, ok := seenGroups[gk]
 			if !ok {
-				group = &selectorInfo{
+				group = &bucketedSelectorCardinality{
 					cacheKey:                    k,
 					cardinalityByShardingFactor: make(map[uint64][]uint64),
 				}
@@ -386,7 +403,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 
 			index, shardCount, err := sharding.ParseShardIDLabelValue(shard)
 			if err != nil {
-				return fmt.Errorf("failed to parse shard label value in %v: %w", c.Matchers, err)
+				return nil, fmt.Errorf("failed to parse shard label value in %v: %w", c.Matchers, err)
 			}
 
 			if _, ok := group.cardinalityByShardingFactor[shardCount]; !ok {
@@ -399,14 +416,22 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		}
 	}
 
-	estimatedGroups := make(map[groupKey]uint64)
-	estimatedCardinalities := queryStats.LoadEstimatedSelectorCardinalities()
+	return seenGroups, nil
+}
+
+func (p *cardinalityStoringPostProcessor) summariseExistingEstimates(estimatedCardinalities []stats.SelectorCardinality) (map[bucketedSelector]uint64, error) {
+	existingEstimates := make(map[bucketedSelector]uint64)
+
 	for _, c := range estimatedCardinalities {
-		selector, _ := selectorStringWithoutShardingMatcher(c.Matchers) // Estimated cardinalities should have no shard matcher.
-		gk := groupKey{selector: selector, bucketMinT: c.MinT, bucketMaxT: c.MaxT}
-		estimatedGroups[gk] = c.SeriesCount
+		selector, _ := selectorStringWithoutShardingMatcher(c.Matchers) // Estimated cardinalities should have no shard matcher, and are already aligned to buckets.
+		gk := bucketedSelector{selector: selector, bucketMinT: c.MinT, bucketMaxT: c.MaxT}
+		existingEstimates[gk] = c.SeriesCount
 	}
 
+	return existingEstimates, nil
+}
+
+func (p *cardinalityStoringPostProcessor) writeUpdatedCacheEntries(ctx context.Context, seenGroups map[bucketedSelector]*bucketedSelectorCardinality, existingEstimates map[bucketedSelector]uint64, spanLogger *spanlogger.SpanLogger) error {
 	entries := make(map[string][]byte)
 	ignoredUpdates := 0
 
@@ -423,7 +448,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 			seenCardinality = max(seenCardinality, cardinalityForShardingFactor)
 		}
 
-		existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, bucketMinT: gk.bucketMinT, bucketMaxT: gk.bucketMaxT}]
+		existingEstimate, haveExistingEstimate := existingEstimates[bucketedSelector{selector: gk.selector, bucketMinT: gk.bucketMinT, bucketMaxT: gk.bucketMaxT}]
 		updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
 		if haveExistingEstimate && (seenCardinality == 0 || float64(seenCardinality) < updateThreshold) {
 			// The existing estimate is not above the threshold to write an updated entry,
@@ -463,7 +488,7 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	spanLogger.DebugLog(
 		"msg", "writing updated cardinality estimates (if any)",
 		"seen_selector_group_count", len(seenGroups),
-		"estimated_selector_group_count", len(estimatedGroups),
+		"estimated_selector_group_count", len(existingEstimates),
 		"new_or_updated_estimates", len(entries),
 		"ignored_updates", ignoredUpdates,
 	)
