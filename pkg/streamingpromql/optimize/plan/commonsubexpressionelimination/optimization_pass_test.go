@@ -1903,7 +1903,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 		firstSelector          string
 		secondSelector         string
 		expectedResult         commonsubexpressionelimination.SelectorRelationship
-		expectedSubsetMatchers []*core.LabelMatcher
+		expectedSubsetMatchers []core.LabelMatcher
 	}{
 		"empty matchers": {
 			firstSelector:  `{}`,
@@ -1954,7 +1954,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{b="1", d="3"}`,
 			secondSelector: `{a="0", b="1", d="3"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "0"},
 			},
 		},
@@ -1962,7 +1962,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{b="1", d="3"}`,
 			secondSelector: `{b="1", c="2", d="3"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "c", Type: labels.MatchEqual, Value: "2"},
 			},
 		},
@@ -1970,7 +1970,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{b="1", d="3"}`,
 			secondSelector: `{b="1", d="3", e="4"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "e", Type: labels.MatchEqual, Value: "4"},
 			},
 		},
@@ -1978,7 +1978,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{c="2", f="5"}`,
 			secondSelector: `{a="0", "b"="1", c="2", d="3", e="4", f="5", g="6", h="7"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "0"},
 				{Name: "b", Type: labels.MatchEqual, Value: "1"},
 				{Name: "d", Type: labels.MatchEqual, Value: "3"},
@@ -1997,7 +1997,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{a=~"(a|b|c)"}`,
 			secondSelector: `{a="a"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "a"},
 			},
 		},
@@ -2010,7 +2010,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{a=~"(a|b)"}`,
 			secondSelector: `{a="a", c="x"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "a"},
 				{Name: "c", Type: labels.MatchEqual, Value: "x"},
 			},
@@ -2019,7 +2019,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{a=~"(a|b)", b="x"}`,
 			secondSelector: `{a="a", b="x"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "a"},
 			},
 		},
@@ -2038,7 +2038,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{c=~"(a|b)"}`,
 			secondSelector: `{a="x", c="a"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "x"},
 				{Name: "c", Type: labels.MatchEqual, Value: "a"},
 			},
@@ -2062,7 +2062,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			firstSelector:  `{a!~"(a|b)"}`,
 			secondSelector: `{a="x"}`,
 			expectedResult: commonsubexpressionelimination.SubsetSelectors,
-			expectedSubsetMatchers: []*core.LabelMatcher{
+			expectedSubsetMatchers: []core.LabelMatcher{
 				{Name: "a", Type: labels.MatchEqual, Value: "x"},
 			},
 		},
@@ -2110,7 +2110,7 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 	}
 }
 
-func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
+func parseSelector(t *testing.T, selector string) []core.LabelMatcher {
 	p := parser.NewParser(parser.Options{})
 	matchers, err := p.ParseMetricSelector(selector)
 	require.NoError(t, err)
@@ -2126,9 +2126,9 @@ var (
 	groupWithNoFilters = commonsubexpressionelimination.SharedSelectorGroup{}
 
 	groupWithFilterOnEnvLabel = commonsubexpressionelimination.SharedSelectorGroup{
-		Filters: [][]*core.LabelMatcher{
+		Filters: [][]core.LabelMatcher{
 			{
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "env",
 					Type:  labels.MatchEqual,
 					Value: "foo",
@@ -2138,9 +2138,9 @@ var (
 	}
 
 	groupWithFilterOnMetricName = commonsubexpressionelimination.SharedSelectorGroup{
-		Filters: [][]*core.LabelMatcher{
+		Filters: [][]core.LabelMatcher{
 			{
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "__name__",
 					Type:  labels.MatchEqual,
 					Value: "foo",
@@ -2152,21 +2152,21 @@ var (
 
 func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 	groupWithFilterOnManyLabels := commonsubexpressionelimination.SharedSelectorGroup{
-		Filters: [][]*core.LabelMatcher{
+		Filters: [][]core.LabelMatcher{
 			{
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "env",
 					Type:  labels.MatchEqual,
 					Value: "foo",
 				},
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "region",
 					Type:  labels.MatchEqual,
 					Value: "foo",
 				},
 			},
 			{
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "cluster",
 					Type:  labels.MatchEqual,
 					Value: "foo",
@@ -2406,9 +2406,9 @@ func TestIsSafeToApplyFilteringAfter(t *testing.T) {
 
 func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
 	groupWithFilterOnBucketLabel := commonsubexpressionelimination.SharedSelectorGroup{
-		Filters: [][]*core.LabelMatcher{
+		Filters: [][]core.LabelMatcher{
 			{
-				&core.LabelMatcher{
+				core.LabelMatcher{
 					Name:  "le",
 					Type:  labels.MatchEqual,
 					Value: "0.5",

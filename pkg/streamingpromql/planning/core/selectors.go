@@ -11,7 +11,7 @@ import (
 )
 
 func describeSelector(
-	matchers []*LabelMatcher,
+	matchers []LabelMatcher,
 	ts *time.Time,
 	offset time.Duration,
 	rng *time.Duration,

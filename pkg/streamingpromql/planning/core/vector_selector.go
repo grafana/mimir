@@ -59,7 +59,7 @@ func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		v.Smoothed == otherVectorSelector.Smoothed
 }
 
-func (v *VectorSelector) GetMatchers() []*LabelMatcher {
+func (v *VectorSelector) GetMatchers() []LabelMatcher {
 	return v.Matchers
 }
 
