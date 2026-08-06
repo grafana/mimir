@@ -352,3 +352,32 @@ func TestOwnersDuring_IgnoresZeroLengthLeases(t *testing.T) {
 	}
 }
 
+// TestApply_LatestToIndexIgnoresZeroLengthLeases ensures a cancelled
+// pre-issue with From far in the future cannot inflate latestTo and
+// skip successor extension ("successor already pre-issued").
+func TestApply_LatestToIndexIgnoresZeroLengthLeases(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	future := t0.Add(time.Hour)
+	// Active lease ends inside the lookahead window so a successor is due.
+	activeTo := t0.Add(testLookahead / 2)
+	l := NewLogFromEntries([]LogEntry{
+		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: activeTo},
+		// Cancelled successor whose From is past at+leaseDuration.
+		{PartitionID: 0, InstanceID: "rc-a", From: future, To: future},
+	})
+
+	require.True(t, l.Apply(t0, &Assignment{
+		Entries: []AssignmentEntry{{PartitionID: 0, InstanceID: "rc-a"}},
+	}, testLease, testLookahead, 0),
+		"without ignoring the cancelled future, Apply would false-trigger 'successor already pre-issued'")
+
+	var latestTo time.Time
+	for _, e := range l.Entries() {
+		if e.InstanceID == "rc-a" && e.To.After(e.From) && e.To.After(latestTo) {
+			latestTo = e.To
+		}
+	}
+	assert.Equal(t, activeTo.Add(testLease), latestTo,
+		"Apply must append a real successor from the active lease end, not skip because of the cancelled future")
+}
+

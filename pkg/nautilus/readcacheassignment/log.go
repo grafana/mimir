@@ -145,9 +145,14 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead, sa
 	// O(N+M). The first pass mutates only To for keys NOT in
 	// `wanted`; the second pass only consults latest-To for keys
 	// IN `wanted`, so the pre-index is safe to build before the
-	// first pass.
+	// first pass. Zero-length cancelled leases are excluded so they
+	// cannot inflate latestTo and false-trigger "successor already
+	// pre-issued" (matching tier-1).
 	latestToIndex := make(map[key]time.Time, len(next.Entries))
 	for _, e := range l.entries {
+		if !e.To.After(e.From) {
+			continue
+		}
 		k := key{pid: e.PartitionID, instance: e.InstanceID}
 		if cur, ok := latestToIndex[k]; !ok || e.To.After(cur) {
 			latestToIndex[k] = e.To
