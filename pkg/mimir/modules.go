@@ -1119,14 +1119,6 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
-	// Register any extra passes injected from outside this package after the built-in passes registered by NewQueryPlanner.
-	for _, p := range t.ExtraASTOptimizationPasses {
-		t.QuerierQueryPlanner.RegisterASTOptimizationPass(p)
-	}
-	for _, p := range t.ExtraQueryPlanOptimizationPasses {
-		t.QuerierQueryPlanner.RegisterQueryPlanOptimizationPass(p)
-	}
-
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
@@ -1192,14 +1184,8 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	// registered by NewQueryPlanner, but must be registered before the remote execution, subquery spin-off
 	// and sharding passes below so that query-mutating passes run before sharding, matching how the
 	// equivalent middlewares are ordered before query sharding today.
-	for _, p := range t.ExtraASTOptimizationPasses {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
-	}
 	for _, p := range t.ExtraQueryFrontendASTOptimizationPasses {
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
-	}
-	for _, p := range t.ExtraQueryPlanOptimizationPasses {
-		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(p)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
