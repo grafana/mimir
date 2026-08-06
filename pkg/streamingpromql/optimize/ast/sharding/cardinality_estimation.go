@@ -79,6 +79,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	defer spanLogger.Finish()
 	spanLogger.SetTag("timeRange", timeRange)
 	spanLogger.SetTag("lookbackDelta", lookbackDelta)
+	spanLogger.SetTag("originalExpression", originalExpression)
 
 	queryStats := stats.FromContext(ctx)
 	selectors, keys, err := e.determineSelectorsToUseForEstimation(ctx, originalExpression, expr, timeRange, lookbackDelta, spanLogger)
@@ -316,6 +317,7 @@ func NewCardinalityStoringPostProcessor(cfg streamingpromql.CardinalityEstimatio
 func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, originalExpression string) error {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "cardinalityStoringPostProcessor.PostProcess")
 	defer spanLogger.Finish()
+	spanLogger.SetTag("originalExpression", originalExpression)
 
 	queryStats := stats.FromContext(ctx)
 	seenCardinalities := queryStats.LoadSeenSelectorCardinalities()
