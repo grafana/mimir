@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -32,16 +33,33 @@ func NewOOOChunk() *OOOChunk {
 	return &OOOChunk{samples: make([]sample, 0, 4)}
 }
 
+// OOOInsertResult reports the outcome of OOOChunk.Insert.
+type OOOInsertResult uint8
+
+const (
+	// OOOInserted means the sample was inserted into the chunk.
+	OOOInserted OOOInsertResult = iota
+	// OOODuplicateExact means a sample with the same timestamp and an equal value was
+	// already present, so the incoming sample was dropped as an idempotent duplicate.
+	OOODuplicateExact
+	// OOODuplicateConflict means a sample with the same timestamp but a different value
+	// was already present, so the incoming sample was dropped as a conflicting overwrite.
+	OOODuplicateConflict
+)
+
 // Insert inserts the sample such that order is maintained.
-// Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+// Overwrites of an existing timestamp are not allowed: when a sample already exists at
+// the same timestamp, Insert reports whether the existing value was equal
+// (OOODuplicateExact) or different (OOODuplicateConflict), letting callers tell an
+// idempotent duplicate apart from a conflicting overwrite.
+func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) OOOInsertResult {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
 		o.samples = append(o.samples, sample{st, t, v, h, fh})
-		return true
+		return OOOInserted
 	}
 
 	// Find index of sample we should replace.
@@ -50,12 +68,16 @@ func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *hi
 	if i >= len(o.samples) {
 		// none found. append it at the end
 		o.samples = append(o.samples, sample{st, t, v, h, fh})
-		return true
+		return OOOInserted
 	}
 
-	// Duplicate sample for timestamp is not allowed.
+	// A sample already exists at this timestamp. Overwrites are not allowed, so report
+	// whether it is an exact duplicate or a conflict instead of storing the new one.
 	if o.samples[i].t == t {
-		return false
+		if o.samples[i].valueEqual(v, h, fh) {
+			return OOODuplicateExact
+		}
+		return OOODuplicateConflict
 	}
 
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
@@ -63,7 +85,22 @@ func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *hi
 	copy(o.samples[i+1:], o.samples[i:])
 	o.samples[i] = sample{st, t, v, h, fh}
 
-	return true
+	return OOOInserted
+}
+
+// valueEqual reports whether a sample carrying (v, h, fh) has the same value as the
+// already-stored sample s. It is used to tell an idempotent exact duplicate apart from
+// a conflicting overwrite when two samples share a timestamp. A type mismatch (e.g. a
+// float landing on a stored histogram) counts as a different value.
+func (s sample) valueEqual(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+	switch {
+	case h != nil:
+		return s.h != nil && h.Equals(s.h)
+	case fh != nil:
+		return s.fh != nil && fh.Equals(s.fh)
+	default:
+		return s.h == nil && s.fh == nil && math.Float64bits(s.f) == math.Float64bits(v)
+	}
 }
 
 func (o *OOOChunk) NumSamples() int {
