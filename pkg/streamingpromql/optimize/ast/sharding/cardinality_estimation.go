@@ -86,7 +86,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		return nil, err
 	}
 	if len(keys) == 0 {
-		spanLogger.DebugLog("msg", "no selectors found in expression")
+		spanLogger.DebugLog("msg", "no selectors found in expression, returning no estimate")
 		return nil, nil
 	}
 
@@ -96,6 +96,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		return nil, err
 	}
 	if len(res) == 0 {
+		spanLogger.DebugLog("msg", "got no cache hits, returning no estimate")
 		return nil, nil
 	}
 
@@ -168,6 +169,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	}
 
 	if !sawAllSelectors {
+		spanLogger.DebugLog("msg", "could not get cached cardinality estimates for all selectors, returning no estimate")
 		return nil, nil
 	}
 
