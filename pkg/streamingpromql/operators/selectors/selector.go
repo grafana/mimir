@@ -159,12 +159,11 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	}
 }
 
-// labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
-// stats.LabelMatcher representation.
-func labelMatchersFromMatchers(base types.Matchers) []stats.LabelMatcher {
-	out := make([]stats.LabelMatcher, 0, len(base))
+// labelMatchersFromMatchers converts the given matchers to their stats.LabelMatcher representation.
+func labelMatchersFromMatchers(matchers types.Matchers) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
 
-	for _, m := range base {
+	for _, m := range matchers {
 		out = append(out, stats.LabelMatcher{
 			Type:  m.Type,
 			Name:  m.Name,
