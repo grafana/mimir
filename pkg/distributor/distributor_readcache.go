@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -279,19 +280,41 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 	if log == nil {
 		return "", false
 	}
-	return previousReadcacheOwnerFromLog(log, d.now(), partitionID)
+	return previousReadcacheOwnerFromLog(log, d.now(), partitionID, "")
 }
 
-func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, partitionID int32) (string, bool) {
+func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, partitionID int32, excludedOwner string) (string, bool) {
 	currentOwners := map[string]struct{}{}
-	for _, id := range log.Lookup(now, partitionID) {
-		currentOwners[id] = struct{}{}
+	if excludedOwner == "" {
+		for _, id := range log.Lookup(now, partitionID) {
+			currentOwners[id] = struct{}{}
+		}
+	}
+	var failingLeaseFrom time.Time
+	if excludedOwner != "" {
+		for _, entry := range log.Entries() {
+			if entry.PartitionID == partitionID &&
+				entry.InstanceID == excludedOwner &&
+				!entry.From.After(now) &&
+				(failingLeaseFrom.IsZero() || entry.From.After(failingLeaseFrom)) {
+				failingLeaseFrom = entry.From
+			}
+		}
+		if failingLeaseFrom.IsZero() {
+			return "", false
+		}
 	}
 	// Walk every entry for this partition, ignoring future-only
-	// leases (From > now). Pick the entry with the largest To that
-	// is *not* still active for `now` and whose InstanceID is not
-	// the current owner. That entry's owner is the one whose lease
-	// was just truncated by the move.
+	// leases (From > now). Pick the entry with the largest To whose
+	// InstanceID is not the logical owner that reported still_warming
+	// and whose lease started before the failing lease.
+	//
+	// We deliberately do not exclude every owner returned by Lookup(now).
+	// During the move safety window the previous owner's truncated lease
+	// remains active alongside the new owner's lease. It is exactly the
+	// warm fallback we need while the new owner catches up. Requiring an
+	// earlier From also prevents the inverse case from falling forward
+	// from a warming old owner to its incomplete successor.
 	var best readcacheassignment.LogEntry
 	bestFound := false
 	for _, e := range log.Entries() {
@@ -299,6 +322,12 @@ func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, 
 			continue
 		}
 		if e.From.After(now) {
+			continue
+		}
+		if e.InstanceID == excludedOwner {
+			continue
+		}
+		if !failingLeaseFrom.IsZero() && !e.From.Before(failingLeaseFrom) {
 			continue
 		}
 		if _, isCurrent := currentOwners[e.InstanceID]; isCurrent {
@@ -313,6 +342,37 @@ func previousReadcacheOwnerFromLog(log *readcacheassignment.Log, now time.Time, 
 		return "", false
 	}
 	return best.InstanceID, true
+}
+
+func logicalReadcacheOwnerForReplica(replicaMap readcacheassignment.ReplicaMap, concreteID string, ignoreMap bool) string {
+	if ignoreMap {
+		return concreteID
+	}
+	for logicalOwner, replicas := range replicaMap {
+		for _, replica := range replicas {
+			if replica.InstanceID == concreteID {
+				return logicalOwner
+			}
+		}
+	}
+	// RF=1 and older snapshots use identity expansion.
+	return concreteID
+}
+
+func preferReadcacheReplicas(replicas []readcacheassignment.Replica, preferredZones []string) []readcacheassignment.Replica {
+	if len(replicas) < 2 || len(preferredZones) == 0 {
+		return replicas
+	}
+	preferred := make([]readcacheassignment.Replica, 0, len(replicas))
+	other := make([]readcacheassignment.Replica, 0, len(replicas))
+	for _, replica := range replicas {
+		if slices.Contains(preferredZones, replica.Zone) {
+			preferred = append(preferred, replica)
+		} else {
+			other = append(other, replica)
+		}
+	}
+	return append(preferred, other...)
 }
 
 // readcacheSyntheticInstanceID is the routing key the read path uses
@@ -477,12 +537,15 @@ func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.Insta
 // the readcache instance that owned partitionID in the lease
 // immediately preceding the current one, along with that instance
 // ID. Used by the caller to fall back when the current owner
-// returns errStillWarming.
+// returns errStillWarming. failingReplica identifies the concrete
+// replica that claimed fallback; its logical owner is the only owner
+// excluded from the lookup, so an overlapping safety-window owner
+// remains eligible.
 //
 // Returns ok=false if there is no recoverable previous owner (no
 // log, lease pruned, address unconfigured, or dial error). The
 // instance ID is empty in that case.
-func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, partitionID int32) (client.IngesterClient, string, bool) {
+func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, partitionID int32, failingReplica string) (client.IngesterClient, string, bool) {
 	if d.readcachePool == nil {
 		return nil, "", false
 	}
@@ -490,13 +553,19 @@ func (d *Distributor) previousReadcacheClientForPartition(ctx context.Context, p
 	if rcState == nil || rcState.log == nil {
 		return nil, "", false
 	}
-	prevID, ok := previousReadcacheOwnerFromLog(rcState.log, d.now(), partitionID)
+	excludedOwner := logicalReadcacheOwnerForReplica(
+		rcState.replicaMap,
+		failingReplica,
+		d.cfg.Readcache.IgnoreReplicaMapForQueries,
+	)
+	prevID, ok := previousReadcacheOwnerFromLog(rcState.log, d.now(), partitionID, excludedOwner)
 	if !ok {
 		return nil, "", false
 	}
 	// prevID is a logical slot under RF≥2; expand and take the first
-	// replica that dials.
-	for _, rep := range expandReadcacheReplicasForQuery(rcState.replicaMap, prevID, d.cfg.Readcache.IgnoreReplicaMapForQueries) {
+	// replica that dials, preferring the querier's local zones.
+	replicas := expandReadcacheReplicasForQuery(rcState.replicaMap, prevID, d.cfg.Readcache.IgnoreReplicaMapForQueries)
+	for _, rep := range preferReadcacheReplicas(replicas, d.cfg.PreferAvailabilityZones) {
 		cli, err := d.readcachePool.GetClientForInstance(ctx, rep.InstanceID)
 		if err != nil {
 			continue

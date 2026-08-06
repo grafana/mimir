@@ -400,7 +400,7 @@ func TestPreviousReadcacheClientForPartition_RF2(t *testing.T) {
 
 	t.Run("resolves a mirror of the previous logical owner", func(t *testing.T) {
 		d := newDistributor(t, "readcache-zone-a-0=127.0.0.1:9095,readcache-zone-b-0=127.0.0.1:9096", false)
-		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-1")
 		require.True(t, ok)
 		assert.Equal(t, "readcache-zone-a-0", instanceID,
 			"must dial slot 0's mirrors (the previous owner), not slot 1's peer")
@@ -408,7 +408,15 @@ func TestPreviousReadcacheClientForPartition_RF2(t *testing.T) {
 
 	t.Run("falls through when the previous owner's first mirror is unresolvable", func(t *testing.T) {
 		d := newDistributor(t, "readcache-zone-b-0=127.0.0.1:9096", false)
-		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-1")
+		require.True(t, ok)
+		assert.Equal(t, "readcache-zone-b-0", instanceID)
+	})
+
+	t.Run("prefers a configured zone for the previous owner", func(t *testing.T) {
+		d := newDistributor(t, "readcache-zone-a-0=127.0.0.1:9095,readcache-zone-b-0=127.0.0.1:9096", false)
+		d.cfg.PreferAvailabilityZones = []string{"zone-b"}
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-1")
 		require.True(t, ok)
 		assert.Equal(t, "readcache-zone-b-0", instanceID)
 	})
@@ -417,15 +425,55 @@ func TestPreviousReadcacheClientForPartition_RF2(t *testing.T) {
 		// With ignore-replica-map-for-queries the map is bypassed, so
 		// the fallback stays on the legacy pod like the primary read.
 		d := newDistributor(t, "readcache-0=127.0.0.1:9095,readcache-zone-a-0=127.0.0.1:9096", true)
-		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-1")
 		require.True(t, ok)
 		assert.Equal(t, "readcache-0", instanceID)
 	})
 
 	t.Run("reports no fallback when no mirror resolves", func(t *testing.T) {
 		d := newDistributor(t, "readcache-zone-a-1=127.0.0.1:9097", false)
-		_, _, ok := d.previousReadcacheClientForPartition(ctx, 0)
+		_, _, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-1")
 		assert.False(t, ok)
+	})
+
+	t.Run("safety-window overlap keeps the old logical owner eligible", func(t *testing.T) {
+		overlap := []readcacheassignment.LogEntry{
+			{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-5 * time.Minute), To: now.Add(2 * time.Minute)},
+			{PartitionID: 0, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(5 * time.Minute)},
+		}
+		d := newDistributor(t, "readcache-zone-a-0=127.0.0.1:9095,readcache-zone-a-1=127.0.0.1:9096", false)
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(overlap), twoZoneReplicaMap())
+
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-1")
+		require.True(t, ok)
+		assert.Equal(t, "readcache-zone-a-0", instanceID,
+			"the active safety-window owner must remain eligible when the new owner is warming")
+	})
+
+	t.Run("safety-window overlap never falls forward to the new owner", func(t *testing.T) {
+		overlap := []readcacheassignment.LogEntry{
+			{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-5 * time.Minute), To: now.Add(2 * time.Minute)},
+			{PartitionID: 0, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(5 * time.Minute)},
+		}
+		d := newDistributor(t, "readcache-zone-a-0=127.0.0.1:9095,readcache-zone-a-1=127.0.0.1:9096", false)
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(overlap), twoZoneReplicaMap())
+
+		_, _, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-zone-a-0")
+		assert.False(t, ok,
+			"a warming previous owner must fail closed instead of falling forward to its incomplete successor")
+	})
+
+	t.Run("RF1 safety-window overlap keeps the old owner eligible", func(t *testing.T) {
+		overlap := []readcacheassignment.LogEntry{
+			{PartitionID: 0, InstanceID: "readcache-0", From: now.Add(-5 * time.Minute), To: now.Add(2 * time.Minute)},
+			{PartitionID: 0, InstanceID: "readcache-1", From: now.Add(-time.Minute), To: now.Add(5 * time.Minute)},
+		}
+		d := newDistributor(t, "readcache-0=127.0.0.1:9095,readcache-1=127.0.0.1:9096", true)
+		d.setReadcacheAssignment(readcacheassignment.NewLogFromEntries(overlap), nil)
+
+		_, instanceID, ok := d.previousReadcacheClientForPartition(ctx, 0, "readcache-1")
+		require.True(t, ok)
+		assert.Equal(t, "readcache-0", instanceID)
 	})
 }
 

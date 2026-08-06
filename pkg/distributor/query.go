@@ -745,7 +745,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			if readcache.IsStillWarming(err) && hasPart {
 				state := warmFallbackStates[ing.Id]
 				if state != nil && state.claimFallback(ing.Id) {
-					prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID)
+					prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID, ing.Addr)
 					if !ok {
 						return result, err
 					}
