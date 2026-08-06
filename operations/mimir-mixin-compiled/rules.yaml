@@ -225,18 +225,33 @@ groups:
                 sum by (cluster, namespace, deployment_without_zone) (
                   label_replace(
                     kube_deployment_spec_replicas,
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                    "deployment_without_zone", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
                 or
                 sum by (cluster, namespace, deployment_without_zone) (
-                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?")
                 ),
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
             )
+          record: cluster_namespace_deployment:actual_replicas:count
+        - expr: |
+            sum by (cluster, namespace, deployment) (
+              label_replace(
+                sum by (cluster, namespace, deployment_without_compartment) (
+                  label_replace(
+                    cluster_namespace_deployment:actual_replicas:count{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                    "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                  )
+                ),
+                "deployment", "$1", "deployment_without_compartment", "(.*)"
+              )
+            )
+            # Skip a component that already has a replica count under its bare name, which happens while a
+            # namespace is being migrated to compartments, to avoid recording the same series twice.
+            unless
+            cluster_namespace_deployment:actual_replicas:count
           record: cluster_namespace_deployment:actual_replicas:count
         - expr: |
             ceil(
@@ -311,7 +326,9 @@ groups:
               ) / 4)
                 /
               avg by (cluster, namespace) (
-                memcached_limit_bytes{job=~".+/memcached"}
+                # This sizes the chunks cache, so match its per-zone and per-compartment deployments too,
+                # while still leaving out the frontend, index-queries and metadata caches.
+                memcached_limit_bytes{job=~".+/memcached(-zone-[a-z])?(-rc-[0-9]+)?"}
               )
             )
           labels:
@@ -325,9 +342,7 @@ groups:
                   sum by (cluster, namespace, pod)(rate(container_cpu_usage_seconds_total[4m])),
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
               )
             )
           record: cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate
@@ -348,9 +363,7 @@ groups:
                     kube_pod_container_resource_requests_cpu_cores,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -364,9 +377,7 @@ groups:
                     kube_pod_container_resource_requests{resource="cpu"},
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -394,9 +405,7 @@ groups:
                   container_memory_usage_bytes{image!=""},
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
               )
             )
           record: cluster_namespace_deployment:container_memory_usage_bytes:sum
@@ -417,9 +426,7 @@ groups:
                     kube_pod_container_resource_requests_memory_bytes,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -433,9 +440,7 @@ groups:
                     kube_pod_container_resource_requests{resource="memory"},
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )

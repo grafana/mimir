@@ -1,4 +1,10 @@
 (import 'alerts-utils.libsonnet') {
+  // Adds a "zone" label taken from the job name, absent for non-zonal deployments (a single zone).
+  // The MimirIngesterTSDBWALCorrupted alerts below count zones this way rather than counting jobs, because
+  // with compartments each zone has one job per compartment ("ingester-zone-a-rc-0").
+  local withZoneLabel(query) =
+    'label_replace(%s, "zone", "$1", "%s", ".*-(zone-[a-z]).*")' % [query, $._config.per_job_label],
+
   local alertGroups = [
     {
       name: 'mimir_blocks_alerts',
@@ -156,9 +162,10 @@
             count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0) > 1
             and
             # and there is only one zone
-            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, zone) (%(corruptions_by_zone)s)) == 1
           ||| % $._config {
             rate_interval: $.rateInterval('5m'),
+            corruptions_by_zone: withZoneLabel('cortex_ingester_tsdb_wal_corruptions_total'),
           },
           labels: {
             severity: 'critical',
@@ -171,13 +178,14 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
-            # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0)) > 1
+            # alert when there are corruptions in more than one zone
+            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, zone) (%(corruption_rate_by_zone)s)) > 1
             and
             # and there are multiple zones
-            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, zone) (%(corruptions_by_zone)s)) > 1
           ||| % $._config {
-            rate_interval: $.rateInterval('5m'),
+            corruption_rate_by_zone: withZoneLabel('(rate(cortex_ingester_tsdb_wal_corruptions_total[%s]) > 0)' % $.rateInterval('5m')),
+            corruptions_by_zone: withZoneLabel('cortex_ingester_tsdb_wal_corruptions_total'),
           },
           labels: {
             severity: 'critical',
@@ -235,18 +243,20 @@
           // so we alert if we've missed two updates plus a 300 second buffer to avoid false-positives. It's important
           // that this alert fire before queriers start to return errors because the bucket index is too old (3600 seconds
           // by default). Allow a 15m lookback (the default compactor.cleanup-interval) to include compactors that may have recently updated the index and then been terminated.
+          // A tenant reports one timestamp per read compartment, each from a different bucket, so group by
+          // compartment: otherwise "min" picks the freshest one and hides a compartment with a stale index.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[%(rate_interval)s]))) > 2100
+            min by(%(alert_aggregation_labels)s, user, read_compartment) (time() - (%(last_update)s)) > 2100
           ||| % $._config {
-            rate_interval: $.rateInterval('15m'),
+            last_update: $.withReadCompartmentLabel('max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[%s])' % $.rateInterval('15m')),
           },
           'for': '2m',  // Extra buffer to allow the compactor that was restarted close to the end of previous update cycle to discover the tenant and udpate their bucket.
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
+            message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s{{ if $labels.read_compartment }} read compartment {{ $labels.read_compartment }}{{ end }} has not been updated since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {

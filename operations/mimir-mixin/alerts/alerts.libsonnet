@@ -4,24 +4,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local excludeWorkloads(labelName, values) =
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
+  // These must build "rollout_group" the same way: MimirRolloutStuck matches their results against each other.
   local groupDeploymentByRolloutGroup(metricName, ignore) =
-    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "%s", "deployment", "%s"))' % [
       metricName,
       excludeWorkloads('deployment', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroup(metricName, ignore) =
-    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local request_metric = 'cortex_request_duration_seconds',
@@ -357,9 +364,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
               or
               ( # Ingest storage timeseries
+                # The ingester ID deduplicates the zone replicas of a partition, which hold the same series.
+                # It restarts from 0 in every read compartment, so the compartment is part of the identity too,
+                # otherwise all compartments but one are deduplicated away.
                 sum by(%(alert_aggregation_labels)s) (
-                  max by(ingester_id, %(alert_aggregation_labels)s) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, %(alert_aggregation_labels)s) (
+                    label_replace(%(memory_series)s,
                       "ingester_id", "$1",
                       "%(per_instance_label)s", ".*-([0-9]+)$"
                     )
@@ -367,7 +377,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
             ) > 100000
-          ||| % $._config,
+          ||| % $._config {
+            memory_series: $.withReadCompartmentLabel('cortex_ingester_memory_series'),
+          },
           labels: {
             severity: 'warning',
           },
