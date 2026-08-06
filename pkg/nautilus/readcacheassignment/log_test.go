@@ -326,3 +326,29 @@ func TestNewLogFromEntries(t *testing.T) {
 		assert.LessOrEqual(t, entries[i-1].PartitionID, entries[i].PartitionID, "entries should be sorted by partition")
 	}
 }
+
+// TestOwnersDuring_IgnoresZeroLengthLeases is the H9 regression: a
+// cancelled pre-issue (To == From) at instant T used to be returned by
+// every query window containing T, causing queriers to dial pods that
+// never held the partition (partition_epoch_unavailable).
+func TestOwnersDuring_IgnoresZeroLengthLeases(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	tReset := t0.Add(time.Second)
+	l := NewLogFromEntries([]LogEntry{
+		{PartitionID: 0, InstanceID: "rc-old", From: t0, To: tReset.Add(2 * time.Minute)},
+		// Phantom: reset wrote this then a racing refresh collapsed it.
+		{PartitionID: 0, InstanceID: "rc-phantom", From: tReset, To: tReset},
+		{PartitionID: 0, InstanceID: "rc-new", From: tReset.Add(2 * time.Minute), To: tReset.Add(2*time.Minute + testLease)},
+	})
+
+	owners := l.OwnersDuring(0, t0, tReset.Add(3*time.Minute))
+	assert.Equal(t, []string{"rc-new", "rc-old"}, owners)
+
+	entries := l.EntriesDuring(0, t0, tReset.Add(3*time.Minute))
+	require.Len(t, entries, 2)
+	for _, e := range entries {
+		assert.NotEqual(t, "rc-phantom", e.InstanceID)
+		assert.True(t, e.To.After(e.From))
+	}
+}
+

@@ -167,7 +167,10 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead, sa
 	futureEntriesByKey := make(map[key][]int, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
-		if !e.To.After(at) {
+		// Skip ended and zero-length (cancelled) leases. To==From is
+		// how Apply kills an unwanted pre-issued successor; matching
+		// tier-1 assignment.Log.Apply.
+		if !e.To.After(at) || !e.To.After(e.From) {
 			continue
 		}
 		k := key{pid: e.PartitionID, instance: e.InstanceID}
@@ -263,7 +266,14 @@ func (l *Log) Lookup(at time.Time, partitionID int32) []string {
 
 // OwnersDuring returns the distinct instance IDs that held partitionID
 // at any point during the half-open wall-clock window [w0, w1). A lease
-// [From, To) is included iff From < w1 && To > w0.
+// [From, To) is included iff To > From (not cancelled) and
+// From < w1 && To > w0.
+//
+// Zero-length leases (To == From) are how Apply cancels an unwanted
+// pre-issued successor. They never held data and must not appear as
+// owners: otherwise queriers dial pods that return
+// partition_epoch_unavailable for every query window containing that
+// instant. Lookup/ActiveAt already ignore them via at.Before(To).
 //
 // This is the interval analogue of Lookup. A query whose interval spans
 // a partition->instance move fans out to every readcache that owned the
@@ -284,7 +294,7 @@ func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
 		return !entries[i].From.Before(w1)
 	})]
 	for _, e := range entries {
-		if !e.To.After(w0) {
+		if !e.To.After(e.From) || !e.To.After(w0) {
 			continue
 		}
 		seen[e.InstanceID] = struct{}{}
@@ -303,6 +313,7 @@ func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
 // bounds instead of collapsing to distinct instance IDs. Used for
 // diagnostics (the distributor's sampled routing-decision log), so a
 // human can see WHY each readcache was selected for a query window.
+// Zero-length (cancelled) leases are omitted; see OwnersDuring.
 func (l *Log) EntriesDuring(partitionID int32, w0, w1 time.Time) []LogEntry {
 	var out []LogEntry
 	entries := l.entriesForPartition(partitionID)
@@ -310,7 +321,7 @@ func (l *Log) EntriesDuring(partitionID int32, w0, w1 time.Time) []LogEntry {
 		return !entries[i].From.Before(w1)
 	})]
 	for _, e := range entries {
-		if !e.To.After(w0) {
+		if !e.To.After(e.From) || !e.To.After(w0) {
 			continue
 		}
 		out = append(out, e)
@@ -353,11 +364,12 @@ func (l *Log) Entries() []LogEntry {
 }
 
 // LiveEntries returns entries whose lease has not yet ended at `at`.
-// Includes active and pre-issued future leases.
+// Includes active and pre-issued future leases. Zero-length cancelled
+// leases are excluded (matching tier-1 assignment.Log.LiveEntries).
 func (l *Log) LiveEntries(at time.Time) []LogEntry {
 	out := make([]LogEntry, 0, len(l.entries))
 	for _, e := range l.entries {
-		if e.To.After(at) {
+		if e.To.After(at) && e.To.After(e.From) {
 			out = append(out, e)
 		}
 	}
@@ -378,7 +390,7 @@ func (l *Log) LeaseHorizon(at time.Time) time.Time {
 	}
 	chainEnd := make(map[chainKey]time.Time)
 	for _, e := range l.entries {
-		if !e.To.After(at) {
+		if !e.To.After(at) || !e.To.After(e.From) {
 			continue
 		}
 		k := chainKey{e.PartitionID, e.InstanceID}
