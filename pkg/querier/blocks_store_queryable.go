@@ -110,6 +110,7 @@ type blocksStoreQueryableMetrics struct {
 	storesHit prometheus.Histogram
 	refetches prometheus.Histogram
 
+	storesQueried                                     prometheus.Counter
 	blocksFound                                       prometheus.Counter
 	blocksQueried                                     prometheus.Counter
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
@@ -133,7 +134,10 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Help:    "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
 			Buckets: []float64{0, 1, 2},
 		}),
-
+		storesQueried: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_storegateway_queried_total",
+			Help: "Total number of requests to store-gateway instances for a single query. Splitting queried blocks into partitions can produce more than one request per store-gateway instance per query.",
+		}),
 		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_found_total",
 			Help: "Number of blocks found based on query time range.",
@@ -703,12 +707,13 @@ func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamR
 
 type queryFunc func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error)
 
-// storeGatewayQueryStats holds the per-query store-gateway histogram values. queryWithConsistencyCheck
-// returns it (rather than observing the histograms itself) so the caller observes them once per query.
+// storeGatewayQueryStats holds the per-query store-gateway metric values. queryWithConsistencyCheck
+// returns it (rather than updating the metrics itself) so the caller aggregates them once per query.
 type storeGatewayQueryStats struct {
-	storesHit int  // number of distinct store-gateway instances queried
-	refetches int  // number of retries due to missing blocks
-	queried   bool // whether the block store was actually queried (true only on the success path)
+	storesHit     int  // number of distinct store-gateway instances queried
+	storesQueried int  // number of requests to store-gateway instances (one per block partition, so >= storesHit)
+	refetches     int  // number of retries due to missing blocks
+	queried       bool // whether the block store was actually queried (true only on the success path)
 }
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
@@ -756,6 +761,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		remainingBlocks = knownBlocks
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
+		queriedStores   = 0
 	)
 
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
@@ -797,6 +803,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// Update the map of blocks we attempted to query.
 		for client, partitions := range clients {
 			touchedStores[client.RemoteAddress()] = struct{}{}
+			queriedStores += len(partitions)
 
 			for _, part := range partitions {
 				for _, blockID := range part {
@@ -809,7 +816,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// The next attempt should just query the missing blocks.
 		remainingBlocks = consistencyTracker.Check(queriedBlocks)
 		if len(remainingBlocks) == 0 {
-			return storeGatewayQueryStats{storesHit: len(touchedStores), refetches: attempt - 1, queried: true}, nil
+			return storeGatewayQueryStats{storesHit: len(touchedStores), storesQueried: queriedStores, refetches: attempt - 1, queried: true}, nil
 		}
 
 		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))
@@ -861,10 +868,11 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 // whole query, summed across the compartments that were queried.
 func (q *blocksStoreQuerier) queryCompartmentsWithConsistencyCheck(ctx context.Context, targets []int, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc) error {
 	var (
-		statsMtx   sync.Mutex
-		storesHit  int
-		refetches  int
-		anyQueried bool
+		statsMtx      sync.Mutex
+		storesHit     int
+		storesQueried int
+		refetches     int
+		anyQueried    bool
 	)
 
 	err := q.forEachCompartment(ctx, targets, func(ctx context.Context, c blocksStoreCompartment) error {
@@ -875,6 +883,7 @@ func (q *blocksStoreQuerier) queryCompartmentsWithConsistencyCheck(ctx context.C
 
 		statsMtx.Lock()
 		storesHit += stats.storesHit
+		storesQueried += stats.storesQueried
 		refetches += stats.refetches
 		anyQueried = anyQueried || stats.queried
 		statsMtx.Unlock()
@@ -885,6 +894,7 @@ func (q *blocksStoreQuerier) queryCompartmentsWithConsistencyCheck(ctx context.C
 	}
 
 	q.metrics.storesHit.Observe(float64(storesHit))
+	q.metrics.storesQueried.Add(float64(storesQueried))
 	if q.metrics.compartmentsHit != nil {
 		q.metrics.compartmentsHit.Observe(float64(len(targets)))
 	}
