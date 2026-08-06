@@ -5,6 +5,7 @@ package selectors
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/matchers"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -127,7 +129,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 }
 
 // reportCardinality records the number of series selected by this selector (and each of its subsets)
-// in the query stats, keyed by the selector's matchers and queried time range.
+// in the query stats.
 //
 // The matchers are taken from the original expression (Selector.Matchers and each subset's filter),
 // ignoring any additional matchers pushed down by callers of SeriesMetadata.
@@ -142,15 +144,30 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	minT, maxT := s.getQueriedTimeRange()
 
 	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
-		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
+		Matchers:    labelMatchersFromMatchers(s.Matchers),
 		MinT:        minT,
 		MaxT:        maxT,
 		SeriesCount: uint64(seriesCount),
 	})
 
+	if len(s.Subsets) == 0 {
+		return
+	}
+
+	converted, err := s.Matchers.ToPrometheusType() // TODO: do this once, change mergeMatchers to work with labels.Matcher
+	if err != nil {
+		panic(fmt.Sprintf("this should never happen: could not parse matchers again: %v", err))
+	}
+
 	for _, subset := range s.Subsets {
+		combined := make([]*labels.Matcher, 0, len(s.Matchers)+len(subset.Filter))
+		combined = append(combined, converted...)
+		combined = append(combined, subset.Filter...)
+
+		reduced, _ := matchers.Reduce(combined, false)
+
 		queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
-			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
+			Matchers:    labelMatchersFromPrometheusMatchers(reduced),
 			MinT:        minT,
 			MaxT:        maxT,
 			SeriesCount: subset.matchingSeriesCount,
@@ -158,12 +175,10 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	}
 }
 
-// labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
-// stats.LabelMatcher representation.
-func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []stats.LabelMatcher {
-	out := make([]stats.LabelMatcher, 0, len(base)+len(filter))
+func labelMatchersFromMatchers(matchers types.Matchers) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
 
-	for _, m := range base {
+	for _, m := range matchers {
 		out = append(out, stats.LabelMatcher{
 			Type:  m.Type,
 			Name:  m.Name,
@@ -171,7 +186,13 @@ func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []
 		})
 	}
 
-	for _, m := range filter {
+	return out
+}
+
+func labelMatchersFromPrometheusMatchers(matchers []*labels.Matcher) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
+
+	for _, m := range matchers {
 		out = append(out, stats.LabelMatcher{
 			Type:  m.Type,
 			Name:  m.Name,

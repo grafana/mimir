@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/matchers"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 // SortLabelsAndMatchers is an optimization pass that ensures that all label names and matchers are sorted.
@@ -28,11 +27,11 @@ func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr, _ *pl
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
 			// Note that VectorSelectors sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
-			slices.SortFunc(expr.LabelMatchers, compareMatchers)
+			matchers.Sort(expr.LabelMatchers)
 
 		case *parser.MatrixSelector:
 			// Note that MatrixSelectors sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
-			slices.SortFunc(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers, compareMatchers)
+			matchers.Sort(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers)
 
 		case *parser.BinaryExpr:
 			if expr.VectorMatching != nil {
@@ -53,8 +52,4 @@ func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr, _ *pl
 	})
 
 	return expr, nil
-}
-
-func compareMatchers(a, b *labels.Matcher) int {
-	return core.CompareMatchers(a.Name, b.Name, a.Type, b.Type, a.Value, b.Value)
 }

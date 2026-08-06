@@ -236,7 +236,10 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
 	lookbackDelta := 5 * time.Minute
 
-	baseMatchers := types.Matchers{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
+	baseMatchers := types.Matchers{
+		{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+		{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+	}
 	expectedMinT, expectedMaxT := ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
 
 	newSelector := func(ctx context.Context) *Selector {
@@ -262,7 +265,10 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 			require.Equal(t, []stats.SelectorCardinality{
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 3,
@@ -279,7 +285,10 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 			require.Equal(t, []stats.SelectorCardinality{
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
@@ -294,7 +303,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 			s := newSelector(ctx)
 			s.Subsets = []Subset{
 				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "instance", "c")}},
 			}
 
 			defer s.Close()
@@ -306,19 +315,29 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 			require.Equal(t, []stats.SelectorCardinality{
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 3,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"}, // Matcher reduction should be applied so that this selector matches the original value in the expression.
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 2,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+						{Type: labels.MatchEqual, Name: "instance", Value: "c"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 1,
@@ -331,7 +350,7 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 			s := newSelector(ctx)
 			s.Subsets = []Subset{
 				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "instance", "c")}},
 			}
 
 			defer s.Close()
@@ -340,19 +359,29 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 
 			require.Equal(t, []stats.SelectorCardinality{
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"}, // Matcher reduction should be applied so that this selector matches the original value in the expression.
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchRegexp, Name: "env", Value: "(prod|dev)"},
+						{Type: labels.MatchEqual, Name: "instance", Value: "c"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
