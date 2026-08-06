@@ -374,9 +374,12 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 }
 
 func genEqualsSubsetMatchers(a, b SubsetMatchers) bool {
-	return slices.EqualFunc(a.Matchers, b.Matchers, func(a, b *LabelMatcher) bool {
+	return slices.EqualFunc(a.AllMatchers, b.AllMatchers, func(a, b *LabelMatcher) bool {
 		return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-	})
+	}) &&
+		slices.EqualFunc(a.Filter, b.Filter, func(a, b *LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		})
 }
 
 func (n *NoOp) Child(idx int) planning.Node {

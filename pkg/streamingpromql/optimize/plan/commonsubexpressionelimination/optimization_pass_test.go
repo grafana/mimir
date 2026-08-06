@@ -704,7 +704,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
-						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: DuplicateFilter: {env="bar"}, subset index: 0
 						- ref#1 Duplicate ...
 			`,
@@ -718,7 +718,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
-						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DuplicateFilter: {env="bar"}, subset index: 0
 							- ref#1 Duplicate ...
@@ -734,7 +734,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
-						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+						- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DuplicateFilter: {env="bar"}, subset index: 0
 							- ref#1 Duplicate ...
@@ -753,7 +753,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate
-								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"}
+								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: sum_over_time(...)
 							- DuplicateFilter: {env="bar"}, subset index: 0
@@ -771,7 +771,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate
-								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"}
+								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: sum_over_time(...)
@@ -793,7 +793,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate
-								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"}
+								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: sum_over_time(...)
@@ -816,7 +816,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate
-								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"}, {env="foo"}
+								- MatrixSelector: {__name__="some_metric"}[5m0s], subsets: {env="bar"} ({__name__="some_metric", env="bar"}), {env="foo"} ({__name__="some_metric", env="foo"})
 					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: sum_over_time(...)
@@ -856,7 +856,7 @@ func TestOptimizationPass(t *testing.T) {
 						- ref#1 Duplicate
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"}
+									- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"} ({__name__="foo", status="success"})
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
@@ -871,7 +871,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: FunctionCall: absent(...) with labels {status="success"}
 						- DuplicateFilter: {status="success"}, subset index: 0
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="foo"}, subsets: {status="success"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"} ({__name__="foo", status="success"})
 					- RHS: FunctionCall: absent(...)
 						- ref#1 Duplicate ...
 			`,
@@ -890,7 +890,7 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: rate(...)
 							- DuplicateFilter: {__name__!="foo_2"}, subset index: 0
 								- ref#1 Duplicate
-									- MatrixSelector: {__name__=~"foo.*"}[5m0s], subsets: {__name__!="foo_2"}
+									- MatrixSelector: {__name__=~"foo.*"}[5m0s], subsets: {__name__!="foo_2"} ({__name__!="foo_2", __name__=~"foo.*"})
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
 							- ref#1 Duplicate ...
@@ -907,7 +907,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: AggregateExpression: sum
 						- DuplicateFilter: {status="success"}, subset index: 0
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="foo"}, subsets: {status="success"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"} ({__name__="foo", status="success"})
 					- RHS: AggregateExpression: sum
 						- ref#1 Duplicate ...
 			`,
@@ -925,7 +925,7 @@ func TestOptimizationPass(t *testing.T) {
 							- ref#1 Duplicate
 								- DeduplicateAndMerge
 									- FunctionCall: rate(...)
-										- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"}
+										- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"} ({__name__="foo", status="success"})
 					- RHS: AggregateExpression: sum
 						- ref#1 Duplicate ...
 			`,
@@ -943,7 +943,7 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: abs(...)
 								- AggregateExpression: max
 									- ref#1 Duplicate
-										- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+										- VectorSelector: {__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"})
 					- RHS: BinaryExpression: LHS + RHS
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: abs(...)
@@ -967,7 +967,7 @@ func TestOptimizationPass(t *testing.T) {
 								- AggregateExpression: max
 									- DuplicateFilter: {env="prod"}, subset index: 0
 										- ref#2 Duplicate
-											- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+											- VectorSelector: {__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"})
 					- RHS: BinaryExpression: LHS + RHS
 						- LHS: ref#1 Duplicate ...
 						- RHS: DeduplicateAndMerge
@@ -987,7 +987,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: BinaryExpression: LHS + RHS
 						- LHS: DuplicateFilter: {env="bar"}, subset index: 0
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="foo"}, subsets: {env="bar"}, {env="baz"}
+								- VectorSelector: {__name__="foo"}, subsets: {env="bar"} ({__name__="foo", env="bar"}), {env="baz"} ({__name__="foo", env="baz"})
 						- RHS: DuplicateFilter: {env="baz"}, subset index: 1
 							- ref#1 Duplicate ...
 					- RHS: ref#1 Duplicate ...
@@ -1003,7 +1003,7 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS + RHS
 						- LHS: ref#1 Duplicate
-							- VectorSelector: {__name__="foo"}, subsets: {env="baz"}, {env="bar"}
+							- VectorSelector: {__name__="foo"}, subsets: {env="baz"} ({__name__="foo", env="baz"}), {env="bar"} ({__name__="foo", env="bar"})
 						- RHS: DuplicateFilter: {env="baz"}, subset index: 0
 							- ref#1 Duplicate ...
 					- RHS: DuplicateFilter: {env="bar"}, subset index: 1
@@ -1021,7 +1021,7 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: BinaryExpression: LHS + RHS
 						- LHS: DuplicateFilter: {env="baz"}, subset index: 0
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="foo"}, subsets: {env="baz"}, {env="bar"}
+								- VectorSelector: {__name__="foo"}, subsets: {env="baz"} ({__name__="foo", env="baz"}), {env="bar"} ({__name__="foo", env="bar"})
 						- RHS: ref#1 Duplicate ...
 					- RHS: DuplicateFilter: {env="bar"}, subset index: 1
 						- ref#1 Duplicate ...
@@ -1040,7 +1040,7 @@ func TestOptimizationPass(t *testing.T) {
 							- LHS: ref#2 Duplicate
 								- AggregateExpression: topk
 									- expression: ref#1 Duplicate
-										- VectorSelector: {__name__="foo"}, subsets: {env="bar"}
+										- VectorSelector: {__name__="foo"}, subsets: {env="bar"} ({__name__="foo", env="bar"})
 									- parameter: NumberLiteral: 5
 							- RHS: ref#3 Duplicate
 								- AggregateExpression: topk
@@ -1063,7 +1063,7 @@ func TestOptimizationPass(t *testing.T) {
 						- LHS: BinaryExpression: LHS + RHS
 							- LHS: AggregateExpression: topk
 								- expression: ref#1 Duplicate
-									- VectorSelector: {__name__="foo"}, subsets: {env="bar"}
+									- VectorSelector: {__name__="foo"}, subsets: {env="bar"} ({__name__="foo", env="bar"})
 								- parameter: NumberLiteral: 5
 							- RHS: AggregateExpression: topk
 								- expression: DuplicateFilter: {env="bar"}, subset index: 0
@@ -1098,7 +1098,7 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS / RHS
 					- LHS: DuplicateFilter: {status="success"}, subset index: 0
 						- ref#1 Duplicate
-							- VectorSelector: {__name__="metric_name", status=~"(success|canceled)"}, subsets: {status="success"}
+							- VectorSelector: {__name__="metric_name", status=~"(success|canceled)"}, subsets: {status="success"} ({__name__="metric_name", status="success"})
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
@@ -1114,7 +1114,7 @@ func TestOptimizationPass(t *testing.T) {
 						- ref#1 Duplicate
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="metric_name", status=~"(success|canceled)"}[5m0s], subsets: {status="success"}
+									- MatrixSelector: {__name__="metric_name", status=~"(success|canceled)"}[5m0s], subsets: {status="success"} ({__name__="metric_name", status="success"})
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
@@ -1171,7 +1171,7 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS / RHS
 					- LHS: FunctionCall: scalar(...)
 						- ref#1 Duplicate
-							- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+							- VectorSelector: {__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"})
 					- RHS: BinaryExpression: LHS + RHS
 						- LHS: FunctionCall: scalar(...)
 							- DuplicateFilter: {env="prod"}, subset index: 0
@@ -1190,7 +1190,7 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS / RHS
 					- LHS: FunctionCall: scalar(...)
 						- ref#1 Duplicate
-							- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+							- VectorSelector: {__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"})
 					- RHS: BinaryExpression: LHS + RHS
 						- LHS: FunctionCall: scalar(...)
 							- DuplicateFilter: {env="prod"}, subset index: 0
@@ -1425,7 +1425,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 					- FunctionCall: histogram_sum(...)
 						- BinaryExpression: LHS * RHS
 							- LHS: ref#1 Duplicate
-								- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+								- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 							- RHS: DeduplicateAndMerge
 								- FunctionCall: histogram_quantile(...)
 									- param 0: NumberLiteral: 0.5
@@ -1440,7 +1440,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: histogram_sum(...)
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="some_metric"}, skip histogram buckets, subsets: {env="bar"}
+								- VectorSelector: {__name__="some_metric"}, skip histogram buckets, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: histogram_count(...)
 							- DuplicateFilter: {env="bar"}, subset index: 0
@@ -1454,7 +1454,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 					- LHS: DeduplicateAndMerge
 						- FunctionCall: histogram_sum(...)
 							- ref#1 Duplicate
-								- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+								- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: histogram_quantile(...)
 							- param 0: NumberLiteral: 0.5
@@ -1470,7 +1470,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 						- FunctionCall: histogram_sum(...)
 							- DuplicateFilter: {env="bar"}, subset index: 0
 								- ref#1 Duplicate
-									- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"}
+									- VectorSelector: {__name__="some_metric"}, subsets: {env="bar"} ({__name__="some_metric", env="bar"})
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: histogram_quantile(...)
 							- param 0: NumberLiteral: 0.5
@@ -1529,7 +1529,7 @@ func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
 	expectedPlanWithSSE := `
 		- BinaryExpression: LHS + RHS
 			- LHS: ref#1 Duplicate
-				- VectorSelector: {__name__="foo"}, subsets: {env="bar"}
+				- VectorSelector: {__name__="foo"}, subsets: {env="bar"} ({__name__="foo", env="bar"})
 			- RHS: DuplicateFilter: {env="bar"}, subset index: 0
 				- ref#1 Duplicate ...
 	`

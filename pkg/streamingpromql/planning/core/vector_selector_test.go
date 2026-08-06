@@ -114,23 +114,41 @@ func TestVectorSelector_Describe(t *testing.T) {
 				VectorSelectorDetails: &VectorSelectorDetails{
 					Matchers: singleMatcher,
 					Subsets: []SubsetMatchers{
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
 					},
 				},
 			},
-			expected: `{__name__="foo"}, subsets: {env="prod"}`,
+			expected: `{__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"})`,
 		},
 		"two subsets": {
 			node: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
 					Matchers: singleMatcher,
 					Subsets: []SubsetMatchers{
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}}},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "test"},
+							},
+						},
 					},
 				},
 			},
-			expected: `{__name__="foo"}, subsets: {env="prod"}, {env="test"}`,
+			expected: `{__name__="foo"}, subsets: {env="prod"} ({__name__="foo", env="prod"}), {env="test"} ({__name__="foo", env="test"})`,
 		},
 	}
 
@@ -429,7 +447,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -441,7 +459,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -456,7 +474,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -468,7 +486,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
 						},
 					},
 				},

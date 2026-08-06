@@ -538,7 +538,12 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 		var newChild planning.Node = duplicate
 
 		if filters := group.getFilterForPath(pathIdx); len(filters) > 0 {
-			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, filters)
+			selector, _, err := path.Selector()
+			if err != nil {
+				return false, err
+			}
+
+			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, selector.GetMatchers(), filters)
 			if err != nil {
 				return false, err
 			}
@@ -552,7 +557,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 			}
 		}
 
-		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
+		err = parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
 		if err != nil {
 			return false, err
 		}
@@ -566,26 +571,24 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 	return false, nil
 }
 
-func (e *OptimizationPass) findOrAddSubsetToSelector(selector planning.Node, subset []*core.LabelMatcher) (int, error) {
-	switch selector := selector.(type) {
+func (e *OptimizationPass) findOrAddSubsetToSelector(targetSelector planning.Node, allMatchers []*core.LabelMatcher, subset []*core.LabelMatcher) (int, error) {
+	switch targetSelector := targetSelector.(type) {
 	case *core.VectorSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	case *core.MatrixSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	default:
-		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", selector)
+		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", targetSelector)
 	}
 }
 
-func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, subset []*core.LabelMatcher) ([]core.SubsetMatchers, int) {
+func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, allMatchers []*core.LabelMatcher, subset []*core.LabelMatcher) ([]core.SubsetMatchers, int) {
 	idx := slices.IndexFunc(subsets, func(e core.SubsetMatchers) bool {
-		return slices.EqualFunc(e.Matchers, subset, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-			return a.Equal(b)
-		})
+		return labelMatcherSlicesEqual(e.Filter, subset) && labelMatcherSlicesEqual(e.AllMatchers, allMatchers)
 	})
 
 	if idx != -1 {
@@ -593,7 +596,13 @@ func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, 
 	}
 
 	idx = len(subsets)
-	return append(subsets, core.SubsetMatchers{Matchers: subset}), idx
+	return append(subsets, core.SubsetMatchers{Filter: subset, AllMatchers: allMatchers}), idx
+}
+
+func labelMatcherSlicesEqual(first, second []*core.LabelMatcher) bool {
+	return slices.EqualFunc(first, second, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
+		return a.Equal(b)
+	})
 }
 
 // findCommonSubexpressionLength returns the length of the common expression present at the end of each path

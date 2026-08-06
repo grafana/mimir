@@ -156,11 +156,17 @@ func TestMatrixSelector_Describe(t *testing.T) {
 					Matchers: singleMatcher,
 					Range:    time.Minute,
 					Subsets: []SubsetMatchers{
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
 					},
 				},
 			},
-			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"}`,
+			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"} ({__name__="foo", env="prod"})`,
 		},
 		"two subsets": {
 			node: &MatrixSelector{
@@ -168,12 +174,24 @@ func TestMatrixSelector_Describe(t *testing.T) {
 					Matchers: singleMatcher,
 					Range:    time.Minute,
 					Subsets: []SubsetMatchers{
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}}},
-						{Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}}},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
+						{
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							AllMatchers: []*LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "test"},
+							},
+						},
 					},
 				},
 			},
-			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"}, {env="test"}`,
+			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"} ({__name__="foo", env="prod"}), {env="test"} ({__name__="foo", env="test"})`,
 		},
 	}
 
@@ -616,7 +634,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range: time.Minute,
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -629,7 +647,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range: time.Minute,
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -645,7 +663,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range: time.Minute,
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -658,7 +676,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range: time.Minute,
 					Subsets: []SubsetMatchers{
 						{
-							Matchers: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
 						},
 					},
 				},
