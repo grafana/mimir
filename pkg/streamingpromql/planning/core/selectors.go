@@ -62,7 +62,10 @@ func describeSelector(
 				builder.WriteString(", ")
 			}
 
-			FormatMatchers(builder, subset.Matchers)
+			FormatMatchers(builder, subset.Filter)
+			builder.WriteString(" (")
+			FormatMatchers(builder, subset.AllMatchers)
+			builder.WriteRune(')')
 		}
 	}
 

@@ -539,7 +539,7 @@ func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
 					- ref#1 Duplicate
 						- SplitFunctionCall
 							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__="foo"}[3h0m0s], subsets: {a="1"}
+								- MatrixSelector: {__name__="foo"}[3h0m0s], subsets: {a="1"} ({__name__="foo", a="1"})
 				- RHS: ref#1 Duplicate ...
 		`), p.String())
 	})
@@ -598,7 +598,14 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 		Range:              4 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 112, End: 132},
 		Subsets: []core.SubsetMatchers{
-			{Matchers: []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}}},
+			{
+				Filter: []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
+				AllMatchers: []*core.LabelMatcher{
+					{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+					{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
+					{Name: "job", Type: labels.MatchEqual, Value: "test"},
+				},
+			},
 		},
 	}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
@@ -612,6 +619,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// The key must contain the full histogram (skip=false fetches buckets).
 	sharedKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, broadSelector, params), 2*hourInMs-1, 4*hourInMs-1)
 	require.NoError(t, err)
+	require.Contains(t, backend.Entries, sharedKey)
 	var sharedEntry cache.CachedSeries
 	require.NoError(t, sharedEntry.Unmarshal(backend.Entries[sharedKey].Value))
 	var sharedList rangevectorsplitting.FirstLastOverTimeIntermediateList
@@ -712,7 +720,14 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		Range:              5 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
 		Subsets: []core.SubsetMatchers{
-			{Matchers: []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}}},
+			{
+				Filter: []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
+				AllMatchers: []*core.LabelMatcher{
+					{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+					{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+					{Name: "region", Type: labels.MatchEqual, Value: "us"},
+				},
+			},
 		},
 	}}
 

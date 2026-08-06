@@ -160,12 +160,15 @@ func SubsetsToSelectorType(subsets []SubsetMatchers) ([]selectors.Subset, error)
 
 	converted := make([]selectors.Subset, 0, len(subsets))
 	for _, subset := range subsets {
-		m, err := LabelMatchersToPrometheusType(subset.Matchers)
+		filter, err := LabelMatchersToPrometheusType(subset.Filter)
 		if err != nil {
 			return nil, err
 		}
 
-		converted = append(converted, selectors.Subset{Filter: m})
+		converted = append(converted, selectors.Subset{
+			Filter:      filter,
+			AllMatchers: LabelMatchersToOperatorType(subset.AllMatchers),
+		})
 	}
 
 	return converted, nil

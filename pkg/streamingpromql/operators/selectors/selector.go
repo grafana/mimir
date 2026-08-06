@@ -66,7 +66,8 @@ type Selector struct {
 }
 
 type Subset struct {
-	Filter []*labels.Matcher
+	Filter      []*labels.Matcher
+	AllMatchers types.Matchers
 
 	matchingSeries      []bool // One entry per series. True means the corresponding series matches this subset.
 	matchingSeriesCount uint64 // The number of series that match this subset.
@@ -129,7 +130,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 // reportCardinality records the number of series selected by this selector (and each of its subsets)
 // in the query stats, keyed by the selector's matchers and queried time range.
 //
-// The matchers are taken from the original expression (Selector.Matchers and each subset's filter),
+// The matchers are taken from the original expression (Selector.Matchers / Subset.AllMatchers),
 // ignoring any additional matchers pushed down by callers of SeriesMetadata.
 func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	s.haveReportedCardinality = true
@@ -142,7 +143,7 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	minT, maxT := s.getQueriedTimeRange()
 
 	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
-		Matchers:    labelMatchersFromMatchers(s.Matchers, nil),
+		Matchers:    labelMatchersFromMatchers(s.Matchers),
 		MinT:        minT,
 		MaxT:        maxT,
 		SeriesCount: uint64(seriesCount),
@@ -150,7 +151,7 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 
 	for _, subset := range s.Subsets {
 		queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
-			Matchers:    labelMatchersFromMatchers(s.Matchers, subset.Filter),
+			Matchers:    labelMatchersFromMatchers(subset.AllMatchers),
 			MinT:        minT,
 			MaxT:        maxT,
 			SeriesCount: subset.matchingSeriesCount,
@@ -158,20 +159,11 @@ func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
 	}
 }
 
-// labelMatchersFromMatchers converts the given base matchers and optional subset filter to the
-// stats.LabelMatcher representation.
-func labelMatchersFromMatchers(base types.Matchers, filter []*labels.Matcher) []stats.LabelMatcher {
-	out := make([]stats.LabelMatcher, 0, len(base)+len(filter))
+// labelMatchersFromMatchers converts the given matchers to their stats.LabelMatcher representation.
+func labelMatchersFromMatchers(matchers types.Matchers) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
 
-	for _, m := range base {
-		out = append(out, stats.LabelMatcher{
-			Type:  m.Type,
-			Name:  m.Name,
-			Value: m.Value,
-		})
-	}
-
-	for _, m := range filter {
+	for _, m := range matchers {
 		out = append(out, stats.LabelMatcher{
 			Type:  m.Type,
 			Name:  m.Name,

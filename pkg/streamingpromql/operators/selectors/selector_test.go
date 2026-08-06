@@ -293,8 +293,22 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 			qs, ctx := stats.ContextWithEmptyStats(context.Background())
 			s := newSelector(ctx)
 			s.Subsets = []Subset{
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
 			}
 
 			defer s.Close()
@@ -312,13 +326,21 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 					SeriesCount: 3,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 2,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 1,
@@ -330,8 +352,22 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 			qs, ctx := stats.ContextWithEmptyStats(context.Background())
 			s := newSelector(ctx)
 			s.Subsets = []Subset{
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")}},
-				{Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")}},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
 			}
 
 			defer s.Close()
@@ -346,13 +382,21 @@ func TestSelector_ReportsCardinality(t *testing.T) {
 					SeriesCount: 0,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "prod"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
 				},
 				{
-					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}, {Type: labels.MatchEqual, Name: "env", Value: "dev"}},
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
 					MinT:        expectedMinT,
 					MaxT:        expectedMaxT,
 					SeriesCount: 0,
