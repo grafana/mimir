@@ -52,6 +52,17 @@ func (m *authFactoryMock) NewUserpassAuth(username string, password string, opts
 	return args.Get(0).(*userpass.UserpassAuth), args.Error(1)
 }
 
+// newUnreachableClient returns a client whose login attempts fail immediately
+// instead of hitting the network.
+func newUnreachableClient(t *testing.T) *api.Client {
+	config := api.DefaultConfig()
+	config.Address = "http://127.0.0.1:0"
+	config.MaxRetries = 0
+	client, err := api.NewClient(config)
+	require.NoError(t, err)
+	return client
+}
+
 func TestAppRoleAuthenticate(t *testing.T) {
 	testRoleID := "testRoleID"
 	testSecretID := "testSecretID"
@@ -76,8 +87,7 @@ func TestAppRoleAuthenticate(t *testing.T) {
 	factoryMock := authFactoryMock{}
 	factoryMock.On("NewAppRoleAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&approle.AppRoleAuth{}, nil)
 
-	client, err := api.NewClient(nil)
-	require.NoError(t, err)
+	client := newUnreachableClient(t)
 	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"), mock.AnythingOfType("approle.LoginOption"))
 }
@@ -104,8 +114,7 @@ func TestAppRoleAuthenticateSingleLoginOption(t *testing.T) {
 	factoryMock := authFactoryMock{}
 	factoryMock.On("NewAppRoleAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&approle.AppRoleAuth{}, nil)
 
-	client, err := api.NewClient(nil)
-	require.NoError(t, err)
+	client := newUnreachableClient(t)
 	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"))
 }
@@ -135,8 +144,7 @@ func TestKubernetesAuthenticate(t *testing.T) {
 	factoryMock := authFactoryMock{}
 	factoryMock.On("NewKubernetesAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&kubernetes.KubernetesAuth{}, nil)
 
-	client, err := api.NewClient(nil)
-	require.NoError(t, err)
+	client := newUnreachableClient(t)
 	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
 }
@@ -164,8 +172,7 @@ func TestKubernetesAuthenticateSingleLoginOption(t *testing.T) {
 	factoryMock := authFactoryMock{}
 	factoryMock.On("NewKubernetesAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&kubernetes.KubernetesAuth{}, nil)
 
-	client, err := api.NewClient(nil)
-	require.NoError(t, err)
+	client := newUnreachableClient(t)
 	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
 }
@@ -193,8 +200,7 @@ func TestUserpassAuthenticate(t *testing.T) {
 	factoryMock := authFactoryMock{}
 	factoryMock.On("NewUserpassAuth", mock.Anything, mock.Anything, mock.Anything).Return(&userpass.UserpassAuth{}, nil)
 
-	client, err := api.NewClient(nil)
-	require.NoError(t, err)
+	client := newUnreachableClient(t)
 	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewUserpassAuth", testUsername, testPassword, mock.AnythingOfType("userpass.LoginOption"))
 }
