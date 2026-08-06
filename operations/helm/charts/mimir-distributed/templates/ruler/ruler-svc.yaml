@@ -20,6 +20,7 @@ spec:
     - port: {{ include "mimir.serverHttpListenPort" . }}
       protocol: TCP
       name: http-metrics
+      appProtocol: http
       targetPort: http-metrics
     {{- if .Values.ruler.service.extraPorts }}
     {{- toYaml .Values.ruler.service.extraPorts | nindent 4 }}
