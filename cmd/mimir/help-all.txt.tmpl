@@ -1513,6 +1513,8 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.merge-duplicate-timeseries
+    	[experimental] Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by the ingesters.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
