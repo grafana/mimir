@@ -359,9 +359,9 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	ignoredUpdates := 0
 
 	for gk, byShard := range seenGroups {
-		var total uint64
+		var seenCardinality uint64
 		for _, count := range byShard {
-			total += count
+			seenCardinality += count
 		}
 
 		// Get all the cache keys (ie. buckets) that this seen selector maps to.
@@ -375,14 +375,33 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		for _, k := range keys {
 			existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.bucketMinT, maxT: k.bucketMaxT}]
 			updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
-			if haveExistingEstimate && (total == 0 || float64(total) < updateThreshold) {
+			if haveExistingEstimate && (seenCardinality == 0 || float64(seenCardinality) < updateThreshold) {
 				// The existing estimate is not above the threshold to write an updated entry,
 				// or both are 0, so leave it as-is.
+				spanLogger.DebugLog(
+					"msg", "skipping writing updated estimate to cache for selector",
+					"selector", gk.selector,
+					"bucket_min_t", k.bucketMinT,
+					"bucket_max_t", k.bucketMaxT,
+					"existing_estimate", existingEstimate,
+					"seen_cardinality", seenCardinality,
+				)
+
 				ignoredUpdates++
 				continue
 			}
 
-			entry := &SelectorCardinalityStatistics{Key: k.plain, Cardinality: total}
+			spanLogger.DebugLog(
+				"msg", "will write updated estimate to cache for selector",
+				"selector", gk.selector,
+				"bucket_min_t", k.bucketMinT,
+				"bucket_max_t", k.bucketMaxT,
+				"existing_estimate", existingEstimate,
+				"have_existing_estimate", haveExistingEstimate,
+				"seen_cardinality", seenCardinality,
+			)
+
+			entry := &SelectorCardinalityStatistics{Key: k.plain, Cardinality: seenCardinality}
 			data, err := entry.Marshal()
 			if err != nil {
 				return err
