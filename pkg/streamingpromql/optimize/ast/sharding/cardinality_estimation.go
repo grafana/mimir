@@ -324,91 +324,102 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		return nil
 	}
 
-	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and time range,
-	// then aggregate within each group. Different shards of the same logical selector each report a
-	// disjoint subset of the series, so their cardinalities are summed. A selector that is reported
-	// more than once with the same shard (for example the same selector appearing twice in a query
-	// without common-subexpression elimination) is counted once, using the maximum reported value.
+	// Group the reported cardinalities by selector (ignoring the query-shard matcher) and bucket time range,
+	// then aggregate within each group.
+	//
+	// Different shards of the same logical selector each report a disjoint subset of the series, so their cardinalities are
+	// summed.
+	//
+	// A selector that is reported more than once with the same shard (for example the same selector appearing twice in a
+	// query without common-subexpression elimination) is counted once, using the maximum reported value.
+	//
+	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
+	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
 	type groupKey struct {
-		selector   string
-		minT, maxT int64
+		selector               string
+		bucketMinT, bucketMaxT int64
 	}
-	seenGroups := make(map[groupKey]map[string]uint64)
+	type selectorInfo struct {
+		cardinalityByShard map[string]uint64
+		cacheKey           cacheKey
+	}
+	seenGroups := make(map[groupKey]selectorInfo)
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
-		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
 
-		byShard := seenGroups[gk]
-		if byShard == nil {
-			byShard = make(map[string]uint64)
-			seenGroups[gk] = byShard
+		// Get all the cache keys (ie. buckets) that this seen selector maps to.
+		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, selector, c.MinT, c.MaxT, false, spanLogger)
+		if err != nil {
+			return err
 		}
-		byShard[shard] = max(byShard[shard], c.SeriesCount)
+
+		for _, k := range keys {
+			gk := groupKey{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
+
+			if _, ok := seenGroups[gk]; !ok {
+				seenGroups[gk] = selectorInfo{
+					cacheKey:           k,
+					cardinalityByShard: make(map[string]uint64),
+				}
+			}
+
+			seenGroups[gk].cardinalityByShard[shard] = max(seenGroups[gk].cardinalityByShard[shard], c.SeriesCount)
+		}
 	}
 
 	estimatedGroups := make(map[groupKey]uint64)
 	estimatedCardinalities := queryStats.LoadEstimatedSelectorCardinalities()
 	for _, c := range estimatedCardinalities {
 		selector, _ := selectorStringWithoutShardingMatcher(c.Matchers) // Estimated cardinalities should have no shard matcher.
-		gk := groupKey{selector: selector, minT: c.MinT, maxT: c.MaxT}
+		gk := groupKey{selector: selector, bucketMinT: c.MinT, bucketMaxT: c.MaxT}
 		estimatedGroups[gk] = c.SeriesCount
 	}
 
 	entries := make(map[string][]byte)
 	ignoredUpdates := 0
 
-	for gk, byShard := range seenGroups {
+	for gk, group := range seenGroups {
 		var seenCardinality uint64
-		for _, count := range byShard {
+		for _, count := range group.cardinalityByShard {
 			seenCardinality += count
 		}
 
-		// Get all the cache keys (ie. buckets) that this seen selector maps to.
-		// We don't need to do the same thing below for the estimates, because they're read and stored in the stats exactly
-		// as they were in the cache (ie. bucketed).
-		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, gk.selector, gk.minT, gk.maxT, false, spanLogger)
+		existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, bucketMinT: gk.bucketMinT, bucketMaxT: gk.bucketMaxT}]
+		updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
+		if haveExistingEstimate && (seenCardinality == 0 || float64(seenCardinality) < updateThreshold) {
+			// The existing estimate is not above the threshold to write an updated entry,
+			// or both are 0, so leave it as-is.
+			spanLogger.DebugLog(
+				"msg", "skipping writing updated estimate to cache for selector",
+				"selector", gk.selector,
+				"bucket_min_t", gk.bucketMinT,
+				"bucket_max_t", gk.bucketMaxT,
+				"existing_estimate", existingEstimate,
+				"seen_cardinality", seenCardinality,
+			)
+
+			ignoredUpdates++
+			continue
+		}
+
+		spanLogger.DebugLog(
+			"msg", "will write updated estimate to cache for selector",
+			"selector", gk.selector,
+			"bucket_min_t", gk.bucketMinT,
+			"bucket_max_t", gk.bucketMaxT,
+			"existing_estimate", existingEstimate,
+			"have_existing_estimate", haveExistingEstimate,
+			"seen_cardinality", seenCardinality,
+		)
+
+		entry := &SelectorCardinalityStatistics{Key: group.cacheKey.plain, Cardinality: seenCardinality}
+		data, err := entry.Marshal()
 		if err != nil {
 			return err
 		}
 
-		for _, k := range keys {
-			existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, minT: k.bucketMinT, maxT: k.bucketMaxT}]
-			updateThreshold := float64(existingEstimate) * (p.cfg.EstimateUpdateThreshold + 1)
-			if haveExistingEstimate && (seenCardinality == 0 || float64(seenCardinality) < updateThreshold) {
-				// The existing estimate is not above the threshold to write an updated entry,
-				// or both are 0, so leave it as-is.
-				spanLogger.DebugLog(
-					"msg", "skipping writing updated estimate to cache for selector",
-					"selector", gk.selector,
-					"bucket_min_t", k.bucketMinT,
-					"bucket_max_t", k.bucketMaxT,
-					"existing_estimate", existingEstimate,
-					"seen_cardinality", seenCardinality,
-				)
-
-				ignoredUpdates++
-				continue
-			}
-
-			spanLogger.DebugLog(
-				"msg", "will write updated estimate to cache for selector",
-				"selector", gk.selector,
-				"bucket_min_t", k.bucketMinT,
-				"bucket_max_t", k.bucketMaxT,
-				"existing_estimate", existingEstimate,
-				"have_existing_estimate", haveExistingEstimate,
-				"seen_cardinality", seenCardinality,
-			)
-
-			entry := &SelectorCardinalityStatistics{Key: k.plain, Cardinality: seenCardinality}
-			data, err := entry.Marshal()
-			if err != nil {
-				return err
-			}
-
-			entries[k.hashed] = data
-		}
+		entries[group.cacheKey.hashed] = data
 	}
 
 	spanLogger.DebugLog(

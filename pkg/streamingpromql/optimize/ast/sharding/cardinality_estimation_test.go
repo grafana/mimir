@@ -645,6 +645,29 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.ElementsMatch(t, expectedKeys, writtenKeys)
 		require.Equal(t, 2, c.SetCount)
 	})
+
+	t.Run("takes the maximum seen cardinality if selectors over different time ranges fall in the same bucket", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 7, MaxT: 7, SeriesCount: 2200})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+
+		writtenKeys := slices.Collect(maps.Keys(c.Entries))
+		expectedKeys, err := selectorCardinalityCacheKeys(ctx, cfg, originalExpression, `__name__="foo"`, 5, 7, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.Len(t, expectedKeys, 1, "invalid test case: expected both selectors' time range to fall into the same cache bucket")
+
+		expectedKey := expectedKeys[0].hashed
+		require.ElementsMatch(t, []string{expectedKey}, writtenKeys)
+		require.Equal(t, 1, c.SetCount)
+
+		written := SelectorCardinalityStatistics{}
+		require.NoError(t, written.Unmarshal(c.Entries[expectedKey].Value))
+		require.Equal(t, uint64(2200), written.Cardinality)
+	})
 }
 
 func setupCardinalityEstimationTest() (*caching.InMemoryCache, streamingpromql.CardinalityEstimationConfig) {
