@@ -4,7 +4,9 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: `cortex_ingester_ingested_samples_total` no longer counts samples that the TSDB silently dropped at commit time because the series already had a sample at the same timestamp; it now reflects the samples actually stored. #TBD
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
+* [ENHANCEMENT] Ingester: Duplicate samples silently dropped by the TSDB at commit time are now counted in `cortex_discarded_samples_total`: exact duplicates (same timestamp and value, e.g. client retries) under the new reason `same-value-for-timestamp`, and same-timestamp conflicts only detectable at commit time under the existing reason `new-value-for-timestamp`. The drops are also attributed per series in cost attribution. #TBD
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.

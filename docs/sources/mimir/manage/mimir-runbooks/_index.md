@@ -3866,10 +3866,13 @@ will remain in the `Terminated` state. This is harmless and will remain there un
 
 This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
+Samples that exactly duplicate an already-received sample (same timestamp and same value, for example due to client retries or duplicate shippers) are dropped without an error or log line, and are counted in the same metric with the label `reason="same-value-for-timestamp"`.
+
 Possible reasons for this are:
 
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
+- Multiple processes exporting metrics with the same identity (for example, prefork workers missing a `service.instance.id` resource attribute in OTLP setups), so their samples collide on the same series.
 
 ## Investigating query evaluation issues
 

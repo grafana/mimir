@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -34,6 +35,14 @@ import (
 type extendedAppender interface {
 	storage.Appender
 	storage.GetRef
+	// DiscardedSampleStatsReporter reports samples silently dropped at commit time
+	// because the series already had a sample at that timestamp; see
+	// tsdb.DiscardedSampleStats. Consulted after Commit to reconcile the ingester's
+	// optimistic per-Append accounting with what was actually stored. Making it part
+	// of extendedAppender (asserted at appender creation) guarantees a wrapper that
+	// fails to forward it is caught loudly on the first push rather than silently
+	// zeroing the duplicate accounting.
+	tsdb.DiscardedSampleStatsReporter
 }
 
 type pushStats struct {
@@ -46,6 +55,7 @@ type pushStats struct {
 	sampleTooOldCount           int
 	sampleTooFarInFutureCount   int
 	newValueForTimestampCount   int
+	sameValueForTimestampCount  int
 	perUserSeriesLimitCount     int
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
@@ -439,8 +449,38 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
+	// Reconcile the optimistic per-Append accounting with what the TSDB actually
+	// stored. Samples that shared a timestamp with an already-present sample are
+	// dropped silently at commit time: Append returned no error, so they were
+	// counted as succeeded above, but they were never stored. Reclassify them as
+	// discarded, split by whether their value differed from (new-value-for-timestamp)
+	// or matched (same-value-for-timestamp) the stored sample. Covers float,
+	// histogram and float-histogram samples; see tsdb.DiscardedSampleStats.
+	// Only reached after a successful Commit; the stats are undefined if Commit fails.
+	dropped := app.DiscardedSampleStats()
+	droppedNewValue := dropped.TotalDifferentValue()
+	droppedSameValue := dropped.TotalSameValue()
+	stats.newValueForTimestampCount += droppedNewValue
+	stats.sameValueForTimestampCount += droppedSameValue
+	stats.succeededSamplesCount -= droppedNewValue + droppedSameValue
+
+	// Attribute the dropped samples to their series for per-series cost attribution.
+	// This targets cortex_discarded_attributed_samples_total, distinct from the
+	// per-user cortex_discarded_samples_total handled via the stats counts above.
+	if droppedNewValue+droppedSameValue > 0 {
+		cast := i.costAttributionMgr.SampleTracker(userID)
+		for _, d := range dropped.SameTimestampDifferentValue {
+			cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), float64(d.Count), reasonNewValueForTimestamp, startAppend)
+		}
+		for _, d := range dropped.SameTimestampSameValue {
+			cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), float64(d.Count), reasonSameValueForTimestamp, startAppend)
+		}
+	}
+
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if stats.succeededSamplesCount > 0 {
+	// Dropped duplicates count as activity here: the tenant is actively writing, and
+	// letting the TSDB idle-close under duplicate-only traffic would just churn reopens.
+	if stats.succeededSamplesCount > 0 || droppedNewValue+droppedSameValue > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
@@ -484,6 +524,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if stats.newValueForTimestampCount > 0 {
 		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+	}
+	if stats.sameValueForTimestampCount > 0 {
+		discarded.sameValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.sameValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
 		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
