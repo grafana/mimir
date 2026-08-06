@@ -19,6 +19,6 @@ message MultiAggregationInstanceDetails {
   // This gives us more flexibility to change how multi-aggregations work in the future.
   core.AggregateExpressionDetails aggregation = 1;
 
-  repeated core.LabelMatcher filters = 2;
+  repeated core.LabelMatcher filters = 2 [(gogoproto.nullable) = false];
   int64 subsetIndex = 3; // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this consumer.
 }

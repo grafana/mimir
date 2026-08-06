@@ -89,9 +89,7 @@ func (d *DuplicateFilter) ChildrenLabels() []string {
 func (d *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	oi, ok := other.(*DuplicateFilter)
 	return ok &&
-		slices.EqualFunc(d.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
-			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-		}) &&
+		slices.EqualFunc(d.Filters, oi.Filters, genEqualsLabelMatcher) &&
 		d.SubsetIndex == oi.SubsetIndex
 }
 

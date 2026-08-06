@@ -388,7 +388,7 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 	}
 }
 
-func hasConflictingEqualsMatchers(matchers []*core.LabelMatcher) bool {
+func hasConflictingEqualsMatchers(matchers []core.LabelMatcher) bool {
 	equals := make(map[string]string)
 
 	for _, m := range matchers {

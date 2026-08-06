@@ -15,7 +15,7 @@ import (
 )
 
 func TestVectorSelector_Describe(t *testing.T) {
-	singleMatcher := []*LabelMatcher{
+	singleMatcher := []LabelMatcher{
 		{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 	}
 
@@ -34,7 +34,7 @@ func TestVectorSelector_Describe(t *testing.T) {
 		"many matchers, no timestamp and no offset": {
 			node: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 						{Name: "env", Type: labels.MatchNotEqual, Value: "test"},
 						{Name: "region", Type: labels.MatchRegexp, Value: "au-.*"},
@@ -115,8 +115,8 @@ func TestVectorSelector_Describe(t *testing.T) {
 					Matchers: singleMatcher,
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
-							AllMatchers: []*LabelMatcher{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []LabelMatcher{
 								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 							},
@@ -132,15 +132,15 @@ func TestVectorSelector_Describe(t *testing.T) {
 					Matchers: singleMatcher,
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
-							AllMatchers: []*LabelMatcher{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []LabelMatcher{
 								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 							},
 						},
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
-							AllMatchers: []*LabelMatcher{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							AllMatchers: []LabelMatcher{
 								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 								{Name: "env", Type: labels.MatchEqual, Value: "test"},
 							},
@@ -169,7 +169,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"identical": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -177,7 +177,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -188,7 +188,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"different expression position": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -196,7 +196,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 3, End: 4},
@@ -207,7 +207,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"different type": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -219,7 +219,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"different offset": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -227,7 +227,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Offset:             time.Hour,
@@ -239,7 +239,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"one with timestamp, one without": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -247,7 +247,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Timestamp:          timestampOf(123),
@@ -259,7 +259,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"both with different timestamps": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Timestamp:          timestampOf(123),
@@ -268,7 +268,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Timestamp:          timestampOf(456),
@@ -280,7 +280,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"selectors with different name": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -288,7 +288,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name_2__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -299,7 +299,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"selectors with different type": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -307,7 +307,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -318,7 +318,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"selectors with different value": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -326,7 +326,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "bar"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -337,7 +337,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"one returning sample timestamps, one not": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition:     PositionRange{Start: 1, End: 2},
@@ -346,7 +346,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition:     PositionRange{Start: 1, End: 2},
@@ -359,7 +359,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"one with skipping histogram buckets enabled, one without": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -367,7 +367,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					SkipHistogramBuckets: true,
@@ -379,7 +379,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"one with smoothed and one without": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -388,7 +388,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -400,7 +400,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"both smoothed": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -409,7 +409,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -421,7 +421,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"both not smoothed": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -430,7 +430,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
@@ -442,24 +442,24 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"same subsets": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
@@ -469,24 +469,24 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 		"different subsets": {
 			a: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
 						},
 					},
 				},
 			},
 			b: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Subsets: []SubsetMatchers{
 						{
-							Filter: []*LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
 						},
 					},
 				},

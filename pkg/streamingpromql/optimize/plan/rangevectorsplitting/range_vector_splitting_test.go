@@ -591,7 +591,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// histogram_count's inner is Duplicate consumer of the same SplitFunctionCall.
 	// The shared split node's inner is the broad MatrixSelector, so there is a single cache entry.
 	broadSelector := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
 			{Name: "job", Type: labels.MatchEqual, Value: "test"},
 		},
@@ -599,8 +599,8 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 112, End: 132},
 		Subsets: []core.SubsetMatchers{
 			{
-				Filter: []*core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
-				AllMatchers: []*core.LabelMatcher{
+				Filter: []core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
+				AllMatchers: []core.LabelMatcher{
 					{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
 					{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
 					{Name: "job", Type: labels.MatchEqual, Value: "test"},
@@ -676,7 +676,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 
 	// Without SSE: the two MatrixSelectors retain their original matchers.
 	narrowNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
 			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 			{Name: "region", Type: labels.MatchEqual, Value: "us"},
@@ -685,7 +685,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 14, End: 54},
 	}}
 	broadNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
 			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 		},
@@ -713,7 +713,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	broadSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
 			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 		},
@@ -721,8 +721,8 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
 		Subsets: []core.SubsetMatchers{
 			{
-				Filter: []*core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
-				AllMatchers: []*core.LabelMatcher{
+				Filter: []core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
+				AllMatchers: []core.LabelMatcher{
 					{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
 					{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 					{Name: "region", Type: labels.MatchEqual, Value: "us"},
@@ -1144,7 +1144,7 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
 	inner := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers:           []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
+		Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
 		Range:              7 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
 	}}

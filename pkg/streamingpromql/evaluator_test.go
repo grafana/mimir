@@ -57,7 +57,7 @@ func TestEvaluator(t *testing.T) {
 	stringOperator := operators.NewStringLiteral(stringNode.Value, timeRange, memoryConsumptionTracker, stringNode.GetExpressionPosition().ToPrometheusType())
 
 	instantVectorNode := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
 			{Type: labels.MatchEqual, Name: "group", Value: "group-1"},
 		},
@@ -72,7 +72,7 @@ func TestEvaluator(t *testing.T) {
 	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, false, false)
 
 	rangeVectorNode := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
 			{Type: labels.MatchEqual, Name: "group", Value: "group-2"},
 		},

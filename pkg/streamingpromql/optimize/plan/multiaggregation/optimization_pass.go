@@ -46,7 +46,7 @@ type aggregateOverDuplicate struct {
 	aggregate                *core.AggregateExpression
 	aggregateParent          planning.Node
 	indexOfAggregateInParent int
-	filters                  []*core.LabelMatcher
+	filters                  []core.LabelMatcher
 	subsetIndex              int64
 }
 
@@ -102,7 +102,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			}
 
 			duplicate, isDuplicate := aggregate.Inner.(*commonsubexpressionelimination.Duplicate)
-			var filters []*core.LabelMatcher
+			var filters []core.LabelMatcher
 			var subsetIndex int64
 
 			if !isDuplicate {
