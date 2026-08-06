@@ -668,6 +668,60 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.NoError(t, written.Unmarshal(c.Entries[expectedKey].Value))
 		require.Equal(t, uint64(2200), written.Cardinality)
 	})
+
+	t.Run("takes the maximum seen cardinality across all different sharding factors, including an unsharded selector", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: 5, MaxT: 5, SeriesCount: 1100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_3")), MinT: 5, MaxT: 5, SeriesCount: 1300})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_3")), MinT: 5, MaxT: 5, SeriesCount: 100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("3_of_3")), MinT: 5, MaxT: 5, SeriesCount: 100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 1200})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+
+		writtenKeys := slices.Collect(maps.Keys(c.Entries))
+		expectedKeys, err := selectorCardinalityCacheKeys(ctx, cfg, originalExpression, `__name__="foo"`, 5, 5, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.Len(t, expectedKeys, 1, "invalid test case: expected result to fall into a single cache bucket")
+
+		expectedKey := expectedKeys[0].hashed
+		require.ElementsMatch(t, []string{expectedKey}, writtenKeys)
+		require.Equal(t, 1, c.SetCount)
+
+		written := SelectorCardinalityStatistics{}
+		require.NoError(t, written.Unmarshal(c.Entries[expectedKey].Value))
+		require.Equal(t, uint64(1100+1000), written.Cardinality)
+	})
+
+	t.Run("takes the maximum seen cardinality across all different sharding factors, and the unsharded selector has the highest cardinality", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2")), MinT: 5, MaxT: 5, SeriesCount: 1100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2")), MinT: 5, MaxT: 5, SeriesCount: 1000})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_3")), MinT: 5, MaxT: 5, SeriesCount: 1300})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_3")), MinT: 5, MaxT: 5, SeriesCount: 100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("3_of_3")), MinT: 5, MaxT: 5, SeriesCount: 100})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(), MinT: 5, MaxT: 5, SeriesCount: 2200})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+
+		writtenKeys := slices.Collect(maps.Keys(c.Entries))
+		expectedKeys, err := selectorCardinalityCacheKeys(ctx, cfg, originalExpression, `__name__="foo"`, 5, 5, false, newNoOpSpanLogger(t))
+		require.NoError(t, err)
+		require.Len(t, expectedKeys, 1, "invalid test case: expected result to fall into a single cache bucket")
+
+		expectedKey := expectedKeys[0].hashed
+		require.ElementsMatch(t, []string{expectedKey}, writtenKeys)
+		require.Equal(t, 1, c.SetCount)
+
+		written := SelectorCardinalityStatistics{}
+		require.NoError(t, written.Unmarshal(c.Entries[expectedKey].Value))
+		require.Equal(t, uint64(2200), written.Cardinality)
+	})
 }
 
 func setupCardinalityEstimationTest() (*caching.InMemoryCache, streamingpromql.CardinalityEstimationConfig) {

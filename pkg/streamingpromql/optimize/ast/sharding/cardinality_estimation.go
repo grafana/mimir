@@ -335,6 +335,9 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	// A selector that is reported more than once with the same shard (for example the same selector appearing twice in a
 	// query without common-subexpression elimination) is counted once, using the maximum reported value.
 	//
+	// A selector that is reported with different sharding factors (eg. due to subquery spinoff applying different sharding
+	// factors to different subqueries) is counted once, with the maximum reported value across all sharding factors.
+	//
 	// Multiple instances of the same selector that contribute to the same bucket (eg. in a split range query where the
 	// split time ranges don't align with bucket boundaries) are counted once, using the maximum reported value.
 	type groupKey struct {
@@ -342,10 +345,18 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		bucketMinT, bucketMaxT int64
 	}
 	type selectorInfo struct {
-		cardinalityByShard map[string]uint64
-		cacheKey           cacheKey
+		// cardinalityByShardingFactor contains one entry per sharding factor, and the value contains an element per shard.
+		// For example, if a selector was sharded into 3 shards (with 100, 200 and 300 series in each of the shards),
+		// and also sharded into 5 shards in a subquery (with 10, 20, 30, 40 and 50 series in each of the shards),
+		// then the map would contain:
+		//	3: [100, 200, 300],
+		//  5: [10, 20, 30, 40, 50]
+		cardinalityByShardingFactor map[uint64][]uint64
+
+		unshardedCardinality uint64
+		cacheKey             cacheKey
 	}
-	seenGroups := make(map[groupKey]selectorInfo)
+	seenGroups := make(map[groupKey]*selectorInfo)
 
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
@@ -359,14 +370,32 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 		for _, k := range keys {
 			gk := groupKey{selector: selector, bucketMinT: k.bucketMinT, bucketMaxT: k.bucketMaxT}
 
-			if _, ok := seenGroups[gk]; !ok {
-				seenGroups[gk] = selectorInfo{
-					cacheKey:           k,
-					cardinalityByShard: make(map[string]uint64),
+			group, ok := seenGroups[gk]
+			if !ok {
+				group = &selectorInfo{
+					cacheKey:                    k,
+					cardinalityByShardingFactor: make(map[uint64][]uint64),
 				}
+				seenGroups[gk] = group
 			}
 
-			seenGroups[gk].cardinalityByShard[shard] = max(seenGroups[gk].cardinalityByShard[shard], c.SeriesCount)
+			if shard == "" {
+				group.unshardedCardinality = max(group.unshardedCardinality, c.SeriesCount)
+				continue
+			}
+
+			index, shardCount, err := sharding.ParseShardIDLabelValue(shard)
+			if err != nil {
+				return fmt.Errorf("failed to parse shard label value in %v: %w", c.Matchers, err)
+			}
+
+			if _, ok := group.cardinalityByShardingFactor[shardCount]; !ok {
+				group.cardinalityByShardingFactor[shardCount] = make([]uint64, shardCount)
+			}
+
+			// ParseShardIDFromLabelValue validates that the index is within the bounds of shardCount,
+			// so we don't need to do a bounds check here.
+			group.cardinalityByShardingFactor[shardCount][index] = max(group.cardinalityByShardingFactor[shardCount][index], c.SeriesCount)
 		}
 	}
 
@@ -382,9 +411,16 @@ func (p *cardinalityStoringPostProcessor) PostProcess(ctx context.Context, origi
 	ignoredUpdates := 0
 
 	for gk, group := range seenGroups {
-		var seenCardinality uint64
-		for _, count := range group.cardinalityByShard {
-			seenCardinality += count
+		seenCardinality := group.unshardedCardinality
+
+		for _, cardinalityPerShard := range group.cardinalityByShardingFactor {
+			var cardinalityForShardingFactor uint64
+
+			for _, count := range cardinalityPerShard {
+				cardinalityForShardingFactor += count
+			}
+
+			seenCardinality = max(seenCardinality, cardinalityForShardingFactor)
 		}
 
 		existingEstimate, haveExistingEstimate := estimatedGroups[groupKey{selector: gk.selector, bucketMinT: gk.bucketMinT, bucketMaxT: gk.bucketMaxT}]
