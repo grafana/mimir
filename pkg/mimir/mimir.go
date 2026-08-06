@@ -999,7 +999,7 @@ type Mimir struct {
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
 
 	// ExtraQueryFrontendASTOptimizationPasses are registered on the query-frontend planner only (not the
-	// querier planner), so they do not affect queries planned by queriers such as ruler rule evaluations.
+	// querier planner).
 	// They let downstream builds run query-mutating logic as MQE optimisation passes whose effect is visible
 	// via the analysis endpoint. They run after the built-in passes and before sharding/subquery-spinoff, and
 	// must be set before the query planner modules initialise.
