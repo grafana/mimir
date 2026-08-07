@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -127,6 +128,84 @@ func NewRing(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*rin
 	}
 
 	return r, nil
+}
+
+// NewRingService returns a service that runs the querier ring client r, and doesn't reach the
+// running state until the ring holds at least one querier reporting a supported query plan
+// version, or waitTimeout elapses.
+//
+// Query-frontends can't plan any query before they've seen the querier ring (see
+// RingQueryPlanVersionProvider), so a query-frontend that reaches the running state earlier
+// reports itself ready and then fails every query it receives until the ring is populated.
+func NewRingService(r *ring.Ring, waitTimeout time.Duration, logger log.Logger) services.Service {
+	watcher := services.NewFailureWatcher()
+
+	return services.NewBasicService(
+		func(ctx context.Context) error {
+			watcher.WatchService(r)
+
+			if err := services.StartAndAwaitRunning(ctx, r); err != nil {
+				return fmt.Errorf("failed to start querier ring client: %w", err)
+			}
+
+			return waitForQueriersInRing(ctx, r, waitTimeout, logger)
+		},
+		func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return nil
+			case err := <-watcher.Chan():
+				return fmt.Errorf("querier ring client failed: %w", err)
+			}
+		},
+		func(error) error {
+			return services.StopAndAwaitTerminated(context.Background(), r)
+		},
+	)
+}
+
+// waitForQueriersInRing blocks until r holds at least one querier reporting a supported query plan
+// version, waitTimeout elapses or ctx is cancelled.
+//
+// Timing out is not an error: we prefer starting up and failing queries (like we would have done
+// while waiting) over never starting up at all, for example when all queriers are down.
+func waitForQueriersInRing(ctx context.Context, r ring.ReadRing, waitTimeout time.Duration, logger log.Logger) error {
+	// The provider is what query-frontends use to plan queries, so it holds the exact condition we need to wait for.
+	provider := RingQueryPlanVersionProvider{ring: r, logger: logger}
+
+	waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+
+	for {
+		version, err := provider.GetMaximumSupportedQueryPlanVersion(waitCtx)
+		if err == nil {
+			level.Info(logger).Log("msg", "querier ring is populated", "maximum_supported_query_plan_version", version)
+			return nil
+		}
+
+		lastErr = err
+
+		select {
+		case <-ticker.C:
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			level.Warn(logger).Log(
+				"msg", "timed out waiting for the querier ring to be populated, queries may fail until it is",
+				"timeout", waitTimeout,
+				"err", lastErr,
+			)
+
+			return nil
+		}
+	}
 }
 
 type RingQueryPlanVersionProvider struct {

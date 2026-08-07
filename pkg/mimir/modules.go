@@ -144,6 +144,10 @@ const (
 	All string = "all"
 )
 
+// querierRingStartupWaitTimeout is how long processes running a query-frontend wait, during startup,
+// for the querier ring to be populated before starting to serve queries anyway.
+const querierRingStartupWaitTimeout = 30 * time.Second
+
 var (
 	// Both queriers and rulers create their own instances of Queryables and federated Queryables,
 	// so we need to make sure the series registered by the individual queryables are unique.
@@ -635,7 +639,7 @@ func (t *Mimir) initQuerierRing() (services.Service, error) {
 
 	t.QuerierRing = r
 
-	return r, nil
+	return querier.NewRingService(r, querierRingStartupWaitTimeout, util_log.Logger), nil
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the

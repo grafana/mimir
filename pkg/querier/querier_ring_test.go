@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -235,4 +236,45 @@ func (m *mockStore) WatchKey(ctx context.Context, key string, f func(interface{}
 
 func (m *mockStore) WatchPrefix(ctx context.Context, prefix string, f func(string, interface{}) bool) {
 	panic("not supported")
+}
+
+func TestRingService_WaitsForQueriersInRing(t *testing.T) {
+	setup := func(t *testing.T, waitTimeout time.Duration) (*consul.Client, services.Service) {
+		store, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { require.NoError(t, closer.Close()) })
+
+		cfg := ring.Config{ReplicationFactor: 1, HeartbeatTimeout: time.Minute}
+		r, err := ring.NewWithStoreClientAndStrategy(cfg, "querier-test", querierRingKey, store, ring.NewDefaultReplicationStrategy(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
+
+		svc := NewRingService(r, waitTimeout, log.NewNopLogger())
+		// Stopping must outlive the test context, otherwise it returns before the service is terminated.
+		t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), svc) })
+
+		return store, svc
+	}
+
+	t.Run("doesn't become running until a querier joins the ring", func(t *testing.T) {
+		store, svc := setup(t, time.Minute)
+
+		require.NoError(t, svc.StartAsync(t.Context()))
+
+		// The service must stay in the starting state while the ring is empty.
+		time.Sleep(500 * time.Millisecond)
+		require.Equal(t, services.Starting, svc.State())
+
+		require.NoError(t, store.CAS(t.Context(), querierRingKey, func(interface{}) (interface{}, bool, error) {
+			desc := ring.NewDesc()
+			desc.AddIngester("querier-0", "127.0.0.1", "", []uint32{1}, ring.ACTIVE, time.Now(), false, time.Time{}, ring.InstanceVersions{MaximumSupportedQueryPlanVersion: uint64(planning.MaximumSupportedQueryPlanVersion)})
+			return desc, true, nil
+		}))
+
+		require.NoError(t, svc.AwaitRunning(t.Context()))
+	})
+
+	t.Run("becomes running once the wait times out, even if the ring is empty", func(t *testing.T) {
+		_, svc := setup(t, 100*time.Millisecond)
+
+		require.NoError(t, services.StartAndAwaitRunning(t.Context(), svc))
+	})
 }
