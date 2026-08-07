@@ -72,6 +72,7 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 	default:
 		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
+		c.series[idx.idx].RecordStartTimestamp(0)
 	}
 	c.appendExemplars(idx.idx, opts.Exemplars)
 	c.appendMetadata(opts.MetricFamilyName, opts.Metadata)

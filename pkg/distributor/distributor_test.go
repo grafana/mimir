@@ -1681,6 +1681,72 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 	}
 }
 
+func TestDistributor_ValidateSampleStartTimestamps(t *testing.T) {
+	labels := []string{model.MetricNameLabel, "series", "job", "job", "service", "service"}
+
+	testCases := map[string]struct {
+		samples                 []mimirpb.Sample
+		startTimestamps         []int64
+		expectedSamples         []mimirpb.Sample
+		expectedStartTimestamps []int64
+		expectedErr             string
+	}{
+		"preserves start timestamp alignment during duplicate compaction": {
+			samples: []mimirpb.Sample{
+				{Value: 1, TimestampMs: 10},
+				{Value: 2, TimestampMs: 10},
+				{Value: 3, TimestampMs: 20},
+				{Value: 4, TimestampMs: 20},
+			},
+			startTimestamps: []int64{111, 222, 333, 444},
+			expectedSamples: []mimirpb.Sample{
+				{Value: 1, TimestampMs: 10},
+				{Value: 3, TimestampMs: 20},
+			},
+			expectedStartTimestamps: []int64{111, 333},
+		},
+		"rejects a misaligned start timestamp slice": {
+			samples: []mimirpb.Sample{
+				{Value: 1, TimestampMs: 10},
+				{Value: 2, TimestampMs: 20},
+			},
+			startTimestamps: []int64{111},
+			expectedSamples: []mimirpb.Sample{
+				{Value: 1, TimestampMs: 10},
+				{Value: 2, TimestampMs: 20},
+			},
+			expectedStartTimestamps: []int64{111},
+			expectedErr:             "sample start timestamps length 1 must be zero or match samples length 2",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			limits := prepareDefaultLimits()
+			ds, _, _, _ := prepare(t, prepConfig{
+				limits:          limits,
+				numDistributors: 1,
+			})
+			require.Len(t, ds, 1)
+
+			cfg := newValidationConfig("user", "user", ds[0].limits)
+			ts := makeTimeseries(labels, slices.Clone(tc.samples), nil, nil)
+			ts.SampleStartTimestamps = slices.Clone(tc.startTimestamps)
+
+			err := ds[0].validateSeries(mtime.Now(), &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
+
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, ts.ValidateSampleStartTimestamps())
+			}
+			assert.Equal(t, tc.expectedSamples, ts.Samples)
+			assert.Equal(t, tc.expectedStartTimestamps, ts.SampleStartTimestamps)
+		})
+	}
+}
+
 func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	const (
 		metricName              = "series"

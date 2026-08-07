@@ -84,6 +84,13 @@ message TimeSeries {
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
   int64 created_timestamp = 6;
+
+  // Optional per-sample start timestamps in milliseconds, aligned one-for-one
+  // with samples. An empty slice means every sample has an unknown or absent
+  // start timestamp.
+  // Note: for Histogram samples, the start timestamp is stored within the Histogram
+  // proto, rather than using a separate slice.
+  repeated int64 sample_start_timestamps = 7 [packed = true];
 }
 
 message LabelPair {
@@ -188,6 +195,10 @@ message Histogram {
   // Used only for converting from OpenTelemetry to Prometheus internally and
   // to unmarshal Remote Write 2.0 messages.
   repeated double custom_values = 16;
+
+  // Optional start timestamp for this histogram sample in milliseconds.
+  // Zero means unknown or absent.
+  int64 start_timestamp = 17;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.

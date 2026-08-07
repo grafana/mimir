@@ -49,7 +49,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || len(ts.SampleStartTimestamps) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -78,6 +78,12 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Samples = nil
 	} else {
 		ts.Samples = ts.Samples[:0]
+	}
+
+	if cap(ts.SampleStartTimestamps) > maxPreallocatedSamplesPerSeries {
+		ts.SampleStartTimestamps = nil
+	} else {
+		ts.SampleStartTimestamps = ts.SampleStartTimestamps[:0]
 	}
 
 	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
