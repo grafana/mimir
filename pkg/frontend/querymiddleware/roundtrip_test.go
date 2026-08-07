@@ -171,7 +171,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-						Samples: []mimirpb.Sample{
+						Samples: []mimirpb.FloatSample{
 							{TimestampMs: int64(reqTime * 1000), Value: 1},
 						},
 					},

@@ -117,7 +117,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 									{Name: "a", Value: "a1"},
 									{Name: "b", Value: "b1"},
 								},
-								Samples: []mimirpb.Sample{
+								Samples: []mimirpb.FloatSample{
 									{
 										Value:       1,
 										TimestampMs: 1,
@@ -133,7 +133,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 									{Name: "a", Value: "a1"},
 									{Name: "b", Value: "b1"},
 								},
-								Samples: []mimirpb.Sample{
+								Samples: []mimirpb.FloatSample{
 									{
 										Value:       8,
 										TimestampMs: 1,
@@ -169,7 +169,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 							{Name: "a", Value: "a1"},
 							{Name: "b", Value: "b1"},
 						},
-						Samples: []mimirpb.Sample{
+						Samples: []mimirpb.FloatSample{
 							{
 								Value:       1,
 								TimestampMs: 1,
@@ -185,7 +185,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 							{Name: "a", Value: "a1"},
 							{Name: "b", Value: "b1"},
 						},
-						Samples: []mimirpb.Sample{
+						Samples: []mimirpb.FloatSample{
 							{
 								Value:       8,
 								TimestampMs: 1,
@@ -244,7 +244,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 				ResultType: string(parser.ValueTypeVector),
 				Result: []SampleStream{{
 					Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1}},
+					Samples: []mimirpb.FloatSample{{Value: 1, TimestampMs: 1}},
 				}},
 			},
 		}, nil
@@ -316,69 +316,69 @@ func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
 		"should add a stale marker at the end even if if input samples have no gaps": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 			hints: &storage.SelectHints{Step: 10},
 			expected: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
 			}},
 		},
 		"should add stale markers at the beginning of each gap and one at the end of the series": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 			hints: &storage.SelectHints{Step: 10},
 			expected: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 40, Value: 4}, {TimestampMs: 50, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 90, Value: 9}, {TimestampMs: 100, Value: math.Float64frombits(value.StaleNaN)}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 40, Value: 4}, {TimestampMs: 50, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 90, Value: 9}, {TimestampMs: 100, Value: math.Float64frombits(value.StaleNaN)}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
 			}},
 		},
 		"should not add stale markers even if points have gaps if hints is not passed": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 			hints: nil,
 			expected: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 		},
 		"should not add stale markers even if points have gaps if step == 0": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 			hints: &storage.SelectHints{Step: 0},
 			expected: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
 			}, {
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
-				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 		},
 	}
@@ -403,7 +403,7 @@ func TestResponseToSamples(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -419,7 +419,7 @@ func TestResponseToSamples(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       8,
 							TimestampMs: 1,
@@ -480,7 +480,7 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 			switch valType {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				stream.Samples = append(stream.Samples, mimirpb.Sample{
+				stream.Samples = append(stream.Samples, mimirpb.FloatSample{
 					Value:       v,
 					TimestampMs: t,
 				})
