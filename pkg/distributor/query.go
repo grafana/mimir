@@ -727,37 +727,59 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			queryStats.AddReadcacheQueryStreamCalls(1)
 		}
 
+		// warmFallbackStream re-issues the query against the
+		// partition's previous lease owner, which still holds the
+		// frozen pre-move head, when the current owner reports that
+		// it is still warming. It returns ok=false when err is not a
+		// warming reply, when a peer still has to be tried, or when
+		// no previous owner is reachable; the caller then surfaces
+		// the original error.
+		//
+		// Waiting for every replica matters under RF≥2: one mirror
+		// may be warming after an isolated restart while its peer is
+		// already warm. Returning the first mirror's previous-owner
+		// response would satisfy quorum before DoUntilQuorum tries
+		// that warm peer.
+		//
+		// During a partition move both mirrors adopt from the same
+		// lease row and warm in lockstep, so the last warming
+		// callback claims the single previous-owner fallback.
+		// RF=1 and dual-fleet warm have one effective replica and
+		// therefore fall back immediately.
+		warmFallbackStream := func(err error) (ingester_client.Ingester_QueryStreamClient, bool) {
+			if !readcache.IsStillWarming(err) || !hasPart {
+				return nil, false
+			}
+			state := warmFallbackStates[ing.Id]
+			if state == nil || !state.claimFallback(ing.Id) {
+				return nil, false
+			}
+			prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID, ing.Addr)
+			if !ok {
+				return nil, false
+			}
+			prevStream, prevErr := prev.QueryStream(ctx, streamReq)
+			if prevErr != nil {
+				level.Warn(log).Log("msg", "readcache still warming and the previous lease owner could not be queried", "partition", partID, "previous_owner", prevID, "err", prevErr)
+				return nil, false
+			}
+			level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+			hits.record(prevID)
+			queryStats.AddReadcacheQueryStreamCalls(1)
+			return prevStream, true
+		}
+
 		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
-			// If every current replica says it's still warming, fall
-			// back to the previous lease owner, which still holds the
-			// frozen pre-move head. Waiting for every replica matters
-			// under RF≥2: one mirror may be warming after an isolated
-			// restart while its peer is already warm. Returning the
-			// first mirror's previous-owner response would satisfy
-			// quorum before DoUntilQuorum tries that warm peer.
-			//
-			// During a partition move both mirrors adopt from the same
-			// lease row and warm in lockstep, so the last warming
-			// callback claims the single previous-owner fallback.
-			// RF=1 and dual-fleet warm have one effective replica and
-			// therefore fall back immediately.
-			if readcache.IsStillWarming(err) && hasPart {
-				state := warmFallbackStates[ing.Id]
-				if state != nil && state.claimFallback(ing.Id) {
-					prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID, ing.Addr)
-					if !ok {
-						return result, err
-					}
-					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
-					hits.record(prevID)
-					queryStats.AddReadcacheQueryStreamCalls(1)
-					stream, err = prev.QueryStream(ctx, streamReq)
-				}
-			}
-			if err != nil {
+			// Only a failure to open the stream lands here. A
+			// readcache that rejects the query because it is still
+			// warming answers from its handler, which gRPC delivers
+			// in the trailer read by the first Recv below.
+			fallback, ok := warmFallbackStream(err)
+			if !ok {
 				return result, err
 			}
+			stream = fallback
 		}
 
 		// Why retain the batches rather than iteratively build a single slice?
@@ -776,8 +798,35 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			return result, err
 		}
 
-		for {
+		// A server-streaming handler that fails before its first Send
+		// reports the failure in the trailer, so a still-warming
+		// readcache surfaces on the first Recv rather than from
+		// QueryStream. Retrying is safe at exactly that point and no
+		// later: nothing from this response has been handed upstream
+		// yet, and receiveResponse leaves no partial state behind.
+		firstRecv := true
+		receive := func() ([]labels.Labels, bool, error) {
 			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker, deduplicator)
+			wasFirst := firstRecv
+			firstRecv = false
+			if err == nil || !wasFirst {
+				return labelsBatch, isEOS, err
+			}
+			fallback, ok := warmFallbackStream(err)
+			if !ok {
+				return labelsBatch, isEOS, err
+			}
+			// The stream being replaced needs no CloseAndExhaust: a
+			// warming reply is a status error, so gRPC has already
+			// ended that RPC and released it. Only the replacement
+			// can still be holding resources, and the deferred
+			// cleanup closes whatever `stream` points at.
+			stream = fallback
+			return result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker, deduplicator)
+		}
+
+		for {
+			labelsBatch, isEOS, err := receive()
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
