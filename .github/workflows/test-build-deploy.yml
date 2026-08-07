@@ -308,10 +308,13 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 10 groups.
+      # Split tests into 5 groups. Each group runs its packages concurrently in a single
+      # "go test" invocation, so a group's runtime is dominated by its slowest package
+      # (~4min for pkg/ingester) rather than by the number of packages in it: more groups
+      # than this just adds job startup and Go build cache restore overhead.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        test_group_total: [10]
+        test_group_id:    [0, 1, 2, 3, 4]
+        test_group_total: [5]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
