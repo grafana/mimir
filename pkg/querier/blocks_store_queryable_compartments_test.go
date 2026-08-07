@@ -149,25 +149,25 @@ func TestBlocksStoreQuerier_Compartments_LabelNames(t *testing.T) {
 		// within each response, as the store-gateways return them.
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{"label_from_compartment_0", "shared_label"},
 							ResponseHints: mockNamesResponseHints(block0),
 						},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{"label_from_compartment_1", "shared_label"},
 							ResponseHints: mockNamesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -324,25 +324,25 @@ func TestBlocksStoreQuerier_Compartments_LabelValues(t *testing.T) {
 		// within each response, as the store-gateways return them.
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{"shared_value", "value_from_compartment_0"},
 							ResponseHints: mockValuesResponseHints(block0),
 						},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{"shared_value", "value_from_compartment_1"},
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -408,21 +408,21 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(seriesA, minT, 1).
 						addBlocks(block0).
 						build(),
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(seriesB, minT, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -474,25 +474,25 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedSeriesResponses: newSeriesResponseBuilder().
 							addValue(seriesA, minT, 1).
 							addBlocks(block0).
 							build(),
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedSeriesResponses: newSeriesResponseBuilder().
 							addValue(seriesB, minT, 2).
 							addBlocks(block1).
 							build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -575,7 +575,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 		// store-gateway returns its values sorted by value ascending (the default search ordering).
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 						searchLabelNamesBatches: []*storepb.SearchResultBatch{{
@@ -586,11 +586,11 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block0},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
 						searchLabelNamesBatches: []*storepb.SearchResultBatch{{
@@ -601,7 +601,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block1},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -641,7 +641,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 		// store-gateway returns its values sorted by value ascending (the default search ordering).
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 						searchLabelValuesBatches: []*storepb.SearchResultBatch{{
@@ -652,11 +652,11 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block0},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
 						searchLabelValuesBatches: []*storepb.SearchResultBatch{{
@@ -667,7 +667,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block1},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}

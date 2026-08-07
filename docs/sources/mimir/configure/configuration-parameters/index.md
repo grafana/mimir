@@ -4736,6 +4736,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-estimated-memory-consumption-per-query
 [max_estimated_memory_consumption_per_query: <int> | default = 0]
 
+# (experimental) Maximum number of blocks that a querier will reference in a
+# single request to a store-gateway. When a request would exceed this, it is
+# split into multiple requests to the same store-gateway. 0 disables the limit.
+# CLI flag: -querier.max-blocks-per-store-request
+[max_blocks_per_store_request: <int> | default = 0]
+
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
 # and ruler for instant, range and remote read queries. For metadata queries
