@@ -744,7 +744,7 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grafana/warpstream-go v0.0.0-20260710130640-f4258f6a3f82
+# github.com/grafana/warpstream-go v0.0.0-20260806151020-d20757c9d02f
 ## explicit; go 1.25.10
 github.com/grafana/warpstream-go/pkg/wgo
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
@@ -1335,7 +1335,7 @@ github.com/twmb/franz-go/pkg/sasl/scram
 # github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20260515175617-8268a5d078c0
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20260729023516-cc159eb5ddb9
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.13.1
@@ -1345,7 +1345,7 @@ github.com/twmb/franz-go/pkg/kmsg/internal/kbin
 # github.com/twmb/franz-go/plugin/kotel v1.6.0
 ## explicit; go 1.22.0
 github.com/twmb/franz-go/plugin/kotel
-# github.com/twmb/franz-go/plugin/kprom v1.4.0
+# github.com/twmb/franz-go/plugin/kprom v1.5.0
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/plugin/kprom
 # github.com/twmb/franz-go/plugin/kslog v1.0.0
