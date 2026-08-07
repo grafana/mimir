@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Mimirtool: `mimirtool rules lint` no longer collapses multi-line PromQL expressions into a single line. Expressions are now formatted with the PromQL prettifier, which keeps expressions longer than 100 characters on multiple lines, like the query formatter in the Prometheus UI. #16196
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
