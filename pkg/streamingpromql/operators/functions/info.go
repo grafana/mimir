@@ -31,6 +31,10 @@ type DataLabelSelector struct {
 // Currently hard coded, so we don't need knowledge of individual info metrics.
 var identifyingLabels = []string{"instance", "job"}
 
+// innerSeriesKey is the sentinel label sets hash used to represent the original, un-enriched
+// inner series (i.e. no matching info series contributes any labels).
+const innerSeriesKey = "inner"
+
 type labelsTime struct {
 	labels labels.Labels
 	time   int64
@@ -287,7 +291,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 func makeLabelSetsHash(labelSets []labels.Labels) string {
 	length := len(labelSets)
 	if length == 0 {
-		return "inner"
+		return innerSeriesKey
 	}
 
 	hashArr := make([]uint64, length)
@@ -425,15 +429,47 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
 	f.innerSig = make([]string, len(innerMetadata))
 
-	extraLabelSets := make(map[int][]labels.Labels)
-	totalLabelSetsCount := 0
+	// The output has at least one series per inner series in the common case, so seed the result
+	// slice at that size and grow it from the pool as needed. This lets us produce the final
+	// metadata in a single pass instead of first computing every combined label set into an
+	// intermediate map to size an exact allocation.
+	result, err := types.SeriesMetadataSlicePool.Get(len(innerMetadata), f.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 
-	// Do a first pass to calculate the combined label sets for each inner series.
+	// If we fail partway through (e.g. a conflicting label or duplicate labelset), return the
+	// pooled result slice so its accounted memory (slice capacity and appended labels) isn't
+	// stranded for the rest of the query. Put is nil-safe, so this is a no-op if
+	// AppendSeriesMetadataFromPool already returned the slice on its own error path.
+	success := false
+	defer func() {
+		if !success {
+			types.SeriesMetadataSlicePool.Put(&result, f.MemoryConsumptionTracker)
+		}
+	}()
+
+	labelSetsHashes := make(map[uint64]int) // hash -> input series index
+
+	// appendSeries adds one output series for inner series i, erroring if a different input
+	// series has already produced the same labelset.
+	appendSeries := func(i int, metadata types.SeriesMetadata) error {
+		hash := metadata.Labels.Hash()
+		if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
+			return fmt.Errorf("vector cannot contain metrics with the same labelset")
+		}
+		labelSetsHashes[hash] = i
+		result, err = types.AppendSeriesMetadataFromPool(f.MemoryConsumptionTracker, result, metadata)
+		return err
+	}
+
 	for i, innerSeries := range innerMetadata {
 		// If this inner series is an info series, pass the original series metadata along unchanged.
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
-			totalLabelSetsCount++
+			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
+			if err := appendSeries(i, innerSeries); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -447,13 +483,14 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
-			totalLabelSetsCount++
+			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
+			if err := appendSeries(i, innerSeries); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
-		// Get all possible combinations of info series labels with this inner series,
-		// and track them properly so we know exactly how many to pull from the pool later.
+		// Get all possible combinations of info series labels with this inner series.
 		newLabelSets, labelSetsOrder, err := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
 		if err != nil {
 			return nil, err
@@ -470,56 +507,27 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		// info series when all data label matchers match empty string.
 		offset := 0
 		if !hasNonEmptyDataLabelMatcher {
-			f.labelSetsOrder[i]["inner"] = 0
-			totalLabelSetsCount++
+			f.labelSetsOrder[i][innerSeriesKey] = 0
 			offset = 1
+			if err := appendSeries(i, innerSeries); err != nil {
+				return nil, err
+			}
 		}
 
-		extraLabelSets[i] = newLabelSets
-		totalLabelSetsCount += len(newLabelSets)
 		for j, labelSetsHash := range labelSetsOrder {
 			f.labelSetsOrder[i][labelSetsHash] = j + offset
 		}
-	}
-
-	result, err := types.SeriesMetadataSlicePool.Get(totalLabelSetsCount, f.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	labelSetsHashes := make(map[uint64]int) // hash -> input series index
-
-	// Do a second pass to actually produce final series metadata using exact numbers from the pool,
-	// while checking for any clashes in final label sets that come from different input series.
-	for i, innerSeries := range innerMetadata {
-		if _, shouldPassInner := f.labelSetsOrder[i]["inner"]; shouldPassInner {
-			hash := innerSeries.Labels.Hash()
-			if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
-				return nil, fmt.Errorf("vector cannot contain metrics with the same labelset")
-			}
-			labelSetsHashes[hash] = i
-			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		for _, newLabels := range extraLabelSets[i] {
-			hash := newLabels.Hash()
-			if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
-				return nil, fmt.Errorf("vector cannot contain metrics with the same labelset")
-			}
-			labelSetsHashes[hash] = i
-			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, types.SeriesMetadata{
+		for _, newLabels := range newLabelSets {
+			if err := appendSeries(i, types.SeriesMetadata{
 				Labels:   newLabels,
 				DropName: innerSeries.DropName,
-			})
-			if err != nil {
+			}); err != nil {
 				return nil, err
 			}
 		}
 	}
 
+	success = true
 	return result, nil
 }
 
@@ -696,11 +704,11 @@ func (f *InfoFunction) getSplitResult(ts int64, sig string, storedSeriesResults 
 			labelSetsHash = makeLabelSetsHash(labelSets)
 		} else {
 			// Use the original inner series labels unchanged.
-			labelSetsHash = "inner"
+			labelSetsHash = innerSeriesKey
 		}
 	} else {
 		// Use the original inner series labels unchanged.
-		labelSetsHash = "inner"
+		labelSetsHash = innerSeriesKey
 	}
 
 	// If this label sets hash is not in the order map, it means we shouldn't create a series for it.
