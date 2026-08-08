@@ -47,6 +47,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-ruler-dedicated-query-path-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

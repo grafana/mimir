@@ -36,6 +36,7 @@ spec:
         baz: qux
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

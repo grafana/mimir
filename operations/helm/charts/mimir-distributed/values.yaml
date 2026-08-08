@@ -76,6 +76,46 @@ global:
   # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}
 
+  # -- Whether the ServiceAccount token is automatically mounted into pods directly managed by this chart.
+  # Defaults to false, following the CIS Kubernetes Benchmark recommendation "Ensure that Service Account Tokens
+  # are only mounted where necessary".
+  # scope: alertmanager, chunks-cache, compactor, continuous-test, distributor, gateway, index-cache, ingester, kafka, metadata-cache, overrides-exporter, querier, query-frontend, query-scheduler, results-cache, ruler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, smoke-test, store-gateway
+  # Can be overridden per component by setting `<component>.automountServiceAccountToken` to an explicit
+  # true/false; leaving the per-component value unset falls through to the automatic behavior described here.
+  # Components that need the token to authenticate to Vault keep it mounted (true) automatically:
+  # when `vaultAgent.enabled` is true, or when the Mimir configuration enables Mimir's native Vault support
+  # with Kubernetes authentication (`vault.enabled: true` and `vault.auth.type: kubernetes`).
+  # Limitation: when `useExternalConfig` is true the chart cannot inspect the Mimir configuration; if your
+  # external configuration uses Vault with Kubernetes authentication, set
+  # `<component>.automountServiceAccountToken: true` yourself.
+  # Custom sidecars (`<component>.extraContainers`) that call the Kubernetes API need either the
+  # per-component override set to true, or an explicitly projected token, for example:
+  #   extraVolumes:
+  #     - name: kube-api-access
+  #       projected:
+  #         sources:
+  #           - serviceAccountToken:
+  #               path: token
+  #           - configMap:
+  #               name: kube-root-ca.crt
+  #               items:
+  #                 - key: ca.crt
+  #                   path: ca.crt
+  #           - downwardAPI:
+  #               items:
+  #                 - path: namespace
+  #                   fieldRef:
+  #                     apiVersion: v1
+  #                     fieldPath: metadata.namespace
+  #   extraVolumeMounts:
+  #     - name: kube-api-access
+  #       mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+  #       readOnly: true
+  # The ServiceAccount objects themselves are not modified, so meta-monitoring (pods created by the
+  # Grafana Agent operator) and pods from subcharts (minio, rollout-operator, grafana-agent-operator)
+  # are unaffected.
+  automountServiceAccountToken: false
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true

@@ -38,6 +38,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: openshift-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:

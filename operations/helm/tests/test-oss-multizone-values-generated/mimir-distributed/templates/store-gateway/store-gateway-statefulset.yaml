@@ -55,6 +55,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -208,6 +209,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -361,6 +363,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

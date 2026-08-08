@@ -37,6 +37,7 @@ spec:
       annotations:
     spec:
       serviceAccountName: metamonitoring-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
