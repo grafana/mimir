@@ -23,7 +23,13 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
+
+// shards is the shard count used by tests that construct stores with the default count.
+// Production code reads the count from trackerStore.numShards; tests keep this constant so
+// shard-count-dependent assertions stay readable.
+const shards = tenantshard.DefaultNumShards
 
 func TestTrackerStore_HappyCase(t *testing.T) {
 	const idleTimeout = 20 * time.Minute
@@ -32,7 +38,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, shards)
 
 	{
 		// Push 2 series, both are accepted.
@@ -84,7 +90,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 	limits := limiterMock{testUser1: 10}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, shards)
 
 	{
 		// Push 10 series, 5 of them are rejected because current limit is 5.
@@ -152,9 +158,9 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker1Events := eventsPipe{}
-	tracker1 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker1Events, false, 0)
+	tracker1 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker1Events, false, 0, shards)
 	tracker2Events := eventsPipe{}
-	tracker2 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker2Events, false, 0)
+	tracker2 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker2Events, false, 0, shards)
 	tracker1Events.listeners = []*trackerStore{tracker2}
 	tracker2Events.listeners = []*trackerStore{tracker1}
 
@@ -231,7 +237,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	const testUser2 = "user2"
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	for i := 0; i < 60; i++ {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
@@ -253,7 +259,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 		testUser2: 2 * idleTimeoutMinutes,
 	}, tracker1.seriesCountsForTests())
 
-	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
@@ -295,7 +301,7 @@ func TestTrackerStore_Snapshot_Size(t *testing.T) {
 	totalSeriesCountForAllUsers := 1_000_000
 	usersCount := 1_000
 	seriesPerUser := totalSeriesCountForAllUsers / usersCount
-	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	for u := 0; u < usersCount; u++ {
 		userID := strconv.Itoa(int(r.Int63() % (1 << 16)))
@@ -324,7 +330,7 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	const testUser1 = "user1"
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
 	require.Empty(t, rejected)
@@ -347,7 +353,7 @@ func TestTrackerStore_Cleanup_MinTimeBetweenShardsCleanup(t *testing.T) {
 	const delay = 10 * time.Millisecond
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, delay)
+	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, delay, shards)
 
 	// Track a single series for a single tenant, so each shard's cleanup is trivial
 	// and the per-shard delay dominates the cleanup duration.
@@ -373,7 +379,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, shards)
 
 	// Push 2 series to testUser1, both are accepted.
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
@@ -427,7 +433,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
-	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries, false, 0)
+	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries, false, 0, shards)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -495,7 +501,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -662,7 +668,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Enabled(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, true, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, true, 0, shards)
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -717,7 +723,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, shards)
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -740,6 +746,9 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 	version := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
 	require.Equal(t, uint8(snapshotEncodingVersion), version)
+	snapshotNumShards := snapshot.Uvarint64()
+	require.NoError(t, snapshot.Err())
+	require.Equal(t, uint64(shards), snapshotNumShards)
 	shard := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
 	require.True(t, shard < shards)
@@ -785,7 +794,7 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				groupByModuloShards(inputs[i])
+				groupByModuloShards(inputs[i], shards)
 			}
 		})
 	}
@@ -794,7 +803,7 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 func TestGroupByModuloShards(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		var series []uint64
-		groupByModuloShards(series)
+		groupByModuloShards(series, shards)
 		requireGroupedByModuloShards(t, series)
 		require.Empty(t, series)
 	})
@@ -802,7 +811,7 @@ func TestGroupByModuloShards(t *testing.T) {
 	t.Run("single element", func(t *testing.T) {
 		series := []uint64{42}
 		original := slices.Clone(series)
-		groupByModuloShards(series)
+		groupByModuloShards(series, shards)
 		requireGroupedByModuloShards(t, series)
 		require.ElementsMatch(t, series, original)
 	})
@@ -810,7 +819,7 @@ func TestGroupByModuloShards(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 		original := slices.Clone(series)
-		groupByModuloShards(series)
+		groupByModuloShards(series, shards)
 		requireGroupedByModuloShards(t, series)
 		require.ElementsMatch(t, series, original)
 	})
@@ -823,11 +832,76 @@ func TestGroupByModuloShards(t *testing.T) {
 				series[i] = r.Uint64()
 			}
 			original := slices.Clone(series)
-			groupByModuloShards(series)
+			groupByModuloShards(series, shards)
 			requireGroupedByModuloShards(t, series)
 			require.ElementsMatch(t, series, original)
 		}
 	})
+}
+
+// TestTrackerStore_Snapshot_ConfigurableShardCount verifies that snapshots round-trip
+// across stores configured with the same shard count, and that a snapshot written with a
+// different shard count (or an unsupported encoding version) is discarded without error.
+func TestTrackerStore_Snapshot_ConfigurableShardCount(t *testing.T) {
+	const idleTimeout = 20 * time.Minute
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	newStore := func(numShards int) *trackerStore {
+		return newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, numShards)
+	}
+
+	// snapshotAllShards serializes every shard of the store into independent blobs.
+	snapshotAllShards := func(t *testing.T, store *trackerStore) [][]byte {
+		t.Helper()
+		blobs := make([][]byte, 0, store.numShards)
+		for s := 0; s < store.numShards; s++ {
+			blobs = append(blobs, slices.Clone(store.snapshot(uint8(s), now, nil)))
+		}
+		return blobs
+	}
+
+	for _, numShards := range []int{1, 32, 256} {
+		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
+			src := newStore(numShards)
+			series := make([]uint64, 5000)
+			for i := range series {
+				series[i] = uint64(i + 1)
+			}
+			_, err := src.trackSeries(context.Background(), "user1", slices.Clone(series), now)
+			require.NoError(t, err)
+			_, err = src.trackSeries(context.Background(), "user2", slices.Clone(series[:1000]), now)
+			require.NoError(t, err)
+			want := src.seriesCountsForTests()
+			require.Equal(t, map[string]uint64{"user1": 5000, "user2": 1000}, want)
+
+			blobs := snapshotAllShards(t, src)
+
+			// Same shard count: state is fully restored.
+			dst := newStore(numShards)
+			require.NoError(t, dst.loadSnapshots(blobs, now))
+			require.Equal(t, want, dst.seriesCountsForTests())
+
+			// Different shard count: snapshots are discarded, store stays empty, no error.
+			otherCount := 16
+			if numShards == otherCount {
+				otherCount = 64
+			}
+			mismatch := newStore(otherCount)
+			require.NoError(t, mismatch.loadSnapshots(blobs, now))
+			require.Empty(t, mismatch.seriesCountsForTests())
+
+			// Unsupported encoding version: discarded, store stays empty, no error.
+			oldVersionBlobs := make([][]byte, len(blobs))
+			for i, b := range blobs {
+				clone := slices.Clone(b)
+				clone[0] = snapshotEncodingVersion - 1 // pretend it's an older format.
+				oldVersionBlobs[i] = clone
+			}
+			oldVersion := newStore(numShards)
+			require.NoError(t, oldVersion.loadSnapshots(oldVersionBlobs, now))
+			require.Empty(t, oldVersion.seriesCountsForTests())
+		})
+	}
 }
 
 func requireGroupedByModuloShards(t *testing.T, series []uint64) {
