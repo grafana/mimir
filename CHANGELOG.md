@@ -112,6 +112,7 @@
 * [BUGFIX] Packaging: Fix the DEB/RPM packages shipping the `mimir`, `mimirtool`, `metaconvert`, and `query-tee` binaries without the executable bit set, which caused `mimir.service` to fail to start. #16166
 
 ### Mixin
+* [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #14235
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [CHANGE] Alerts: `MimirIngesterKafkaReadFailed` now fires as `warning` after 5m, and escalates to `critical` if it persists for 30m. `MimirStrongConsistencyEnforcementFailed` severity changed from `critical` to `warning`, since queriers retry on a different ingester and fire their own alerts if that retry fails. #16019
