@@ -175,6 +175,7 @@
 * [BUGFIX] MQE: Fix issue where a sentinel value was inadvertently returned to a pool where it could be mutated by multiple threads at once. #16205
 
 ### Mixin
+* [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #14235
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [CHANGE] Alerts: `MimirIngesterKafkaReadFailed` now fires as `warning` after 5m, and escalates to `critical` if it persists for 30m. `MimirStrongConsistencyEnforcementFailed` severity changed from `critical` to `warning`, since queriers retry on a different ingester and fire their own alerts if that retry fails. #16019
