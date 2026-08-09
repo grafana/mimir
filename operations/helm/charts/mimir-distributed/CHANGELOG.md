@@ -34,6 +34,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 6.2.0
 
+* [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
