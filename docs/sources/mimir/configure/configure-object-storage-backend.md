@@ -149,40 +149,77 @@ ruler_storage:
 
 #### Azure Workload Identity
 
-Here is an example configuration for using Azure Workload Identity.
+When `account_key` and `connection_string` are **unset**, Mimir authenticates
+to Azure Blob Storage with Azure AD / managed identity (including Azure
+Workload Identity on Kubernetes). Optional fields:
+
+| Field | Description |
+| ----- | ----------- |
+| `account_name` | Storage account name (required). |
+| `endpoint_suffix` | Endpoint without scheme; defaults to Azure public cloud when empty. |
+| `container_name` | Blob container (set per storage block as usual). |
+| `user_assigned_id` | Client ID of a **user-assigned** managed identity. Leave empty to use the **system-assigned** identity. |
+
+You still need a storage account that trusts the identity (RBAC role such as
+Storage Blob Data Contributor on the account or containers).
+
+##### Mimir configuration (no account key)
 
 ```yaml
----
 common:
   storage:
     backend: azure
     azure:
       account_name: mimirprod
-      endpoint_suffix: "blob.core.windows.net"
+      endpoint_suffix: blob.core.windows.net
+      # account_key intentionally omitted — use managed / workload identity
+      # user_assigned_id: "<client-id-of-user-assigned-identity>"  # optional
+
 blocks_storage:
   azure:
     container_name: mimir-blocks
+
 alertmanager_storage:
   azure:
     container_name: mimir-alertmanager
+
 ruler_storage:
   azure:
     container_name: mimir-ruler
+```
+
+##### Kubernetes: Azure Workload Identity
+
+On AKS (or any cluster with the Workload Identity webhook), bind a Kubernetes
+service account to a user-assigned managed identity. Typical steps:
+
+1. Create a user-assigned managed identity and grant it blob data access on the storage account.
+2. Create a federated identity credential from that identity to your cluster's OIDC issuer and the Mimir pods' service account (`system:serviceaccount:<namespace>:<sa-name>`).
+3. Label pods and annotate the service account so the webhook injects the token:
+
+```yaml
+# Helm values sketch — field paths depend on the chart
 serviceAccount:
   create: true
   name: mimir-storage
   annotations:
-    "azure.workload.identity/use": "true"
-    "azure.workload.identity/client-id": "${USER_ASSIGNED_IDENTITY_CLIENT_ID}"
+    azure.workload.identity/client-id: "${USER_ASSIGNED_IDENTITY_CLIENT_ID}"
   labels:
-    "azure.workload.identity/use": "true"
+    azure.workload.identity/use: "true"
+
+# Ensure Mimir pods get the label (chart-specific; e.g. global.podLabels)
 global:
   podLabels:
-    "azure.workload.identity/use": "true"
+    azure.workload.identity/use: "true"
 ```
 
+Set `user_assigned_id` in the Mimir Azure storage config to the same client ID,
+or rely on the environment injected by the webhook when using a single
+user-assigned identity.
+
 {{< admonition type="note" >}}
-Unlike with Tempo, federated tokens are not supported with Mimir.
+Unlike with Tempo, federated tokens are not supported with Mimir beyond this
+managed / workload identity path. Do not set `account_key` if you want identity-based auth.
 {{< /admonition >}}
 
 ### OpenStack SWIFT
