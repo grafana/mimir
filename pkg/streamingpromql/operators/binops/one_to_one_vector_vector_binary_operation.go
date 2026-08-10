@@ -22,8 +22,72 @@ import (
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
-// OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
-// One-to-many and many-to-one binary operations between instant vectors are not supported.
+// OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant
+// vectors such as "<expr> + <expr>" or "<expr> - <expr>".
+//
+// # Without fill
+//
+// SeriesMetadata groups input series into match groups by match key (on()/ignoring()). Each match
+// group produces one output series per distinct set of output labels. A comparison filter without
+// bool can produce multiple output series from one match group when left series have different
+// metric names; those output series share one right side (oneToOneBinaryOperationRightSide).
+//
+// sortSeries orders the output series to minimise buffering. It reads the larger source side in
+// order, so the operator holds at most the entire smaller source side in memory at once.
+//
+// NextSeries reads one output series at a time. It fetches left data via leftBuffer, populates the
+// right side via rightBuffer (merging all right source series for the group), then calls
+// computeResult to evaluate the operation step by step. The operator releases right-side data after
+// the last output series that uses it has been processed.
+//
+// # With fill
+//
+// fill_left and fill_right extend matching to groups that have series on only one side. There are
+// three cases.
+//
+// ## fill_right: unmatched left series
+//
+// A left series with no matching right group produces output using the RHS fill value as a
+// synthetic right operand. The output series has fillMissingRight=true and no rightSide. NextSeries
+// passes an empty right operand to computeResult; the evaluator substitutes the fill value at each
+// left-side step. computeOutputSeries registers these series after matched series so that a matched
+// output series wins any label collision.
+//
+// ## fill_left: unmatched right groups
+//
+// A right group with no matching left series produces output using the LHS fill value. The output
+// series has fillMissingLeft=true and no leftSeriesIndices. nextFilledLeftSeries passes an empty
+// left operand to computeResult; the evaluator substitutes the fill value at each right-side step.
+//
+// ## fill_left on matched groups: the name-retaining split
+//
+// For a matched group, fill_left applies per step: at a step where the right side has a sample but
+// no left series of the group does, the evaluator synthesises a left operand from the fill value.
+//
+// For most operators the synthesised point carries the same output labels as any other point in the
+// group. computeResult adds it to the result inline (missingLeftInResult mode).
+//
+// For name-retaining comparison filters (e.g. "a > fill_left(0) b") with ignoring()/without
+// matching, the output labels differ between a both-present step (keeps the left metric name) and a
+// fill-left step (no metric name, because the synthesised operand uses only the right match
+// labels). These two point types need separate output series. The operator calls this a split group
+// (splitFillLeftName=true) and creates two kinds of output series per group:
+//   - One matched output series per distinct left label set, carrying name-retaining points. These
+//     share a oneToOneBinaryOperationSplitHolder (splitHolder).
+//   - One name-dropped sibling (nameDropped=true, no leftSeriesIndices) carrying the fill-left
+//     points for the whole group.
+//
+// A group has exactly one set of fill-left points (fill applies only when no left series has a
+// sample). The operator computes them on the last matched read of the group only. Earlier matched
+// reads skip the fill-left branch (missingLeftSkip) to avoid emitting spurious points or
+// annotations. The last matched read uses missingLeftSeparate mode and stores the fill-left points
+// in the split holder. sortSeries places the last matched read before the name-dropped sibling,
+// which then takes the points from the holder.
+//
+// If a left series has no metric name, its output labels equal the sibling's labels. In that case
+// addNameDroppedFillLeftSiblings makes the colliding matched output series the fill-left carrier
+// (fillLeftCarrier=true) instead of adding a sibling. If that series is the group's only matched
+// output series, the split is not needed and is cleared entirely.
 type OneToOneVectorVectorBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
@@ -1113,7 +1177,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return finalResult, nil
 	}
 
-	if fillLeft.mode == fillLeftSeparate {
+	if fillLeft.mode == missingLeftSeparate {
 		// This is the last matched read of a split group, so fillLeftResult holds the group's fill-left
 		// points.
 		if thisSeries.fillLeftCarrier {
@@ -1160,14 +1224,14 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 // therefore the whole left side of the group, and the evaluator skips no step.
 func (b *OneToOneVectorVectorBinaryOperation) fillLeftOptionsFor(thisSeries *oneToOneBinaryOperationOutputSeries, rightSide *oneToOneBinaryOperationRightSide, isLastUseOfRightSide bool) fillLeftOptions {
 	if thisSeries.splitHolder == nil {
-		return fillLeftOptions{mode: fillLeftInResult}
+		return fillLeftOptions{mode: missingLeftInResult}
 	}
 
 	if !isLastUseOfRightSide {
-		return fillLeftOptions{mode: fillLeftSkip}
+		return fillLeftOptions{mode: missingLeftSkip}
 	}
 
-	return fillLeftOptions{mode: fillLeftSeparate, leftSidePresence: rightSide.leftSidePresence}
+	return fillLeftOptions{mode: missingLeftSeparate, leftSidePresence: rightSide.leftSidePresence}
 }
 
 // mergeGroupFillLeftPoints merges the fill-left points of a match group into the result of the

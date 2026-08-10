@@ -123,14 +123,21 @@ func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Label
 	}
 }
 
-// matchingLabelsWithoutName returns a copy of matchingLabels with __name__ removed. We never
-// include __name__ in output group labels, even when it is explicitly mentioned in on(...), as
-// per https://github.com/prometheus/prometheus/issues/16631. It returns a new slice and never
-// mutates the input, which may be shared with the query plan.
+// matchingLabelsWithoutName returns matchingLabels with __name__ removed. We never include
+// __name__ in output group labels, even when it is explicitly mentioned in on(...), as per
+// https://github.com/prometheus/prometheus/issues/16631. It never mutates the input, which may
+// be shared with the query plan. In the common case where __name__ is not present it returns
+// the input slice directly without allocating.
 func matchingLabelsWithoutName(matchingLabels []string) []string {
-	return slices.DeleteFunc(slices.Clone(matchingLabels), func(l string) bool {
-		return l == model.MetricNameLabel
-	})
+	i := slices.Index(matchingLabels, model.MetricNameLabel)
+	if i == -1 {
+		return matchingLabels
+	}
+
+	lbls := make([]string, 0, len(matchingLabels)-1)
+	lbls = append(lbls, matchingLabels[:i]...)
+	lbls = append(lbls, matchingLabels[i+1:]...)
+	return lbls
 }
 
 func formatConflictError(
@@ -304,29 +311,34 @@ func newVectorVectorBinaryOperationEvaluator(
 
 }
 
-// fillLeftMode selects what computeResult does at a fill-left timestep. A fill-left timestep is a
-// timestep where only the right side has a sample. The evaluator must also have a fill value for the
-// left operand.
-type fillLeftMode int
+// missingLeftMode selects what computeResult does at a timestep where only the right side has a
+// sample. When e.fillLeft is set, computeResult synthesises a left operand from the fill value.
+// When e.fillLeft is nil, computeResult drops the timestep regardless of this mode.
+type missingLeftMode int
 
 const (
-	// fillLeftInResult adds a kept fill-left point to result, next to every other kept point. It is
-	// the default mode. Every caller that does not split a match group needs it.
-	fillLeftInResult fillLeftMode = iota
+	// missingLeftInResult adds a kept fill-left point to result, next to every other kept point. It
+	// is the default mode. Every caller that does not split a match group needs it.
+	missingLeftInResult missingLeftMode = iota
 
-	// fillLeftSeparate adds a kept fill-left point to fillLeftResult instead of result. This lets the
-	// caller give the fill-left points labels that differ from the labels of the other points.
+	// missingLeftSeparate adds a kept fill-left point to fillLeftResult instead of result. This lets
+	// the caller give the fill-left points labels that differ from the labels of the other points.
 	//
-	// Upstream Prometheus builds the missing left operand from the right series' match labels only and
-	// drops __name__. A kept fill-left timestep for a name-retaining operator therefore has no metric
-	// name. Only the one-to-one operator asks for this mode. It asks only for a matched group, and
-	// only when the operator retains __name__ and fillLeft is set. See
+	// Upstream Prometheus builds the missing left operand from the right series' match labels only
+	// and drops __name__. A kept fill-left timestep for a name-retaining operator therefore has no
+	// metric name. Only the one-to-one operator asks for this mode. It asks only for a matched
+	// group, and only when the operator retains __name__ and fillLeft is set. See
 	// OneToOneVectorVectorBinaryOperation.computeOutputSeries.
-	fillLeftSeparate
+	//
+	// Example expression: `a > without(foo) fill_left(0) b`
+	// A comparison operator without `bool` retains __name__, and `without(...)` (not `on(...)`)
+	// matching is used, so a fill-left timestep on a matched group produces two output series: one
+	// with __name__ (from the right series' match labels) and one without.
+	missingLeftSeparate
 
-	// fillLeftSkip evaluates no fill-left timestep at all. computeResult then produces neither a point
-	// nor an annotation for such a timestep.
-	fillLeftSkip
+	// missingLeftSkip evaluates no fill-left timestep at all. computeResult then produces neither a
+	// point nor an annotation for such a timestep.
+	missingLeftSkip
 )
 
 // fillLeftOptions controls the fill-left branch of computeResult.
@@ -334,15 +346,15 @@ const (
 // The zero value keeps every kept fill-left point in result. That is what every caller that does not
 // split a match group needs.
 type fillLeftOptions struct {
-	// mode selects what computeResult does at a fill-left timestep.
-	mode fillLeftMode
+	// mode selects what computeResult does at a timestep where only the right side has a sample.
+	mode missingLeftMode
 
 	// leftSidePresence holds one entry per step of the query time range. Each entry is the index of
 	// the left series with a sample at that step. The entry is -1 when no left series has a sample at
 	// that step. computeResult skips every fill-left timestep whose entry is not -1.
 	//
 	// A nil leftSidePresence means that computeResult evaluates every fill-left timestep. Only the
-	// fillLeftSeparate mode uses this field.
+	// missingLeftSeparate mode uses this field.
 	//
 	// The one-to-one operator passes the presence of the whole match group here. That keeps the
 	// evaluator from raising an annotation for a step where the operator emits no point.
@@ -352,9 +364,9 @@ type fillLeftOptions struct {
 // evaluatesStepAt reports whether computeResult evaluates the fill-left timestep at timestamp t.
 func (o fillLeftOptions) evaluatesStepAt(t int64, timeRange *types.QueryTimeRange) bool {
 	switch o.mode {
-	case fillLeftSkip:
+	case missingLeftSkip:
 		return false
-	case fillLeftSeparate:
+	case missingLeftSeparate:
 		return o.leftSidePresence == nil || o.leftSidePresence[timeRange.PointIndex(t)] == -1
 	default:
 		return true
@@ -371,7 +383,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
-	// A separate output stream holds the fill-left points in the fillLeftSeparate mode. These slices
+	// A separate output stream holds the fill-left points in the missingLeftSeparate mode. These slices
 	// are always new slices from the pool. That mode means that fill is active. Active fill turns off
 	// input-slice reuse.
 	var fillLeftFPoints []promql.FPoint
@@ -401,16 +413,16 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	maxPoints := min(leftPoints, rightPoints)
 	switch {
 	case e.fillLeft != nil && e.fillRight != nil:
-		maxPoints = leftPoints + rightPoints
+		// An output series produces at most one point per step, so the number of steps in the
+		// query time range is also an upper bound on the number of output points. This clamp
+		// only has an effect here: in the single-fill cases maxPoints is leftPoints or
+		// rightPoints, each of which is already bounded by StepCount.
+		maxPoints = min(leftPoints+rightPoints, e.timeRange.StepCount)
 	case e.fillRight != nil:
 		maxPoints = leftPoints
 	case e.fillLeft != nil:
 		maxPoints = rightPoints
 	}
-
-	// An output series produces at most one point per step, so the number of steps in the query
-	// time range is also an upper bound on the number of output points.
-	maxPoints = min(maxPoints, e.timeRange.StepCount)
 
 	// We cannot re-use any slices when the series contain a mix of floats and histograms.
 	// Consider the following, where f is a float at a particular step, and h is a histogram.
@@ -493,10 +505,10 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	lT, lF, lH, lHIndex, lOk := e.leftIterator.Next()
 	rT, rF, rH, rHIndex, rOk := e.rightIterator.Next()
 
-	// appendHistogram appends a result histogram point. When toFillLeft is true, appendHistogram adds
-	// the point to the separate fill-left output stream. toFillLeft is true only in the
-	// fillLeftSeparate mode.
-	appendHistogram := func(t int64, h *histogram.FloatHistogram, toFillLeft bool) error {
+	// appendHistogram appends a result histogram point. When toFillLeftSeparate is true, appendHistogram
+	// adds the point to the separate fill-left output stream. toFillLeftSeparate is true only in the
+	// missingLeftSeparate mode.
+	appendHistogram := func(t int64, h *histogram.FloatHistogram, toFillLeftSeparate bool) error {
 		// Check if we're reusing the FloatHistogram from either side.
 		// If so, remove it so that it is not modified when the slice is reused.
 		if h == lH {
@@ -507,7 +519,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 			right.Histograms[rHIndex].H = nil
 		}
 
-		if toFillLeft {
+		if toFillLeftSeparate {
 			if fillLeftHPoints == nil {
 				var err error
 				if fillLeftHPoints, err = types.HPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
@@ -533,10 +545,11 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		return nil
 	}
 
-	// appendFloat appends a result float point. When toFillLeft is true, appendFloat adds the point to
-	// the separate fill-left output stream. toFillLeft is true only in the fillLeftSeparate mode.
-	appendFloat := func(t int64, f float64, toFillLeft bool) error {
-		if toFillLeft {
+	// appendFloat appends a result float point. When toFillLeftSeparate is true, appendFloat adds the
+	// point to the separate fill-left output stream. toFillLeftSeparate is true only in the
+	// missingLeftSeparate mode.
+	appendFloat := func(t int64, f float64, toFillLeftSeparate bool) error {
+		if toFillLeftSeparate {
 			if fillLeftFPoints == nil {
 				var err error
 				if fillLeftFPoints, err = types.FPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
@@ -566,12 +579,12 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	// Operands are passed explicitly so a fill value can be substituted for a side with no sample at
 	// this timestep (its histogram operand then being nil, as fill values are floats).
 	//
-	// toFillLeft adds a kept point to the separate fill-left output stream. toFillLeft is true only in
-	// the fillLeftSeparate mode, and only at a fill-left timestep.
+	// toFillLeftSeparate adds a kept point to the separate fill-left output stream. toFillLeftSeparate
+	// is true only in the missingLeftSeparate mode, and only at a fill-left timestep.
 	//
 	// appendHistogram compares its result against the outer loop values to decide whether to nil them for
 	// safe slice reuse, and on fill paths lHOp/rHOp differ from them (ie if one operand is nil).
-	appendNextSample := func(t int64, lF, rF float64, lHOp, rHOp *histogram.FloatHistogram, toFillLeft bool) error {
+	appendNextSample := func(t int64, lF, rF float64, lHOp, rHOp *histogram.FloatHistogram, toFillLeftSeparate bool) error {
 		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lHOp, rHOp, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
 
 		if err != nil {
@@ -598,10 +611,10 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 
 		if resultHist != nil {
-			return appendHistogram(t, resultHist, toFillLeft)
+			return appendHistogram(t, resultHist, toFillLeftSeparate)
 		}
 
-		return appendFloat(t, resultFloat, toFillLeft)
+		return appendFloat(t, resultFloat, toFillLeftSeparate)
 	}
 
 	// Iterate until both sides are exhausted. Where only one side has a sample, we emit output only if
@@ -623,12 +636,15 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		default:
 			// Only the right side has a sample; fill the left operand if a fill value is set.
 			//
-			// fillLeft can block this timestep. The evaluator then produces no point and no annotation
-			// for it. This matches an engine that never evaluates the timestep.
+			// fillLeft can block this timestep. When blocked, the evaluator produces no point and no
+			// annotation. This matches Prometheus' behaviour: Prometheus processes an entire match
+			// group at once, so it only evaluates a fill-left timestep for the one output series that
+			// owns the group's fill-left points. Earlier output series in the group never see that
+			// timestep at all, so they raise no annotation for it either.
 			if e.fillLeft != nil && fillLeft.evaluatesStepAt(rT, &e.timeRange) {
-				// In the fillLeftSeparate mode, appendNextSample adds this kept point to the fill-left
-				// output stream so the caller can give it name-dropped labels.
-				if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, fillLeft.mode == fillLeftSeparate); err != nil {
+			// In the missingLeftSeparate mode, appendNextSample adds this kept point to the fill-left
+			// output stream so the caller can give it name-dropped labels.
+			if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, fillLeft.mode == missingLeftSeparate); err != nil {
 					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
 				}
 			}

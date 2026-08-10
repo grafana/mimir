@@ -298,5 +298,11 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if vm := b.GetVectorMatching(); vm != nil && (vm.FillValues.LhsSet || vm.FillValues.RhsSet) {
+		// Queriers that do not understand QueryPlanV20 would silently ignore the fill modifier
+		// and produce incorrect results.
+		return planning.QueryPlanV20, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }
