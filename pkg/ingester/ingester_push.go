@@ -462,6 +462,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		for _, d := range dropped.SameTimestampSameValue {
 			cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), float64(d.Count), reasonSameValueForTimestamp, startAppend)
 		}
+
+		// TESTING (dev-cell shakedown only, do not merge): direct per-request evidence of
+		// commit-time duplicate drops, incl. an example series per category.
+		firstSame, firstNew := "", ""
+		if len(dropped.SameTimestampSameValue) > 0 {
+			firstSame = dropped.SameTimestampSameValue[0].Labels.String()
+		}
+		if len(dropped.SameTimestampDifferentValue) > 0 {
+			firstNew = dropped.SameTimestampDifferentValue[0].Labels.String()
+		}
+		level.Info(i.logger).Log("msg", "TESTING: commit dropped duplicate samples",
+			"user", userID, "sameValue", droppedSameValue, "newValue", droppedNewValue,
+			"firstSameValueSeries", firstSame, "firstNewValueSeries", firstNew)
 	}
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
