@@ -40,8 +40,22 @@ fi
 # List all tests.
 ALL_TESTS=$(go test -tags=stringlabels -list 'Test.*' "${INTEGRATION_DIR}" | grep -E '^Test.*' | sort)
 
-# Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL="$TOTAL" -v INDEX="$INDEX" 'NR % TOTAL == INDEX')
+# Tests slow enough that no round-robin of the others can balance around them, so they get a
+# group each: TestIngesterSharding alone is 9% of the suite and 2.2x the next slowest test.
+# Pinning it matches the slowest-group time an optimal duration-aware split would reach.
+# Names that no longer exist are ignored, so a rename degrades to a plain round-robin.
+DEDICATED_TESTS="TestIngesterSharding"
+
+PINNED_TESTS=$(echo "$ALL_TESTS" | grep -xF "$DEDICATED_TESTS" || true)
+NUM_PINNED=$(echo "$PINNED_TESTS" | grep -c . || true)
+
+if [[ "$INDEX" -lt "$NUM_PINNED" ]]; then
+    GROUP_TESTS=$(echo "$PINNED_TESTS" | sed -n "$((INDEX + 1))p")
+else
+    # Round-robin the rest over the groups the pinned tests didn't take.
+    GROUP_TESTS=$(echo "$ALL_TESTS" | grep -vxF "$DEDICATED_TESTS" \
+        | awk -v TOTAL="$((TOTAL - NUM_PINNED))" -v INDEX="$((INDEX - NUM_PINNED))" 'NR % TOTAL == INDEX')
+fi
 
 if [[ -z "$GROUP_TESTS" ]]; then
     echo "ERROR: No tests found for group $INDEX of $TOTAL. This likely indicates a compilation error or misconfiguration."
