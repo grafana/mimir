@@ -625,6 +625,7 @@
   "query-frontend.client-cluster-validation.label": "",
   "query-frontend.query-engine": "mimir",
   "query-frontend.enable-query-engine-fallback": true,
+  "query-frontend.wait-for-querier-ring-on-startup": true,
   "ingest-storage.kafka.backend": "kafka",
   "ingest-storage.kafka.address": "",
   "ingest-storage.kafka.topic": "",

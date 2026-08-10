@@ -2521,6 +2521,13 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and remote execution is enabled, don't report
+# the query-frontend as ready during startup until it has seen at least one
+# querier in the querier ring, or 30s elapses. Queries fail while the ring is
+# empty, so starting to serve before then means failing queries.
+# CLI flag: -query-frontend.wait-for-querier-ring-on-startup
+[wait_for_querier_ring_on_startup: <boolean> | default = true]
 ```
 
 ### query_scheduler

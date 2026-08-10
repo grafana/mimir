@@ -75,11 +75,6 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 }
 
 func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc) {
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
