@@ -1,13 +1,8 @@
 name: cleanup-pr-caches
 
-# A cache written by a pull request run is scoped to that pull request's merge ref, and GitHub
-# only lets re-runs of the same pull request restore it: not main, not other pull requests. Once
-# the pull request is closed nothing can ever hit those entries again, so they just occupy the
-# repository cache quota until the retention policy collects them, shortening how long the
-# shared caches on main survive. Delete them immediately instead.
-#
-# Caches that a pull request merely *read* from main are owned by refs/heads/main. They are a
-# different scope and are never listed, let alone deleted, by this workflow.
+# Caches written by a PR run are scoped to its merge ref and only restorable by re-runs of the
+# same PR, so once it closes nothing can hit them again. Caches it read from main are owned by
+# refs/heads/main and aren't matched by the ref filter below.
 
 on:
   pull_request:
@@ -18,11 +13,10 @@ permissions: {}
 jobs:
   delete-pr-caches:
     runs-on: ubuntu-latest
-    # Fork pull requests receive a read-only GITHUB_TOKEN, so the deletion would fail with
-    # permission denied. Their caches are left to the repository retention policy.
+    # Fork PRs get a read-only token; leave theirs to the retention policy.
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
-      actions: write # So we can delete the caches.
+      actions: write
     steps:
       - name: Delete caches scoped to this pull request
         env:
@@ -32,8 +26,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Deleting entries renumbers the pages of the list endpoint, so collect every id
-          # before deleting any of them.
+          # Collect every id first: deleting shifts the list endpoint's pages.
           IDS=$(gh api --paginate "/repos/$GH_REPO/actions/caches?ref=$PR_REF&per_page=100" --jq '.actions_caches[].id')
 
           if [[ -z "$IDS" ]]; then

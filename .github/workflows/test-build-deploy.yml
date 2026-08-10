@@ -186,11 +186,8 @@ jobs:
   # cache entries: integration tests (no -race), unit tests (-race), and image builds + linting
   # (CGO_ENABLED=0, multi-arch for images, single-arch for lint).
   #
-  # Consumers restore with two fallback tiers: same build image first, then any build image.
-  # The second tier matters because the build image is rebuilt whenever its own tooling
-  # dependencies are bumped, which usually leaves the Go toolchain untouched: without it, every
-  # such bump would drop all branches to a cold cache. Entries compiled by a different Go
-  # version are simply never hit, since Go keys the build cache by compiler build ID.
+  # The second restore-keys tier falls back across build images, which get rebuilt for reasons
+  # unrelated to the Go toolchain. Safe: Go keys cache entries by compiler build ID.
   warmup-go-build-cache-integration-tests:
     needs: [goversion, prepare]
     runs-on: ubuntu-latest
@@ -316,10 +313,8 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 5 groups. Each group runs its packages concurrently in a single
-      # "go test" invocation, so a group's runtime is dominated by its slowest package
-      # (~4min for pkg/ingester) rather than by the number of packages in it: more groups
-      # than this just adds job startup and Go build cache restore overhead.
+      # A group's runtime is bounded by its slowest package, not by how many packages it holds,
+      # so more groups only add per-job startup and cache restore overhead.
       matrix:
         test_group_id:    [0, 1, 2, 3, 4]
         test_group_total: [5]

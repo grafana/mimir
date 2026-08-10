@@ -74,11 +74,8 @@ echo
 EXIT_CODE=0
 FAILED_PACKAGES=""
 
-# Run all the packages in a single "go test" invocation: go test runs packages concurrently
-# (up to -p, which defaults to GOMAXPROCS), while invoking it once per package would run them
-# serially. Unit tests are mostly latency-bound (they spend their time waiting, not computing),
-# so this is roughly 2x faster on a CI runner even though the runner only has a few cores.
-# Failed packages are then retried individually, so a flaky package doesn't re-run the group.
+# These tests are latency-bound rather than CPU-bound, so batching all packages into one
+# "go test" is ~2x faster than one invocation per package even on a 4 core runner.
 MAX_ATTEMPTS=2
 OUTPUT_FILE=$(mktemp)
 trap 'rm -f "$OUTPUT_FILE"' EXIT
@@ -86,8 +83,7 @@ trap 'rm -f "$OUTPUT_FILE"' EXIT
 RACE_PACKAGES=$(echo "$GROUP_TESTS" | grep -v --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN")
 NO_RACE_PACKAGES=$(echo "$GROUP_TESTS" | grep --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN")
 
-# Runs "go test" on the given packages, setting FAILED to the space separated list of packages
-# that failed. FAILED is set to "$@" if the failure can't be attributed to specific packages.
+# Sets FAILED to the packages that failed, or to all of "$@" if it can't be attributed.
 run_tests() {
     local race_flag=$1
     shift
@@ -100,7 +96,6 @@ run_tests() {
         return
     fi
 
-    # "go test" reports a failed package as "FAIL<tab>package<tab>duration" (or "[build failed]").
     FAILED=$(grep --extended-regexp "^FAIL[[:space:]]+github.com/grafana/mimir/" "$OUTPUT_FILE" | awk '{print $2}' | sort -u | xargs)
     if [[ -z "$FAILED" ]]; then
         FAILED="$*"
