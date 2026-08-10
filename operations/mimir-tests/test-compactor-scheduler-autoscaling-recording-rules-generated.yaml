@@ -1490,7 +1490,7 @@ spec:
               sum(
                 (
                   sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge"})
-                  / (max by (compaction_type) (namespace_compaction_type:cortex_compactor_compaction_bytes_per_second:rate24h{namespace="default"}) > 0)
+                  / ((max by (compaction_type) (namespace_compaction_type:cortex_compactor_compaction_bytes_per_second:rate24h{namespace="default"})) > 0)
                 )
                 or
                 sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge"}) * 1e-07
@@ -1499,7 +1499,7 @@ spec:
               # Plan jobs: pending jobs * seconds/job.
               sum(cortex_compactor_scheduler_pending_jobs{namespace="default", job_type="plan"})
               * (
-                max(namespace:cortex_compactor_plan_job_duration_seconds:avg24h{namespace="default"})
+                ((max(namespace:cortex_compactor_plan_job_duration_seconds:avg24h{namespace="default"})) > 0)
                 or on() vector(1)
               )
             )

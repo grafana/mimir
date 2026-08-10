@@ -979,7 +979,7 @@
     // Turns outstanding bytes into seconds of work: divide by a configured throughput, or multiply by the seconds/byte we measure ourselves.
     local bytes_to_seconds =
       if compaction_query != '' then
-        '/ (%s > 0)' % compaction_query
+        '/ ((%s) > 0)' % compaction_query
       else |||
         * (
           sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
@@ -990,7 +990,7 @@
 
     local plan_job_seconds =
       if plan_query != '' then
-        plan_query
+        '((%s) > 0)' % plan_query
       else |||
         histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
         and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
