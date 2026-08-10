@@ -642,9 +642,9 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 			// owns the group's fill-left points. Earlier output series in the group never see that
 			// timestep at all, so they raise no annotation for it either.
 			if e.fillLeft != nil && fillLeft.evaluatesStepAt(rT, &e.timeRange) {
-			// In the missingLeftSeparate mode, appendNextSample adds this kept point to the fill-left
-			// output stream so the caller can give it name-dropped labels.
-			if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, fillLeft.mode == missingLeftSeparate); err != nil {
+				// In the missingLeftSeparate mode, appendNextSample adds this kept point to the fill-left
+				// output stream so the caller can give it name-dropped labels.
+				if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH, fillLeft.mode == missingLeftSeparate); err != nil {
 					return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
 				}
 			}

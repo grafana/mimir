@@ -549,11 +549,11 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				return nil, compat.NewNotSupportedError("'fill' modifier with many-to-one/one-to-many matching (group_left/group_right)")
 			}
 
-		// The match group key keeps __name__ when the query lists it in on(...), but the output
-		// labels of a filled series always drop __name__. So two match groups that differ only
-		// by __name__ produce the same output labels. The engine then needs one output series
-		// that draws from several match groups. MQE does not support that yet.
-		if expr.VectorMatching.On && slices.Contains(expr.VectorMatching.MatchingLabels, model.MetricNameLabel) {
+			// The match group key keeps __name__ when the query lists it in on(...), but the output
+			// labels of a filled series always drop __name__. So two match groups that differ only
+			// by __name__ produce the same output labels. The engine then needs one output series
+			// that draws from several match groups. MQE does not support that yet.
+			if expr.VectorMatching.On && slices.Contains(expr.VectorMatching.MatchingLabels, model.MetricNameLabel) {
 				return nil, compat.NewNotSupportedError("'fill' modifier with __name__ in the 'on' clause")
 			}
 		}
