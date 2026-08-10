@@ -631,7 +631,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with fill on both sides is not narrowed": {
 			expr: `some_metric + on (cluster) fill(0) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + on (cluster) RHS
+				- BinaryExpression: LHS + on (cluster) fill (0) RHS
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
@@ -641,7 +641,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with fill_right is not narrowed": {
 			expr: `some_metric + on (cluster) fill_right(0) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + on (cluster) RHS
+				- BinaryExpression: LHS + on (cluster) fill_right (0) RHS
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
@@ -651,7 +651,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with fill_left is not narrowed": {
 			expr: `some_metric + ignoring (env) fill_left(0) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + ignoring (env) RHS
+				- BinaryExpression: LHS + ignoring (env) fill_left (0) RHS
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,

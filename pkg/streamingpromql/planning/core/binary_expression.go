@@ -75,6 +75,18 @@ func (b *BinaryExpression) Describe() string {
 
 			builder.WriteRune(')')
 		}
+
+		fv := b.VectorMatching.FillValues
+		if fv.LhsSet && fv.RhsSet && fv.Lhs == fv.Rhs {
+			fmt.Fprintf(builder, " fill (%v)", fv.Lhs)
+		} else {
+			if fv.LhsSet {
+				fmt.Fprintf(builder, " fill_left (%v)", fv.Lhs)
+			}
+			if fv.RhsSet {
+				fmt.Fprintf(builder, " fill_right (%v)", fv.Rhs)
+			}
+		}
 	}
 
 	builder.WriteString(" RHS")

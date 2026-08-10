@@ -153,6 +153,57 @@ func TestBinaryExpression_Describe(t *testing.T) {
 			},
 			expected: `LHS + ignoring (foo) group_right () RHS`,
 		},
+		"fill on both sides with equal values": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On:             true,
+						MatchingLabels: []string{"cluster"},
+						FillValues:     VectorMatchFillValues{Lhs: 0, LhsSet: true, Rhs: 0, RhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + on (cluster) fill (0) RHS`,
+		},
+		"fill on both sides with different values": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On:             true,
+						MatchingLabels: []string{"cluster"},
+						FillValues:     VectorMatchFillValues{Lhs: 1, LhsSet: true, Rhs: 2, RhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + on (cluster) fill_left (1) fill_right (2) RHS`,
+		},
+		"fill_left only": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						MatchingLabels: []string{"env"},
+						FillValues:     VectorMatchFillValues{Lhs: 0, LhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + ignoring (env) fill_left (0) RHS`,
+		},
+		"fill_right only": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On:             true,
+						MatchingLabels: []string{"cluster"},
+						FillValues:     VectorMatchFillValues{Rhs: 0, RhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + on (cluster) fill_right (0) RHS`,
+		},
 		"hints with include labels": {
 			node: &BinaryExpression{
 				BinaryExpressionDetails: &BinaryExpressionDetails{
