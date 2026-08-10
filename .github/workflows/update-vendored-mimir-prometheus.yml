@@ -79,6 +79,9 @@ jobs:
         with:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
           go-version: "1.26.5"
+          # `go mod` commands don't populate a build cache worth keeping, and the entries would
+          # compete for the repository-wide cache quota with the go-build-cache-* entries.
+          cache: false
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
       # because any events triggered by the later don't spawn GitHub actions.

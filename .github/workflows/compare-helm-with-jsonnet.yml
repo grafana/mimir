@@ -54,6 +54,10 @@ jobs:
     - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
         go-version: ${{ needs.goversion.outputs.version }}
+        # This job's caches are scoped to the PR ref, so they're only ever reused by pushes to
+        # the same PR, while still competing for the repository-wide cache quota with the
+        # go-build-cache-* entries that every branch shares.
+        cache: false
     - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
     - name: Download yq
       uses: dsaltares/fetch-gh-release-asset@aa2ab1243d6e0d5b405b973c89fa4d06a2d0fff7 # 1.1.2
