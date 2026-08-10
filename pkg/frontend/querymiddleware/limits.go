@@ -114,6 +114,9 @@ type Limits interface {
 	// EnabledPromQLExtendedRangeSelectors returns the names of PromQL experimental extended range selectors modifiers allowed for the tenant. ie smoothed and anchored
 	EnabledPromQLExtendedRangeSelectors(userID string) []string
 
+	// EnabledPromQLBinopFillModifiers returns the names of PromQL binary operation fill modifiers allowed for the tenant. ie fill, fill_left, fill_right
+	EnabledPromQLBinopFillModifiers(userID string) []string
+
 	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
 	Prom2RangeCompat(userID string) bool
 

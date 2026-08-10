@@ -24,6 +24,7 @@ const (
 	functionType                      = experimentalFeatureType("function")
 	aggregationType                   = experimentalFeatureType("aggregation")
 	extendedRangeSelectorModifierType = experimentalFeatureType("extended range selector modifier")
+	binopFillModifierType             = experimentalFeatureType("binary operation fill modifier")
 )
 
 // experimentalFeaturesMiddleware manages the per-tenant access to experimental functions, aggregations and extended range selector modifiers.
@@ -72,9 +73,19 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 		}
 	}
 
-	if allExperimentalFunctionsEnabled && allExtendedRangeSelectorsEnabled {
-		// If all experimental functions are enabled for all tenants here, we don't need to check the query
-		// for those functions and can skip this middleware.
+	enabledBinopFillModifiers := make(map[string][]string, len(tenantIDs))
+	allBinopFillModifiersEnabled := true
+	for _, tenantID := range tenantIDs {
+		enabled := m.limits.EnabledPromQLBinopFillModifiers(tenantID)
+		enabledBinopFillModifiers[tenantID] = enabled
+		if len(enabled) == 0 || enabled[0] != allExperimentalFeatures {
+			allBinopFillModifiersEnabled = false
+		}
+	}
+
+	if allExperimentalFunctionsEnabled && allExtendedRangeSelectorsEnabled && allBinopFillModifiersEnabled {
+		// If all experimental features are enabled for all tenants here, we don't need to check the query
+		// for those features and can skip this middleware.
 		return m.next.Do(ctx, req)
 	}
 
@@ -97,6 +108,8 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 			tenantMap = enabledExperimentalFunctions
 		case extendedRangeSelectorModifierType:
 			tenantMap = enabledExtendedRangeSelectors
+		case binopFillModifierType:
+			tenantMap = enabledBinopFillModifiers
 		}
 
 		for _, enabled := range tenantMap {
@@ -120,7 +133,8 @@ func createExperimentalFeatureError(featureType experimentalFeatureType, feature
 	return apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 }
 
-// containedExperimentalFeatures returns any PromQL experimental functions, aggregations or range selector modifiers used in the query.
+// containedExperimentalFeatures returns any PromQL experimental functions, aggregations, range
+// selector modifiers, or binary operation fill modifiers used in the query.
 func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeatureType {
 	expFuncNames := map[string]experimentalFeatureType{}
 	_ = inspect(expr, func(node parser.Node) error {
@@ -143,6 +157,16 @@ func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeat
 		case *parser.VectorSelector:
 			if n.Smoothed {
 				expFuncNames["smoothed"] = extendedRangeSelectorModifierType
+			}
+		case *parser.BinaryExpr:
+			if n.VectorMatching != nil {
+				if n.VectorMatching.FillValues.LHS != nil && n.VectorMatching.FillValues.RHS != nil {
+					expFuncNames["fill"] = binopFillModifierType
+				} else if n.VectorMatching.FillValues.LHS != nil {
+					expFuncNames["fill_left"] = binopFillModifierType
+				} else if n.VectorMatching.FillValues.RHS != nil {
+					expFuncNames["fill_right"] = binopFillModifierType
+				}
 			}
 		}
 		return nil
