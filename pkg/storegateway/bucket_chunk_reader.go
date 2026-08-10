@@ -134,14 +134,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 	if err != nil {
 		return errors.Wrap(err, "get range reader")
 	}
-	// Drain any unread bytes of the fetched range before closing it, so the underlying HTTP
-	// connection can be returned to the idle pool and reused. The range is fetched using
-	// estimated chunk lengths, so it frequently extends past the last chunk actually read;
-	// closing a response body with unread bytes causes net/http to discard the connection.
-	defer func() {
-		_, _ = io.Copy(io.Discard, bucketReader)
-		runutil.CloseWithLogOnErr(r.block.logger, bucketReader, "readChunkRange close range reader")
-	}()
+	defer runutil.CloseWithLogOnErr(r.block.logger, bucketReader, "readChunkRange close range reader")
 
 	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
 	// all stats in a local instance and then merge it in the defer.
@@ -208,6 +201,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		// where the crc32 + length varint size are a substantial part of the chunk.
 		localStats.chunksTouchedSizeSum += varint.UvarintSize(chunkDataLen) + chunkEncDataLen + crc32.Size
 	}
+
+	// Chunk lengths are estimated, so drain any overfetched tail to make the connection reusable.
+	_, _ = io.Copy(io.Discard, reader)
+
 	return nil
 }
 
