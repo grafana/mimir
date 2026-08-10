@@ -151,7 +151,7 @@ ruler_storage:
 
 When `account_key` and `connection_string` are **unset**, Mimir authenticates
 to Azure Blob Storage with Azure AD / managed identity (including Azure
-Workload Identity on Kubernetes). Optional fields:
+Workload Identity on Kubernetes).
 
 | Field | Description |
 | ----- | ----------- |
@@ -172,7 +172,7 @@ common:
     azure:
       account_name: mimirprod
       endpoint_suffix: blob.core.windows.net
-      # account_key intentionally omitted — use managed / workload identity
+      # account_key: leave unset to use managed / workload identity
       # user_assigned_id: "<client-id-of-user-assigned-identity>"  # optional
 
 blocks_storage:
@@ -219,7 +219,7 @@ user-assigned identity.
 
 {{< admonition type="note" >}}
 Unlike with Tempo, federated tokens are not supported with Mimir beyond this
-managed / workload identity path. Do not set `account_key` if you want identity-based auth.
+managed / workload identity path. Do not set `account_key` if you want identity-based authentication.
 {{< /admonition >}}
 
 ### OpenStack SWIFT
