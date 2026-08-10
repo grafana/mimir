@@ -160,6 +160,7 @@ func openPartitionTSDB(
 	}
 	maxExemplars := effectiveMaxExemplars(limits, tenantID, maxExemplarsCap)
 
+	// BlockReloadInterval is explicit because Prometheus clamps its zero value to one second.
 	opts := &tsdb.Options{
 		// RetentionDuration uses the readcache-local retention rather
 		// than cfg.Retention (the shared ingester knob). See the
@@ -167,6 +168,7 @@ func openPartitionTSDB(
 		RetentionDuration:                    localBlockRetention.Milliseconds(),
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
+		BlockReloadInterval:                  time.Minute,
 		NoLockfile:                           true,
 		StripeSize:                           cfg.StripeSize,
 		HeadChunksWriteBufferSize:            cfg.HeadChunksWriteBufferSize,
