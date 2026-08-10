@@ -33,6 +33,7 @@ RUN apt-get update && \
       jq \
       zip \
       unzip \
+      zstd \
       protobuf-compiler \
       libprotobuf-dev \
       shellcheck \
