@@ -1627,6 +1627,15 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 	return 0, labels.EmptyLabels()
 }
 
+func (a dbAppender) CommitStats() CommitStats {
+	if s, ok := a.Appender.(CommitStatsReporter); ok {
+		return s.CommitStats()
+	}
+	return CommitStats{}
+}
+
+var _ CommitStatsReporter = dbAppender{}
+
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
 
