@@ -4991,6 +4991,13 @@ blocked_requests:
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
 
+# Enable certain experimental PromQL binary operation fill modifiers (fill,
+# fill_left, fill_right), which are subject to being changed or removed at any
+# time, on a per-tenant basis. Defaults to empty which means all fill modifiers
+# are disabled. Set to 'all' to enable all fill modifiers.
+# CLI flag: -query-frontend.enabled-promql-binop-fill-modifiers
+[enabled_promql_binop_fill_modifiers: <string> | default = ""]
+
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
 # with Prometheus 3.0 semantics
