@@ -1286,7 +1286,7 @@ Requires [authentication](#authentication).
 GET /api/v1/alerts
 ```
 
-Get the current **tenant Alertmanager YAML configuration** for the authenticated
+Get the current tenant Alertmanager YAML configuration for the authenticated
 tenant from the configured object storage. This is Mimir's multi-tenant config
 API (enabled with `-alertmanager.enable-api`), not the Alertmanager "list
 firing alerts" API.
