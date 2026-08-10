@@ -317,6 +317,7 @@ func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 	v.memoizedIterator = nil
 	v.chunkIterator = nil
 
+	v.Selector.FinishedReading(ctx)
 	v.Selector.Close()
 	return nil
 }

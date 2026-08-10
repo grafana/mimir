@@ -6,10 +6,16 @@
 
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
+* [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
+  * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
 * [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
+* [ENHANCEMENT] Ruler: Split oversized remote distributor writes to keep resulting calls within the configured gRPC maximum send size, and expose the number of generated requests in `cortex_ruler_remote_distributor_requests_per_write_request`. #16160
+* [ENHANCEMENT] Alerts: Don't fire `MimirMemberlistZoneAwareRoutingAutoFailover` while the node is still joining the cluster. #16315
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
+* [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
+* [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
 
 ### Mixin
 
@@ -22,9 +28,15 @@
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 
+### Mixin
+
+### Jsonnet
+
 ### Documentation
 
 ### Tools
+
+* [CHANGE] `create-draft-release-notes.sh` doesn't require release notes ready for release candidate. #16286
 
 ## 3.2.0-rc.0
 
@@ -189,6 +201,7 @@
 * [CHANGE] Query-frontend: Enable query sharding by default. Disable it by setting `_config.query_sharding_enabled` to `false`. #16212
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
+* [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.1. #15328, #15626, #16129
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757

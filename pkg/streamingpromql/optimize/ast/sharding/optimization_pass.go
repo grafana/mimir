@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -20,15 +22,20 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+var tracer = otel.Tracer("pkg/streamingpromql/optimize/ast/sharding")
+
 type OptimizationPass struct {
-	sharder *querymiddleware.QuerySharder
+	sharder   *querymiddleware.QuerySharder
+	estimator CardinalityEstimator
 }
 
-func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
+func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
-		sharder: querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		sharder:   querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		estimator: estimator,
 	}
 }
 
@@ -36,7 +43,7 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil
 	}
@@ -55,31 +62,38 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ *plann
 	// separate query that must be sharded independently. Some of these subtrees may be shardable and
 	// others not; that's fine, just like for top-level range queries today, where the shardable parts
 	// are sharded and the rest is left unchanged.
-	if roots := collectEvaluationRoots(expr); len(roots) > 0 {
+	if roots := collectEvaluationRoots(expr, params.TimeRange); len(roots) > 0 {
 		for _, root := range roots {
-			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], options)
+			shardedChild, err := o.shard(ctx, tenantIDs, params.OriginalExpression, root.call.Args[0], root.timeRange, params.LookbackDelta, options)
 			if err != nil {
 				return nil, err
 			}
 
-			root.Args[0] = shardedChild
+			root.call.Args[0] = shardedChild
 		}
 
 		return expr, nil
 	}
 
-	return o.shard(ctx, tenantIDs, expr, options)
+	return o.shard(ctx, tenantIDs, params.OriginalExpression, expr, params.TimeRange, params.LookbackDelta, options)
 }
 
 // shard shards expr, returning the sharded expression, or expr unchanged if it cannot be sharded.
-func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, options requestoptions.Options) (parser.Expr, error) {
+func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, originalExpression string, expr parser.Expr, timeRange types.QueryTimeRange, lookbackDelta time.Duration, options requestoptions.Options) (parser.Expr, error) {
 	requestedShardCount := int(options.TotalShards)
 	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
 
-	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
-		seriesCount = hints.GetCardinalityEstimate()
+	if o.estimator != nil {
+		var err error
+		seriesCount, err = o.estimator.EstimateSeriesCount(ctx, originalExpression, expr, timeRange, lookbackDelta)
 
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
 		if hints.TotalQueries > 0 {
 			// If splitting and caching inside MQE is enabled, this will be 1, and that is OK:
 			// the impact of this is that the -query-frontend.query-sharding-max-sharded-queries limit will apply per time-split
@@ -107,24 +121,34 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr p
 //
 // Markers are never nested inside one another (the subquery spin-off mapper does not recurse into a
 // query once it has spun it off), so this does not descend into a marker once found.
-func collectEvaluationRoots(expr parser.Expr) []*parser.Call {
-	var roots []*parser.Call
+func collectEvaluationRoots(expr parser.Expr, rootTimeRange types.QueryTimeRange) []evaluationRoot {
+	var roots []evaluationRoot
 
-	var visit func(node parser.Node)
-	visit = func(node parser.Node) {
+	var visit func(node parser.Node, timeRange types.QueryTimeRange)
+	visit = func(node parser.Node, timeRange types.QueryTimeRange) {
 		if call, ok := node.(*parser.Call); ok && core.IsEvaluationRootFunctionCall(call) {
-			roots = append(roots, call)
+			roots = append(roots, evaluationRoot{call: call, timeRange: timeRange})
 			return
 		}
 
+		childrenTimeRange := timeRange
+		if subquery, isSubquery := node.(*parser.SubqueryExpr); isSubquery {
+			childrenTimeRange = core.SubqueryChildrenTimeRange(timeRange, subquery.Range, subquery.Step, subquery.OriginalOffset, core.TimeFromTimestamp(subquery.Timestamp))
+		}
+
 		for _, child := range parser.Children(node) {
-			visit(child)
+			visit(child, childrenTimeRange)
 		}
 	}
 
-	visit(expr)
+	visit(expr, rootTimeRange)
 
 	return roots
+}
+
+type evaluationRoot struct {
+	call      *parser.Call
+	timeRange types.QueryTimeRange
 }
 
 var ConcatSquasher astmapper.Squasher = &concatSquasher{}

@@ -62,13 +62,16 @@ type EngineOpts struct {
 	EnableMultiAggregation                                    bool `yaml:"enable_multi_aggregation" category:"experimental"`
 	EnableRemoveStaticallyEmptyExpressions                    bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
 
-	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
-
+	RangeVectorSplitting          RangeVectorSplittingConfig          `yaml:"range_vector_splitting" category:"experimental"`
 	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"time_splitting_and_caching" category:"experimental"`
+	CardinalityEstimation         CardinalityEstimationConfig         `yaml:"cardinality_estimation" category:"experimental"`
 
 	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
 	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
 	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
+
+	// QueryPostProcessors are invoked after each query executes successfully.
+	QueryPostProcessors []QueryPostProcessor `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.
@@ -110,6 +113,16 @@ type RangeQuerySplittingAndCachingConfig struct {
 	CacheUnconsumedResults bool `yaml:"cache_unconsumed_results" category:"experimental"`
 }
 
+type CardinalityEstimationConfig struct {
+	Backend           caching.Backend            `yaml:"-"`
+	CacheKeyGenerator *caching.CacheKeyGenerator `yaml:"-"`
+
+	BucketSize                time.Duration `yaml:"bucket_size" category:"experimental"`
+	TTL                       time.Duration `yaml:"ttl" category:"experimental"`
+	MaxBucketsReadPerSelector int64         `yaml:"max_buckets_read_per_selector" category:"experimental"`
+	EstimateUpdateThreshold   float64       `yaml:"estimate_update_threshold" category:"experimental"`
+}
+
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", true, "Enable subset selector elimination when evaluating queries.")
@@ -123,6 +136,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 
 	o.RangeVectorSplitting.RegisterFlags(f)
 	o.RangeQuerySplittingAndCaching.RegisterFlags(f)
+	o.CardinalityEstimation.RegisterFlags(f)
 }
 
 func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
@@ -135,8 +149,51 @@ func (c *RangeQuerySplittingAndCachingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.CacheUnconsumedResults, "querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results", true, "Enable caching of query results that were not fully consumed by the query. When enabled, if a query stops reading before all series have been read, the remaining series are read and buffered so that the complete set of results can be cached.")
 }
 
+func (cfg *CardinalityEstimationConfig) RegisterFlags(f *flag.FlagSet) {
+	// Note that we have to use the flag name below (rather than referring to a constant) to avoid a circular import dependency.
+	const onlyAppliesIfSplittingAndCachingInsideMQE = " Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true."
+
+	f.DurationVar(&cfg.BucketSize, "querier.mimir-query-engine.cardinality-estimation.bucket-size", 4*time.Hour, "The duration of each bucket used to store cardinality estimates per selector."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.DurationVar(&cfg.TTL, "querier.mimir-query-engine.cardinality-estimation.ttl", 7*24*time.Hour, "The time-to-live of each cached cardinality estimate."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.Int64Var(&cfg.MaxBucketsReadPerSelector, "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector", 168, "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced)."+onlyAppliesIfSplittingAndCachingInsideMQE)
+	f.Float64Var(&cfg.EstimateUpdateThreshold, "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold", 0.1, "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate)."+onlyAppliesIfSplittingAndCachingInsideMQE)
+}
+
+func (cfg *CardinalityEstimationConfig) ConfigureCache(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator) {
+	cfg.Backend = caching.NewAdaptor(baseCache)
+	cfg.CacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("SC", 1), cachePrefixGenerator)
+}
+
+func (cfg *CardinalityEstimationConfig) Validate() error {
+	if cfg.BucketSize < time.Millisecond {
+		return fmt.Errorf("cardinality estimation bucket size must be at least 1ms")
+	}
+
+	if cfg.TTL <= 0 {
+		return fmt.Errorf("cardinality estimation TTL must be greater than zero")
+	}
+
+	if cfg.MaxBucketsReadPerSelector <= 0 {
+		return fmt.Errorf("cardinality estimation max buckets read per selector must be greater than zero")
+	}
+
+	if cfg.EstimateUpdateThreshold < 0 {
+		return fmt.Errorf("cardinality estimation update threshold must not be negative")
+	}
+
+	return nil
+}
+
 func (o *EngineOpts) Validate() error {
-	return o.RangeVectorSplitting.Validate()
+	if err := o.RangeVectorSplitting.Validate(); err != nil {
+		return err
+	}
+
+	if err := o.CardinalityEstimation.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // PrometheusEngineOpts returns the options for constructing the Prometheus engine, whether it is

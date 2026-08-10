@@ -11,11 +11,13 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -218,6 +220,206 @@ func TestSelector_QueryRanges(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "region", Value: "us-east-1"},
 			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
 		})
+	})
+}
+
+func TestSelector_ReportsCardinality(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			foo{env="prod", instance="a"} 0 1 2 3 4 5
+			foo{env="prod", instance="b"} 0 1 2 3 4 5
+			foo{env="dev", instance="c"}  0 1 2 3 4 5
+	`)
+
+	start := timestamp.Time(0)
+	end := start.Add(5 * time.Minute)
+	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
+	lookbackDelta := 5 * time.Minute
+
+	baseMatchers := types.Matchers{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}}
+	expectedMinT, expectedMaxT := ComputeQueriedTimeRange(timeRange, nil, 0, 0, lookbackDelta, false, false)
+
+	newSelector := func(ctx context.Context) *Selector {
+		return &Selector{
+			Queryable:                storage,
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 baseMatchers,
+			MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(ctx),
+		}
+	}
+
+	t.Run("without subsets", func(t *testing.T) {
+		t.Run("SeriesMetadata() called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			defer s.Close()
+
+			_, err := s.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 3,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+
+		t.Run("SeriesMetadata() not called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			defer s.Close()
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+	})
+
+	t.Run("with subsets", func(t *testing.T) {
+		t.Run("SeriesMetadata() called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			s.Subsets = []Subset{
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+			}
+
+			defer s.Close()
+
+			_, err := s.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 3,
+				},
+				{
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 2,
+				},
+				{
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 1,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+
+		t.Run("SeriesMetadata() not called", func(t *testing.T) {
+			qs, ctx := stats.ContextWithEmptyStats(context.Background())
+			s := newSelector(ctx)
+			s.Subsets = []Subset{
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "prod")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+				{
+					Filter: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "env", "dev")},
+					AllMatchers: types.Matchers{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+				},
+			}
+
+			defer s.Close()
+
+			s.FinishedReading(ctx)
+
+			require.Equal(t, []stats.SelectorCardinality{
+				{
+					Matchers:    []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "foo"}},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+				{
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+				{
+					Matchers: []stats.LabelMatcher{
+						{Type: labels.MatchEqual, Name: "__name__", Value: "foo"},
+						{Type: labels.MatchEqual, Name: "env", Value: "dev"},
+						{Type: labels.MatchEqual, Name: "full-matchers", Value: "some-matcher-dropped-during-cse"},
+					},
+					MinT:        expectedMinT,
+					MaxT:        expectedMaxT,
+					SeriesCount: 0,
+				},
+			}, qs.LoadSeenSelectorCardinalities())
+		})
+	})
+
+	t.Run("no stats in context", func(t *testing.T) {
+		for _, callSeriesMetadata := range []bool{true, false} {
+			t.Run(fmt.Sprintf("SeriesMetadata() called = %v", callSeriesMetadata), func(t *testing.T) {
+				// Should not panic when there are no stats in the context.
+				ctx := context.Background()
+				s := newSelector(ctx)
+
+				if callSeriesMetadata {
+					_, err := s.SeriesMetadata(ctx, nil)
+					require.NoError(t, err)
+				}
+
+				s.FinishedReading(ctx)
+			})
+		}
 	})
 }
 

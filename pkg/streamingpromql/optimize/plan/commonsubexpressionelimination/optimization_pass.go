@@ -202,10 +202,10 @@ func (s *deduplicationStats) add(other deduplicationStats) {
 
 type SharedSelectorGroup struct {
 	Paths   []path
-	Filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
+	Filters [][]core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
 }
 
-func (g *SharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatcher) {
+func (g *SharedSelectorGroup) add(p path, additionalMatchers []core.LabelMatcher) {
 	if len(g.Paths) == 0 {
 		// First duplicate or subset selector we've seen, create the list of paths.
 		g.Paths = make([]path, 0, 2)
@@ -215,7 +215,7 @@ func (g *SharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatche
 
 	if g.Filters == nil && len(additionalMatchers) > 0 {
 		// First subset selector we've seen, create a slice of filters for all the other existing nodes.
-		g.Filters = make([][]*core.LabelMatcher, len(g.Paths)-1, len(g.Paths))
+		g.Filters = make([][]core.LabelMatcher, len(g.Paths)-1, len(g.Paths))
 	}
 
 	if g.Filters != nil {
@@ -232,7 +232,7 @@ func (g *SharedSelectorGroup) hasSubsetSelectors() bool {
 	return g.Filters != nil
 }
 
-func (g *SharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
+func (g *SharedSelectorGroup) getFilterForPath(pathIdx int) []core.LabelMatcher {
 	if g.Filters == nil {
 		return nil
 	}
@@ -366,7 +366,7 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 }
 
 // countRegexMatchers counts the number of matchers that match a regular expression rather than a specific value
-func countRegexMatches(matchers []*core.LabelMatcher) int {
+func countRegexMatches(matchers []core.LabelMatcher) int {
 	count := 0
 
 	for _, m := range matchers {
@@ -538,7 +538,12 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 		var newChild planning.Node = duplicate
 
 		if filters := group.getFilterForPath(pathIdx); len(filters) > 0 {
-			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, filters)
+			selector, _, err := path.Selector()
+			if err != nil {
+				return false, err
+			}
+
+			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, selector.GetMatchers(), filters)
 			if err != nil {
 				return false, err
 			}
@@ -552,7 +557,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 			}
 		}
 
-		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
+		err = parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
 		if err != nil {
 			return false, err
 		}
@@ -566,26 +571,24 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 	return false, nil
 }
 
-func (e *OptimizationPass) findOrAddSubsetToSelector(selector planning.Node, subset []*core.LabelMatcher) (int, error) {
-	switch selector := selector.(type) {
+func (e *OptimizationPass) findOrAddSubsetToSelector(targetSelector planning.Node, allMatchers []core.LabelMatcher, subset []core.LabelMatcher) (int, error) {
+	switch targetSelector := targetSelector.(type) {
 	case *core.VectorSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	case *core.MatrixSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	default:
-		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", selector)
+		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", targetSelector)
 	}
 }
 
-func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, subset []*core.LabelMatcher) ([]core.SubsetMatchers, int) {
+func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, allMatchers []core.LabelMatcher, subset []core.LabelMatcher) ([]core.SubsetMatchers, int) {
 	idx := slices.IndexFunc(subsets, func(e core.SubsetMatchers) bool {
-		return slices.EqualFunc(e.Matchers, subset, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-			return a.Equal(b)
-		})
+		return labelMatcherSlicesEqual(e.Filter, subset) && labelMatcherSlicesEqual(e.AllMatchers, allMatchers)
 	})
 
 	if idx != -1 {
@@ -593,7 +596,13 @@ func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, 
 	}
 
 	idx = len(subsets)
-	return append(subsets, core.SubsetMatchers{Matchers: subset}), idx
+	return append(subsets, core.SubsetMatchers{Filter: subset, AllMatchers: allMatchers}), idx
+}
+
+func labelMatcherSlicesEqual(first, second []core.LabelMatcher) bool {
+	return slices.EqualFunc(first, second, func(a core.LabelMatcher, b core.LabelMatcher) bool {
+		return a.Equal(b)
+	})
 }
 
 // findCommonSubexpressionLength returns the length of the common expression present at the end of each path
@@ -1024,7 +1033,7 @@ const (
 // SelectorsAreDuplicateOrSubset does not check if first is a subset of second.
 //
 // The matchers in first and second must be sorted in the order produced by core.CompareMatchers.
-func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
+func SelectorsAreDuplicateOrSubset(first, second []core.LabelMatcher) (SelectorRelationship, []core.LabelMatcher) {
 	// Take the fast path out of here if the first selector is longer than the second as they can't be subsets
 	if len(first) > len(second) {
 		return NotDuplicateOrSubset, nil
@@ -1032,7 +1041,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 	// If they're equal lengths we check if they're exactly identical
 	if len(first) == len(second) {
-		same := slices.EqualFunc(first, second, func(a, b *core.LabelMatcher) bool {
+		same := slices.EqualFunc(first, second, func(a, b core.LabelMatcher) bool {
 			return a.Equal(b)
 		})
 
@@ -1044,10 +1053,10 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	}
 
 	nextSecondIdx := 0
-	var subsetMatchers []*core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
+	var subsetMatchers []core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
 	var checkAndAllocateSubsetMatchers = func() {
 		if subsetMatchers == nil {
-			subsetMatchers = make([]*core.LabelMatcher, 0, max(1, len(second)-len(first)))
+			subsetMatchers = make([]core.LabelMatcher, 0, max(1, len(second)-len(first)))
 		}
 	}
 
@@ -1102,7 +1111,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 // secondMatcherIsSubsetOfFirstMatcher returns true if all label values matching second also match first.
 // Handles the cases where outer is MatchRegexp or MatchNotRegexp and inner is MatchEqual.
-func secondMatcherIsSubsetOfFirstMatcher(first, second *core.LabelMatcher) bool {
+func secondMatcherIsSubsetOfFirstMatcher(first, second core.LabelMatcher) bool {
 	if second.Type != labels.MatchEqual {
 		return false
 	}
@@ -1129,5 +1138,5 @@ func secondMatcherIsSubsetOfFirstMatcher(first, second *core.LabelMatcher) bool 
 type selector interface {
 	planning.Node
 	EquivalentToIgnoringMatchersAndHints(other planning.Node) bool
-	GetMatchers() []*core.LabelMatcher
+	GetMatchers() []core.LabelMatcher
 }

@@ -1212,3 +1212,96 @@ func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName st
 		require.Empty(t, m)
 	}
 }
+
+func TestQueryFrontendCardinalityEstimation(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio, consul, memcached))
+
+	const targetSeriesPerShard = 10
+	const defaultShardCount = 8
+
+	flags := map[string]string{
+		"-query-frontend.results-cache.backend":                                    "memcached",
+		"-query-frontend.results-cache.memcached.addresses":                        "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.parallelize-shardable-queries":                            "true",
+		"-query-frontend.enable-remote-execution":                                  "true",
+		"-query-frontend.use-mimir-query-engine-for-sharding":                      "true",
+		"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "true",
+		"-query-frontend.query-sharding-target-series-per-shard":                   strconv.Itoa(targetSeriesPerShard),
+		"-query-frontend.query-sharding-total-shards":                              strconv.Itoa(defaultShardCount),
+	}
+
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until both the distributor, querier and query-frontend have updated the ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"), "distributor should have seen distributor and ingester ring")
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"), "querier should have seen ingester ring")
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"), "query-frontend should have seen querier ring")
+
+	nowTruncatedToLastSecond := time.Now().Truncate(time.Second)
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	sampleT := nowTruncatedToLastSecond.Add(-20 * time.Minute)
+	metricName := "test_metric"
+	const seriesCount = 15
+	expectedSum := 0.0
+
+	for idx := range seriesCount {
+		series, _, _ := generateFloatSeries(metricName, sampleT, prompb.Label{Name: "idx", Value: strconv.Itoa(idx)})
+		seriesValue := series[0].Samples[0].Value
+		expectedSum += seriesValue
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	}
+
+	makeRequest := func() {
+		res, err := client.Query(fmt.Sprintf("sum(%v)", metricName), sampleT)
+		require.NoError(t, err)
+
+		v, ok := res.(model.Vector)
+		require.Truef(t, ok, "expected instant query result to be a vector, got %T", res)
+
+		require.Len(t, v, 1)
+		sample := v[0]
+		require.InDelta(t, expectedSum, float64(sample.Value), 0.00001)
+		require.Equal(t, sampleT, sample.Timestamp.Time())
+		require.Equal(t, "{}", sample.Metric.String())
+	}
+
+	expectedQuerierRequestsSoFar := 0
+	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "querierpb.EvaluateQueryRequest"))
+
+	// Make the request. The cardinality cache should be empty, so the request should run with the default number of shards.
+	makeRequest()
+	expectedQuerierRequestsSoFar += defaultShardCount
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedQuerierRequestsSoFar)), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "querier should have received one request per shard")
+
+	// Make the request again. The cardinality should be loaded from the cache and used to set the shard size based on the cardinality seen in the last request.
+	makeRequest()
+	expectedQuerierRequestsSoFar += 2
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedQuerierRequestsSoFar)), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "querier should have received one request per shard for the original and subsequent requests")
+}

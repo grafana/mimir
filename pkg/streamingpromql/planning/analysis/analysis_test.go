@@ -566,7 +566,7 @@ func TestHandler_Sharding(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
-	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
+	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, log.NewNopLogger()))
 
 	handler := middleware.AuthenticateUser(NewHandler(planner, streamingpromql.NewStaticQueryLimitsProvider(), streamingpromql.NewTestEngineOpts(), requestoptions.OptionDecoder{}))
 

@@ -48,7 +48,7 @@ require (
 	cloud.google.com/go/storage v1.61.3 // indirect
 	connectrpc.com/connect v1.20.0 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
-	cuelang.org/go v0.16.1 // indirect
+	cuelang.org/go v0.17.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	dmitri.shuralyov.com/go/generated v0.0.0-20170818220700-b1254a446363 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
@@ -88,7 +88,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
-	github.com/aws/smithy-go v1.27.4 // indirect
+	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
@@ -207,7 +207,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/jsonnet-bundler/jsonnet-bundler v0.6.0 // indirect
 	github.com/jstemmer/go-junit-report v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.0.0 // indirect
@@ -266,7 +266,7 @@ require (
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/prometheus/prometheus v0.311.3 // indirect
-	github.com/protocolbuffers/txtpbfmt v0.0.0-20260217160748-a481f6a22f94 // indirect
+	github.com/protocolbuffers/txtpbfmt v0.0.0-20260420112717-c39628bde8b5 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect

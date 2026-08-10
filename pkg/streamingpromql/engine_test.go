@@ -1818,7 +1818,7 @@ func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T
 	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
 		},
 	}}

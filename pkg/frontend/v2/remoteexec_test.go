@@ -2312,7 +2312,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	if enableMQESharding {
-		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
+		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, nil, logger))
 	}
 
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)

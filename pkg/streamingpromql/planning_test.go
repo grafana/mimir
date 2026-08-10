@@ -63,7 +63,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
@@ -90,7 +90,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
@@ -118,7 +118,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(0),
@@ -143,7 +143,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(0),
@@ -175,7 +175,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(0),
@@ -200,7 +200,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(3000),
@@ -232,7 +232,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(5000),
@@ -263,7 +263,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Offset:             30 * time.Second,
@@ -287,7 +287,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -311,7 +311,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -337,7 +337,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -390,7 +390,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -442,7 +442,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -557,7 +557,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
@@ -600,7 +600,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
@@ -634,7 +634,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 14, End: 25},
@@ -669,7 +669,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 19, End: 30},
@@ -705,7 +705,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 8, End: 19},
@@ -848,7 +848,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
@@ -890,7 +890,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -942,7 +942,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -953,7 +953,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 14, End: 31},
@@ -988,7 +988,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -999,7 +999,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 23, End: 40},
@@ -1037,7 +1037,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1048,7 +1048,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 29, End: 46},
@@ -1086,7 +1086,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1097,7 +1097,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 46, End: 63},
@@ -1137,7 +1137,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1172,7 +1172,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1207,7 +1207,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1244,7 +1244,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1283,7 +1283,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1325,7 +1325,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Offset:                 0,
@@ -1380,7 +1380,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Timestamp:              timestampOf(1000),
@@ -1435,7 +1435,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Timestamp:              timestampOf(1000),
@@ -1507,7 +1507,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -1533,7 +1533,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -1560,7 +1560,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
@@ -1596,7 +1596,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
@@ -1608,7 +1608,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_DATA_LABEL_SELECTOR,
 						Details: marshalDetails(&core.DataLabelSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "svc_info"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 13, End: 34},

@@ -95,6 +95,12 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 		result.Value = types.GetMatrix(0)
 	}
 
+	for _, pp := range q.engine.queryPostProcessors {
+		if err := pp.PostProcess(ctx, q.evaluator.originalExpression); err != nil {
+			return &promql.Result{Err: fmt.Errorf("post-processing query failed: %w", err)}
+		}
+	}
+
 	q.succeeded = true
 	return result
 }
@@ -329,4 +335,14 @@ func (q *Query) Cancel() {
 
 func (q *Query) String() string {
 	return q.originalExpression
+}
+
+// QueryPostProcessor is invoked after a query has executed successfully.
+//
+// It can be used to observe the outcome of a query, for example to populate a cache from the query
+// stats. Post-processors are not invoked if the query fails, and must not modify the query result.
+type QueryPostProcessor interface {
+	// PostProcess is called once, after the query has executed successfully. Implementations should
+	// read whatever they need (for example the query stats) from ctx.
+	PostProcess(ctx context.Context, originalExpression string) error
 }

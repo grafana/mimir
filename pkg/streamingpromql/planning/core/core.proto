@@ -143,7 +143,7 @@ enum UnaryOperation {
 }
 
 message VectorSelectorDetails {
-  repeated LabelMatcher matchers = 1;
+  repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [
     (gogoproto.stdduration) = true,
@@ -161,7 +161,7 @@ message VectorSelectorDetails {
 }
 
 message MatrixSelectorDetails {
-  repeated LabelMatcher matchers = 1;
+  repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [
     (gogoproto.stdduration) = true,
@@ -190,7 +190,11 @@ message MatrixSelectorDetails {
 // SubsetMatchers defines a subset for a selector to report in its statistics.
 // It does not affect the series returned by a selector.
 message SubsetMatchers {
-  repeated LabelMatcher matchers = 1;
+  // The minimal set of matchers that must be applied on top of the selector's matchers to produce the series for this subset.
+  repeated LabelMatcher filter = 1 [(gogoproto.nullable) = false];
+
+  // The original set of matchers used for this subset.
+  repeated LabelMatcher all_matchers = 2 [(gogoproto.nullable) = false];
 }
 
 message SubqueryDetails {
@@ -239,6 +243,6 @@ message VectorMatchFillValues {
 }
 
 message DataLabelSelectorDetails {
-  repeated LabelMatcher matchers = 1;
+  repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
   PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
 }

@@ -2188,6 +2188,39 @@ mimir_query_engine:
     # CLI flag: -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
     [cache_unconsumed_results: <boolean> | default = true]
 
+  cardinality_estimation:
+    # (experimental) The duration of each bucket used to store cardinality
+    # estimates per selector. Only applies if running splitting and caching
+    # inside MQE is enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.bucket-size
+    [bucket_size: <duration> | default = 4h]
+
+    # (experimental) The time-to-live of each cached cardinality estimate. Only
+    # applies if running splitting and caching inside MQE is enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.ttl
+    [ttl: <duration> | default = 168h]
+
+    # (experimental) The maximum number of buckets to attempt to read per
+    # selector. If a selector's time range queries more buckets than this limit,
+    # buckets over the entire time range are sampled (i.e. the resolution is
+    # reduced). Only applies if running splitting and caching inside MQE is
+    # enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector
+    [max_buckets_read_per_selector: <int> | default = 168]
+
+    # (experimental) The minimum difference from the original estimate to
+    # trigger storing a new cardinality estimate in the cache. Values are a
+    # proportion of the original value (e.g. a value of 0.1 means a new estimate
+    # is only written if the new value is 10% higher than the original
+    # estimate). Only applies if running splitting and caching inside MQE is
+    # enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold
+    [estimate_update_threshold: <float> | default = 0.1]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

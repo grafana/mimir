@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16228-4e1f803380@sha256:7312c47440ea6afeeb30e63e33317a16d5c8e0a3c1f323b9e898de2f3ce7dfbf
+LATEST_BUILD_IMAGE_TAG ?= pr16310-f1ed3a6127@sha256:010022d1ec7e39c3da50350a62af47760def96ee22d502a77910db6e504508ba
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -654,7 +654,8 @@ build-mixin: check-mixin-jb
 	@# Empty the compiled mixin directories content, without removing the directories itself,
 	@# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
 	@# If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
-	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+	@set -e; \
+	for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
 		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
