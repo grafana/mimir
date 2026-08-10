@@ -175,8 +175,6 @@
 * [BUGFIX] MQE: Fix issue where a sentinel value was inadvertently returned to a pool where it could be mutated by multiple threads at once. #16205
 
 ### Mixin
-* [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #14235
-
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [CHANGE] Alerts: `MimirIngesterKafkaReadFailed` now fires as `warning` after 5m, and escalates to `critical` if it persists for 30m. `MimirStrongConsistencyEnforcementFailed` severity changed from `critical` to `warning`, since queriers retry on a different ingester and fire their own alerts if that retry fails. #16019
 * [CHANGE] Remove Grafana Enterprise Metrics (GEM) specific build of the mixin. #16031
@@ -194,6 +192,8 @@
 * [ENHANCEMENT] Dashboards: Add optional per-zone panels for multi-zone write path deployments to the "Writes" dashboard, enabled via the `show_multi_zone_write_path_panels` config option (disabled by default). When enabled, the gateway and distributor "Requests / sec" and "Kafka produced records / sec" panels break down the traffic by availability zone, and "Latency per zone" panels are added next to the aggregate latency panels. #16206
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 * [BUGFIX] Alerts: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
+
+* [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #16329
 
 ### Jsonnet
 
