@@ -164,6 +164,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 
 var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)
 var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("at least one querier in the ring is not reporting a supported query plan version")
+var errNoHealthyQueriersInRing = fmt.Errorf("no healthy queriers in the ring")
 
 func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	logger := spanlogger.FromContext(ctx, r.logger)
@@ -171,6 +172,12 @@ func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx c
 	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
 	if err != nil {
 		return 0, fmt.Errorf("could not compute maximum supported query plan version: could not get all queriers from the ring: %w", err)
+	}
+
+	// GetAllHealthy only fails if the ring is empty: a ring holding nothing but unhealthy queriers
+	// returns no instances and no error, and we can't compute a version from that.
+	if len(instances.Instances) == 0 {
+		return 0, fmt.Errorf("could not compute maximum supported query plan version: %w", errNoHealthyQueriersInRing)
 	}
 
 	lowestVersionSeen := uint64(math.MaxUint64)

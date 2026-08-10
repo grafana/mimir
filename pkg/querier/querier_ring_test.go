@@ -21,8 +21,9 @@ import (
 )
 
 type mockInstance struct {
-	state    ring.InstanceState
-	versions ring.InstanceVersions
+	state     ring.InstanceState
+	versions  ring.InstanceVersions
+	unhealthy bool
 }
 
 func TestRingQueryPlanVersionProvider(t *testing.T) {
@@ -37,6 +38,45 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 	}{
 		"no instances in the ring": {
 			expectedError: "could not compute maximum supported query plan version: could not get all queriers from the ring: empty ring",
+		},
+		"one instance in the ring, has version but is unhealthy": {
+			instances: []mockInstance{
+				{
+					state:     ring.ACTIVE,
+					versions:  versionsMap(123),
+					unhealthy: true,
+				},
+			},
+			expectedError: "could not compute maximum supported query plan version: no healthy queriers in the ring",
+		},
+		"many instances in the ring, all have versions but all are unhealthy": {
+			instances: []mockInstance{
+				{
+					state:     ring.ACTIVE,
+					versions:  versionsMap(123),
+					unhealthy: true,
+				},
+				{
+					state:     ring.LEAVING,
+					versions:  versionsMap(124),
+					unhealthy: true,
+				},
+			},
+			expectedError: "could not compute maximum supported query plan version: no healthy queriers in the ring",
+		},
+		"many instances in the ring, only the unhealthy ones have a lower version": {
+			instances: []mockInstance{
+				{
+					state:     ring.ACTIVE,
+					versions:  versionsMap(122),
+					unhealthy: true,
+				},
+				{
+					state:    ring.ACTIVE,
+					versions: versionsMap(123),
+				},
+			},
+			expectedVersion: 123,
 		},
 		"one instance in the ring, has no version": {
 			instances: []mockInstance{
@@ -158,7 +198,14 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 			})
 
 			for idx, instance := range testCase.instances {
-				desc.AddIngester(fmt.Sprintf("querier-%d", idx), fmt.Sprintf("127.0.0.%d", idx), "", []uint32{uint32(idx)}, instance.state, time.Now(), false, time.Time{}, instance.versions)
+				id := fmt.Sprintf("querier-%d", idx)
+				added := desc.AddIngester(id, fmt.Sprintf("127.0.0.%d", idx), "", []uint32{uint32(idx)}, instance.state, time.Now(), false, time.Time{}, instance.versions)
+
+				if instance.unhealthy {
+					// AddIngester always sets a fresh heartbeat, so backdate it beyond the ring's heartbeat timeout.
+					added.Timestamp = time.Now().Add(-time.Hour).Unix()
+					desc.Ingesters[id] = added
+				}
 			}
 
 			cfg := ring.Config{
