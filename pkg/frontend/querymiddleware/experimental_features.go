@@ -160,12 +160,19 @@ func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeat
 			}
 		case *parser.BinaryExpr:
 			if n.VectorMatching != nil {
-				if n.VectorMatching.FillValues.LHS != nil && n.VectorMatching.FillValues.RHS != nil {
+				lhs := n.VectorMatching.FillValues.LHS
+				rhs := n.VectorMatching.FillValues.RHS
+				if lhs != nil && rhs != nil && *lhs == *rhs {
+					// Both sides set to the same value: written as fill(v).
 					expFuncNames["fill"] = binopFillModifierType
-				} else if n.VectorMatching.FillValues.LHS != nil {
-					expFuncNames["fill_left"] = binopFillModifierType
-				} else if n.VectorMatching.FillValues.RHS != nil {
-					expFuncNames["fill_right"] = binopFillModifierType
+				} else {
+					// Asymmetric fill_left / fill_right (possibly both, possibly only one).
+					if lhs != nil {
+						expFuncNames["fill_left"] = binopFillModifierType
+					}
+					if rhs != nil {
+						expFuncNames["fill_right"] = binopFillModifierType
+					}
 				}
 			}
 		}
