@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/services"
 	hashivault "github.com/hashicorp/vault/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -444,4 +445,52 @@ func TestRulerDistributorClientModuleDependencies(t *testing.T) {
 
 	deps := mimir.ModuleManager.DependenciesForModule(RulerDistributorClient)
 	require.Contains(t, deps, Vault)
+}
+
+func TestMimir_InitQuerierRing(t *testing.T) {
+	tests := map[string]struct {
+		remoteExecutionEnabled bool
+		waitEnabled            bool
+		expectedWait           bool
+	}{
+		"should wait for the querier ring to be populated when remote execution is enabled": {
+			remoteExecutionEnabled: true,
+			waitEnabled:            true,
+			expectedWait:           true,
+		},
+		"should not wait for the querier ring to be populated when remote execution is disabled": {
+			remoteExecutionEnabled: false,
+			waitEnabled:            true,
+			expectedWait:           false,
+		},
+		"should not wait for the querier ring to be populated when the wait is disabled": {
+			remoteExecutionEnabled: true,
+			waitEnabled:            false,
+			expectedWait:           false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := newDefaultConfig()
+			cfg.Frontend.QueryMiddleware.EnableRemoteExecution = testData.remoteExecutionEnabled
+			cfg.Frontend.WaitForQuerierRingOnStartup = testData.waitEnabled
+			// The default is memberlist, which needs the MemberlistKV module to have been initialised.
+			cfg.Querier.Ring.Common.KVStore.Store = "inmemory"
+
+			mimir := &Mimir{Cfg: *cfg, Registerer: prometheus.NewPedanticRegistry()}
+
+			svc, err := mimir.initQuerierRing()
+			require.NoError(t, err)
+			require.NotNil(t, mimir.QuerierRing)
+
+			// When there's nothing to wait for, the ring client is returned directly instead of being
+			// wrapped in the service that gates the running state on the ring being populated.
+			if testData.expectedWait {
+				require.NotSame(t, services.Service(mimir.QuerierRing), svc)
+			} else {
+				require.Same(t, services.Service(mimir.QuerierRing), svc)
+			}
+		})
+	}
 }

@@ -635,7 +635,13 @@ func (t *Mimir) initQuerierRing() (services.Service, error) {
 
 	t.QuerierRing = r
 
-	return r, nil
+	// Query-frontends only consult the ring to plan queries when remote execution is enabled
+	// (see createQueryFrontendQueryPlanner), so otherwise there's nothing to wait for.
+	if !t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution || !t.Cfg.Frontend.WaitForQuerierRingOnStartup {
+		return r, nil
+	}
+
+	return querier.NewRingService(r, querier.RingStartupWaitTimeout, util_log.Logger), nil
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the

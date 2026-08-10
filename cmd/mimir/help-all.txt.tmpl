@@ -2975,6 +2975,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
     	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
+  -query-frontend.wait-for-querier-ring-on-startup
+    	[experimental] If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries. (default true)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

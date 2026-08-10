@@ -36,8 +36,9 @@ type CombinedFrontendConfig struct {
 
 	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 
-	QueryEngine               string `yaml:"query_engine" category:"experimental"`
-	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
+	QueryEngine                 string `yaml:"query_engine" category:"experimental"`
+	EnableQueryEngineFallback   bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
+	WaitForQuerierRingOnStartup bool   `yaml:"wait_for_querier_ring_on_startup" category:"experimental"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -48,6 +49,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 
 	f.StringVar(&cfg.QueryEngine, queryEngineFlag, querier.MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+	f.BoolVar(&cfg.WaitForQuerierRingOnStartup, "query-frontend.wait-for-querier-ring-on-startup", true, fmt.Sprintf("If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or %s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries.", querier.RingStartupWaitTimeout))
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
