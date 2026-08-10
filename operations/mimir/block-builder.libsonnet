@@ -55,7 +55,7 @@
       // process faster than the 1h job backlog window.
       'ingest-storage.kafka.ingestion-concurrency-max': 2,
       // Align fetch concurrency with GOMAXPROCS for better throughput / lower memory.
-      'ingest-storage.kafka.fetch-concurrency-max': std.min(std.ceil($.util.parseCPU($.block_builder_container.resources.requests.cpu)), 4),
+      'ingest-storage.kafka.fetch-concurrency-max': std.ceil(std.max($.util.parseCPU($.block_builder_container.resources.requests.cpu), 4)),
     } +
     $.mimirRuntimeConfigFile,
 
@@ -64,7 +64,7 @@
   block_builder_env_map:: {
     // Pin Go threads to CPU request: block-builders are IO-bound during fetch so extra threads
     // add little throughput but increase context-switch cost.
-    GOMAXPROCS: std.toString($.util.parseCPU($.block_builder_container.resources.requests.cpu)),
+    GOMAXPROCS: std.toString(std.ceil(std.max($.util.parseCPU($.block_builder_container.resources.requests.cpu), 4))),
     // Dynamically set GOMEMLIMIT based on memory limit to protect against OOM.
     GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.block_builder_container.resources.limits.memory))),
   },
