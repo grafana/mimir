@@ -152,14 +152,13 @@ func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) 
 
 func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte, err error) {
 	l.requests.Add(float64(len(keys)))
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
 	var (
 		found = make(map[string][]byte, len(keys))
 		miss  = make([]string, 0, len(keys))
 		now   = time.Now()
 	)
 
+	l.mtx.Lock()
 	for _, k := range keys {
 		item, ok := l.lru.Get(k)
 		if !ok {
@@ -174,10 +173,16 @@ func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ..
 		miss = append(miss, k)
 
 	}
+	l.mtx.Unlock()
 	l.hits.Add(float64(len(found)))
 
+	// Fetch misses from the backing cache with no lock held: this can be a slow,
+	// blocking network round trip, and must not stall unrelated callers of this
+	// LRUCache instance while it's in flight.
 	if len(miss) > 0 {
 		result, err = l.c.GetMultiWithError(ctx, miss, opts...)
+
+		l.mtx.Lock()
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
 			l.lru.Add(k, &Item{
@@ -186,6 +191,7 @@ func (l *LRUCache) GetMultiWithError(ctx context.Context, keys []string, opts ..
 			})
 			found[k] = v
 		}
+		l.mtx.Unlock()
 	}
 
 	return found, err

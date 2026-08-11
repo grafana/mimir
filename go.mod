@@ -367,4 +367,6 @@ replace github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-2024
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
 
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20260811200925-7d42c29df10e
+
 replace github.com/thanos-io/objstore => github.com/francoposa/objstore v0.0.0-20260730205958-44bf50474b87
