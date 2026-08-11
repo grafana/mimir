@@ -976,6 +976,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -1071,6 +1072,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
@@ -1373,6 +1375,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
@@ -1479,6 +1482,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
@@ -1721,6 +1725,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1826,6 +1831,7 @@ spec:
         - -compactor.symbols-flushers-concurrency=4
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1951,6 +1957,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2088,6 +2095,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2219,6 +2227,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2587,6 +2596,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2728,6 +2738,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2871,6 +2882,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
