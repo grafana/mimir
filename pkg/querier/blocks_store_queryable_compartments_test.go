@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -207,6 +208,53 @@ func TestBlocksStoreQuerier_Compartments_LabelNames(t *testing.T) {
 		// The hit metric is not registered when compartments are disabled.
 		require.Equal(t, 0, testutil.CollectAndCount(reg, "cortex_querier_compartments_hit_per_query"))
 		assertStoreGatewayInstancesHit(t, reg, 1, 0)
+	})
+
+	t.Run("should name the read compartment a ring error came from", func(t *testing.T) {
+		router := compartments.NewRouter(2)
+		block := ulid.MustNew(1, nil)
+
+		t.Run("when the query is pinned to the failing compartment", func(t *testing.T) {
+			for failing := 0; failing < 2; failing++ {
+				t.Run(fmt.Sprintf("compartment %d", failing), func(t *testing.T) {
+					finders := []*blocksFinderMock{{}, {}}
+					finders[failing].On("GetBlocks", mock.Anything, compartmentsTestTenant, minT, maxT).Return(bucketindex.Blocks{{ID: block}}, &bucketindex.Metadata{}, nil)
+
+					stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+					stores[failing] = &blocksStoreSetMock{mockedResponses: []interface{}{ring.ErrTooManyUnhealthyInstances}}
+
+					q := newCompartmentsTestQuerier(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+					matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricNameForCompartment(t, router, failing))
+					_, _, err := q.LabelNames(ctx, nil, matcher)
+					require.ErrorIs(t, err, ring.ErrTooManyUnhealthyInstances)
+					require.ErrorContains(t, err, fmt.Sprintf("read compartment %d", failing))
+				})
+			}
+		})
+
+		t.Run("when the query fans out to all compartments", func(t *testing.T) {
+			for failing := 0; failing < 2; failing++ {
+				t.Run(fmt.Sprintf("compartment %d", failing), func(t *testing.T) {
+					// Only the failing compartment has blocks, so only it can fail. If both failed, the fan-out
+					// would return whichever error came first and the assertions below would flake.
+					finders := make([]BlocksFinder, 2)
+					stores := make([]BlocksStoreSet, 2)
+					for c := range finders {
+						finders[c] = &stubBlocksFinder{meta: &bucketindex.Metadata{}}
+						stores[c] = &blocksStoreSetMock{}
+					}
+					finders[failing] = &stubBlocksFinder{blocks: bucketindex.Blocks{{ID: block}}, meta: &bucketindex.Metadata{}}
+					stores[failing] = &blocksStoreSetMock{mockedResponses: []interface{}{ring.ErrTooManyUnhealthyInstances}}
+
+					q := newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+					_, _, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "job", "test"))
+					require.ErrorIs(t, err, ring.ErrTooManyUnhealthyInstances)
+					require.ErrorContains(t, err, fmt.Sprintf("read compartment %d", failing))
+				})
+			}
+		})
 	})
 }
 
