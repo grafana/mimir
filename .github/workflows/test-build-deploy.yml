@@ -86,7 +86,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -183,6 +185,9 @@ jobs:
   # There are three separate warmup jobs because different compilation flags produce different
   # cache entries: integration tests (no -race), unit tests (-race), and image builds + linting
   # (CGO_ENABLED=0, multi-arch for images, single-arch for lint).
+  #
+  # The second restore-keys tier falls back across build images, which get rebuilt for reasons
+  # unrelated to the Go toolchain. Safe: Go keys cache entries by compiler build ID.
   warmup-go-build-cache-integration-tests:
     needs: [goversion, prepare]
     runs-on: ubuntu-latest
@@ -308,10 +313,11 @@ jobs:
     strategy:
       # Do not abort other groups when one fails.
       fail-fast: false
-      # Split tests into 10 groups.
+      # A group's runtime is bounded by its slowest package, not by how many packages it holds,
+      # so more groups only add per-job startup and cache restore overhead.
       matrix:
-        test_group_id:    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        test_group_total: [10]
+        test_group_id:    [0, 1, 2, 3, 4]
+        test_group_total: [5]
         extra_build_tags: ["", "nopools"]
     needs:
       - prepare
@@ -333,7 +339,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-unit-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -425,7 +433,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -449,7 +459,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -473,7 +485,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -497,7 +511,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -521,7 +537,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -549,7 +567,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-image-and-lint-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Build
@@ -633,7 +653,9 @@ jobs:
         with:
           path: /go/cache
           key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-unit-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -686,7 +708,9 @@ jobs:
         with:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
+          restore-keys: |
+            go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
+            go-build-cache-integration-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace

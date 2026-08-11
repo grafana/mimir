@@ -74,35 +74,60 @@ echo
 EXIT_CODE=0
 FAILED_PACKAGES=""
 
-# Run one package at a time so that a failure can be retried individually without re-running
-# the entire group.
+# These tests are latency-bound rather than CPU-bound, so batching all packages into one
+# "go test" is ~2x faster than one invocation per package even on a 4 core runner.
 MAX_ATTEMPTS=2
+OUTPUT_FILE=$(mktemp)
+trap 'rm -f "$OUTPUT_FILE"' EXIT
 
-for pkg in $GROUP_TESTS; do
-    if echo "$pkg" | grep -q --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN"; then
-        RACE_FLAG=""
-    else
-        RACE_FLAG="-race"
+RACE_PACKAGES=$(echo "$GROUP_TESTS" | grep -v --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN")
+NO_RACE_PACKAGES=$(echo "$GROUP_TESTS" | grep --extended-regexp "$SKIP_RACE_DETECTOR_PATTERN")
+
+# Sets FAILED to the packages that failed, or to all of "$@" if it can't be attributed.
+run_tests() {
+    local race_flag=$1
+    shift
+
+    # shellcheck disable=SC2086 # we *want* word splitting of race_flag.
+    go test -tags="${BUILD_TAGS}" -timeout 30m $race_flag "$@" 2>&1 | tee "$OUTPUT_FILE"
+
+    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+        FAILED=""
+        return
     fi
+
+    FAILED=$(grep --extended-regexp "^FAIL[[:space:]]+github.com/grafana/mimir/" "$OUTPUT_FILE" | awk '{print $2}' | sort -u | xargs)
+    if [[ -z "$FAILED" ]]; then
+        FAILED="$*"
+    fi
+}
+
+for RACE_FLAG in "-race" ""; do
+    if [[ "$RACE_FLAG" == "-race" ]]; then
+        PACKAGES=$(echo "$RACE_PACKAGES" | xargs)
+    else
+        PACKAGES=$(echo "$NO_RACE_PACKAGES" | xargs)
+    fi
+
+    [[ -z "$PACKAGES" ]] && continue
 
     for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
         if [[ $ATTEMPT -gt 1 ]]; then
-            echo "Retrying failed package: $pkg"
+            echo
+            echo "Retrying failed packages: $PACKAGES"
             echo
         fi
 
-        # shellcheck disable=SC2086 # we *want* word splitting of RACE_FLAG.
-        go test -tags="${BUILD_TAGS}" -timeout 30m $RACE_FLAG "$pkg"
-        PKG_EXIT_CODE=$?
+        # shellcheck disable=SC2086 # we *want* word splitting of PACKAGES.
+        run_tests "$RACE_FLAG" $PACKAGES
+        PACKAGES=$FAILED
 
-        if [[ $PKG_EXIT_CODE -eq 0 ]]; then
-            break
-        fi
+        [[ -z "$PACKAGES" ]] && break
     done
 
-    if [[ $PKG_EXIT_CODE -ne 0 ]]; then
+    if [[ -n "$PACKAGES" ]]; then
         EXIT_CODE=1
-        FAILED_PACKAGES="${FAILED_PACKAGES} ${pkg}"
+        FAILED_PACKAGES="${FAILED_PACKAGES} ${PACKAGES}"
     fi
 done
 
