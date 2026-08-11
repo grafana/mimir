@@ -612,6 +612,36 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	requireOffsets(t, schedB, "ingest", 0, map[int]int64{0: 200, 1: 100, 2: 150})
 }
 
+// TestStartup_NoCommit_PartialObservation demonstrates an unsafe startup resume where a partition
+// has no committed offset and only the later of two in-flight jobs is reported during the
+// observation window (the earlier job's worker is down), the scheduler silently skips the earlier job's range.
+func TestStartup_NoCommit_PartialObservation(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+	// No initCommit: simulates a fresh consumer group or a crash before the first
+	// committed-offset flush.  Both committed and planned are empty for partition 0.
+
+	// The previous scheduler had cut two consecutive jobs: [100, 200) and [200, 300).
+	// Worker w0, which holds [100, 200), is down during the observation window.
+	// Only worker w1, holding [200, 300), reports in.
+	jobLate := job[schedulerpb.JobSpec]{
+		key:  jobKey{id: "ingest/0/200", epoch: 11},
+		spec: schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: 200, EndOffset: 300},
+	}
+	require.NoError(t, sched.updateJob(jobLate.key, "w1", false, jobLate.spec))
+
+	sched.completeObservationMode(t.Context())
+
+	ps := sched.getPartitionState("ingest", 0)
+
+	// Without a committed-offset anchor there is no baseline to validate the observation
+	// against.  planned should stay empty so that initSingleClusterConsumptionOffsets falls
+	// back to the safe max(startOffset, fallbackOffset) path, rather than resuming from 300
+	// and silently skipping [100, 200).
+	require.True(t, ps.plannedEmpty(0),
+		"no committed-offset anchor: planned should stay empty to avoid silently "+
+			"skipping [100, 200); got planned=%d", ps.plannedOffset(0))
+}
+
 // TestCompleteObservationMode_ResumesFromImportedPlan verifies that startup cuts pending jobs
 // from the planned frontier established by observation import: ranges recovered from workers are
 // not re-cut, only the data beyond them is.
