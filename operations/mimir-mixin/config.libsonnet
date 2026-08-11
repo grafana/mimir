@@ -389,10 +389,13 @@
           |||,
         cpu_usage_seconds_total:
           |||
+            # The sandbox and parent cgroup series that cAdvisor exposes next to the per-container
+            # ones have an empty "image" label and would double count CPU time, so they're filtered
+            # out, consistently with the memory_usage rule below.
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(rate_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""}[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
