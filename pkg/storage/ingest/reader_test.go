@@ -1577,12 +1577,6 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 					testRoutines := sync.WaitGroup{}
 					t.Cleanup(testRoutines.Wait)
 
-					// Create a channel to signal goroutines once the test has done.
-					testDone := make(chan struct{})
-					t.Cleanup(func() {
-						close(testDone)
-					})
-
 					consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 
 					cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
@@ -1599,7 +1593,7 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 								t.Logf("artificially slowing down OffsetFetch request by %s", delay.String())
 
 								select {
-								case <-testDone:
+								case <-ctx.Done():
 								case <-time.After(delay):
 								}
 							})
@@ -1614,21 +1608,17 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 					// Continue to produce records at a high pace, so that we simulate the case there are always new
 					// records to fetch.
-					testRoutines.Add(1)
-					go func() {
-						defer testRoutines.Done()
-
+					testRoutines.Go(func() {
 						for {
 							select {
-							case <-testDone:
+							case <-ctx.Done():
 								return
-
 							case <-time.After(targetLag / 2):
 								produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", nextRecordID.Inc())))
 								t.Log("produced 1 record")
 							}
 						}
-					}()
+					})
 
 					// Create and start the reader.
 					reg := prometheus.NewPedanticRegistry()
