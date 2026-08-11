@@ -35,6 +35,7 @@ var identifyingLabels = []string{"instance", "job"}
 // inner series (i.e. no matching info series contributes any labels).
 const innerSeriesKey = "inner"
 
+// labelSetsHashID indexes labelSetsHashesByID, i.e. it identifies an interned group hash.
 type labelSetsHashID uint32
 
 const innerSeriesHashID labelSetsHashID = 0
@@ -299,8 +300,10 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// Summarise the info series by recording per timestamp and labels-only signature
 	// the series labels we've seen. We do this in a second pass so the inner loop's
 	// per-(metric, sig) duplicate resolution finalises before we write the result.
-	// Values in f.sigTimestamps temporarily identify groups built below; finalization
-	// replaces them with interned hash IDs without allocating another timestamp map.
+	// Values in f.sigTimestamps temporarily hold indexes into groups rather than interned hash
+	// IDs (reusing the same slots avoids allocating another timestamp map); finalization below
+	// replaces them in place with the interned hash IDs, so nothing may read f.sigTimestamps as
+	// hash IDs until it has run.
 	var groups infoSeriesGroups
 	for _, metricSigTimestamps := range sigTimestampsByMetric {
 		for t, sigsAtTimestamp := range metricSigTimestamps {
