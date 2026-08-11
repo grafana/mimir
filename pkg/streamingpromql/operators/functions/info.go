@@ -31,6 +31,10 @@ type DataLabelSelector struct {
 // Currently hard coded, so we don't need knowledge of individual info metrics.
 var identifyingLabels = []string{"instance", "job"}
 
+// innerSeriesKey is the sentinel label sets hash used to represent the original, un-enriched
+// inner series (i.e. no matching info series contributes any labels).
+const innerSeriesKey = "inner"
+
 type labelsTime struct {
 	labels labels.Labels
 	time   int64
@@ -287,7 +291,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 func makeLabelSetsHash(labelSets []labels.Labels) string {
 	length := len(labelSets)
 	if length == 0 {
-		return "inner"
+		return innerSeriesKey
 	}
 
 	hashArr := make([]uint64, length)
@@ -432,7 +436,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	for i, innerSeries := range innerMetadata {
 		// If this inner series is an info series, pass the original series metadata along unchanged.
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
+			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
 			totalLabelSetsCount++
 			continue
 		}
@@ -447,7 +451,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			if hasNonEmptyDataLabelMatcher {
 				continue
 			}
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
+			f.labelSetsOrder[i] = map[string]int{innerSeriesKey: 0}
 			totalLabelSetsCount++
 			continue
 		}
@@ -470,7 +474,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		// info series when all data label matchers match empty string.
 		offset := 0
 		if !hasNonEmptyDataLabelMatcher {
-			f.labelSetsOrder[i]["inner"] = 0
+			f.labelSetsOrder[i][innerSeriesKey] = 0
 			totalLabelSetsCount++
 			offset = 1
 		}
@@ -492,7 +496,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	// Do a second pass to actually produce final series metadata using exact numbers from the pool,
 	// while checking for any clashes in final label sets that come from different input series.
 	for i, innerSeries := range innerMetadata {
-		if _, shouldPassInner := f.labelSetsOrder[i]["inner"]; shouldPassInner {
+		if _, shouldPassInner := f.labelSetsOrder[i][innerSeriesKey]; shouldPassInner {
 			hash := innerSeries.Labels.Hash()
 			if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
 				return nil, fmt.Errorf("vector cannot contain metrics with the same labelset")
@@ -696,11 +700,11 @@ func (f *InfoFunction) getSplitResult(ts int64, sig string, storedSeriesResults 
 			labelSetsHash = makeLabelSetsHash(labelSets)
 		} else {
 			// Use the original inner series labels unchanged.
-			labelSetsHash = "inner"
+			labelSetsHash = innerSeriesKey
 		}
 	} else {
 		// Use the original inner series labels unchanged.
-		labelSetsHash = "inner"
+		labelSetsHash = innerSeriesKey
 	}
 
 	// If this label sets hash is not in the order map, it means we shouldn't create a series for it.
