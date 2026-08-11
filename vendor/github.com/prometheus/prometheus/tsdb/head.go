@@ -124,6 +124,14 @@ type Head struct {
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
+	// DIAGNOSTIC (unknown-series-refs investigation): refs deleted by a full-delete
+	// tombstone during the current WAL replay. Populated across loadWAL calls (checkpoint
+	// then segments) so the "orphaned samples" reporting can distinguish samples orphaned
+	// because their series was deleted mid-replay by a tombstone from samples orphaned
+	// because the series record was genuinely absent from the WAL. Remove once the
+	// investigation concludes.
+	replayFullDeleteTombstoneRefs *seriesRefSet
+
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 	pfmc     *PostingsForMatchersCache
@@ -909,6 +917,9 @@ func (h *Head) Init(minValidTime int64) error {
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
+	// DIAGNOSTIC (unknown-series-refs investigation): reset the per-replay set of
+	// tombstone-deleted refs at the start of every WAL replay.
+	h.replayFullDeleteTombstoneRefs = &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -1428,6 +1439,21 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
+	// DIAGNOSTIC (unknown-series-refs investigation): record the WAL-expiry horizon
+	// (maxt) armed for the evicted series. gcSeries sets walExpiries[ref] = maxt so
+	// their series records are kept in checkpoints until mint passes maxt. If a later
+	// checkpoint drops these records while their samples remain in the WAL, replay
+	// reports "unknown series references". Correlate this with the checkpoint
+	// keep-decision log in truncateWAL. Remove once the investigation concludes.
+	if h.wal != nil && len(deleted) > 0 {
+		h.logger.Info("DIAGNOSTIC selected-series eviction armed WAL expiries",
+			"num_evicted", len(deleted),
+			"wal_expiry_maxt", maxt,
+			"head_min_time", h.MinTime(),
+			"head_max_time", h.MaxTime(),
+		)
+	}
+
 	// Record the deleted series refs in the WAL so that we can ignore them during replay.
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
@@ -1595,13 +1621,65 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
+	// DIAGNOSTIC (unknown-series-refs investigation): wrap the keep predicate to
+	// categorize why each record is kept in or dropped from the checkpoint. This is
+	// the decisive signal: it tells us whether evicted series lost their record
+	// because no WAL expiry was tracked at checkpoint time (dropped_no_expiry ->
+	// eviction-path/expiry-lifecycle bug) or because the checkpoint mint advanced
+	// past the armed expiry (dropped_expired_expiry -> timing). Semantics are
+	// identical to keepSeriesInWALCheckpointFn(mint); keep is called sequentially by
+	// wlog.Checkpoint, so plain counters are safe. Remove once the investigation
+	// concludes.
+	var keptInHead, keptByExpiry, droppedNoExpiry, droppedExpiredExpiry int64
+	exampleDroppedRefs := make([]chunks.HeadSeriesRef, 0, 10)
+	keep := func(id chunks.HeadSeriesRef) bool {
+		if h.series.getByID(id) != nil {
+			keptInHead++
+			return true
+		}
+		keepUntil, ok := h.getWALExpiry(id)
+		if ok && keepUntil >= mint {
+			keptByExpiry++
+			return true
+		}
+		if ok {
+			droppedExpiredExpiry++
+		} else {
+			droppedNoExpiry++
+		}
+		if len(exampleDroppedRefs) < cap(exampleDroppedRefs) {
+			exampleDroppedRefs = append(exampleDroppedRefs, id)
+		}
+		return false
+	}
+	cpStats, err := wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint, h.opts.EnableSTStorage.Load())
+	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
+	}
+	if droppedNoExpiry+droppedExpiredExpiry > 0 {
+		h.walExpiriesMtx.Lock()
+		walExpiriesTracked := len(h.walExpiries)
+		h.walExpiriesMtx.Unlock()
+		h.logger.Info("DIAGNOSTIC WAL checkpoint keep decisions",
+			"mint", mint,
+			"first_segment", first,
+			"last_segment", last,
+			"kept_in_head", keptInHead,
+			"kept_by_expiry", keptByExpiry,
+			"dropped_no_expiry", droppedNoExpiry,
+			"dropped_expired_expiry", droppedExpiredExpiry,
+			"wal_expiries_tracked", walExpiriesTracked,
+			"example_dropped_refs", fmt.Sprintf("%v", exampleDroppedRefs),
+			"stats_total_series", cpStats.TotalSeries,
+			"stats_dropped_series", cpStats.DroppedSeries,
+			"stats_total_samples", cpStats.TotalSamples,
+			"stats_dropped_samples", cpStats.DroppedSamples,
+		)
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -1611,13 +1689,37 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	// The checkpoint is written and data before mint is truncated, so stop tracking expired series.
+	// DIAGNOSTIC (unknown-series-refs investigation): count and report the series-record
+	// protections dropped here. This is the lifecycle event that lets a *later* checkpoint
+	// drop a still-referenced series record: once the expiry is gone, keepSeriesInWALCheckpointFn
+	// returns false for that ref. Correlate max_deleted_keep_until against the orphaned
+	// samples' time range from replay. Remove once the investigation concludes.
 	h.walExpiriesMtx.Lock()
+	deletedExpiries := 0
+	minDeletedKeepUntil, maxDeletedKeepUntil := int64(math.MaxInt64), int64(math.MinInt64)
 	for ref, keepUntil := range h.walExpiries {
 		if keepUntil < mint {
 			delete(h.walExpiries, ref)
+			deletedExpiries++
+			if keepUntil < minDeletedKeepUntil {
+				minDeletedKeepUntil = keepUntil
+			}
+			if keepUntil > maxDeletedKeepUntil {
+				maxDeletedKeepUntil = keepUntil
+			}
 		}
 	}
+	remainingExpiries := len(h.walExpiries)
 	h.walExpiriesMtx.Unlock()
+	if deletedExpiries > 0 {
+		h.logger.Info("DIAGNOSTIC WAL truncation dropped expired series-record protections",
+			"mint", mint,
+			"deleted_expiries", deletedExpiries,
+			"min_deleted_keep_until", minDeletedKeepUntil,
+			"max_deleted_keep_until", maxDeletedKeepUntil,
+			"remaining_expiries", remainingExpiries,
+		)
+	}
 
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
