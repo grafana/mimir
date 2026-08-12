@@ -4074,8 +4074,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
 			},
-			expectedSamplesRead: 6,
+			expectedSamplesRead: 10,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 5,
+			},
+			// MQE evaluates the @-pinned step-invariant subquery once and reads its samples a single
+			// time, whereas Prometheus' engine now accounts the reads per output step.
+			expectedSamplesReadWithMQE: 6,
+			expectedSamplesReadPerStepWithMQE: promstats.TotalSamplesPerStep{
 				0: 6, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
 			},
 		},
