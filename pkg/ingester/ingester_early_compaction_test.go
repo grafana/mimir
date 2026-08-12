@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,6 +30,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -1817,6 +1822,83 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFre
 			"every retained pending ref must carry a fresher timestamp than the evicted batch")
 	}
 	db.pendingNonOwnedRefsMtx.Unlock()
+}
+
+// TestIngester_CostAttribution_ActiveSeriesLeaksWhenSamplesLagBehindWallClock reproduces
+// https://github.com/grafana/mimir/issues/16259: cost-attribution active series can leak when
+// early head compaction removes a series from the head while active series tracking still
+// considers it active, because it received a sample recently in wall-clock time, even though the
+// sample's timestamp is older than the idle timeout due to Kafka consumer lag.
+func TestIngester_CostAttribution_ActiveSeriesLeaksWhenSamplesLagBehindWallClock(t *testing.T) {
+	const idleTimeout = 20 * time.Minute
+
+	ctx := context.Background()
+	ctxWithUser := user.InjectOrgID(ctx, userID)
+	now := time.Now()
+
+	// The sample lags wall-clock by more than the idle timeout, but it is ingested now.
+	laggingSampleTS := now.Add(-idleTimeout - 5*time.Minute)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = idleTimeout
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Only trigger compaction manually.
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+
+	// Enable cost attribution by the "team" label. PastGracePeriod defaults to 0 (disabled),
+	// so the lagging sample is accepted.
+	limits := defaultLimitsTestConfig()
+	limits.MaxCostAttributionCardinality = 100
+	limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team", Output: "team"}}},
+	}
+	limits.CostAttributionBaseTrackers.Canonicalize()
+	limits.ComputeCostAttributionConfigHash()
+	overrides := validation.NewOverrides(limits, nil)
+
+	reg := prometheus.NewRegistry()
+	caReg := prometheus.NewRegistry()
+	cam, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides, reg, caReg)
+	require.NoError(t, err)
+
+	ingester, r, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, cfg, overrides, nil, "", "", reg, cam)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	// Push a series whose sample is already older than the idle timeout, ingested now.
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1", "team", "foo"),
+		Samples: []util_test.Sample{{TS: laggingSampleTS.UnixMilli(), Val: 1}},
+	}}))
+
+	// It is active (ingested now) and attributed.
+	require.NoError(t, testutil.GatherAndCompare(caReg, strings.NewReader(`
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+		# TYPE cortex_ingester_attributed_active_series gauge
+		cortex_ingester_attributed_active_series{team="foo",tenant="1",tracker="cost-attribution"} 1
+	`), "cortex_ingester_attributed_active_series"))
+
+	// Trigger early head compaction now. It purges active series first (head intact), but our
+	// series is still active by wall-clock, so it is NOT decremented. Then it truncates the head
+	// at now-idleTimeout (sample-time), dropping the series (its only sample is older than that).
+	ingester.compactBlocksToReduceInMemorySeries(ctx, now)
+	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
+
+	// Time passes; the series finally becomes inactive by wall-clock. The active-series update
+	// purges it. The head index can no longer resolve its ref, but the labels captured when the
+	// series was deleted from the head are used to decrement the cost-attribution tracker.
+	ingester.updateActiveSeries(now.Add(idleTimeout + time.Minute))
+
+	// Plain active is 0.
+	active, _, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	assert.Equal(t, 0, active)
+
+	// No decrement failed: the labels stored on deletion were used.
+	assert.Equal(t, float64(0), testutil.ToFloat64(ingester.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID)))
+
+	// Cost-attribution active series is 0, consistent with the active series count.
+	assert.NoError(t, testutil.GatherAndCompare(caReg, strings.NewReader(``), "cortex_ingester_attributed_active_series"))
 }
 
 // pickOwnedAndNonOwnedSeries returns two single-label series with distinct secondary hashes,

@@ -589,24 +589,51 @@ func (s *seriesStripe) reloadConfig(asm *asmodel.Matchers, cat *costattribution.
 
 			// It's possible that a series may have been added while we were in the lookup phase,
 			// So we need to keep this logic here for those.
-			if err := idx.Series(ref, &buf, nil); err != nil {
+			if lbls, ok := s.lookupSeriesLabels(ref, entry, idx, &buf); ok {
+				incrementCatIfChanged(lbls, entry)
+				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(lbls) })
+			} else {
 				s.activeSeriesAttributionFailureCounter.Add(1)
 				// If we failed to lookup the series (which shouldn't happen as we're notified of deletions),
 				// we still need to update the entry.matches to make sure it has a coherent size with the matchers we're setting.
 				updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(labels.EmptyLabels()) })
-				// We do not increment CAT here, because it shouldn't happen, and because nobody would decrement it later.
-				// Or we could do it, if you want to, anyway, this should not happen, why am I even spending my energy writing this comment?
-				continue
 			}
-			lbls := buf.Labels()
-			incrementCatIfChanged(lbls, entry)
-			updateEntryIfMatchersChanged(ref, entry, func() asmodel.PreAllocDynamicSlice { return asm.Matches(lbls) })
 		}
 	}
 
 	if catChanged {
 		s.cat = cat
 	}
+}
+
+func (s *seriesStripe) lookupSeriesLabels(ref storage.SeriesRef, entry seriesEntry, idx tsdb.IndexReader, buf *labels.ScratchBuilder) (labels.Labels, bool) {
+	if err := idx.Series(ref, buf, nil); err == nil {
+		return buf.Labels(), true
+	}
+
+	// The series ref may be missing from the index when the series
+	// was deleted from the head while still active (e.g. early head
+	// compaction). Look up by lbls instead.
+	if entry.isDeleted() {
+		if lbls, ok := s.deleted.labelsOf(ref); ok {
+			return lbls, true
+		}
+	}
+	return labels.Labels{}, false
+}
+
+func (s *seriesStripe) decrementCostAttribution(ref storage.SeriesRef, entry seriesEntry, idx tsdb.IndexReader, buf *labels.ScratchBuilder) {
+	if s.cat == nil {
+		return
+	}
+
+	lbls, ok := s.lookupSeriesLabels(ref, entry, idx, buf)
+	if !ok {
+		s.activeSeriesAttributionFailureCounter.Add(1)
+		return
+	}
+
+	s.cat.Decrement(lbls, entry.numNativeHistogramBuckets)
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
@@ -632,13 +659,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
-			if s.cat != nil {
-				if err := idx.Series(ref, &buf, nil); err != nil {
-					s.activeSeriesAttributionFailureCounter.Add(1)
-				} else {
-					s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
-				}
-			}
+			s.decrementCostAttribution(ref, entry, idx, &buf)
 			if entry.isDeleted() {
 				s.deleted.purge(ref)
 			}
@@ -693,11 +714,7 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	s.active--
 	if s.cat != nil {
 		buf := labels.NewScratchBuilder(128)
-		if err := idx.Series(ref, &buf, nil); err != nil {
-			s.activeSeriesAttributionFailureCounter.Add(1)
-		} else {
-			s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
-		}
+		s.decrementCostAttribution(ref, entry, idx, &buf)
 	}
 	if entry.numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms--
@@ -745,7 +762,12 @@ type deletedSeries struct {
 
 type deletedSeriesRef struct {
 	ref storage.SeriesRef
-	key string
+	// lbls points to deletedSeries.keys[ref] under stringlabels, and to the
+	// original labels.Labels from the head otherwise. So, under stringlabels,
+	// we avoid keeping the original labels.Labels alive after it has been
+	// removed from the head; we made a clone of it in deletedSeries.keys[ref],
+	// so we take advantage of that.
+	lbls labels.Labels
 }
 
 func (ds *deletedSeries) find(lbls labels.Labels) (deletedSeriesRef, bool) {
@@ -774,7 +796,18 @@ func (ds *deletedSeries) add(ref storage.SeriesRef, lbls labels.Labels) {
 	key := string(lbls.Bytes(ds.buf))
 
 	ds.keys[ref] = key
-	ds.refs[key] = deletedSeriesRef{ref, key}
+	ds.refs[key] = deletedSeriesRef{ref: ref, lbls: deletedSeriesLbls(key, lbls)}
+}
+
+func (ds *deletedSeries) labelsOf(ref storage.SeriesRef) (labels.Labels, bool) {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
+	key, ok := ds.keys[ref]
+	if !ok {
+		return labels.EmptyLabels(), false
+	}
+	return ds.refs[key].lbls, true
 }
 
 func (ds *deletedSeries) purge(ref storage.SeriesRef) {
