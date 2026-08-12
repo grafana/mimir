@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Set `appProtocol` on every Service port so Istio (and other service meshes) can identify the transport protocol without relying on port-name prefixes. Ports named `grpc*` get `appProtocol: grpc`, `http-metrics` / `legacy-http-metrics` get `appProtocol: http`, and `cluster` / `memcached-client` / `kafka` / `controller` get `appProtocol: tcp`. The `gossip-ring` port already carried `appProtocol: tcp` from #5673. Fixes Envoy protocol misdetection in meshed clusters where mimir components use port names that do not match Istio's recognised prefixes (`grpc-*`, `http-*`, `http2-*`, `tcp-*`, `tls-*`). No behaviour change for clusters without a service mesh; `appProtocol` is advisory metadata. #16204
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
