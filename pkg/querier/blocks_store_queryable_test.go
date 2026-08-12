@@ -210,6 +210,34 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_blocks_consistency_checks_total 1
 			`,
 		},
+		"a single store-gateway instance holds the required blocks split into multiple partitions": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
+						addValue(metricNameLabel, minT, 1).
+						addValue(metricNameLabel, minT+1, 2).
+						addBlocks(block1, block2).
+						addFetchedIndexBytes(50).
+						build(),
+					}: {{block1}, {block2}},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+		},
 		"a single store-gateway instance holds the required blocks (single returned series) - multiple chunks per series for stats": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1},
@@ -1697,15 +1725,17 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					continue
 				}
 
-				for k := range m {
+				for k, partitions := range m {
 					mockClient := k.(*storeGatewayClientMock)
+					// Each partition is a separate RPC to the same client, so the mocked responses
+					// (and thus the fetched series/chunks) are received once per partition.
 					for _, sr := range mockClient.mockedSeriesResponses {
 						if s := sr.GetStreamingSeries(); s != nil {
-							seriesCount += len(s.Series)
+							seriesCount += len(s.Series) * len(partitions)
 						}
 
 						if c := sr.GetStreamingChunksEstimate(); c != nil {
-							chunksCount += int(c.EstimatedChunkCount)
+							chunksCount += int(c.EstimatedChunkCount) * len(partitions)
 						}
 					}
 				}
@@ -2235,6 +2265,33 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
 					}: {{block1, block2}},
+				},
+			},
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
+		},
+		"a single store-gateway instance holds the required blocks split into multiple partitions": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1",
+						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							Hints:         mockNamesHints(block1, block2),
+							ResponseHints: mockNamesResponseHints(block1, block2),
+						},
+						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							Hints:         mockValuesHints(block1, block2),
+							ResponseHints: mockValuesResponseHints(block1, block2),
+						},
+					}: {{block1}, {block2}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
