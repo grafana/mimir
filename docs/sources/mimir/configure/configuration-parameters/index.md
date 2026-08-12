@@ -2060,12 +2060,6 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
-# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
-# filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation. Deprecated: has no effect.
-# CLI flag: -querier.filter-queryables-enabled
-[filter_queryables_enabled: <boolean> | default = false]
-
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -2501,11 +2495,6 @@ results_cache:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
-
-# (deprecated) Cache statistics of processed samples on results cache.
-# Deprecated: has no effect.
-# CLI flag: -query-frontend.cache-samples-processed-stats
-[cache_samples_processed_stats: <boolean> | default = false]
 
 client_cluster_validation:
   # (experimental) Primary cluster validation label.
@@ -5595,14 +5584,6 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout-overhead
   [write_timeout_overhead: <duration> | default = 2s]
 
-  # (deprecated) The number of Kafka clients used by producers. When the
-  # configured number of clients is greater than 1, partitions are sharded among
-  # Kafka clients. A higher number of clients may provide higher write
-  # throughput at the cost of additional Metadata requests pressure to Kafka.
-  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
-  # CLI flag: -ingest-storage.kafka.write-clients
-  [write_clients: <int> | default = 1]
-
   # (experimental) Mark an agent as slow when its window-average latency exceeds
   # this multiple of the cluster baseline. Only applies when
   # -ingest-storage.kafka.backend=warpstream.
@@ -6525,11 +6506,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in the Head and OOOHead when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
-  [head_postings_for_matchers_cache_size: <int> | default = 100]
-
   # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
   # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
@@ -6545,11 +6521,6 @@ tsdb:
   # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
-
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in each compacted block when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
-  [block_postings_for_matchers_cache_size: <int> | default = 100]
 
   # (advanced) Maximum size in bytes of the cache for postings for matchers in
   # each compacted block when TTL is greater than 0.
