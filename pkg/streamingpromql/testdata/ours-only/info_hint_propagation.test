@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# These cases document a known divergence from Prometheus, so they run against MQE only.
+#
+# MQE propagates the @/offset modifier from info()'s first argument to the info (target_info)
+# selector only when the first argument is a selector directly, or a selector wrapped in a
+# step-invariant operator (see findInnerInstantVectorSelector in operators/functions/factories.go).
+# When the selector is nested inside another operator (a function such as ceil(), a binary
+# operation, an aggregation, etc.), MQE does NOT find it and so does NOT propagate the modifier.
+#
+# Prometheus, by contrast, finds the first VectorSelector anywhere in the first argument
+# (promql infoSelectHints) and always propagates its @/offset. The nested queries below therefore
+# return version="v1" on Prometheus, which is why they are kept out of the dual-engine
+# ours/info.test file.
+#
+# The churning target_info makes the divergence observable at t=4m: version="v1" is only returned
+# when the modifier is propagated (target_info evaluated at the shifted time t=0); version="v2" is
+# what MQE returns because it evaluates target_info at the query time t=4m instead.
+#
+# These use `eval range from 4m to 4m` rather than `eval instant at 4m` deliberately: an @-anchored
+# expression is step-invariant, and `eval instant` additionally cross-checks the query over a
+# multi-step range where the step-invariant collapses to the anchor time, which returns a different
+# (v1) value. A single-point range query exercises one evaluation path and pins MQE's behaviour.
+
+clear
+
+load 1m
+  metric{instance="a", job="1"} 1 2 3 4 5
+  target_info{instance="a", job="1", version="v1"} 1 1 1 stale _
+  target_info{instance="a", job="1", version="v2"} _ _ _      _ 1
+
+# Sanity check: a directly-wrapped selector IS propagated (matches Prometheus).
+# metric @ 0 is evaluated at t=0 (value 1) and target_info is looked up at t=0 -> version="v1".
+eval range from 4m to 4m step 1m info(metric @ 0)
+  metric{instance="a", job="1", version="v1"} 1
+
+# @ nested inside ceil(): NOT propagated by MQE.
+# metric @ 0 = 1 so ceil(...) = 1, but target_info is looked up at the query time t=4m -> version="v2".
+# (ceil() drops __name__, so the enriched series has no metric name.)
+# Prometheus would return version="v1" here.
+eval range from 4m to 4m step 1m info(ceil(metric @ 0))
+  {instance="a", job="1", version="v2"} 1
+
+# @ nested inside a vector-scalar operation: NOT propagated by MQE.
+# (The arithmetic drops __name__.) Prometheus would return version="v1" here.
+eval range from 4m to 4m step 1m info(metric @ 0 * 1)
+  {instance="a", job="1", version="v2"} 1

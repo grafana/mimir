@@ -32,6 +32,10 @@ func (s *StepInvariantInstantVectorOperator) ExpressionPosition() posrange.Posit
 	return s.inner.ExpressionPosition()
 }
 
+func (s *StepInvariantInstantVectorOperator) Inner() types.InstantVectorOperator {
+	return s.inner
+}
+
 func (s *StepInvariantInstantVectorOperator) Close() {
 	s.inner.Close()
 }
