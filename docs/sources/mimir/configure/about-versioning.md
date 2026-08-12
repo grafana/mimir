@@ -232,6 +232,7 @@ The following features are currently experimental:
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
+  - Maximum number of blocks per store-gateway request (`-querier.max-blocks-per-store-request`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
