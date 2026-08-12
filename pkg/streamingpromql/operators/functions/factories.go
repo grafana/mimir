@@ -614,29 +614,6 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 	}
 }
 
-// findInnerInstantVectorSelector returns the first InstantVectorSelector found by
-// unwrapping known single-child wrappers (e.g. StepInvariantInstantVectorOperator).
-// Returns nil when the first arg is not a selector or selector-wrapper (e.g. binary op).
-//
-// This does NOT achieve full parity with Prometheus, which finds the first VectorSelector
-// anywhere in the first argument's AST (see promql infoSelectHints) and propagates its @/offset
-// regardless of how deeply it is nested. We only reach a selector that is the first argument
-// directly or wrapped in a step-invariant operator; a selector nested inside a function
-// (e.g. info(ceil(metric @ 0))), aggregation, or binary operation is not found, so its @/offset
-// is not propagated. Doing so at the operator layer is impractical because operators expose no
-// generic child traversal and instant/range selector types sit behind different interfaces;
-// matching Prometheus would require computing the hint from the parser AST at plan-build time.
-// The gap is exercised by testdata/ours-only/info_hint_propagation.test.
-func findInnerInstantVectorSelector(op types.InstantVectorOperator) *selectors.InstantVectorSelector {
-	switch t := op.(type) {
-	case *selectors.InstantVectorSelector:
-		return t
-	case *operators.StepInvariantInstantVectorOperator:
-		return findInnerInstantVectorSelector(t.Inner())
-	}
-	return nil
-}
-
 func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -653,13 +630,6 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected an instant vector selector for 2nd argument for info, got %T", args[1])
-	}
-
-	// Propagate @/offset modifiers from the first argument's selector to the info selector,
-	// mirroring Prometheus's infoSelectHints.
-	if innerSel := findInnerInstantVectorSelector(inner); innerSel != nil {
-		info.Selector.Timestamp = innerSel.Selector.Timestamp
-		info.Selector.Offset = innerSel.Selector.Offset
 	}
 
 	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition), nil

@@ -74,6 +74,20 @@ func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer 
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
+	if f.Function == functions.FUNCTION_INFO && len(f.Args) == 2 {
+		// Propagate the @/offset modifiers of the first selector in the first argument to the
+		// data label selector, mirroring Prometheus's infoSelectHints, so that info series are
+		// selected at the same (shifted) time as the samples they enrich. This is derived from
+		// the plan here rather than in the operator factory because operators do not support
+		// generic child traversal, so nested selectors would not be reachable there.
+		if dataLabelSelector, ok := children[1].(*functions.DataLabelSelector); ok {
+			if ts, offset, found := infoSelectTimestampAndOffset(f.Args[0]); found {
+				dataLabelSelector.Selector.Timestamp = TimestampFromTime(ts)
+				dataLabelSelector.Selector.Offset = offset.Milliseconds()
+			}
+		}
+	}
+
 	o, err := fnc.OperatorFactory(children, absentLabels, params, f.GetExpressionPosition().ToPrometheusType(), timeRange)
 	if err != nil {
 		return nil, err
