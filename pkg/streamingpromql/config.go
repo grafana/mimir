@@ -244,6 +244,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableScalarCommonSubexpressionElimination:                true,
 		EnableNarrowBinarySelectors:                               true,
 		EnableEliminateDeduplicateAndMerge:                        true,
+		EnablePropagateMatchers:                                   true,
 		EnableReduceMatchers:                                      true,
 		EnableMultiAggregation:                                    true,
 		EnableRemoveStaticallyEmptyExpressions:                    true,
