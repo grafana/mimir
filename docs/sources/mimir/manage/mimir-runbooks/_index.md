@@ -1092,7 +1092,7 @@ How to **investigate**:
 
 ### MimirSchedulerQueriesStuck
 
-This alert fires if queries are piling up in the query-scheduler.
+This alert fires when the oldest query waiting in the query-scheduler queue has been waiting for too long, indicating that queries are stuck rather than being processed. The alert is based on `cortex_query_scheduler_queue_max_wait_seconds`, which reports how long the oldest request still waiting in the queue has been waiting since it was enqueued. Requests already dispatched to a querier are excluded.
 
 #### Dashboard Panels
 
