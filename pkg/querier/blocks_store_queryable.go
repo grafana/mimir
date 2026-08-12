@@ -107,10 +107,10 @@ type BlocksStoreLimits interface {
 }
 
 type blocksStoreQueryableMetrics struct {
-	storesHit prometheus.Histogram
-	refetches prometheus.Histogram
+	storesHit     prometheus.Histogram
+	storesQueried prometheus.Histogram
+	refetches     prometheus.Histogram
 
-	storesQueried                                     prometheus.Counter
 	blocksFound                                       prometheus.Counter
 	blocksQueried                                     prometheus.Counter
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
@@ -129,14 +129,17 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Help:    "Number of store-gateway instances hit for a single query.",
 			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
 		}),
+		storesQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_querier_storegateway_queried_per_query",
+			Help:                            "Number of requests to store-gateway instances for a single query. Splitting queried blocks into partitions can produce more than one request per store-gateway instance per query.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_refetches_per_query",
 			Help:    "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
 			Buckets: []float64{0, 1, 2},
-		}),
-		storesQueried: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_storegateway_queried_total",
-			Help: "Total number of requests to store-gateway instances for a single query. Splitting queried blocks into partitions can produce more than one request per store-gateway instance per query.",
 		}),
 		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_found_total",
@@ -894,7 +897,7 @@ func (q *blocksStoreQuerier) queryCompartmentsWithConsistencyCheck(ctx context.C
 	}
 
 	q.metrics.storesHit.Observe(float64(storesHit))
-	q.metrics.storesQueried.Add(float64(storesQueried))
+	q.metrics.storesQueried.Observe(float64(storesQueried))
 	if q.metrics.compartmentsHit != nil {
 		q.metrics.compartmentsHit.Observe(float64(len(targets)))
 	}
