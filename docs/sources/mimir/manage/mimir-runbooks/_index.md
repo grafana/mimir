@@ -3866,10 +3866,26 @@ will remain in the `Terminated` state. This is harmless and will remain there un
 
 This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
+Samples that exactly duplicate an already-stored sample are dropped without an error or log line. Refer to [Samples discarded with reason same-value-for-timestamp](#samples-discarded-with-reason-same-value-for-timestamp).
+
 Possible reasons for this are:
 
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
+- Multiple processes exporting metrics with the same identity (for example, prefork workers missing a `service.instance.id` resource attribute in OTLP setups), so their samples collide on the same series.
+
+## Samples discarded with reason same-value-for-timestamp
+
+This means a sample was received that exactly duplicates an already-stored sample of the same series: same timestamp and same value. These samples are dropped silently: the client receives a successful response and no log line is emitted. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="same-value-for-timestamp"`, and the drops are attributed per series in cost attribution when it's enabled.
+
+Possible reasons for this are:
+
+- Clients or shippers retrying, or double-sending, remote-write requests.
+- Multiple processes exporting identical metrics with the same identity, for example, prefork workers missing a `service.instance.id` resource attribute in OTLP setups.
+- With ingest storage enabled, ingesters can re-process recent Kafka records after a restart or a partition rebalance, and the replayed samples are discarded with this reason. Bursts following ingester rollouts are expected and don't indicate a client problem.
+- With created timestamp zero ingestion enabled, the synthetic zero sample that the ingester writes at a series' created timestamp can collide with a stored zero sample at the same timestamp, typically once when the series is created. These discards count a sample that the client never sent, so a small reconciliation gap against received samples is expected for such tenants.
+
+These discards are harmless because the sample's value is already stored. A sustained high rate indicates duplicated client traffic that is wasting write-path resources.
 
 ## Investigating query evaluation issues
 
