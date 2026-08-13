@@ -17,6 +17,10 @@
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
 
+    // the minimum time that must elapse after a pod becomes ready before a pod in another zone
+    // for the same partition can be evicted - only applicable when a partition regex is set
+    multi_zone_ingester_zpdb_cross_zone_eviction_delay: if $._config.ingest_storage_enabled then '20m' else '',
+
     // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
     multi_zone_ingester_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
     multi_zone_ingester_zone_a_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
@@ -147,7 +151,7 @@
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
     (
       if $._config.multi_zone_ingester_zpdb_enabled then
-        $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_regex, $._config.multi_zone_ingester_zpdb_partition_group)
+        $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_regex, $._config.multi_zone_ingester_zpdb_partition_group, $._config.multi_zone_ingester_zpdb_cross_zone_eviction_delay)
       else
         podDisruptionBudget.new('ingester-rollout') +
         podDisruptionBudget.mixin.spec.withMaxUnavailable(1)

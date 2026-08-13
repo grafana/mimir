@@ -118,9 +118,7 @@ func (m *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other pl
 	oi, ok := other.(*MultiAggregationInstance)
 	return ok &&
 		((m.Aggregation == nil && oi.Aggregation == nil) || (m.Aggregation != nil && oi.Aggregation != nil && genEqualsAggregateExpressionDetails(*m.Aggregation, *oi.Aggregation))) &&
-		slices.EqualFunc(m.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
-			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-		}) &&
+		slices.EqualFunc(m.Filters, oi.Filters, genEqualsLabelMatcher) &&
 		m.SubsetIndex == oi.SubsetIndex
 }
 

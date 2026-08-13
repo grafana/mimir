@@ -10,6 +10,7 @@ import (
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -70,6 +71,16 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querierAligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querierUnaligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Wait until the query-frontends have updated the querier ring.
+	// Both query-frontends will see both queriers, but this is OK for this test given the configuration only applies to the query-frontend.
+	require.NoError(t, queryFrontendAligned.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	require.NoError(t, queryFrontendUnaligned.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// Push a series for each user to Mimir.
 	const user = "user"

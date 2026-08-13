@@ -189,7 +189,7 @@
         },
         {
           alert: $.alertName('IngesterTSDBWALWritesFailed'),
-          'for': '3m',
+          'for': '12m',
           expr: |||
             rate(cortex_ingester_tsdb_wal_writes_failed_total[%s]) > 0
           ||| % $.rateInterval('1m'),
@@ -278,5 +278,5 @@
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

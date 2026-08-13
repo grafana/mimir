@@ -162,7 +162,15 @@ func querySumFloat(metricName string) string {
 }
 
 func querySumHist(metricName string) string {
-	return fmt.Sprintf("sum(%s)", metricName)
+	// As with querySumFloat, we wrap the selector in an over_time() function with a 1s range selector so
+	// that only the samples we previously wrote are fetched and the PromQL lookback period doesn't
+	// influence query results. Without this, the lookback period carries the most recently written
+	// histogram forward past its real timestamp, producing samples whose values don't match the expected
+	// value for those later timestamps. This is especially problematic when recovering the last written
+	// sample on startup, where the query end time is "now" rather than the last written timestamp.
+	// We use last_over_time() rather than max_over_time() (used for floats) because the latter does not
+	// support native histograms.
+	return fmt.Sprintf("sum(last_over_time(%s[1s]))", metricName)
 }
 
 // The fan-out query variants below use a regex (=~) name matcher to force the read path to fan out
@@ -175,7 +183,7 @@ func querySumFloatFanOut(metricName string) string {
 }
 
 func querySumHistFanOut(metricName string) string {
-	return fmt.Sprintf(`sum({__name__=~"%s.*"})`, metricName)
+	return fmt.Sprintf(`sum(last_over_time({__name__=~"%s.*"}[1s]))`, metricName)
 }
 
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {

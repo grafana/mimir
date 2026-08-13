@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -42,17 +42,19 @@ type OptimizationPass struct {
 	defaultStepFunc func(rangeMillis int64) int64
 	metrics         frontendspinoff.Metrics
 	wrapper         astmapper.SubquerySpinOffWrapper
+	opts            frontendspinoff.Options
 	logger          log.Logger
 }
 
 var _ optimize.ASTOptimizationPass = (*OptimizationPass)(nil)
 
-func NewOptimizationPass(limits Limits, defaultStepFunc func(rangeMillis int64) int64, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(limits Limits, defaultStepFunc func(rangeMillis int64) int64, opts frontendspinoff.Options, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		limits:          limits,
 		defaultStepFunc: defaultStepFunc,
 		metrics:         frontendspinoff.NewMetrics(reg),
 		wrapper:         NewEvaluationRootWrapper(),
+		opts:            opts,
 		logger:          logger,
 	}
 }
@@ -61,9 +63,9 @@ func (o *OptimizationPass) Name() string {
 	return "Subquery spin-off"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	// Subquery spin-off only applies to instant queries: range queries are left unchanged.
-	if !timeRange.IsInstant {
+	if !params.TimeRange.IsInstant {
 		return expr, nil
 	}
 
@@ -82,7 +84,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, timeRang
 
 	o.metrics.SpinOffAttempts.Inc()
 
-	spinOffQuery, ok := frontendspinoff.Map(ctx, expr, o.wrapper, o.metrics, o.defaultStepFunc, mapTimeout, spanLog)
+	spinOffQuery, ok := frontendspinoff.Map(ctx, expr, o.wrapper, o.metrics, o.defaultStepFunc, mapTimeout, spanLog, o.opts)
 	if !ok {
 		// Spinning off subqueries was not possible or not worthwhile, so leave the query unchanged.
 		return expr, nil

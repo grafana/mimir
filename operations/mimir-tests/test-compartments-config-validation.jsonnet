@@ -202,4 +202,74 @@ local err17 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartmen
 assert err17 == null :
        'case 17: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err17;
 
+//
+// validateMimirCompartmentsAutoscalingDisabledKnobs() — the paired per-compartment autoscaling
+// disable knobs. The validator is a pure function of its arguments, so it's called directly.
+//
+
+local validateKnobs(disabledCompartments, staticReplicas, numCompartments=2, autoscalingEnabled=true) =
+  (compartmentsCommon { _config+: env._config }).validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'autoscaling_foo_disabled_compartments',
+    disabledCompartments,
+    'foo_compartment_static_replicas',
+    staticReplicas,
+    numCompartments,
+    'autoscaling_foo_enabled',
+    autoscalingEnabled,
+  );
+
+// 18. A valid pair produces no error; so do the empty defaults.
+local err18a = validateKnobs([1], { compartment_1: 3 });
+assert err18a == null : 'case 18a: expected no error for a valid knob pair, got: %s' % err18a;
+local err18b = validateKnobs([], {});
+assert err18b == null : 'case 18b: expected no error for the empty defaults, got: %s' % err18b;
+
+// 19. Malformed knob shapes.
+local err19a = validateKnobs(0, {});
+assert isError(err19a, 'must be a list of compartment indexes') :
+       'case 19a: expected a shape error for a non-list disable knob, got: %s' % err19a;
+local err19b = validateKnobs([], [1]);
+assert isError(err19b, 'must be an object mapping') :
+       'case 19b: expected a shape error for a non-object static-replicas knob, got: %s' % err19b;
+
+// 20. Non-integer and out-of-range compartment indexes.
+local err20a = validateKnobs([1.5], { compartment_1: 3 });
+assert isError(err20a, 'compartment indexes must be integers') :
+       'case 20a: expected a non-integer index error, got: %s' % err20a;
+local err20b = validateKnobs(['1'], { compartment_1: 3 });
+assert isError(err20b, 'compartment indexes must be integers') :
+       'case 20b: expected a non-integer index error for a string index, got: %s' % err20b;
+local err20c = validateKnobs([2], { compartment_2: 3 });
+assert isError(err20c, 'only compartments [0, 2) exist') :
+       'case 20c: expected an out-of-range index error, got: %s' % err20c;
+
+// 21. Duplicate compartment indexes.
+local err21 = validateKnobs([1, 1], { compartment_1: 3 });
+assert isError(err21, 'duplicate compartment indexes') :
+       'case 21: expected a duplicate-index error, got: %s' % err21;
+
+// 22. A non-empty disable list has no effect while the component-level autoscaling knob is off.
+local err22 = validateKnobs([1], { compartment_1: 3 }, autoscalingEnabled=false);
+assert isError(err22, 'autoscaling_foo_enabled is false') && isError(err22, 'has no effect') :
+       'case 22: expected a component-knob pairing error, got: %s' % err22;
+
+// 23. Every disabled compartment needs a static replica count, and it must be a positive integer.
+local err23a = validateKnobs([1], {});
+assert isError(err23a, 'set an explicit count via foo_compartment_static_replicas: { compartment_1: <replicas> }') :
+       'case 23a: expected a missing static-replicas error, got: %s' % err23a;
+local err23b = validateKnobs([1], { compartment_1: 0 });
+assert isError(err23b, 'foo_compartment_static_replicas.compartment_1 must be an integer greater than 0') :
+       'case 23b: expected a non-positive replicas error, got: %s' % err23b;
+local err23c = validateKnobs([1], { compartment_1: 2.5 });
+assert isError(err23c, 'foo_compartment_static_replicas.compartment_1 must be an integer greater than 0') :
+       'case 23c: expected a non-integer replicas error, got: %s' % err23c;
+
+// 24. Stale or malformed static-replicas keys (compartment not disabled, or not a compartment key).
+local err24a = validateKnobs([1], { compartment_1: 3, compartment_0: 2 });
+assert isError(err24a, 'has entry "compartment_0"') && isError(err24a, 'not listed in autoscaling_foo_disabled_compartments') :
+       'case 24a: expected a stale static-replicas key error, got: %s' % err24a;
+local err24b = validateKnobs([1], { compartment_1: 3, foo: 2 });
+assert isError(err24b, 'has entry "foo"') :
+       'case 24b: expected a malformed static-replicas key error, got: %s' % err24b;
+
 {}

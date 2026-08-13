@@ -113,16 +113,15 @@ func (p PositionRange) ToPrometheusType() posrange.PositionRange {
 	return posrange.PositionRange(p)
 }
 
-func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher {
+func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []LabelMatcher {
 	if len(matchers) == 0 {
 		return nil
 	}
 
-	converted := make([]*LabelMatcher, 0, len(matchers))
+	converted := make([]LabelMatcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		matcher := LabelMatcherFromPrometheusType(m)
-		converted = append(converted, &matcher)
+		converted = append(converted, LabelMatcherFromPrometheusType(m))
 	}
 
 	return converted
@@ -136,7 +135,7 @@ func LabelMatcherFromPrometheusType(m *labels.Matcher) LabelMatcher {
 	}
 }
 
-func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
+func LabelMatchersToOperatorType(matchers []LabelMatcher) types.Matchers {
 	if len(matchers) == 0 {
 		return nil
 	}
@@ -160,18 +159,21 @@ func SubsetsToSelectorType(subsets []SubsetMatchers) ([]selectors.Subset, error)
 
 	converted := make([]selectors.Subset, 0, len(subsets))
 	for _, subset := range subsets {
-		m, err := LabelMatchersToPrometheusType(subset.Matchers)
+		filter, err := LabelMatchersToPrometheusType(subset.Filter)
 		if err != nil {
 			return nil, err
 		}
 
-		converted = append(converted, selectors.Subset{Filter: m})
+		converted = append(converted, selectors.Subset{
+			Filter:      filter,
+			AllMatchers: LabelMatchersToOperatorType(subset.AllMatchers),
+		})
 	}
 
 	return converted, nil
 }
 
-func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
+func LabelMatchersToPrometheusType(matchers []LabelMatcher) ([]*labels.Matcher, error) {
 	if len(matchers) == 0 {
 		return nil, nil
 	}

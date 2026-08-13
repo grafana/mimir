@@ -158,11 +158,10 @@ message SearchLabelValuesRequest {
   SearchFilter filter = 5;
   SearchOrdering ordering = 6;
   int64 limit = 7;
-  // IncludeMetadata asks the ingester to enrich each result's Metadata field
-  // with the per-tenant MetricMetadata when name == "__name__". Has no effect
-  // for any other label name. Ignored by sources without metric metadata
-  // (e.g. store-gateway).
-  bool include_metadata = 8;
+  // 8 was include_metadata: it asked the ingester to enrich each result with
+  // metric metadata. Enrichment now happens on the querier, so the field was
+  // removed.
+  reserved 8;
 }
 
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming
@@ -173,9 +172,9 @@ message SearchResultBatch {
   message Result {
     string value = 1;
     double score = 2;
-    // Metadata is populated only when the request set include_metadata=true
-    // and the underlying source has metric metadata for value. Nil otherwise.
-    cortexpb.MetricMetadata metadata = 3;
+    // 3 was metadata: per-result metric metadata. Enrichment now happens on the
+    // querier, so the field was removed.
+    reserved 3;
   }
   repeated Result results = 1 [(gogoproto.nullable) = false];
   repeated string warnings = 2;
@@ -270,7 +269,17 @@ message MetricsForLabelMatchersResponse {
 message MetricsMetadataRequest {
   sint32 limit = 1;
   sint32 limit_per_metric = 2;
+
+  // Metric restricts the response to metadata for the given metric name.
+  // Empty means no name restriction.
+  //
+  // Deprecated: use metric_names instead.
   string metric = 3;
+
+  // MetricNames restricts the response to metadata for the given metric names.
+  // Empty means no name restriction. When set, it takes precedence over the
+  // single-name metric field.
+  repeated string metric_names = 4;
 }
 
 message MetricsMetadataResponse {

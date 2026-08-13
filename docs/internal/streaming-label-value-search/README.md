@@ -158,10 +158,47 @@ return.
 
 ## Metadata enrichment (`include_metadata`)
 
-The `include_metadata=true` URL param on `/api/v1/search/metric_names` asks
-for per-metric `Type/Help/Unit` metadata to be inlined on each result. This
-enrichment is **applied only at the ingester**, the store-gateway has no metric metadata
-to enrich with.
+The `include_metadata=true` URL param on `/api/v1/search/metric_names` asks for
+per-metric `Type/Help/Unit` metadata to be inlined on each result. It is honoured
+only by the metric-names endpoint — that is the only response shape with
+`Type/Help/Unit` fields — so the param is ignored (no metadata fetch) on
+`/api/v1/search/label_names` and `/api/v1/search/label_values`, including
+`label_values?label=__name__`.
+
+Enrichment is applied in the querier's metric-names HTTP handler, not in
+the ingesters. Metric metadata is sharded by metric name independently of series
+(sharded by all labels), so the ingester that owns a metric's metadata is
+usually not the one that holds a series with that name.
+
+The handler wraps the fully-merged result set with a buffering enricher: it
+batches the streamed metric names, fetches their metadata via
+`FetchMetricMetadata` on the opened querier, and joins by name. The handler
+stays tenant-federation-agnostic, but the fetcher it obtains is federation-aware.
+
+`FetchMetricMetadata` is implemented by:
+
+- `distributorQuerier` — via the ingester `MetricsMetadata` fan-out (the same
+  all-ingester path `/api/v1/metadata` uses, extended to accept multiple names);
+- `multiQuerier` — delegates to the child querier that queries the ingesters;
+- `tenantfederation.mergeQuerier` — fans out per tenant and unions by name; on a
+  name present in several tenants the first tenant by sorted ID wins.
+
+Metadata is fetched from the ingesters (keyed by metric name, independent of the
+query time range), so it is always current rather than tied to the searched
+window. It is **best-effort**: metadata is optional per result, so a fetch
+failure, or a metric that no ingester currently holds metadata for, simply leaves
+results un-enriched, exactly like a metric that has no metadata.
+
+The store-gateway has no metric metadata and is not consulted for it.
+
+### Known limitations
+
+- **Classic histograms and summaries are not enriched.** Metadata is keyed by
+  metric family name (e.g. `http_request_duration_seconds`), but the search
+  returns the actual `__name__` series values, which for classic
+  histograms/summaries are the `_bucket`/`_count`/`_sum` sub-series. Those names
+  don't match the family key, so the join misses. Native histograms and plain
+  counters/gauges enrich fine.
 
 ## Per-source notes
 
@@ -194,7 +231,7 @@ the ingester is a single-source leaf, the limit applied here is the
 limit across all ingesters in the quorum.
 
 **Files**: `pkg/ingester/ingester_search.go` (RPC handlers, streaming
-loop, metadata decorator, wire/internal converters);
+loop, wire/internal converters);
 `pkg/ingester/client/ingester.proto` (RPC + batch wire definitions).
 
 **Per-call flow:**
@@ -327,9 +364,9 @@ defers before the merge is constructed.
 
 **What the store-gateway does NOT do:**
 
-- **Metadata enrichment**: the proto's `Result.Metadata` field is never
-  populated by the store-gateway. Metric metadata lives only at the
-  ingester (see [Metadata enrichment](#metadata-enrichment-include_metadata)).
+- **Metadata enrichment**: the store-gateway has no metric metadata. Metadata
+  is fetched from the ingesters and joined on the querier (see
+  [Metadata enrichment](#metadata-enrichment-include_metadata)).
 - **Tenant federation**: per-tenant scoping happens upstream at the
   querier; the store-gateway sees one tenant per call.
 

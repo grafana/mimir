@@ -68,15 +68,13 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 	}{
 		"floats": {
 			append: func(ts int64, floats *FPointRingBuffer, histograms *HPointRingBuffer) error {
-				_, err := floats.Append(promql.FPoint{T: ts})
-				return err
+				return floats.Append(promql.FPoint{T: ts})
 			},
 			samplesPerPoint: 1,
 		},
 		"histograms": {
 			append: func(ts int64, floatsf *FPointRingBuffer, histograms *HPointRingBuffer) error {
-				_, err := histograms.Append(promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
-				return err
+				return histograms.Append(promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
 			},
 			samplesPerPoint: EquivalentFloatSampleCount(&histogram.FloatHistogram{}),
 		},
@@ -186,12 +184,9 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
 
 	h := &histogram.FloatHistogram{}
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))})
-	require.NoError(t, err)
-	_, err = histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h})
-	require.NoError(t, err)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
-	require.NoError(t, err)
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))}))
+	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
 
 	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h), 0, 0)
@@ -225,10 +220,8 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FixedTimesta
 	floats := NewFPointRingBuffer(memoryConsumptionTracker)
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
 
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))})
-	require.NoError(t, err)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
-	require.NoError(t, err)
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
 
 	haveTimestamp := true
 	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil)
@@ -331,14 +324,10 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 
 	floats := NewFPointRingBuffer(memoryConsumptionTracker)
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))})
-	require.NoError(t, err)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))})
-	require.NoError(t, err)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
-	require.NoError(t, err)
-	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start)})
-	require.NoError(t, err)
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
+	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start)}))
 
 	overallProcessed := newPerStepTracker("overall samples processed", timeRange.StepCount)
 	overallReadIfSubsequentStep := newPerStepTracker("overall samples read if subsequent step", timeRange.StepCount)

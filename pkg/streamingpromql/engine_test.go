@@ -82,6 +82,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"left_vector + fill_right(0) right_vector": "'fill' modifier",
 		"left_vector + fill(0) right_vector":       "'fill' modifier",
 		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
+		"start_timestamp(vector(0))":               "'start_timestamp' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -89,6 +90,21 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 			requireQueryIsUnsupported(t, expression, expectedError)
 		})
 	}
+}
+
+// TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected verifies that MQE fails loudly when
+// delayed name removal is enabled the Prometheus way (via CommonOpts) rather than being silently
+// ignored, since MQE only honours the per-tenant limits setting.
+func TestNewEngine_DelayedNameRemovalViaPrometheusOptionRejected(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.EqualError(t, err, "enabling delayed name removal via the Prometheus engine option is not supported by the Mimir query engine; enable it per-tenant via the enable_delayed_name_removal setting (-querier.enable-delayed-name-removal flag) instead")
+	require.Nil(t, engine)
 }
 
 func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
@@ -211,9 +227,9 @@ func TestRangeVectorSelectors(t *testing.T) {
 	delayedLimits.EnableDelayedNameRemoval = true
 	delayedOpts := NewTestEngineOpts()
 	delayedOpts.Limits = delayedLimits
-	delayedOpts.CommonOpts.EnableDelayedNameRemoval = true
+	delayedOpts.EnableDelayedNameRemovalPrometheusEngine = true
 
-	delayedPrometheusEngine := promql.NewEngine(delayedOpts.CommonOpts)
+	delayedPrometheusEngine := promql.NewEngine(delayedOpts.PrometheusEngineOpts())
 	delayedPlanner, err := NewQueryPlanner(delayedOpts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	delayedMimirEngine, err := NewEngine(delayedOpts, stats.NewQueryMetrics(nil), delayedPlanner)
@@ -1792,7 +1808,7 @@ func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T
 	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
 		},
 	}}
@@ -2413,13 +2429,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 		limits := NewStaticQueryLimitsProvider()
 		limits.EnableDelayedNameRemoval = delayedNameRemovalEnabled
 		opts.Limits = limits
-		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+		opts.EnableDelayedNameRemovalPrometheusEngine = delayedNameRemovalEnabled
 
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
 		mimirEngine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
-		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		prometheusEngine := promql.NewEngine(opts.PrometheusEngineOpts())
 
 		engineSets = append(engineSets, struct {
 			mimirEngine               promql.QueryEngine
@@ -4058,8 +4074,14 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 6, 60000: 6, 120000: 6, 180000: 6, 240000: 6, 300000: 6, 360000: 6, 420000: 6, 480000: 6, 540000: 6, 600000: 6,
 			},
-			expectedSamplesRead: 6,
+			expectedSamplesRead: 10,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
+				0: 0, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 1, 360000: 1, 420000: 1, 480000: 1, 540000: 1, 600000: 5,
+			},
+			// MQE evaluates the @-pinned step-invariant subquery once and reads its samples a single
+			// time, whereas Prometheus' engine now accounts the reads per output step.
+			expectedSamplesReadWithMQE: 6,
+			expectedSamplesReadPerStepWithMQE: promstats.TotalSamplesPerStep{
 				0: 6, 60000: 0, 120000: 0, 180000: 0, 240000: 0, 300000: 0, 360000: 0, 420000: 0, 480000: 0, 540000: 0, 600000: 0,
 			},
 		},

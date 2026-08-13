@@ -105,7 +105,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addShowNativeLatencyVariable($.latencyVariableDefault())
-    .addRow(
+    .addRowIf(
+      $._config.compactor_standalone_enabled,
       $.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary')
       .addPanel(
         $.startedCompletedFailedPanel(
@@ -255,7 +256,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
-      ($.row('Summary (scheduler mode)') + { collapse: true })
+      $.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary')
       .addPanel(
         $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
@@ -385,7 +386,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRow(
       $.row('Compaction')
-      .addPanel(
+      .addPanelIf(
+        $._config.compactor_standalone_enabled,
         $.timeseriesPanel('Estimated Compaction Jobs') +
         $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
                      [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
@@ -494,7 +496,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
         $.stack,
       )
-      .splitIntoLines([4, 4])
+      .splitIntoLines(if $._config.compactor_standalone_enabled then [4, 4] else [3, 4])
     )
     .addRow(
       $.row('Garbage collector')

@@ -292,7 +292,7 @@ func TestChunksCaching(t *testing.T) {
 			cfg := NewCachingBucketConfig()
 			cfg.CacheGetRange(cfgName, cache, isTSDBChunkFile, subrangeSize, cache, time.Hour, time.Hour, tc.maxGetRangeRequests)
 
-			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			cachingBucket, err := NewCachingBucket(bucketID, bucketID, inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			assert.NoError(t, err)
 
 			ctx := context.Background()
@@ -368,7 +368,7 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
-	c, err := NewCachingBucket("test", b, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	c, err := NewCachingBucket("test", "test", b, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	r, err := c.GetRange(context.Background(), "test", -1, 1000)
@@ -413,7 +413,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
@@ -505,7 +505,7 @@ func TestExists(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should return cached value on cache hit", func(t *testing.T) {
@@ -558,7 +558,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, func(string) bool { return false }, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should not use the cache when caching is disabled for the given object", func(t *testing.T) {
@@ -612,7 +612,7 @@ func TestGet(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Get() should cache non-existence of the requested object if it doesn't exist", func(t *testing.T) {
@@ -696,7 +696,7 @@ func TestGetTooBigObject(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -720,7 +720,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -783,7 +783,7 @@ func TestAttributes(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Attributes() should not cache non existing objects", func(t *testing.T) {
@@ -966,7 +966,7 @@ func TestMutationInvalidatesCache(t *testing.T) {
 	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
 	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	t.Run("invalidated on upload", func(t *testing.T) {

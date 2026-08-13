@@ -20,6 +20,21 @@ func TestAlignTimestampToInterval(t *testing.T) {
 	assert.Equal(t, time.Unix(40, 0), alignTimestampToInterval(time.Unix(40, 0), 10*time.Second))
 }
 
+func TestQuerySumWrapsSelectorInOverTimeWindow(t *testing.T) {
+	// All query builders must wrap the selector in a 1s *_over_time window. This ensures only the
+	// samples we previously wrote are fetched and the PromQL lookback period doesn't carry the most
+	// recently written sample forward past its real timestamp. Without this, recovering the last
+	// written sample on startup fails: the recovery query's end time is "now", so a bare selector
+	// returns lookback-carried samples whose values don't match the expected value for those later
+	// timestamps. Histograms use last_over_time because max_over_time does not support native histograms.
+	const metric = "test_metric"
+
+	assert.Equal(t, "sum(max_over_time(test_metric[1s]))", querySumFloat(metric))
+	assert.Equal(t, "sum(last_over_time(test_metric[1s]))", querySumHist(metric))
+	assert.Equal(t, `sum(max_over_time({__name__=~"test_metric.*"}[1s]))`, querySumFloatFanOut(metric))
+	assert.Equal(t, `sum(last_over_time({__name__=~"test_metric.*"}[1s]))`, querySumHistFanOut(metric))
+}
+
 func TestGetQueryStep(t *testing.T) {
 	tests := map[string]struct {
 		start         time.Time

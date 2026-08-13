@@ -22,7 +22,7 @@ load 30s
   hist_then_float {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}} 1 2
 
 eval instant at 45s hist_then_float smoothed
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "hist_then_float"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "hist_then_float" (1:1)
 
 # MQE-only: with multiple series in one selector, only the series whose neighbours mix floats and
 # histograms is dropped (with the warning naming that series); a pure-float series is still
@@ -33,7 +33,7 @@ load 30s
   mm_pure 10 20 30 40
 
 eval instant at 45s {__name__=~"mm_mixed|mm_pure"} smoothed
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mm_mixed"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mm_mixed" (1:1)
   mm_pure 25
 
 # MQE-only (Prometheus panics on the empty result): when the smoothed instant selector interpolates
@@ -46,7 +46,7 @@ load 30s
   exp_then_custom {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval instant at 45s histogram_count(exp_then_custom smoothed)
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "exp_then_custom"
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "exp_then_custom" (1:17)
 
 # MQE-only, and a documented divergence from Prometheus's intent: the smoothed instant selector
 # only inspects the two immediate neighbours of the eval time when deciding whether the window

@@ -286,7 +286,7 @@ func isLabelModifyingFunction(node planning.Node) bool {
 	return false
 }
 
-func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
+func hasExactNameMatcher(matchers []core.LabelMatcher) bool {
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
 			return true

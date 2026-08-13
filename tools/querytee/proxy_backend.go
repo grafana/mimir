@@ -36,6 +36,7 @@ type ProxyBackendInterface interface {
 	HasConfiguredProportion() bool
 	MinDataQueriedAge() time.Duration
 	ShouldHandleQuery(minQueryTime time.Time) bool
+	ShouldHandleTenants(tenantIDs []string) bool
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
 }
 
@@ -56,6 +57,9 @@ type ProxyBackend struct {
 
 	// Minimum data queried age - backend serves queries with min time >= (now - age)
 	minDataQueriedAge time.Duration
+
+	// Set of tenant IDs whose requests must not be sent to this backend.
+	excludeTenants map[string]struct{}
 
 	// Cluster validation label to set in outgoing requests.
 	clusterLabel string
@@ -94,6 +98,14 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		}
 	}
 
+	var excludeTenants map[string]struct{}
+	if len(cfg.ExcludeTenants) > 0 {
+		excludeTenants = make(map[string]struct{}, len(cfg.ExcludeTenants))
+		for _, tenantID := range cfg.ExcludeTenants {
+			excludeTenants[tenantID] = struct{}{}
+		}
+	}
+
 	return &ProxyBackend{
 		name:              name,
 		endpoint:          endpoint,
@@ -102,6 +114,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		cfg:               cfg,
 		requestProportion: requestProportion,
 		minDataQueriedAge: minDataQueriedAge,
+		excludeTenants:    excludeTenants,
 		clusterLabel:      clusterLabel,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -152,6 +165,23 @@ func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	// Backend serves queries where min_query_time >= (now - age)
 	cutOffTs := time.Now().Add(-b.minDataQueriedAge)
 	return minQueryTime.Before(cutOffTs)
+}
+
+// ShouldHandleTenants reports whether this backend should handle a request for the given tenant IDs.
+// The request is skipped only when all of its tenants are excluded, so a request that mixes excluded
+// and non-excluded tenants is still forwarded. Requests without any tenant are always handled.
+func (b *ProxyBackend) ShouldHandleTenants(tenantIDs []string) bool {
+	if len(b.excludeTenants) == 0 || len(tenantIDs) == 0 {
+		return true
+	}
+	for _, tenantID := range tenantIDs {
+		if _, excluded := b.excludeTenants[tenantID]; !excluded {
+			// At least one tenant is not excluded, so handle the request.
+			return true
+		}
+	}
+	// All tenants are excluded.
+	return false
 }
 
 func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {

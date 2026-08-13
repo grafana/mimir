@@ -2356,6 +2356,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.store-gateway-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.store-gateway-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -2598,7 +2620,7 @@
               "required": false,
               "desc": "Enable subset selector elimination when evaluating queries.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-subset-selector-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
@@ -2984,6 +3006,60 @@
                   "fieldDefaultValue": true,
                   "fieldFlag": "querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results",
                   "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "cardinality_estimation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "bucket_size",
+                  "required": false,
+                  "desc": "The duration of each bucket used to store cardinality estimates per selector. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 14400000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.bucket-size",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl",
+                  "required": false,
+                  "desc": "The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_buckets_read_per_selector",
+                  "required": false,
+                  "desc": "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 168,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "estimate_update_threshold",
+                  "required": false,
+                  "desc": "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0.1,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold",
+                  "fieldType": "float",
                   "fieldCategory": "experimental"
                 }
               ],
@@ -3677,6 +3753,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "ingester.client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ingester.client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.client.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -5989,6 +6087,17 @@
         },
         {
           "kind": "field",
+          "name": "max_blocks_per_store_request",
+          "required": false,
+          "desc": "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-blocks-per-store-request",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_lookback",
           "required": false,
           "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
@@ -7806,6 +7915,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.frontend-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.frontend-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -8096,6 +8227,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "querier.scheduler-client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "querier.scheduler-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "querier.scheduler-client.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -8475,6 +8628,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "query-frontend.grpc-client-config.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -8896,7 +9071,7 @@
           "required": false,
           "desc": "True to enable query sharding.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.parallelize-shardable-queries",
           "fieldType": "boolean"
         },
@@ -8906,19 +9081,8 @@
           "required": false,
           "desc": "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-remote-execution",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "enable_multiple_node_remote_execution_requests",
-          "required": false,
-          "desc": "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.enable-multiple-node-remote-execution-requests",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -8926,9 +9090,9 @@
           "kind": "field",
           "name": "use_mimir_query_engine_for_sharding",
           "required": false,
-          "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.",
+          "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.use-mimir-query-engine-for-sharding",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -8985,6 +9149,28 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.active-series-framed-responses",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "subquery_spin_off_simple_subqueries",
+          "required": false,
+          "desc": "Set to true to spin off subqueries whose inner expression is considered simple. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-simple-subqueries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "subquery_spin_off_with_excess_downstream_queries",
+          "required": false,
+          "desc": "Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -query-frontend.subquery-spin-off-enabled=true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-with-excess-downstream-queries",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -9060,6 +9246,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "wait_for_querier_ring_on_startup",
+          "required": false,
+          "desc": "If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -13082,6 +13279,17 @@
         },
         {
           "kind": "field",
+          "name": "block_health_validation_concurrency",
+          "required": false,
+          "desc": "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-health-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "meta_sync_concurrency",
           "required": false,
           "desc": "Number of goroutines to use when syncing block meta files from the long term storage.",
@@ -14043,6 +14251,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 5000000000,
                   "fieldFlag": "compactor.scheduler-client.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "compactor.scheduler-client.grpc-client-config.keepalive-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
@@ -15834,6 +16064,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ruler.client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ruler.client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -16909,6 +17161,28 @@
                   "fieldCategory": "advanced"
                 },
                 {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler.query-frontend.grpc-client-config.keepalive-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
                   "kind": "block",
                   "name": "cluster_validation",
                   "required": false,
@@ -17261,6 +17535,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 5000000000,
                   "fieldFlag": "ruler.distributor.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_time",
+                  "required": false,
+                  "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.keepalive-time",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "keepalive_timeout",
+                  "required": false,
+                  "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.keepalive-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
@@ -19558,6 +19854,28 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "alertmanager.alertmanager-client.keepalive-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "cluster_validation",
               "required": false,
@@ -21752,6 +22070,28 @@
               "fieldValue": null,
               "fieldDefaultValue": 5000000000,
               "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_time",
+              "required": false,
+              "desc": "After a duration of this time if the client doesn't see any activity it pings the server to see if the transport is still alive. This also determines the socket's TCP_USER_TIMEOUT together with keepalive-timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.keepalive-time",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "keepalive_timeout",
+              "required": false,
+              "desc": "After having pinged for keepalive check, the client waits for a duration of this time and if no activity is seen even after that the connection is closed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "query-scheduler.grpc-client-config.keepalive-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },

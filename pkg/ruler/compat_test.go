@@ -10,10 +10,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -50,6 +52,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+// newTestActiveQueryTracker builds a promql.ActiveQueryTracker for tests, asserting that
+// creation succeeds. NewActiveQueryTracker now returns an error, so this keeps the call sites
+// (several of which live inside var blocks) concise.
+func newTestActiveQueryTracker(t *testing.T, logger *slog.Logger) *promql.ActiveQueryTracker {
+	t.Helper()
+	tracker, err := promql.NewActiveQueryTracker(t.TempDir(), 20, logger)
+	require.NoError(t, err)
+	return tracker
+}
 
 type fakePusher struct {
 	request  *mimirpb.WriteRequest
@@ -403,48 +415,50 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 }
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
-	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
-	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	synctest.Test(t, func(t *testing.T) {
+		queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+		zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
-	mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
-		time.Sleep(1 * time.Second)
-		return promql.Vector{}, nil
-	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), false, log.NewNopLogger())
+		mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+			time.Sleep(1 * time.Second)
+			return promql.Vector{}, nil
+		}
+		qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), false, log.NewNopLogger())
 
-	// Ensure we start with counters at 0.
-	require.LessOrEqual(t, float64(0), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(0), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Ensure we start with counters at 0.
+		require.LessOrEqual(t, float64(0), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(0), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Increment zeroFetchedSeriesCount for non-existent series.
-	_, _ = qf(context.Background(), "test", time.Now())
-	require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Increment zeroFetchedSeriesCount for non-existent series.
+		_, _ = qf(context.Background(), "test", time.Now())
+		require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Increment zeroFetchedSeriesCount for another non-existent series.
-	_, _ = qf(context.Background(), "test2", time.Now())
-	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Increment zeroFetchedSeriesCount for another non-existent series.
+		_, _ = qf(context.Background(), "test2", time.Now())
+		require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Don't increment zeroFetchedSeriesCount for query without series selectors.
-	_, _ = qf(context.Background(), "vector(0.995)", time.Now())
-	require.LessOrEqual(t, float64(3), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Don't increment zeroFetchedSeriesCount for query without series selectors.
+		_, _ = qf(context.Background(), "vector(0.995)", time.Now())
+		require.LessOrEqual(t, float64(3), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Don't increment zeroFetchedSeriesCount for another query without series selectors.
-	_, _ = qf(context.Background(), "vector(2.4192e+15 / 1e+09)", time.Now())
-	require.LessOrEqual(t, float64(4), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Don't increment zeroFetchedSeriesCount for another query without series selectors.
+		_, _ = qf(context.Background(), "vector(2.4192e+15 / 1e+09)", time.Now())
+		require.LessOrEqual(t, float64(4), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Increment zeroFetchedSeriesCount for non-existent series even when combined with a non-series selector.
-	_, _ = qf(context.Background(), "test + vector(0.995)", time.Now())
-	require.LessOrEqual(t, float64(5), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Increment zeroFetchedSeriesCount for non-existent series even when combined with a non-series selector.
+		_, _ = qf(context.Background(), "test + vector(0.995)", time.Now())
+		require.LessOrEqual(t, float64(5), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 
-	// Don't increment zeroFetchedSeriesCount for queries with errors.
-	_, _ = qf(context.Background(), "rate(test)", time.Now())
-	require.LessOrEqual(t, float64(6), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
-	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+		// Don't increment zeroFetchedSeriesCount for queries with errors.
+		_, _ = qf(context.Background(), "rate(test)", time.Now())
+		require.LessOrEqual(t, float64(6), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+		require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+	})
 }
 
 func TestRecordAndReportRuleQueryMetrics_Logging(t *testing.T) {
@@ -554,7 +568,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
-			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
+			tracker := newTestActiveQueryTracker(t, promslog.NewNopLogger())
 			eng := promql.NewEngine(promql.EngineOpts{
 				MaxSamples:         1e6,
 				ActiveQueryTracker: tracker,
@@ -624,7 +638,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 				fs        = afero.NewMemMapFs()
 				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
 				queryable = newMockQueryable()
-				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng       = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -712,7 +726,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				notifierManager = notifier.NewManager(&notifier.Options{
 					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				tracker = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
+				tracker = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(options.logger))
 				eng     = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -794,7 +808,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 		notifierManager = notifier.NewManager(&notifier.Options{
 			Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 		}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-		tracker = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
+		tracker = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(options.logger))
 		eng     = promql.NewEngine(promql.EngineOpts{
 			MaxSamples:         1e6,
 			ActiveQueryTracker: tracker,
@@ -1207,7 +1221,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
 				fs        = afero.NewMemMapFs()
 				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng       = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,

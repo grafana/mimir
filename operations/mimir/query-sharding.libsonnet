@@ -1,6 +1,6 @@
 {
   _config+: {
-    query_sharding_enabled: false,
+    query_sharding_enabled: true,
 
     // Raise the msg size for the GRPC messages query-frontend <-> querier by this factor when query sharding is enabled
     query_sharding_msg_size_factor: 4,

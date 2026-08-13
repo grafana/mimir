@@ -31,6 +31,13 @@ func (evaluationRootWrapper) WrapDownstreamQuery(expr parser.Expr) (parser.Expr,
 		return wrapInVectorEvaluationRoot(expr), nil
 	case parser.ValueTypeScalar:
 		return wrapInScalarEvaluationRoot(expr), nil
+	case parser.ValueTypeMatrix, parser.ValueTypeString:
+		// A range vector selector (matrix) or string literal can only appear as the root of the whole
+		// query: neither can be combined with anything else in PromQL, and neither can contain a subquery
+		// to spin off. There is no matrix or string evaluation root marker, and marking these would be
+		// pointless because no subquery will be spun off, so leave the expression unchanged. The spin-off
+		// is treated as a no-op by the caller because no subqueries were spun off.
+		return expr, nil
 	default:
 		return nil, fmt.Errorf("evaluationRootWrapper: unsupported expression type %s", expr.Type())
 	}

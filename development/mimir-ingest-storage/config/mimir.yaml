@@ -96,6 +96,9 @@ ruler_storage:
 query_scheduler:
   service_discovery_mode: "ring"
 
+querier:
+  experimental_search_api_enabled: true
+
 alertmanager:
   fallback_config_file: ./config/alertmanager-fallback-config.yaml
 

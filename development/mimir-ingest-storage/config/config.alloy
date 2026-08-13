@@ -1,0 +1,166 @@
+prometheus.scrape "metrics_local_mimir_ingest_storage" {
+        targets = concat(
+                [{
+                        __address__ = "distributor-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "distributor",
+                        job         = "mimir-ingest-storage/distributor",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "ingester-zone-a-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-ingest-storage/ingester",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "ingester-zone-b-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-ingest-storage/ingester",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "querier:8080",
+                        cluster     = "docker-compose",
+                        container   = "querier",
+                        job         = "mimir-ingest-storage/querier",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "query-frontend:8080",
+                        cluster     = "docker-compose",
+                        container   = "query-frontend",
+                        job         = "mimir-ingest-storage/query-frontend",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "query-scheduler:8080",
+                        cluster     = "docker-compose",
+                        container   = "query-scheduler",
+                        job         = "mimir-ingest-storage/query-scheduler",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "compactor:8080",
+                        cluster     = "docker-compose",
+                        container   = "compactor",
+                        job         = "mimir-ingest-storage/compactor",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-a-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-ingest-storage/store-gateway",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-b-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-ingest-storage/store-gateway",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "ruler-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-ingest-storage/ruler",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "ruler-2:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-ingest-storage/ruler",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "ruler-3:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-ingest-storage/ruler",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "alertmanager-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-ingest-storage/alertmanager",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "alertmanager-2:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-ingest-storage/alertmanager",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "alertmanager-3:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-ingest-storage/alertmanager",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "block-builder-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder",
+                        job         = "mimir-ingest-storage/block-builder",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "block-builder-scheduler-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder-scheduler",
+                        job         = "mimir-ingest-storage/block-builder-scheduler",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-a-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-ingest-storage/usage-tracker",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-a-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-ingest-storage/usage-tracker",
+                        namespace   = "mimir-ingest-storage",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-b-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-ingest-storage/usage-tracker",
+                        namespace   = "mimir-ingest-storage",
+                }],
+        )
+        forward_to      = [prometheus.remote_write.metrics_local.receiver]
+        scrape_interval = "5s"
+        scrape_timeout  = "5s"
+
+        scrape_native_histograms  = true
+        scrape_classic_histograms = true
+
+        // Scrape and forward metric metadata downstream.
+        honor_metadata = true
+}
+
+prometheus.remote_write "metrics_local" {
+        endpoint {
+                name                   = "local"
+                url                    = "http://distributor-1:8080/api/v1/push"
+                send_native_histograms = true
+
+                // Send metrics using remote write 2.0, which carries metric metadata inline.
+                protobuf_message = "io.prometheus.write.v2.Request"
+
+                queue_config { }
+        }
+}

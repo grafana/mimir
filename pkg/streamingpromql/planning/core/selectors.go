@@ -11,7 +11,7 @@ import (
 )
 
 func describeSelector(
-	matchers []*LabelMatcher,
+	matchers []LabelMatcher,
 	ts *time.Time,
 	offset time.Duration,
 	rng *time.Duration,
@@ -62,7 +62,10 @@ func describeSelector(
 				builder.WriteString(", ")
 			}
 
-			FormatMatchers(builder, subset.Matchers)
+			FormatMatchers(builder, subset.Filter)
+			builder.WriteString(" (")
+			FormatMatchers(builder, subset.AllMatchers)
+			builder.WriteRune(')')
 		}
 	}
 

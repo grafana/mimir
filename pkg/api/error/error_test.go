@@ -171,6 +171,14 @@ func TestTypeForError(t *testing.T) {
 			err:      googlestatus.Error(codes.Canceled, "request was canceled"),
 			expected: TypeCanceled,
 		},
+		"gRPC message too large error": {
+			err:      status.Error(codes.ResourceExhausted, "trying to send message larger than max (112 vs. 100)"),
+			expected: TypeTooLargeEntry,
+		},
+		"other resource exhausted gRPC error": {
+			err:      status.Error(codes.ResourceExhausted, "something else went wrong"),
+			expected: fallback,
+		},
 	}
 
 	for name, testCase := range testCases {

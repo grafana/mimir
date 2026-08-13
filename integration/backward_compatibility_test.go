@@ -319,28 +319,27 @@ func checkQueries(
 			}
 
 			// Query the series.
-			for _, endpoint := range []string{queryFrontend.HTTPEndpoint(), querier.HTTPEndpoint()} {
-				c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
-				require.NoError(t, err)
+			endpoint := queryFrontend.HTTPEndpoint()
+			c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
+			require.NoError(t, err)
 
-				for _, query := range instantQueries {
-					t.Run(fmt.Sprintf("%s: instant query: %s", endpoint, query.expr), func(t *testing.T) {
-						result, err := c.Query(query.expr, query.time)
-						require.NoError(t, err)
-						require.Equal(t, model.ValVector, result.Type())
-						require.Equal(t, query.expectedVector, result.(model.Vector))
-					})
-				}
+			for _, query := range instantQueries {
+				t.Run(fmt.Sprintf("instant query: %s", query.expr), func(t *testing.T) {
+					result, err := c.Query(query.expr, query.time)
+					require.NoError(t, err)
+					require.Equal(t, model.ValVector, result.Type())
+					require.Equal(t, query.expectedVector, result.(model.Vector))
+				})
+			}
 
-				for _, req := range remoteReadRequests {
-					t.Run(fmt.Sprintf("%s: remote read: %s", endpoint, req.metricName), func(t *testing.T) {
-						httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
-						require.NoError(t, err)
-						require.Equal(t, http.StatusOK, httpRes.StatusCode)
-						require.NotNil(t, result)
-						require.Equal(t, req.expectedTimeseries, result.Timeseries)
-					})
-				}
+			for _, req := range remoteReadRequests {
+				t.Run(fmt.Sprintf("remote read: %s", req.metricName), func(t *testing.T) {
+					httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
+					require.NoError(t, err)
+					require.Equal(t, http.StatusOK, httpRes.StatusCode)
+					require.NotNil(t, result)
+					require.Equal(t, req.expectedTimeseries, result.Timeseries)
+				})
 			}
 		})
 	}

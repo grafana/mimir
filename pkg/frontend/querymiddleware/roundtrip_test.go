@@ -138,6 +138,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
 			cfg.ShardedQueries = true
+			cfg.UseMQEForSharding = false
 		}),
 		log.NewNopLogger(),
 		limits,
@@ -600,6 +601,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
+	cfg.UseMQEForSharding = false
 	cfg.RewriteQueriesHistogram = true
 	cfg.RewriteQueriesPropagateMatchers = true
 

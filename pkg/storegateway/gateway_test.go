@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -220,25 +221,27 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	test.VerifyNoLeak(t)
 
-	ctx := context.Background()
-	gatewayCfg := mockGatewayConfig()
-	storageCfg := mockStorageConfig(t)
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		gatewayCfg := mockGatewayConfig()
+		storageCfg := mockStorageConfig(t)
+		ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
+		bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
-	require.NoError(t, err)
+		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
+		require.NoError(t, err)
 
-	require.NoError(t, g.StartAsync(ctx))
-	err = g.AwaitRunning(ctx)
-	assert.Error(t, err)
-	assert.Equal(t, services.Failed, g.State())
+		require.NoError(t, g.StartAsync(ctx))
+		err = g.AwaitRunning(ctx)
+		assert.Error(t, err)
+		assert.Equal(t, services.Failed, g.State())
 
-	// We expect a clean shutdown, including unregistering the instance from the ring.
-	assert.False(t, g.ringLifecycler.IsRegistered())
-	_ = services.StopAndAwaitTerminated(ctx, g) // There will be an error since the initial sync failed
+		// We expect a clean shutdown, including unregistering the instance from the ring.
+		assert.False(t, g.ringLifecycler.IsRegistered())
+		_ = services.StopAndAwaitTerminated(ctx, g) // There will be an error since the initial sync failed
+	})
 }
 
 // TestStoreGateway_InitialSyncWithWaitRingTokensStability tests the store-gateway cold start case.

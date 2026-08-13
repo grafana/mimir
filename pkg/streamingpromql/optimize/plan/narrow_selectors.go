@@ -45,7 +45,7 @@ func NewNarrowSelectorsOptimizationPass(reg prometheus.Registerer, logger log.Lo
 }
 
 func (n *NarrowSelectorsOptimizationPass) Name() string {
-	return "narrow selectors"
+	return "Narrow selectors"
 }
 
 func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {

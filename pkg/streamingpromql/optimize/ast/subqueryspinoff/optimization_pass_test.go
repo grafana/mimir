@@ -16,8 +16,10 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
+	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -84,7 +86,7 @@ func TestOptimizationPass(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			pass := subqueryspinoff.NewOptimizationPass(mockLimits{enabled: !testCase.disabled}, func(int64) int64 { return 1000 }, reg, log.NewNopLogger())
+			pass := subqueryspinoff.NewOptimizationPass(mockLimits{enabled: !testCase.disabled}, func(int64) int64 { return 1000 }, frontendspinoff.Options{}, reg, log.NewNopLogger())
 			planner.RegisterASTOptimizationPass(pass)
 
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
@@ -93,7 +95,11 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
-			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, testCase.input, timeRange, streamingpromql.NoopPlanningObserver{})
+			params := &planning.QueryParameters{
+				OriginalExpression: testCase.input,
+				TimeRange:          timeRange,
+			}
+			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, params, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			expectedOutput := testCase.expectedOutput

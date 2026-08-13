@@ -215,7 +215,7 @@ func New(
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
 	case MimirEngine:
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, planner)
@@ -224,7 +224,7 @@ func New(
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.PrometheusEngineOpts()))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -361,7 +361,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64) (cont
 	// is required since they may be lazy queriers and not allocate any resources
 	// when methods are initially called: we need to wait until the results are
 	// consumed and the caller of this querier closes it.
-	mq.storeQueriers(queriers)
+	mq.addQueriersToCleanup(queriers)
 	return ctx, queriers, minT, maxT, nil
 }
 
@@ -665,8 +665,8 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-// storeQueriers stores the created queriers so they can be cleaned up when this querier is eventually cleaned up.
-func (mq *multiQuerier) storeQueriers(queriers []storage.Querier) {
+// addQueriersToCleanup tracks the created queriers so they are closed when the multiQuerier is closed.
+func (mq *multiQuerier) addQueriersToCleanup(queriers []storage.Querier) {
 	mq.queriersMtx.Lock()
 	mq.queriers = append(mq.queriers, queriers...)
 	mq.queriersMtx.Unlock()

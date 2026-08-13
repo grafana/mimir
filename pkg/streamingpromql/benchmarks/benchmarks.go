@@ -514,6 +514,11 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: `info(info_dense_2000, {__name__="target_info_X"})`,
 		},
+		// CSE eligible query that uses longer range selectors than the step
+		{
+			Expr:  `histogram_count(sum(rate(nh_X[1h]))) / histogram_fraction(0, +Inf, sum(increase(nh_X[1h])))`,
+			Steps: 50,
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

@@ -101,6 +101,9 @@ type RangeVectorOperator interface {
 	// NextStepSamples returns populated RingBuffers with the samples for the next time step for the
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
+	//
+	// Returned views of FPoints or HPoints are only valid until the next call to NextSeries or
+	// NextStepSamples. The views must be cloned in order to use them beyond the next call.
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
 }
 

@@ -12,12 +12,10 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	mimirstorage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
@@ -234,7 +232,7 @@ func (s *ingesterSearchResultSet) Next() bool {
 	}
 	if s.batch != nil && s.idx < len(s.batch.Results) {
 		r := s.batch.Results[s.idx]
-		s.cur = convertToStorageResult(r)
+		s.cur = storage.SearchResult{Value: r.Value, Score: r.Score}
 		s.idx++
 		return true
 	}
@@ -253,24 +251,12 @@ func (s *ingesterSearchResultSet) Next() bool {
 		}
 		if len(batch.Results) > 0 {
 			s.batch = batch
-			s.cur = convertToStorageResult(batch.Results[0])
+			s.cur = storage.SearchResult{Value: batch.Results[0].Value, Score: batch.Results[0].Score}
 			s.idx = 1
 			return true
 		}
 		// Warning-only batch — keep pulling.
 	}
-}
-
-func convertToStorageResult(r ingester_client.SearchResultBatch_Result) storage.SearchResult {
-	res := storage.SearchResult{Value: r.Value, Score: r.Score}
-	if r.Metadata != nil {
-		res.Metadata = &metadata.Metadata{
-			Type: mimirpb.MetricMetadataMetricTypeToMetricType(r.Metadata.Type),
-			Help: r.Metadata.Help,
-			Unit: r.Metadata.Unit,
-		}
-	}
-	return res
 }
 
 func (s *ingesterSearchResultSet) At() storage.SearchResult { return s.cur }
@@ -317,7 +303,6 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 		Matchers:         wireMatchers,
 		Filter:           paramsToProto(params),
 		Ordering:         orderingToProto(hints),
-		IncludeMetadata:  params != nil && params.IncludeMetadata,
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)

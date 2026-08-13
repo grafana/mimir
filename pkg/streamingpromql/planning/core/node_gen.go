@@ -164,9 +164,7 @@ func (d *DataLabelSelector) ChildrenLabels() []string {
 func (d *DataLabelSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	oi, ok := other.(*DataLabelSelector)
 	return ok &&
-		slices.EqualFunc(d.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
-			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-		})
+		slices.EqualFunc(d.Matchers, oi.Matchers, genEqualsLabelMatcher)
 }
 
 func genEqualsLabelMatcher(a, b LabelMatcher) bool {
@@ -363,9 +361,7 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Anchored == oi.Anchored &&
 		m.AnchoredResetsChanges == oi.AnchoredResetsChanges &&
 		m.CounterAware == oi.CounterAware &&
-		slices.EqualFunc(m.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
-			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-		}) &&
+		slices.EqualFunc(m.Matchers, oi.Matchers, genEqualsLabelMatcher) &&
 		m.Offset == oi.Offset &&
 		m.Range == oi.Range &&
 		m.Smoothed == oi.Smoothed &&
@@ -374,9 +370,8 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 }
 
 func genEqualsSubsetMatchers(a, b SubsetMatchers) bool {
-	return slices.EqualFunc(a.Matchers, b.Matchers, func(a, b *LabelMatcher) bool {
-		return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-	})
+	return slices.EqualFunc(a.AllMatchers, b.AllMatchers, genEqualsLabelMatcher) &&
+		slices.EqualFunc(a.Filter, b.Filter, genEqualsLabelMatcher)
 }
 
 func (n *NoOp) Child(idx int) planning.Node {
@@ -605,9 +600,7 @@ func (v *VectorSelector) ChildrenLabels() []string {
 func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	oi, ok := other.(*VectorSelector)
 	return ok &&
-		slices.EqualFunc(v.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
-			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
-		}) &&
+		slices.EqualFunc(v.Matchers, oi.Matchers, genEqualsLabelMatcher) &&
 		v.Offset == oi.Offset &&
 		v.ReturnSampleTimestamps == oi.ReturnSampleTimestamps &&
 		v.ReturnSampleTimestampsPreserveHistograms == oi.ReturnSampleTimestampsPreserveHistograms &&

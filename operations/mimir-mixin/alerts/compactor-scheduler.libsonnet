@@ -43,7 +43,7 @@
               increase(cortex_compactor_scheduler_repeated_job_failures_total[%(rate_interval)s])
             ) > 0
           ||| % $._config {
-            rate_interval: $.rateInterval('5m'),
+            rate_interval: $.rateInterval('20m'),
           },
           labels: {
             severity: 'warning',
@@ -76,7 +76,7 @@
 
   groups+:
     $.withRunbookURL(
-      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      'https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s',
       $.withDashboardURL(
         'mimir-compactor.json',
         $.withExtraLabelsAnnotations(alertGroups)

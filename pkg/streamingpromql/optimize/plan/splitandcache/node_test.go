@@ -188,7 +188,7 @@ func TestMaterializeSplit(t *testing.T) {
 		t.Run(fmt.Sprintf("%v to %v, step %v, split interval %v", timestamp.Time(testCase.timeRange.StartT).Format(time.RFC3339), timestamp.Time(testCase.timeRange.EndT).Format(time.RFC3339), time.Duration(testCase.timeRange.IntervalMilliseconds)*time.Millisecond, testCase.splitInterval.String()), func(t *testing.T) {
 			innerNode := &core.VectorSelector{
 				VectorSelectorDetails: &core.VectorSelectorDetails{
-					Matchers: []*core.LabelMatcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "my_metric"}},
+					Matchers: []core.LabelMatcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "my_metric"}},
 				},
 			}
 

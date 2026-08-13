@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -19,10 +20,11 @@ import (
 // and we don't care about performance here so we can use an interface+generics.
 type ringBuffer[T any] interface {
 	DiscardPointsAtOrBefore(t int64)
-	Append(p T) (bool, error)
+	Append(p T) error
 	Reset()
 	Use(s []T) error
 	Release()
+	ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[T]
 	ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[T]
 	ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[T]
 	GetPoints() []T
@@ -31,6 +33,7 @@ type ringBuffer[T any] interface {
 }
 
 type ringBufferView[T any] interface {
+	IsDirty() bool
 	ForEach(f func(p T))
 	UnsafePoints() (head []T, tail []T)
 	CopyPoints() ([]T, error)
@@ -106,12 +109,10 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	shouldHavePoints(t, buf, points[3:5]...)
 
 	// Trigger expansion of buffer (we resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well).
-	resized, err := buf.Append(points[5])
+	err := buf.Append(points[5])
 	require.NoError(t, err)
-	require.True(t, resized, "expected Append() to trigger a resize")
-	resized, err = buf.Append(points[6])
+	err = buf.Append(points[6])
 	require.NoError(t, err)
-	require.False(t, resized, "expected Append() not to trigger a resize")
 
 	shouldHavePoints(t, buf, points[3:7]...)
 
@@ -229,9 +230,8 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		require.Equal(t, 2, len(buf.GetPoints()))
 		require.Equal(t, 2, buf.size)
 
-		nextPoint, resized, err := buf.NextPoint()
+		nextPoint, err := buf.NextPoint()
 		require.NoError(t, err)
-		require.True(t, resized, "expected NextPoint() to trigger a resize")
 
 		*nextPoint = points[2]
 		// We assign "NextPoint" points[2], and then check it is in the ring
@@ -277,9 +277,8 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		// Check we only have the expected points
 		shouldHavePoints(t, buf, points[2:4]...)
 
-		nextPoint, resized, err := buf.NextPoint()
+		nextPoint, err := buf.NextPoint()
 		require.NoError(t, err)
-		require.False(t, resized, "expected NextPoint() not to trigger a resize")
 
 		*nextPoint = points[4]
 		// We assign "NextPoint" points[4], and then check it is in the ring
@@ -440,8 +439,7 @@ func TestRingBuffer_ViewBetweenSearchingBackwards(t *testing.T) {
 }
 
 func mustAppend[T any](t *testing.T, buf ringBuffer[T], point T) {
-	_, err := buf.Append(point)
-	require.NoError(t, err)
+	require.NoError(t, buf.Append(point))
 }
 
 func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
@@ -495,6 +493,35 @@ func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts i
 	viewShouldHavePoints(t, buf.ViewUntilSearchingBackwardsForTesting(ts), expected...)
 }
 
+type viewsForIsDirtyTests[T any] struct {
+	untilForwards  ringBufferView[T]
+	untilBackwards ringBufferView[T]
+	between        ringBufferView[T]
+}
+
+func shouldHaveCleanViews[T any](t *testing.T, buf ringBuffer[T]) viewsForIsDirtyTests[T] {
+	untilForwards := buf.ViewUntilSearchingForwardsForTesting(math.MaxInt64)
+	require.False(t, untilForwards.IsDirty(), "expected ViewUntilSearchingForwards to not return dirty view")
+
+	untilBackwards := buf.ViewUntilSearchingBackwardsForTesting(math.MaxInt64)
+	require.False(t, untilBackwards.IsDirty(), "expected ViewUntilSearchingBackwards to not return dirty view")
+
+	between := buf.ViewBetweenSearchingBackwardsForTesting(math.MinInt64, math.MaxInt64)
+	require.False(t, between.IsDirty(), "expected ViewBetweenSearchingBackwards to not return dirty view")
+
+	return viewsForIsDirtyTests[T]{
+		untilForwards:  untilForwards,
+		untilBackwards: untilBackwards,
+		between:        between,
+	}
+}
+
+func shouldHaveDirtyViews[T any](t *testing.T, buf ringBuffer[T], views viewsForIsDirtyTests[T]) {
+	assert.True(t, views.untilForwards.IsDirty(), "expected view created by ViewUntilSearchingForwards from %+v to be dirty. view: %+v", buf, views.untilForwards)
+	assert.True(t, views.untilBackwards.IsDirty(), "expected view created by ViewUntilSearchingBackwards from %+v to be dirty. view: %+v", buf, views.untilBackwards)
+	assert.True(t, views.between.IsDirty(), "expected view created by ViewBetweenSearchingBackwards from %+v to be dirty. view: %+v", buf, views.between)
+}
+
 func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected ...T) {
 	head, tail := view.UnsafePoints()
 	combinedPoints := append(head, tail...)
@@ -538,6 +565,10 @@ type fPointRingBufferWrapper struct {
 	*FPointRingBuffer
 }
 
+func (w *fPointRingBufferWrapper) ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[promql.FPoint] {
+	return w.ViewBetweenSearchingBackwards(minT, maxT, nil)
+}
+
 func (w *fPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.FPoint] {
 	return w.ViewUntilSearchingForwards(maxT, nil)
 }
@@ -561,6 +592,10 @@ func (w *fPointRingBufferWrapper) GetTimestamp(point promql.FPoint) int64 {
 // Wrapper for HPointRingBuffer to work around indirection to get points
 type hPointRingBufferWrapper struct {
 	*HPointRingBuffer
+}
+
+func (w *hPointRingBufferWrapper) ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[promql.HPoint] {
+	return w.ViewBetweenSearchingBackwards(minT, maxT, nil)
 }
 
 func (w *hPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.HPoint] {
@@ -867,7 +902,7 @@ func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
-			_, err := buff.AppendSlice(tc.append)
+			err := buff.AppendSlice(tc.append)
 			require.NoError(t, err)
 			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
@@ -882,36 +917,32 @@ func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 	require.Len(t, buff.points, 2)
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored in the upper end of the existing 2 slot buffer
-	resized, err := buff.AppendAtStart(promql.FPoint{T: 9, F: 20})
+	err := buff.AppendAtStart(promql.FPoint{T: 9, F: 20})
 	require.NoError(t, err)
-	require.False(t, resized, "expected AppendAtStart() not to trigger a buffer resize")
 	require.Equal(t, 2, buff.size)
 	require.Equal(t, 1, buff.firstIndex)
 	require.Len(t, buff.points, 2)
 	require.Equal(t, promql.FPoint{T: 9, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 8, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 8, F: 20})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendAtStart() to trigger a buffer resize")
 	require.Equal(t, 3, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 8, F: 20}, buff.PointAt(0))
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored at the end of the existing buffer
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 7, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 7, F: 20})
 	require.NoError(t, err)
-	require.False(t, resized, "expected AppendAtStart() not to trigger a buffer resize")
 	require.Equal(t, 4, buff.size)
 	require.Equal(t, 3, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 7, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	resized, err = buff.AppendAtStart(promql.FPoint{T: 6, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 6, F: 20})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendAtStart() to trigger a buffer resize")
 	require.Equal(t, 5, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 8)
@@ -921,9 +952,9 @@ func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	// insert 2 samples - the first point will be at the tail of the ring
-	_, err := buff.AppendAtStart(promql.FPoint{T: 10, F: 20})
+	err := buff.AppendAtStart(promql.FPoint{T: 10, F: 20})
 	require.NoError(t, err)
-	_, err = buff.AppendAtStart(promql.FPoint{T: 5, F: 20})
+	err = buff.AppendAtStart(promql.FPoint{T: 5, F: 20})
 	require.NoError(t, err)
 
 	require.Equal(t, 2, buff.size)
@@ -931,9 +962,8 @@ func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	require.Len(t, buff.points, 2)
 
 	// append a slice and validate that the buffer has been re-aligned to start at firstIndex=0
-	resized, err := buff.AppendSlice([]promql.FPoint{{T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}})
+	err = buff.AppendSlice([]promql.FPoint{{T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}})
 	require.NoError(t, err)
-	require.True(t, resized, "expected AppendSlice() to trigger a buffer resize")
 	shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, []promql.FPoint{{T: 5, F: 20}, {T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}}...)
 
 	require.Equal(t, 0, buff.firstIndex)
@@ -952,7 +982,7 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Equal(t, 0, buff.firstIndex)
 
 	buff.RemoveLast()
-	_, err := buff.AppendAtStart(promql.FPoint{T: 5})
+	err := buff.AppendAtStart(promql.FPoint{T: 5})
 	require.NoError(t, err)
 	require.Equal(t, 4, buff.size)
 	require.Len(t, buff.points, 4)
@@ -965,7 +995,7 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Len(t, buff.points, 4)
 	require.Equal(t, 3, buff.firstIndex)
 
-	_, err = buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}})
+	err = buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}})
 	require.NoError(t, err)
 }
 
@@ -1238,4 +1268,134 @@ func TestHPointRingBufferView_UnsafePointsInIndexRange(t *testing.T) {
 		require.Panics(t, func() { view.UnsafePointsInIndexRange(0, view.Count()) })
 		require.Panics(t, func() { view.UnsafePointsInIndexRange(2, 1) })
 	})
+}
+
+func TestRingBufferView_IsDirty(t *testing.T) {
+	t.Run("resize", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("append at start", func(t *testing.T) {
+		// Note that HPoint buffers don't have an AppendAtStart() method
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+
+		err := fbuff.AppendAtStart(promql.FPoint{T: 0})
+		require.NoError(t, err)
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+	})
+
+	t.Run("discard points", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.DiscardPointsAtOrBefore(30)
+		hbuff.DiscardPointsAtOrBefore(30)
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("remove last", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.RemoveLast()
+		hbuff.RemoveLastPoint()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("remove first", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.RemoveFirst()
+		hbuff.RemoveFirst()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("reset", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.Reset()
+		hbuff.Reset()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("use", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		require.NoError(t, fbuff.Use(make([]promql.FPoint, 0, 16)))
+		require.NoError(t, hbuff.Use(make([]promql.HPoint, 0, 16)))
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
 }

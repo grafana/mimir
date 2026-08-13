@@ -1161,6 +1161,173 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 	}
 }
 
+func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
+	type backendTenantConfig struct {
+		name           string
+		preferred      bool
+		excludeTenants []string
+	}
+
+	testCases := map[string]struct {
+		backends         []backendTenantConfig
+		orgID            string
+		expectedBackends []string
+	}{
+		"no tenant header - all backends selected": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "secondary", excludeTenants: []string{"23"}},
+			},
+			orgID:            "",
+			expectedBackends: []string{"preferred", "secondary"},
+		},
+		"excluded tenant is skipped for the configured backend only": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "excluding", excludeTenants: []string{"23", "432"}},
+				{name: "other", excludeTenants: []string{"42"}},
+			},
+			orgID:            "23",
+			expectedBackends: []string{"preferred", "other"},
+		},
+		"non-excluded tenant is sent to all backends": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "excluding", excludeTenants: []string{"23", "432"}},
+			},
+			orgID:            "12345",
+			expectedBackends: []string{"preferred", "excluding"},
+		},
+		"preferred backend always receives the request even for excluded tenants": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "excluding", excludeTenants: []string{"23"}},
+			},
+			orgID:            "23",
+			expectedBackends: []string{"preferred"},
+		},
+		"multi-tenant request with all tenants excluded is skipped": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "excluding", excludeTenants: []string{"23", "432"}},
+			},
+			orgID:            "23|432",
+			expectedBackends: []string{"preferred"},
+		},
+		"multi-tenant request with some tenants excluded is still forwarded": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "excluding", excludeTenants: []string{"23", "432"}},
+			},
+			orgID:            "23|12345",
+			expectedBackends: []string{"preferred", "excluding"},
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var backends []ProxyBackendInterface
+			for _, backendCfg := range tc.backends {
+				u, err := url.Parse("http://localhost:9090")
+				require.NoError(t, err)
+
+				backend := NewProxyBackend(
+					backendCfg.name,
+					u,
+					time.Second,
+					backendCfg.preferred,
+					false,
+					"",
+					BackendConfig{ExcludeTenants: backendCfg.excludeTenants},
+				)
+				backends = append(backends, backend)
+			}
+
+			endpoint := NewProxyEndpoint(
+				backends,
+				Route{RouteName: "test"},
+				NewProxyMetrics(nil),
+				log.NewNopLogger(),
+				nil,
+				0,
+				1.0,
+				false,
+				newTestQueryDecoder(),
+			)
+
+			req := httptest.NewRequest("GET", "/api/v1/query", nil)
+			q := req.URL.Query()
+			q.Set("query", "up")
+			req.URL.RawQuery = q.Encode()
+			if tc.orgID != "" {
+				req.Header.Set("X-Scope-OrgID", tc.orgID)
+			}
+
+			selectedBackends, err := endpoint.selectBackends(req)
+			require.NoError(t, err)
+
+			var selectedNames []string
+			for _, backend := range selectedBackends {
+				selectedNames = append(selectedNames, backend.Name())
+			}
+
+			assert.ElementsMatch(t, tc.expectedBackends, selectedNames)
+		})
+	}
+}
+
+func TestBackendConfig_ExcludeTenantsValidation(t *testing.T) {
+	tests := map[string]struct {
+		configContent string
+		expectedError string
+	}{
+		"exclude_tenants on a secondary backend is allowed": {
+			configContent: `
+              backend1:
+                exclude_tenants: ["23", "432"]
+            `,
+		},
+		"exclude_tenants on the preferred backend is rejected": {
+			configContent: `
+              backend2:
+                exclude_tenants: ["23"]
+            `,
+			expectedError: "backend backend2: exclude_tenants cannot be set on the preferred backend",
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tmpfile, err := os.CreateTemp("", "backend-config-*.yaml")
+			require.NoError(t, err)
+			defer os.Remove(tmpfile.Name())
+			_, err = tmpfile.Write([]byte(tc.configContent))
+			require.NoError(t, err)
+			require.NoError(t, tmpfile.Close())
+
+			cfg := ProxyConfig{
+				BackendEndpoints:                   "http://backend1:9090,http://backend2:9090",
+				PreferredBackend:                   "backend2",
+				BackendConfigFile:                  tmpfile.Name(),
+				DeprecatedServerHTTPServiceAddress: "localhost",
+				DeprecatedServerHTTPServicePort:    0,
+				DeprecatedServerGRPCServiceAddress: "localhost",
+				DeprecatedServerGRPCServicePort:    0,
+				SecondaryBackendsRequestProportion: 1.0,
+			}
+
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+			if tc.expectedError != "" {
+				assert.ErrorContains(t, err, tc.expectedError)
+				assert.Nil(t, p)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, p)
+			}
+		})
+	}
+}
+
 func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 	testCases := map[string]struct {
 		config        map[string]*BackendConfig
