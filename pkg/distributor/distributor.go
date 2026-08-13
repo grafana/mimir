@@ -425,8 +425,9 @@ type PushMetrics struct {
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
 	// OTLP metrics.
-	otlpRequestCounter     *prometheus.CounterVec
-	otlpContentTypeCounter *prometheus.CounterVec
+	otlpRequestCounter                             *prometheus.CounterVec
+	otlpContentTypeCounter                         *prometheus.CounterVec
+	otlpRequestsWithJobOrInstanceResourceAttribute *prometheus.CounterVec
 	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
 	otlpArrayLengths *prometheus.HistogramVec
 }
@@ -466,6 +467,10 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			Name: "cortex_distributor_otlp_requests_by_content_type_total",
 			Help: "Total number of requests with a given content type.",
 		}, []string{"content_type"}),
+		otlpRequestsWithJobOrInstanceResourceAttribute: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total",
+			Help: "The total number of OTLP requests that carry at least one resource with \"job\" or \"instance\" as a resource attribute key.",
+		}, []string{"user"}),
 		otlpArrayLengths: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_otlp_array_lengths",
 			Help:                            "Number of elements in the arrays of OTLP requests.",
@@ -494,6 +499,12 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 	}
 }
 
+func (m *PushMetrics) IncOTLPRequestWithJobOrInstanceResourceAttribute(user string) {
+	if m != nil {
+		m.otlpRequestsWithJobOrInstanceResourceAttribute.WithLabelValues(user).Inc()
+	}
+}
+
 func (m *PushMetrics) ObserveRequestBodySize(user, handler string, uncompressedSize, compressedSize int64) {
 	if m != nil {
 		if compressedSize > 0 {
@@ -519,6 +530,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.influxRequestCounter.DeleteLabelValues(user)
 	m.influxUncompressedBodySize.DeleteLabelValues(user)
 	m.otlpRequestCounter.DeleteLabelValues(user)
+	m.otlpRequestsWithJobOrInstanceResourceAttribute.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
 }
 

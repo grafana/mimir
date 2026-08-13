@@ -389,10 +389,13 @@
           |||,
         cpu_usage_seconds_total:
           |||
+            # The sandbox and parent cgroup series that cAdvisor exposes next to the per-container
+            # ones have an empty "image" label and would double count CPU time, so they're filtered
+            # out, consistently with the memory_usage rule below.
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(rate_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""}[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -721,6 +724,13 @@
 
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
+
+    // The regular expression used to identify the node's boot/root disk device.
+    // This device is excluded from the "Disk writes" and "Disk reads" panels, since it
+    // typically doesn't hold Mimir data and would otherwise skew the per-device breakdown.
+    // Override this if your nodes don't use "sda" as the boot device (e.g. some cloud
+    // providers default to "vda").
+    node_boot_disk_device_regex: '.*sda.*',
 
     // Whether certain dashboard description headers should be shown
     show_dashboard_descriptions: {

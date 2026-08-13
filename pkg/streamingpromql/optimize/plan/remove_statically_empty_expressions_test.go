@@ -663,7 +663,7 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
 		selector := &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers: []*core.LabelMatcher{
+				Matchers: []core.LabelMatcher{
 					{
 						Type:  labels.MatchEqual,
 						Name:  model.MetricNameLabel,

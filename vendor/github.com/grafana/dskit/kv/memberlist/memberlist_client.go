@@ -323,8 +323,9 @@ type KV struct {
 	localBroadcasts  *memberlist.TransmitLimitedQueue // queue for messages generated locally
 	gossipBroadcasts *memberlist.TransmitLimitedQueue // queue for messages that we forward from other nodes
 
-	// Node metadata for zone-aware routing (nil if zone-aware routing is disabled).
-	nodeMeta []byte
+	// Node metadata and node selection delegate for zone-aware routing (nil if it's disabled).
+	nodeMeta            []byte
+	zoneAwareNodeSelect *zoneAwareNodeSelectionDelegate
 
 	// KV Store.
 	storeMu sync.RWMutex
@@ -587,7 +588,8 @@ func (m *KV) configureZoneAwareRouting(mlCfg *memberlist.Config) error {
 	m.nodeMeta = localMeta
 
 	// Set up the node selection delegate.
-	mlCfg.NodeSelection = newZoneAwareNodeSelectionDelegate(role, m.cfg.ZoneAwareRouting.Zone, m.logger, m.registerer)
+	m.zoneAwareNodeSelect = newZoneAwareNodeSelectionDelegate(role, m.cfg.ZoneAwareRouting.Zone, m.logger, m.registerer)
+	mlCfg.NodeSelection = m.zoneAwareNodeSelect
 
 	// The bridge always prefer another bridge as first node. If the bridge only push/pull to 1 node per interval, then
 	// it will only communicate to bridges, potentially leading to network partitioning if the gossiping is not
@@ -666,6 +668,11 @@ func (m *KV) running(ctx context.Context) error {
 	}
 
 	ok := m.joinMembersOnStartup(ctx)
+
+	if m.zoneAwareNodeSelect != nil {
+		m.zoneAwareNodeSelect.markJoined()
+	}
+
 	if !ok && m.cfg.AbortIfJoinFails {
 		return errFailedToJoinCluster
 	}

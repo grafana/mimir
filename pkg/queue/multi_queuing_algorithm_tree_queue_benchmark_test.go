@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -414,81 +415,83 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			}
 
 			t.Run(testCaseName, func(t *testing.T) {
-				queue, err := New(
-					log.NewNopLogger(),
-					maxOutStandingPerTenant,
-					consumerForgetDelay,
-					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					nil,
-					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-				)
-				require.NoError(t, err)
+				synctest.Test(t, func(t *testing.T) {
+					queue, err := New(
+						log.NewNopLogger(),
+						maxOutStandingPerTenant,
+						consumerForgetDelay,
+						promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+						nil,
+						promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+						promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+					)
+					require.NoError(t, err)
 
-				// New constructor does not allow passing in a tree or tenantConsumerShards
-				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantConsumerAssignments = &tenantConsumerShards{
-					consumerIDsSorted: make([]tree.ConsumerID, 0),
-					tenantsByID:       make(map[string]*queueTenant),
-					queuingAlgorithm:  scenario.tqa,
-				}
-				queue.queueBroker.tree = scenario.tree
+					// New constructor does not allow passing in a tree or tenantConsumerShards
+					// so we have to override here to use the same structures as the test case
+					queue.queueBroker.tenantConsumerAssignments = &tenantConsumerShards{
+						consumerIDsSorted: make([]tree.ConsumerID, 0),
+						tenantsByID:       make(map[string]*queueTenant),
+						queuingAlgorithm:  scenario.tqa,
+					}
+					queue.queueBroker.tree = scenario.tree
 
-				ctx := context.Background()
-				require.NoError(t, queue.starting(ctx))
+					ctx := context.Background()
+					require.NoError(t, queue.starting(ctx))
 
-				t.Cleanup(func() {
-					// if the test has failed and the queue does not get cleared,
-					// we must send a shutdown signal for the remaining connected consumer
-					// or else StopAndAwaitTerminated will never complete.
-					assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+					t.Cleanup(func() {
+						// if the test has failed and the queue does not get cleared,
+						// we must send a shutdown signal for the remaining connected consumer
+						// or else StopAndAwaitTerminated will never complete.
+						assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+					})
+
+					// configure queue producers to enqueue requests with the query component
+					// randomly assigned according to the distribution defined in the test case
+					queueDimensionFunc := makeWeightedRandAdditionalQueueDimensionFunc(
+						weightedQueueDimensionTestCase.tenantQueueDimensionsWeights,
+					)
+					producersChan, producersErrGroup := makeQueueProducerGroup(
+						queue, maxConsumersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
+					)
+
+					// configure queue consumers with respective latencies for processing requests
+					// which were assigned the "normal" or "slow" query component
+					consumeFunc := makeQueueConsumeFuncWithSlowQueryComponent(
+						slowConsumerLatency, normalConsumerLatency, testCaseObservations,
+					)
+					queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
+						context.Background(), queue, totalRequests, numConsumers, numWorkersPerConsumer, consumeFunc,
+					)
+
+					// run queue consumers and producers and wait for completion
+
+					// run producers to fill queue
+					close(producersChan)
+					err = producersErrGroup.Wait()
+					require.NoError(t, err)
+
+					// run consumers to until queue is empty
+					close(startConsumersChan)
+					err = queueConsumerErrGroup.Wait()
+					require.NoError(t, err)
+
+					report := testCaseObservations.Report()
+					t.Logf("%s: %s", testCaseName, report.QueryComponentReportString())
+					t.Logf("%s: %s", testCaseName, report.TenantIDReportString())
+					// collect results in order
+					testCaseNames = append(testCaseNames, testCaseName)
+					testCaseReports[testCaseName] = report
+
+					require.NoError(t, queue.stop(nil))
+					assert.NotEqual(t, "", tree.CurrentConsumer(scenario.tqa))
+					// ensure everything was dequeued; we can pass a nil DequeueArgs because we don't
+					// want to update any state before doing this (i.e., we're dequeuing for _any_ consumer,
+					// just to make sure the tree is empty).
+					path, val := scenario.tree.Dequeue(nil)
+					assert.Nil(t, val)
+					assert.Equal(t, path, tree.QueuePath{})
 				})
-
-				// configure queue producers to enqueue requests with the query component
-				// randomly assigned according to the distribution defined in the test case
-				queueDimensionFunc := makeWeightedRandAdditionalQueueDimensionFunc(
-					weightedQueueDimensionTestCase.tenantQueueDimensionsWeights,
-				)
-				producersChan, producersErrGroup := makeQueueProducerGroup(
-					queue, maxConsumersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
-				)
-
-				// configure queue consumers with respective latencies for processing requests
-				// which were assigned the "normal" or "slow" query component
-				consumeFunc := makeQueueConsumeFuncWithSlowQueryComponent(
-					slowConsumerLatency, normalConsumerLatency, testCaseObservations,
-				)
-				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
-					context.Background(), queue, totalRequests, numConsumers, numWorkersPerConsumer, consumeFunc,
-				)
-
-				// run queue consumers and producers and wait for completion
-
-				// run producers to fill queue
-				close(producersChan)
-				err = producersErrGroup.Wait()
-				require.NoError(t, err)
-
-				// run consumers to until queue is empty
-				close(startConsumersChan)
-				err = queueConsumerErrGroup.Wait()
-				require.NoError(t, err)
-
-				report := testCaseObservations.Report()
-				t.Logf("%s: %s", testCaseName, report.QueryComponentReportString())
-				t.Logf("%s: %s", testCaseName, report.TenantIDReportString())
-				// collect results in order
-				testCaseNames = append(testCaseNames, testCaseName)
-				testCaseReports[testCaseName] = report
-
-				require.NoError(t, queue.stop(nil))
-				assert.NotEqual(t, "", tree.CurrentConsumer(scenario.tqa))
-				// ensure everything was dequeued; we can pass a nil DequeueArgs because we don't
-				// want to update any state before doing this (i.e., we're dequeuing for _any_ consumer,
-				// just to make sure the tree is empty).
-				path, val := scenario.tree.Dequeue(nil)
-				assert.Nil(t, val)
-				assert.Equal(t, path, tree.QueuePath{})
 			})
 		}
 	}

@@ -248,6 +248,8 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, p
 			step = 0
 		}
 
+		p.ensureSubqueryStepsPopulated(expr)
+
 		return promql.PreprocessExpr(expr, timestamp.Time(params.TimeRange.StartT), timestamp.Time(params.TimeRange.EndT), step)
 	})
 
@@ -268,6 +270,20 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, p
 	}
 
 	return expr, nil
+}
+
+// ensureSubqueryStepsPopulated ensures that all subquery expressions have a populated step,
+// including those that use the default step.
+func (p *QueryPlanner) ensureSubqueryStepsPopulated(expr parser.Expr) {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		if node, ok := node.(*parser.SubqueryExpr); ok {
+			if node.Step == 0 {
+				node.Step = time.Duration(p.noStepSubqueryIntervalFn(node.Range.Milliseconds())) * time.Millisecond
+			}
+		}
+
+		return nil
+	})
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
@@ -689,13 +705,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return f, nil
 
 	case *parser.SubqueryExpr:
-
-		step := expr.Step
-
-		if step == 0 {
-			step = time.Duration(p.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
-		}
-
 		// Construct the Subquery in 2 phases.
 		// The first step initializes the SubqueryDetails, which allows us to determine the children time range.
 		// The second step then creates the inner expression, passing in this child time range.
@@ -706,7 +715,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				Range:              expr.Range,
-				Step:               step,
+				Step:               expr.Step,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}

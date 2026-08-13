@@ -3011,6 +3011,60 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "cardinality_estimation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "bucket_size",
+                  "required": false,
+                  "desc": "The duration of each bucket used to store cardinality estimates per selector. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 14400000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.bucket-size",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "ttl",
+                  "required": false,
+                  "desc": "The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 604800000000000,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.ttl",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_buckets_read_per_selector",
+                  "required": false,
+                  "desc": "The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 168,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "estimate_update_threshold",
+                  "required": false,
+                  "desc": "The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0.1,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold",
+                  "fieldType": "float",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -6028,6 +6082,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-estimated-memory-consumption-per-query",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_blocks_per_store_request",
+          "required": false,
+          "desc": "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-blocks-per-store-request",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -9181,6 +9246,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "wait_for_querier_ring_on_startup",
+          "required": false,
+          "desc": "If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -13200,6 +13276,17 @@
           "fieldFlag": "compactor.block-sync-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "block_health_validation_concurrency",
+          "required": false,
+          "desc": "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-health-validation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

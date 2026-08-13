@@ -1110,17 +1110,17 @@ func TestKafkaFlush(t *testing.T) {
 		1: 2000,
 	})
 
-	p4 := sched.getPartitionState("ingest", 4)
-	p4.initCommit(0, 65535)
+	p2 := sched.getPartitionState("ingest", 2)
+	p2.initCommit(0, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
-		4: 65535,
+		2: 65535,
 	})
 
 	p1.initCommit(0, 4000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 4000,
-		4: 65535,
+		2: 65535,
 	}, "should be able to advance an existing offset")
 
 	reg := sched.register.(*prometheus.Registry)
@@ -1128,13 +1128,13 @@ func TestKafkaFlush(t *testing.T) {
 		`# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
 		cortex_blockbuilder_scheduler_partition_committed_offset{partition="1"} 4000
-		cortex_blockbuilder_scheduler_partition_committed_offset{partition="4"} 65535
+		cortex_blockbuilder_scheduler_partition_committed_offset{partition="2"} 65535
 	`), "cortex_blockbuilder_scheduler_partition_committed_offset"), "should only modify commit gauge for non-empty commit offsets")
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
 		`# HELP cortex_blockbuilder_scheduler_partition_planned_offset The planned offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_planned_offset gauge
 		cortex_blockbuilder_scheduler_partition_planned_offset{partition="1"} 4000
-		cortex_blockbuilder_scheduler_partition_planned_offset{partition="4"} 65535
+		cortex_blockbuilder_scheduler_partition_planned_offset{partition="2"} 65535
 	`), "cortex_blockbuilder_scheduler_partition_planned_offset"), "should only modify planned gauge for non-empty planned offsets")
 }
 

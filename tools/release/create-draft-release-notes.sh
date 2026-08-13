@@ -37,22 +37,23 @@ fi
 # candidates), which are the ones whose patch version is 0. Patch releases only get a CHANGELOG.
 RELEASE_PATCH=$(echo -n "${LAST_RELEASE_VERSION}" | $SED -E 's/^[0-9]+\.[0-9]+\.([0-9]+).*/\1/')
 RELEASE_MINOR=$(echo -n "${LAST_RELEASE_VERSION}" | grep -Eo '^[0-9]+\.[0-9]+')
+RELEASE_CANDIDATE=$(echo -n "${LAST_RELEASE_VERSION}" | $SED -nE 's/^[0-9]+\.[0-9]+\.[0-9]+-rc\.([0-9]+)/\1/p')
 
 if [ "${RELEASE_PATCH}" = "0" ]; then
   RELEASE_NOTES_DOC="${REPO_ROOT}/docs/sources/mimir/release-notes/v${RELEASE_MINOR}.md"
 
-  if [ ! -f "${RELEASE_NOTES_DOC}" ]; then
+  if [ -f "${RELEASE_NOTES_DOC}" ]; then
+    FIRST_HEADING_LINE=$(grep -n -m1 '^# ' "${RELEASE_NOTES_DOC}" | cut -d: -f1)
+    tail -n +"${FIRST_HEADING_LINE}" "${RELEASE_NOTES_DOC}" | # Remove everything before the first heading (the YAML front matter)
+      $SED -E '/^<!--.*-->$/d' | # Remove HTML comments (e.g. vale directives)
+      $SED -E '/^\{\{[<%].*[%>]\}\}$/d' | # Remove Hugo shortcodes, keeping inner content
+      $SED "s|<MIMIR_VERSION>|v${RELEASE_MINOR}.x|g" # Replace the docs version placeholder that the website resolves at publish time
+    printf "\n"
+  elif [ -z "${RELEASE_CANDIDATE}" ]; then
     echo "Expected release notes document '${RELEASE_NOTES_DOC}' for release ${LAST_RELEASE_VERSION}, but it was not found." > /dev/stderr
     echo "The release notes document must be committed to the release branch before tagging the release." > /dev/stderr
     exit 1
   fi
-
-  FIRST_HEADING_LINE=$(grep -n -m1 '^# ' "${RELEASE_NOTES_DOC}" | cut -d: -f1)
-  tail -n +"${FIRST_HEADING_LINE}" "${RELEASE_NOTES_DOC}" | # Remove everything before the first heading (the YAML front matter)
-    $SED -E '/^<!--.*-->$/d' | # Remove HTML comments (e.g. vale directives)
-    $SED -E '/^\{\{[<%].*[%>]\}\}$/d' | # Remove Hugo shortcodes, keeping inner content
-    $SED "s|<MIMIR_VERSION>|v${RELEASE_MINOR}.x|g" # Replace the docs version placeholder that the website resolves at publish time
-  printf "\n"
 fi
 
 #

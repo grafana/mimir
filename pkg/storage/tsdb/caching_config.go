@@ -158,18 +158,17 @@ func configureMetadataCaching(
 }
 
 // NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and
-// its tenant TSDBs. The bucketID prefixes every cache key.
+// its tenant TSDBs. The bucketID prefixes every cache key, so metadataCache may be shared by several
+// caching buckets. A nil metadataCache returns bkt unchanged.
 func NewMetadataCachingBucket(
 	bucketID string,
+	bucketName string,
+	metadataCache cache.Cache,
 	metadataCfg MetadataCacheConfig,
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (objstore.Bucket, error) {
-	metadataCache, err := NewMetadataCacheClient(metadataCfg.BackendConfig, logger, reg)
-	if err != nil {
-		return nil, err
-	}
 	if metadataCache == nil {
 		// No caching configured
 		return bkt, nil
@@ -178,7 +177,7 @@ func NewMetadataCachingBucket(
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 
-	return bucketcache.NewCachingBucket(bucketID, bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(bucketID, bucketName, bkt, cachingBucketCfg, logger, reg)
 }
 
 func NewChunksCacheClient(
@@ -339,7 +338,7 @@ func newStoreCachingBucket(
 		return bkt, nil
 	}
 
-	return bucketcache.NewCachingBucket(cacheBucketID, bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(cacheBucketID, cfg.Bucket.BucketName(), bkt, cachingBucketCfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

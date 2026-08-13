@@ -112,7 +112,8 @@ func (c *ClusterBuffer[W]) MultiAdd(ctx context.Context, items []promised[W]) {
 
 // wrap layers p's done with two hooks:
 //   - a once-fire that delivers either the produce outcome or ctx.Err()
-//     (whichever first) to the original done;
+//     (whichever first) to the original done (only if the input ctx is
+//     cancellable);
 //   - an accounting hook that decrements the buffered counters on actual flush
 //     completion regardless of whether ctx already fired.
 func (c *ClusterBuffer[W]) wrap(ctx context.Context, p promised[W]) promised[W] {
@@ -121,9 +122,21 @@ func (c *ClusterBuffer[W]) wrap(ctx context.Context, p promised[W]) promised[W] 
 	c.bufferedBytes.Add(payloadBytes)
 	c.bufferedRecords.Add(recCount)
 
-	var (
-		origDone = p.done
+	origDone := p.done
 
+	// A non-cancelable ctx can never fire that watch, so it skips the AfterFunc
+	// registration and both once-gates entirely: the flush (or a closed-buffer/error
+	// path) resolves done exactly once, so a bare decrement-then-forward suffices.
+	if ctx.Done() == nil {
+		p.done = func(res ProduceResult) {
+			c.bufferedBytes.Add(-payloadBytes)
+			c.bufferedRecords.Add(-recCount)
+			origDone(res)
+		}
+		return p
+	}
+
+	var (
 		// origDoneFired gates the original done ("ctx-cancel vs flush" race).
 		origDoneFired atomic.Bool
 

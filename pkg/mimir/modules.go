@@ -71,6 +71,7 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
+	intermediatecache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
@@ -114,6 +115,7 @@ const (
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
+	QuerierIntermediateCacheClient   string = "querier-intermediate-cache-client"
 	QuerierLifecycler                string = "querier-lifecycler"
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QuerierRing                      string = "querier-ring"
@@ -633,7 +635,13 @@ func (t *Mimir) initQuerierRing() (services.Service, error) {
 
 	t.QuerierRing = r
 
-	return r, nil
+	// Query-frontends only consult the ring to plan queries when remote execution is enabled
+	// (see createQueryFrontendQueryPlanner), so otherwise there's nothing to wait for.
+	if !t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution || !t.Cfg.Frontend.WaitForQuerierRingOnStartup {
+		return r, nil
+	}
+
+	return querier.NewRingService(r, querier.RingStartupWaitTimeout, util_log.Logger), nil
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the
@@ -959,6 +967,13 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	opts := t.createQueryFrontendPromQLEngineOptions()
 
+	// When sharding and splitting/caching run inside MQE with cardinality-based sharding, store the
+	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
+	// createQueryFrontendQueryPlanner) can use it to size shards for future queries.
+	if middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.ShardedQueries && middlewareCfg.UseMQEForSharding && middlewareCfg.CardinalityBasedShardingEnabled() {
+		opts.QueryPostProcessors = append(opts.QueryPostProcessors, sharding.NewCardinalityStoringPostProcessor(opts.CardinalityEstimation, util_log.Logger))
+	}
+
 	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
 		return nil, err
 	}
@@ -1110,20 +1125,28 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
-	// Register any extra passes injected from outside this package after the built-in passes registered by NewQueryPlanner.
-	for _, p := range t.ExtraASTOptimizationPasses {
-		t.QuerierQueryPlanner.RegisterASTOptimizationPass(p)
-	}
-	for _, p := range t.ExtraQueryPlanOptimizationPasses {
-		t.QuerierQueryPlanner.RegisterQueryPlanOptimizationPass(p)
-	}
-
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
 		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts, requestoptions.OptionDecoder{PropagatedHeaders: t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders})
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
+
+	return nil, nil
+}
+
+func (t *Mimir) initQuerierIntermediateCacheClient() (services.Service, error) {
+	cfg := t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	client, err := intermediatecache.NewCacheClient(cfg.IntermediateResultsCache, "querier", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.Cfg.Querier.EngineConfig.MimirQueryEngine.RangeVectorSplitting.IntermediateResultsCache.CacheClient = client
 
 	return nil, nil
 }
@@ -1136,7 +1159,6 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	}
 
 	var err error
-
 	t.QueryFrontendCacheClient, err = querymiddleware.NewResultsCache(cfg.ResultsCache, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -1168,11 +1190,8 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	// registered by NewQueryPlanner, but must be registered before the remote execution, subquery spin-off
 	// and sharding passes below so that query-mutating passes run before sharding, matching how the
 	// equivalent middlewares are ordered before query sharding today.
-	for _, p := range t.ExtraASTOptimizationPasses {
+	for _, p := range t.ExtraQueryFrontendASTOptimizationPasses {
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(p)
-	}
-	for _, p := range t.ExtraQueryPlanOptimizationPasses {
-		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(p)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
@@ -1186,7 +1205,19 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
+		// When splitting and caching run inside MQE, the cardinality-estimation middleware is not in
+		// the chain, so estimate cardinality from the per-selector cardinality cache. Otherwise, use
+		// the estimate provided by the cardinality-estimation middleware via the request hints.
+		var estimator sharding.CardinalityEstimator
+		if t.Cfg.Frontend.QueryMiddleware.CardinalityBasedShardingEnabled() {
+			if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+				estimator = sharding.NewCacheCardinalityEstimator(opts.CardinalityEstimation, util_log.Logger)
+			} else {
+				estimator = sharding.NewRequestHintsCardinalityEstimator()
+			}
+		}
+
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, estimator, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	return nil
@@ -1219,6 +1250,11 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+
+	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
+	// used by operators executed in queriers.
+	opts.RangeVectorSplitting.IntermediateResultsCache.CacheClient = nil
 
 	// We can't use the engine to register these metrics, as the same metrics are used by other kinds of caches (eg. the labels query cache)
 	// and the Prometheus client library requires that they each instance of the metric has exactly the same set of label names within this process.
@@ -1700,6 +1736,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QuerierIntermediateCacheClient, t.initQuerierIntermediateCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierLifecycler, t.initQuerierLifecycler, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
@@ -1774,7 +1811,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner, QuerierIntermediateCacheClient},
 		Ruler:                            rulerDeps,
 		RulerDistributorClient:           {Vault},
 		RulerStorage:                     {Overrides},

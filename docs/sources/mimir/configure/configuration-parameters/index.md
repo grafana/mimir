@@ -2188,6 +2188,39 @@ mimir_query_engine:
     # CLI flag: -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
     [cache_unconsumed_results: <boolean> | default = true]
 
+  cardinality_estimation:
+    # (experimental) The duration of each bucket used to store cardinality
+    # estimates per selector. Only applies if running splitting and caching
+    # inside MQE is enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.bucket-size
+    [bucket_size: <duration> | default = 4h]
+
+    # (experimental) The time-to-live of each cached cardinality estimate. Only
+    # applies if running splitting and caching inside MQE is enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.ttl
+    [ttl: <duration> | default = 168h]
+
+    # (experimental) The maximum number of buckets to attempt to read per
+    # selector. If a selector's time range queries more buckets than this limit,
+    # buckets over the entire time range are sampled (i.e. the resolution is
+    # reduced). Only applies if running splitting and caching inside MQE is
+    # enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector
+    [max_buckets_read_per_selector: <int> | default = 168]
+
+    # (experimental) The minimum difference from the original estimate to
+    # trigger storing a new cardinality estimate in the cache. Values are a
+    # proportion of the original value (e.g. a value of 0.1 means a new estimate
+    # is only written if the new value is 10% higher than the original
+    # estimate). Only applies if running splitting and caching inside MQE is
+    # enabled with
+    # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
+    # CLI flag: -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold
+    [estimate_update_threshold: <float> | default = 0.1]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
@@ -2488,6 +2521,13 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and remote execution is enabled, don't report
+# the query-frontend as ready during startup until it has seen at least one
+# querier in the querier ring, or 30s elapses. Queries fail while the ring is
+# empty, so starting to serve before then means failing queries.
+# CLI flag: -query-frontend.wait-for-querier-ring-on-startup
+[wait_for_querier_ring_on_startup: <boolean> | default = true]
 ```
 
 ### query_scheduler
@@ -4703,6 +4743,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-estimated-memory-consumption-per-query
 [max_estimated_memory_consumption_per_query: <int> | default = 0]
 
+# (experimental) Maximum number of blocks that a querier will reference in a
+# single request to a store-gateway. When a request would exceed this, it is
+# split into multiple requests to the same store-gateway. 0 disables the limit.
+# CLI flag: -querier.max-blocks-per-store-request
+[max_blocks_per_store_request: <int> | default = 0]
+
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
 # and ruler for instant, range and remote read queries. For metadata queries
@@ -6617,6 +6663,11 @@ The `compactor` block configures the compactor component.
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
 [block_sync_concurrency: <int> | default = 8]
+
+# (experimental) Number of blocks whose health can be validated concurrently
+# during a compaction job. A nonpositive value means no limit.
+# CLI flag: -compactor.block-health-validation-concurrency
+[block_health_validation_concurrency: <int> | default = 0]
 
 # (advanced) Number of goroutines to use when syncing block meta files from the
 # long term storage.

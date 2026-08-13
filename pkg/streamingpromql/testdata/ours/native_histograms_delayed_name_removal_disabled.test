@@ -18,17 +18,17 @@ load 1m
   mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
 
 eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
-  expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+  expect info regex: PromQL info: input to histogram_quantile needed to be fixed for monotonicity .* \(1:25\)
   {} 8.5
 
 eval instant at 1m histogram_quantile(0.5, myHistogram1)
-  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)
 
 eval instant at 1m histogram_quantile(0.5, myHistogram2)
-  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World"
+  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" (1:25)
 
 eval instant at 1m histogram_quantile(0.5, mixedHistogram)
-  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms (1:25)
 
 clear
 
@@ -39,28 +39,28 @@ load 1m
   histogram_nan{case="20% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
 
 eval instant at 1m histogram_quantile(1, histogram_nan)
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:23)
   {case="100% NaNs"} NaN
   {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.81, histogram_nan)
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:26)
   {case="100% NaNs"} NaN
   {case="20% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="100% NaNs"})
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:25)
   {case="100% NaNs"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:25)
   {case="20% NaNs"} 1
 
 eval instant at 1m histogram_quantile(0.4, histogram_nan{case="100% NaNs"})
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN (1:25)
   {case="100% NaNs"} NaN
 
 # histogram_quantile and histogram_fraction equivalence if quantile is not NaN
 eval instant at 1m histogram_quantile(0.4, histogram_nan{case="20% NaNs"})
-  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher (1:25)
   {case="20% NaNs"} 0.7071067811865475
