@@ -332,7 +332,7 @@ load 5m
 eval range from 0 to 10m step 5m {__name__=~"hma|hmb"} != fill_left(0) hmr
   hma{l="x"} {{schema:0 sum:1 count:1}} _ _
   hmb{l="x"} _ {{schema:0 sum:3 count:3}} _
-  expect info msg: PromQL info: incompatible sample types encountered for binary operator "!=": float != histogram
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "!=": float != histogram (1:1)
   expect no_warn
 
 # ---------- fill(NaN) / fill(Inf) at intermittent steps ----------
