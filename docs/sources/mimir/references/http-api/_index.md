@@ -1320,7 +1320,6 @@ This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
 Alertmanager UI/API under `<alertmanager-http-prefix>`.
 
-
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
@@ -1371,7 +1370,6 @@ DELETE /api/v1/alerts
 This is the multi-tenant configuration endpoint (same path family as
 [Get Alertmanager configuration](#get-alertmanager-configuration)), not the
 Alertmanager UI/API under `<alertmanager-http-prefix>`.
-
 
 Deletes the Alertmanager configuration for the authenticated tenant.
 
