@@ -33,6 +33,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
+
 ### Tools
 
 * [CHANGE] `create-draft-release-notes.sh` doesn't require release notes ready for release candidate. #16286
