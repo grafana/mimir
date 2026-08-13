@@ -481,7 +481,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0-rc.0
 
   statefulSet:
     enabled: true
