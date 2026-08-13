@@ -1636,12 +1636,11 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		return true, false
 	}
 
-	s.headChunks = &memChunk{
+	s.pushHeadChunk(&memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		prev:    s.headChunks,
-	}
+	})
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -1693,12 +1692,11 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		return true, false
 	}
 
-	s.headChunks = &memChunk{
+	s.pushHeadChunk(&memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		prev:    s.headChunks,
-	}
+	})
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -1894,32 +1892,31 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
 	// so this is a single element list most of the time.
-	s.headChunks = &memChunk{
+	chk := s.pushHeadChunk(&memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
-		prev:    s.headChunks,
-	}
+	})
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
+		chk.chunk, err = chunkenc.NewEmptyChunk(e)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunks.chunk = chunkenc.NewXORChunk()
+		chk.chunk = chunkenc.NewXORChunk()
 	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
-	app, err := s.headChunks.chunk.Appender()
+	app, err := chk.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return s.headChunks
+	return chk
 }
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
@@ -1966,18 +1963,16 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRefs
 }
 
-// mmapChunks will m-map all but first chunk on s.headChunks list.
+// mmapChunks will m-map all but first chunk on s.headChunks list and update headChunkCount.
 func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
 	if s.headChunks == nil || s.headChunks.prev == nil {
 		// There is none or only one head chunk, so nothing to m-map here.
-		return
+		return count
 	}
 
-	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
-	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
-	// then we need to write chunks t0 to t3, but skip s.headChunks.
-	for i := s.headChunks.len() - 1; i > 0; i-- {
-		chk := s.headChunks.atOffset(i)
+	// Collect head chunks in oldest-first order, then write all except the newest.
+	hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
+	for _, chk := range hc[:len(hc)-1] {
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
@@ -1988,8 +1983,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		count++
 	}
 
-	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
+	// Remove the tail of the list, leaving only the most recent head chunk.
 	s.headChunks.prev = nil
+	s.setHeadChunks(s.headChunks, 1)
 
 	return count
 }

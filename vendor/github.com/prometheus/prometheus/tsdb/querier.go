@@ -118,11 +118,30 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
+// chunkCacheEnabler is an optional interface implemented by chunk readers that
+// support an in-memory head-chunk cache. The cache is beneficial when every
+// chunk of a series is accessed sequentially, such as range queries and compaction.
+type chunkCacheEnabler interface {
+	EnableChunkCache()
+}
+
+// enableChunkCache enables the head-chunk cache on cr if it supports one.
+func enableChunkCache(cr ChunkReader) {
+	if enabler, ok := cr.(chunkCacheEnabler); ok {
+		enabler.EnableChunkCache()
+	}
+}
+
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
 	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
+
+	if hints != nil && hints.Step > 0 {
+		enableChunkCache(chunks)
+	}
+
 	p, err := index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -170,6 +189,10 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 ) storage.ChunkSeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
+
+	if hints != nil && hints.Step > 0 {
+		enableChunkCache(chunks)
+	}
 
 	if hints != nil {
 		mint = hints.Start
