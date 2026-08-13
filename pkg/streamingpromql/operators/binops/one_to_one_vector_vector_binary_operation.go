@@ -657,7 +657,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	// Fill the right side: emit output driven by the left side alone for any unmatched left group.
 	if fillRight {
-		if err := b.addUnmatchedLeftSeriesWithFilledRightSides(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc, unmatchedLeftSeries); err != nil {
+		if err := b.addUnmatchedLeftSeriesWithFilledRightSides(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc, groupKeyFunc, unmatchedLeftSeries); err != nil {
 			return nil, nil, nil, -1, nil, -1, err
 		}
 	}
@@ -702,11 +702,33 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
 	outputSeriesLabelsBytes *[]byte,
 	labelsFunc func(labels.Labels) labels.Labels,
+	groupKeyFunc func(labels.Labels) []byte,
 	unmatchedLeftSeries []int,
 ) error {
+	// seenGroupKeys tracks which match-group keys have already produced a filled-right output series.
+	// One-to-one matching requires at most one left series per match group. If a second unmatched left
+	// series carries the same group key, the group has multiple left series and no right match, which
+	// is a many-to-one violation.
+	seenGroupKeys := make(map[string]int, len(unmatchedLeftSeries)) // group key → first left series index
+
 	for _, leftSeriesIndex := range unmatchedLeftSeries {
+		leftLabels := b.leftMetadata[leftSeriesIndex].Labels
+		groupKey := groupKeyFunc(leftLabels)
+
+		if firstIndex, seen := seenGroupKeys[string(groupKey)]; seen {
+			groupLabels := labelsFunc(b.leftMetadata[firstIndex].Labels)
+			return fmt.Errorf(
+				"found duplicate series for the match group %s on the left side of the operation: %s and %s",
+				groupLabels,
+				b.leftMetadata[firstIndex].Labels,
+				leftLabels,
+			)
+		}
+
+		seenGroupKeys[string(groupKey)] = leftSeriesIndex
+
 		// Use the same label function as a real match. The result metric comes from the left operand.
-		outputSeriesLabels := labelsFunc(b.leftMetadata[leftSeriesIndex].Labels)
+		outputSeriesLabels := labelsFunc(leftLabels)
 		*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
 		outputSeries, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]
 
@@ -748,6 +770,13 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 			// Collision with another filled-right series. Both build their right side from the same RHS
 			// fill value. Merge by appending this left index and let them compete per-timestep, the same
 			// way the matched path does for comparison filters.
+			//
+			// Note: this branch is unreachable when outputSeriesLabels includes __name__ (name-retaining
+			// operators), because two distinct left series then produce distinct output labels and cannot
+			// collide here. It can only be reached by a name-dropping operator, where both left series
+			// produce identical output labels. Those two series share a match group key, which the
+			// seenGroupKeys check above already rejects. This branch therefore remains for completeness
+			// but is dead code in practice.
 			outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
 			continue
 		}

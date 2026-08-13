@@ -330,8 +330,8 @@ const (
 	// group, and only when the operator retains __name__ and fillLeft is set. See
 	// OneToOneVectorVectorBinaryOperation.computeOutputSeries.
 	//
-	// Example expression: `a > without(foo) fill_left(0) b`
-	// A comparison operator without `bool` retains __name__, and `without(...)` (not `on(...)`)
+	// Example expression: `a > ignoring(foo) fill_left(0) b`
+	// A comparison operator without `bool` retains __name__, and `ignoring(...)` (not `on(...)`)
 	// matching is used, so a fill-left timestep on a matched group produces two output series: one
 	// with __name__ (from the right series' match labels) and one without.
 	missingLeftSeparate

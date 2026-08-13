@@ -389,3 +389,34 @@ eval instant at 0m hist_left + fill_left(0) float_right
   {label="b"} 20
   expect no_info
   expect no_warn
+
+# ---------- Duplicate series within an unmatched match group ----------
+#
+# One-to-one matching requires at most one series per match group on each side. Filling one side
+# must not relax that: an unmatched left match group holding two series is still a many-to-one
+# match and must fail, even though the right operand is synthesised from the fill value.
+
+clear
+
+load 5m
+  dup_a{label="x"} 1
+  dup_b{label="x"} 2
+  other{label="y"} 5
+
+# fill_right with a name-retaining operator: both left series share the match group {label="x"} and
+# have no right match, so each right operand is synthesised from the fill value.
+eval_fail instant at 0 {__name__=~"dup_a|dup_b"} != fill_right(0) missing_metric
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left (hand-)?side of the operation)
+
+# Same, with fill on both sides.
+eval_fail instant at 0 {__name__=~"dup_a|dup_b"} != fill(0) missing_metric
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left (hand-)?side of the operation)
+
+# Same, where the right side is non-empty but belongs to a different match group.
+eval_fail instant at 0 {__name__=~"dup_a|dup_b"} != fill_right(0) other
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left (hand-)?side of the operation)
+
+# An operator that drops __name__ merges the two left series into one output series, so the existing
+# single-side merge already catches the duplicate. This case passes today.
+eval_fail instant at 0 {__name__=~"dup_a|dup_b"} + fill_right(0) missing_metric
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left (hand-)?side of the operation)

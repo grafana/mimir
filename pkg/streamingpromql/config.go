@@ -221,9 +221,8 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 	return nil
 }
 
-func NewTestEngineOpts() EngineOpts {
+	func NewTestEngineOpts() EngineOpts {
 	parserOpts := promqlext.NewPromQLParserOptions()
-	parserOpts.EnableBinopFillModifiers = true
 
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
