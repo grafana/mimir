@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
 
 
 ## 6.2.0
