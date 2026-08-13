@@ -277,9 +277,6 @@ mimir:
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
-      # Default 60s so a member evicted by a transient fault periodically rejoins the cluster
-      # instead of staying isolated until restart. In large deployments or legacy setups not
-      # using multi-zone-memberlist-bridge, tune or set to 0s after evaluating your topology.
       rejoin_interval: 60s
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
