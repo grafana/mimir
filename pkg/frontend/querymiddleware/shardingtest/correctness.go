@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -539,6 +540,22 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			ExpectedShardedQueries: 1,
 		},
+		// info() is a many-to-one join between the enriched metric and target_info. The inner
+		// metric is sharded while the target_info selector is not, so every shard sees the full
+		// set of target_info series to enrich its subset of the metric correctly.
+		`sum by on info(metric)`: {
+			Query:                  `sum by (data_center) (info(metric_with_info))`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum by on rate(info(metric))`: {
+			Query:                  `sum by (data_center) (info(rate(metric_with_info[1m])))`,
+			ExpectedShardedQueries: 1,
+		},
+		// Two-argument form: only the inner metric is sharded, the data label selector is not.
+		`sum by on info(metric, data label selector)`: {
+			Query:                  `sum by (data_center) (info(metric_with_info, {data_center=~".+"}))`,
+			ExpectedShardedQueries: 1,
+		},
 	}
 
 	series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
@@ -600,6 +617,33 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		}
 
 		series = append(series, testdatagen.NewNativeHistogramSeries(testdatagen.NewTestNativeHistogramLabels(seriesID), Start.Add(-lookbackDelta), End, Step, gen))
+		seriesID++
+	}
+
+	// Add series with identifying labels (instance, job) alongside matching target_info series.
+	// These are used to test sharding of the info() function, which is a many-to-one join between
+	// the enriched metric and target_info. Multiple instances ensure the metric series are spread
+	// across shards, while each shard must still see the full set of target_info series to enrich
+	// its subset of the metric correctly.
+	const numInfoInstances = 20
+	for i := range numInfoInstances {
+		instance := strconv.Itoa(i)
+
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(
+			"__name__", "metric_with_info",
+			"instance", instance,
+			"job", "test",
+			"group_1", strconv.Itoa(i%3),
+		), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(float64(i+1)*0.1)))
+		seriesID++
+
+		// The matching target_info series enriches the metric above with a data_center data label.
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(
+			"__name__", "target_info",
+			"instance", instance,
+			"job", "test",
+			"data_center", "dc_"+strconv.Itoa(i%4),
+		), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(1)))
 		seriesID++
 	}
 
@@ -679,6 +723,7 @@ func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTe
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
 		{fn: "ts_of_first_over_time", rangeQuery: true},
 		{fn: "ts_of_last_over_time", rangeQuery: true},
+		{fn: "info"},
 	}
 	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "abs"},
