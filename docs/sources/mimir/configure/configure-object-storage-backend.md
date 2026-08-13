@@ -153,11 +153,11 @@ When `account_key` and `connection_string` are **unset**, Mimir authenticates
 to Azure Blob Storage with Azure AD / managed identity (including Azure
 Workload Identity on Kubernetes).
 
-| Field | Description |
-| ----- | ----------- |
-| `account_name` | Storage account name (required). |
-| `endpoint_suffix` | Endpoint without scheme; defaults to Azure public cloud when empty. |
-| `container_name` | Blob container (set per storage block as usual). |
+| Field              | Description                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `account_name`     | Storage account name (required).                                                                        |
+| `endpoint_suffix`  | Endpoint without scheme; defaults to Azure public cloud when empty.                                     |
+| `container_name`   | Blob container (set per storage block as usual).                                                        |
 | `user_assigned_id` | Client ID of a **user-assigned** managed identity. Leave empty to use the **system-assigned** identity. |
 
 You still need a storage account that trusts the identity (RBAC role such as
