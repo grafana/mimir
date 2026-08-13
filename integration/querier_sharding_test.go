@@ -294,41 +294,40 @@ overrides:
 	numSeries := 10
 
 	// Push multiple counter-like series with samples spanning 20 minutes (one per minute).
-	// Build all series upfront and push in a single batch per tenant to avoid timestamp-too-old rejections.
-	for _, tenant := range []string{userID, "sharded-tenant"} {
-		writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenant)
-		require.NoError(t, err)
+	// Build all series upfront and push in a single batch to avoid timestamp-too-old rejections.
+	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "sharded-tenant")
+	require.NoError(t, err)
 
-		var allSeries []prompb.TimeSeries
-		for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
-			samples := make([]prompb.Sample, numSamples)
-			for i := 0; i < numSamples; i++ {
-				// Monotonically increasing values (counter-like).
-				samples[i] = prompb.Sample{
-					Value:     float64((seriesIdx+1)*100 + i),
-					Timestamp: now.Add(time.Duration(i-numSamples+1) * time.Minute).UnixMilli(),
-				}
+	var allSeries []prompb.TimeSeries
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		samples := make([]prompb.Sample, numSamples)
+		for i := 0; i < numSamples; i++ {
+			// Monotonically increasing values (counter-like).
+			samples[i] = prompb.Sample{
+				Value:     float64((seriesIdx+1)*100 + i),
+				Timestamp: now.Add(time.Duration(i-numSamples+1) * time.Minute).UnixMilli(),
 			}
-
-			allSeries = append(allSeries, prompb.TimeSeries{
-				Labels: []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_counter"},
-					{Name: "instance", Value: fmt.Sprintf("instance_%d", seriesIdx)},
-					{Name: "group", Value: fmt.Sprintf("group_%d", seriesIdx%3)},
-				},
-				Samples: samples,
-			})
 		}
 
-		res, err := writeClient.Push(allSeries)
-		require.NoError(t, err)
-		require.Equal(t, 200, res.StatusCode)
+		allSeries = append(allSeries, prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: model.MetricNameLabel, Value: "test_counter"},
+				{Name: "instance", Value: fmt.Sprintf("instance_%d", seriesIdx)},
+				{Name: "group", Value: fmt.Sprintf("group_%d", seriesIdx%3)},
+			},
+			Samples: samples,
+		})
 	}
 
-	// Create clients:
-	// - unshardedClient queries the querier directly (no sharding).
-	// - shardedClient queries the query-frontend with sharding enabled (via per-tenant override).
-	unshardedClient, err := e2emimir.NewClient("", querier1.HTTPEndpoint(), "", "", userID)
+	res, err := writeClient.Push(allSeries)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Both clients query the same tenant and data through the query-frontend, so the only difference is
+	// whether the request is sharded. unshardedClient disables sharding per-request via the internal
+	// Sharding-Control header (querying the querier directly is avoided since those HTTP endpoints are
+	// being phased out).
+	unshardedClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "sharded-tenant", e2emimir.WithAddHeader("Sharding-Control", "0"))
 	require.NoError(t, err)
 	shardedClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "sharded-tenant")
 	require.NoError(t, err)
