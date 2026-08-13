@@ -349,11 +349,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
 	if flags["-ingest-storage.enabled"] == "true" {
 		for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
@@ -1033,11 +1028,6 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// Push series for the test user to Mimir.

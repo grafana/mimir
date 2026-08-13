@@ -49,6 +49,7 @@ const (
 	MaxSeriesPerQueryFlag                       = "querier.max-fetched-series-per-query"
 	MaxEstimatedChunksPerQueryMultiplierFlag    = "querier.max-estimated-fetched-chunks-per-query-multiplier"
 	MaxEstimatedMemoryConsumptionPerQueryFlag   = "querier.max-estimated-memory-consumption-per-query"
+	MaxBlocksPerStoreRequestFlag                = "querier.max-blocks-per-store-request"
 	MaxLabelNamesPerSeriesFlag                  = "validation.max-label-names-per-series"
 	MaxLabelNamesPerInfoSeriesFlag              = "validation.max-label-names-per-info-series"
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
@@ -91,6 +92,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
 )
 
@@ -215,6 +217,7 @@ type Limits struct {
 	MaxFetchedSeriesPerQuery              int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery          int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxEstimatedMemoryConsumptionPerQuery uint64         `yaml:"max_estimated_memory_consumption_per_query" json:"max_estimated_memory_consumption_per_query" category:"experimental"`
+	MaxBlocksPerStoreRequest              int            `yaml:"max_blocks_per_store_request" json:"max_blocks_per_store_request" category:"experimental"`
 	MaxQueryLookback                      model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
 	MaxPartialQueryLength                 model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
@@ -432,6 +435,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Uint64Var(&l.MaxEstimatedMemoryConsumptionPerQuery, MaxEstimatedMemoryConsumptionPerQueryFlag, 0, "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.")
+	f.IntVar(&l.MaxBlocksPerStoreRequest, MaxBlocksPerStoreRequestFlag, 0, "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.")
 	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
@@ -723,6 +727,10 @@ func (l *Limits) Validate() error {
 
 	if l.HATrackerUpdateTimeoutJitterMax < 0 {
 		return errNegativeUpdateTimeoutJitterMax
+	}
+
+	if l.MaxBlocksPerStoreRequest < 0 {
+		return errNegativeMaxBlocksPerStoreRequest
 	}
 
 	switch l.FloatChunkEncoding {
@@ -1044,6 +1052,10 @@ func (o *Overrides) EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(use
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
+}
+
+func (o *Overrides) MaxBlocksPerStoreRequest(userID string) int {
+	return o.getOverridesForUser(userID).MaxBlocksPerStoreRequest
 }
 
 func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {

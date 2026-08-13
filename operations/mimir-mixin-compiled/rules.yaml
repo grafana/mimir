@@ -319,10 +319,13 @@ groups:
             reason: active_series
           record: cluster_namespace_deployment_reason:required_replicas:count
         - expr: |
+            # The sandbox and parent cgroup series that cAdvisor exposes next to the per-container
+            # ones have an empty "image" label and would double count CPU time, so they're filtered
+            # out, consistently with the memory_usage rule below.
             sum by (cluster, namespace, deployment) (
               label_replace(
                 label_replace(
-                  sum by (cluster, namespace, pod)(rate(container_cpu_usage_seconds_total[4m])),
+                  sum by (cluster, namespace, pod)(rate(container_cpu_usage_seconds_total{image!=""}[4m])),
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it

@@ -94,11 +94,6 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 	}
 	require.NoError(t, s.StartAndWaitReady(mimirServices...))
 
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
 	// The ingester instance ring is shared across compartments, so the distributor and querier should
 	// see every ingester ACTIVE in it.
 	for _, svc := range []*e2emimir.MimirService{distributors[0], querier} {
@@ -289,11 +284,6 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 		mimirServices = append(mimirServices, sg)
 	}
 	require.NoError(t, s.StartAndWaitReady(mimirServices...))
-
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// The ingester instance ring is shared across compartments, so the distributor and querier should
 	// see every ingester ACTIVE in it.

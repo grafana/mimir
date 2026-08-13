@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/dskit/services"
@@ -73,57 +74,59 @@ func TestRulerSyncQueue_EnqueueAndPoll(t *testing.T) {
 }
 
 func TestRulerSyncQueue_ShouldNotNotifyChannelMoreFrequentlyThanPollFrequency(t *testing.T) {
-	ctx := context.Background()
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
 
-	const pollFrequency = time.Second
-	q := newRulerSyncQueue(pollFrequency)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, q))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
+		const pollFrequency = time.Second
+		q := newRulerSyncQueue(pollFrequency)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, q))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, q))
+		})
+
+		done := make(chan struct{}, 1)
+		wg := sync.WaitGroup{}
+
+		// Start a worker which continuously enqueue.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			userID := 0
+
+			for {
+				select {
+				case <-time.After(pollFrequency / 10):
+					q.enqueue(fmt.Sprintf("user-%d", userID))
+					userID++
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		// Start a worker which continuously poll from the queue.
+		numPolls := 0
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case <-q.poll():
+					numPolls++
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		// Run for 5x poll frequency and then stop the workers
+		time.Sleep(5 * pollFrequency)
+		close(done)
+		wg.Wait()
+
+		assert.LessOrEqual(t, numPolls, 6)
 	})
-
-	done := make(chan struct{}, 1)
-	wg := sync.WaitGroup{}
-
-	// Start a worker which continuously enqueue.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		userID := 0
-
-		for {
-			select {
-			case <-time.After(pollFrequency / 10):
-				q.enqueue(fmt.Sprintf("user-%d", userID))
-				userID++
-			case <-done:
-				return
-			}
-		}
-	}()
-
-	// Start a worker which continuously poll from the queue.
-	numPolls := 0
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		for {
-			select {
-			case <-q.poll():
-				numPolls++
-			case <-done:
-				return
-			}
-		}
-	}()
-
-	// Run for 5x poll frequency and then stop the workers
-	time.Sleep(5 * pollFrequency)
-	close(done)
-	wg.Wait()
-
-	assert.LessOrEqual(t, numPolls, 6)
 }
 
 func TestRulerSyncQueue_Concurrency(t *testing.T) {

@@ -261,9 +261,9 @@ func TestBlocksStoreQuerier_SearchLabelNames_HappyPath(t *testing.T) {
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{
-			store1: {block1},
-			store2: {block2},
+		map[BlocksStoreClient][][]ulid.ULID{
+			store1: {{block1}},
+			store2: {{block2}},
 		},
 	}}
 	finder := &blocksFinderMock{}
@@ -318,8 +318,8 @@ func TestBlocksStoreQuerier_SearchLabelNames_RetriesMissingBlock(t *testing.T) {
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storePartial: {block1, block2}},
-		map[BlocksStoreClient][]ulid.ULID{storeRetry: {block2}},
+		map[BlocksStoreClient][][]ulid.ULID{storePartial: {{block1, block2}}},
+		map[BlocksStoreClient][][]ulid.ULID{storeRetry: {{block2}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -365,8 +365,8 @@ func TestBlocksStoreQuerier_SearchLabelNames_PartialReplicaFailureWithRetry(t *t
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeRetriable: {block1}},
-		map[BlocksStoreClient][]ulid.ULID{storeOK: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{storeRetriable: {{block1}}},
+		map[BlocksStoreClient][][]ulid.ULID{storeOK: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -407,7 +407,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_WarningsPropagated(t *testing.T) {
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -451,7 +451,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_WarningsOnlyNoResults(t *testing.T)
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -492,7 +492,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_NonRetriableErrorBubblesUp(t *testi
 		searchLabelNamesErr:    status.Error(codes.Code(http.StatusUnprocessableEntity), "validation"),
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -537,7 +537,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_PeerNonRetriableCancelsBlockedHeade
 		queriedBlockIDs:             []ulid.ULID{block2},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeA: {block1}, storeB: {block2}},
+		map[BlocksStoreClient][][]ulid.ULID{storeA: {{block1}}, storeB: {{block2}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -590,7 +590,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_PeerNonRetriableCancelsBlockedHead
 		queriedBlockIDs:              []ulid.ULID{block2},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeA: {block1}, storeB: {block2}},
+		map[BlocksStoreClient][][]ulid.ULID{storeA: {{block1}}, storeB: {{block2}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -651,7 +651,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_MidStreamRecvError(t *testing.T) {
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -696,8 +696,8 @@ func TestBlocksStoreQuerier_SearchLabelNames_HeaderRecvErrorIsRetriable(t *testi
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeHeaderErr: {block1}},
-		map[BlocksStoreClient][]ulid.ULID{storeOK: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{storeHeaderErr: {{block1}}},
+		map[BlocksStoreClient][][]ulid.ULID{storeOK: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -735,7 +735,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_MissingHeaderIsProtocolViolation(t 
 		searchLabelNamesOmitHeader: true,
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeNoHeader: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{storeNoHeader: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -776,7 +776,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_ResultsOnHeaderIsProtocolViolation(
 		searchLabelNamesOmitHeader: true,
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeResultsOnHeader: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{storeResultsOnHeader: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -829,9 +829,9 @@ func TestBlocksStoreQuerier_SearchLabelValues_HappyPath(t *testing.T) {
 	}
 
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{
-			store1: {block1},
-			store2: {block2},
+		map[BlocksStoreClient][][]ulid.ULID{
+			store1: {{block1}},
+			store2: {{block2}},
 		},
 	}}
 	finder := &blocksFinderMock{}
@@ -878,7 +878,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_PropagatesBucketStoreMetadata(t *te
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -919,7 +919,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_PropagatesBucketStoreMetadata(t *t
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -962,7 +962,7 @@ func TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName(t *testing.T) {
 		queriedBlockIDs: []ulid.ULID{block1},
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{store: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{store: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
@@ -1051,7 +1051,7 @@ func TestBlocksStoreQuerier_SearchLabelNames_MalformedHeaderBlockHintHardFails(t
 		searchLabelNamesOmitHeader: true,
 	}
 	stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{storeBadHeader: {block1}},
+		map[BlocksStoreClient][][]ulid.ULID{storeBadHeader: {{block1}}},
 	}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{

@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -742,6 +743,10 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 }
 
 func TestHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp(t *testing.T) {
+	synctest.Test(t, testHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp)
+}
+
+func testHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp(t *testing.T) {
 	const (
 		replica = "r1"
 		cluster = "c1"

@@ -2521,6 +2521,13 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and remote execution is enabled, don't report
+# the query-frontend as ready during startup until it has seen at least one
+# querier in the querier ring, or 30s elapses. Queries fail while the ring is
+# empty, so starting to serve before then means failing queries.
+# CLI flag: -query-frontend.wait-for-querier-ring-on-startup
+[wait_for_querier_ring_on_startup: <boolean> | default = true]
 ```
 
 ### query_scheduler
@@ -4735,6 +4742,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # use. This limit is enforced in the querier. 0 to disable.
 # CLI flag: -querier.max-estimated-memory-consumption-per-query
 [max_estimated_memory_consumption_per_query: <int> | default = 0]
+
+# (experimental) Maximum number of blocks that a querier will reference in a
+# single request to a store-gateway. When a request would exceed this, it is
+# split into multiple requests to the same store-gateway. 0 disables the limit.
+# CLI flag: -querier.max-blocks-per-store-request
+[max_blocks_per_store_request: <int> | default = 0]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
