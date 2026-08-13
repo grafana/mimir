@@ -7,7 +7,6 @@ package integration
 
 import (
 	"fmt"
-	"math"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -20,6 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -376,6 +376,11 @@ overrides:
 			require.Equal(t, 1, len(unshardedResultInfos))
 		})
 	}
+
+	// Ensure the sharded path was actually exercised. Without this, the test would still pass if sharding
+	// silently no-opped (e.g. misconfigured shard count), since both paths would then return identical
+	// unsharded results.
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
 }
 
 // requireModelValueApproxEqual compares two model.Value results allowing for small
@@ -384,8 +389,6 @@ func requireModelValueApproxEqual(t *testing.T, expected, actual model.Value) {
 	t.Helper()
 	require.Equal(t, expected.Type(), actual.Type(), "result types differ")
 
-	const epsilon = 1e-12
-
 	switch exp := expected.(type) {
 	case model.Vector:
 		act := actual.(model.Vector)
@@ -393,17 +396,12 @@ func requireModelValueApproxEqual(t *testing.T, expected, actual model.Value) {
 		for i := range exp {
 			require.Equal(t, exp[i].Metric, act[i].Metric, "sample %d: metric labels differ", i)
 			require.Equal(t, exp[i].Timestamp, act[i].Timestamp, "sample %d: timestamps differ", i)
-			if math.IsNaN(float64(exp[i].Value)) {
-				require.True(t, math.IsNaN(float64(act[i].Value)), "sample %d: expected NaN", i)
-			} else {
-				require.InEpsilon(t, float64(exp[i].Value), float64(act[i].Value), epsilon,
-					"sample %d: values differ beyond tolerance", i)
-			}
+			requireSampleValueApproxEqual(t, exp[i].Value, act[i].Value, "sample %d: values differ beyond tolerance", i)
 		}
 	case *model.Scalar:
 		act := actual.(*model.Scalar)
 		require.Equal(t, exp.Timestamp, act.Timestamp)
-		require.InEpsilon(t, float64(exp.Value), float64(act.Value), epsilon)
+		requireSampleValueApproxEqual(t, exp.Value, act.Value, "scalar values differ beyond tolerance")
 	case model.Matrix:
 		act := actual.(model.Matrix)
 		require.Equal(t, len(exp), len(act), "matrix series count differs")
@@ -413,16 +411,24 @@ func requireModelValueApproxEqual(t *testing.T, expected, actual model.Value) {
 			for j := range exp[i].Values {
 				require.Equal(t, exp[i].Values[j].Timestamp, act[i].Values[j].Timestamp,
 					"series %d sample %d: timestamps differ", i, j)
-				if math.IsNaN(float64(exp[i].Values[j].Value)) {
-					require.True(t, math.IsNaN(float64(act[i].Values[j].Value)),
-						"series %d sample %d: expected NaN", i, j)
-				} else {
-					require.InEpsilon(t, float64(exp[i].Values[j].Value), float64(act[i].Values[j].Value), epsilon,
-						"series %d sample %d: values differ beyond tolerance", i, j)
-				}
+				requireSampleValueApproxEqual(t, exp[i].Values[j].Value, act[i].Values[j].Value,
+					"series %d sample %d: values differ beyond tolerance", i, j)
 			}
 		}
 	default:
 		require.Equal(t, expected, actual, "unsupported model.Value type")
 	}
+}
+
+// requireSampleValueApproxEqual compares two sample values allowing for small floating-point precision
+// differences that can arise from sharded vs unsharded evaluation. It delegates to Prometheus' almost.Equal,
+// which handles NaN, StaleNaN, ±Inf, and zero (a plain relative-epsilon check rejects a zero expected value
+// and can't compare infinities). The epsilon matches promqltest's default.
+func requireSampleValueApproxEqual(t *testing.T, expected, actual model.SampleValue, msg string, args ...any) {
+	t.Helper()
+
+	const epsilon = 1e-6 // Matches promqltest's defaultEpsilon.
+
+	require.Truef(t, almost.Equal(float64(expected), float64(actual), epsilon),
+		msg+" (expected %v, got %v)", append(args, expected, actual)...)
 }
