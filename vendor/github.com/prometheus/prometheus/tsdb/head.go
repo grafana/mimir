@@ -22,8 +22,10 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
+	stdatomic "sync/atomic" //nolint:depguard
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -992,7 +994,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// The head chunk was completed and was m-mapped after taking the snapshot.
 			// Hence remove this chunk.
 			ms.nextAt = 0
-			ms.headChunks = nil
+			ms.setHeadChunks(nil, 0)
 			ms.app = nil
 		}
 		return nil
@@ -1820,26 +1822,25 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	return s, true, nil
 }
 
-// mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
+// mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
+// mmapChunks() on each of them.
 //
 // There are two types of chunks that store samples for each memSeries:
 // A) Head chunk - stored on Go heap, when new samples are appended they go there.
 // B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
+// are read-only.
 //
-//	are read-only.
-//
-// Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
-// The m-mapping operation is needs to be serialised and so it goes via central lock.
-// If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
-//
-// To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
-// sample append path, since waiting on a lock inside an append would lock the entire memSeries for
-// (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
+// M-mapping is serialised via the per-series lock and done away from the sample append path,
+// since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
+	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
+			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+				continue
+			}
+
 			series.Lock()
 			count += series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
@@ -2206,8 +2207,9 @@ type memSeries struct {
 	// pN is the pointer to the mmappedChunk referred to by HeadChunkID=N
 	mmappedChunks []*mmappedChunk
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
-	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
+	// This is a linked list, headChunks points to the most recent chunk, headChunks.prev points
 	// to older chunk and so on.
+	// Please note the headChunkCount field tracking the number of headChunks.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
@@ -2222,6 +2224,12 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// headChunkCount tracks the number of head chunks. All mutations of the
+	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
+	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
+	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
+	// between two bools and a float64.
+	headChunkCount stdatomic.Uint32
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2284,13 +2292,33 @@ func (s *memSeries) maxTime() int64 {
 	return math.MinInt64
 }
 
+// pushHeadChunk prepends chk to the head-chunk list, keeping headChunkCount in
+// sync with the list length. The invariant is that headChunkCount equals the
+// list length whenever the series lock is released; direct prev unlinks
+// (mmapChunks, truncateChunksBefore) must be immediately paired with a
+// setHeadChunks call.
+func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	chk.prev = s.headChunks
+	s.headChunks = chk
+	s.headChunkCount.Add(1)
+	return chk
+}
+
+// setHeadChunks replaces the head-chunk list with head, which must be a list
+// of count chunks, keeping headChunkCount in sync with the list length. See
+// pushHeadChunk for the invariant.
+func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
+	s.headChunks = head
+	s.headChunkCount.Store(count)
+}
+
 // truncateChunksBefore removes all chunks from the series that
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
+		var i uint32
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
@@ -2300,10 +2328,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
-					s.headChunks = nil
+					s.setHeadChunks(nil, 0)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
+					s.setHeadChunks(s.headChunks, i)
 				}
 				s.mmappedChunks = nil
 				break
@@ -2371,6 +2400,26 @@ func (mc *memChunk) len() (count int) {
 	return count
 }
 
+// collectHeadChunks walks the headChunks linked list once and returns a slice
+// in oldest-first order (matching mmappedChunks ordering).
+// For example, given head{t4} -> t3 -> t2 -> t1 -> t0, it returns [t0, t1, t2, t3, t4].
+// buf must have length 0 but may have non-zero capacity for reuse; the
+// returned slice's tail beyond its length is zeroed, so a reused, shrinking
+// buffer does not pin chunks from a previous, longer collection.
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	// Single walk: append newest-to-oldest (following prev pointers), then
+	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
+	// expensive part; slices.Reverse on a contiguous array is essentially
+	// free by comparison.
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
+	}
+	slices.Reverse(hc)
+	clear(hc[len(hc):cap(hc)])
+	return hc
+}
+
 // oldest returns the oldest element on the list.
 // For single element list this will be the same memChunk oldest() was called on.
 func (mc *memChunk) oldest() (elem *memChunk) {
@@ -2380,30 +2429,6 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
-	}
-	return elem
-}
-
-// atOffset returns a memChunk that's Nth element on the linked list.
-func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
-	if offset == 0 {
-		return mc
-	}
-	if offset == 1 {
-		return mc.prev
-	}
-	if offset < 0 {
-		return nil
-	}
-
-	var i int
-	elem = mc
-	for i < offset {
-		i++
-		elem = elem.prev
-		if elem == nil {
-			break
-		}
 	}
 	return elem
 }
