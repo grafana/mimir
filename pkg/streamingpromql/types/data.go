@@ -42,15 +42,33 @@ func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []Seri
 // tracks the slice capacity growth against the memory limit, so it can be used to build up a
 // result whose final size is not known in advance without stranding pooled slices.
 //
-// On error, base is returned to the pool and must not continue to be used.
+// On error, base is returned to the pool, any label accounting done by this call is undone, and
+// base must not continue to be used.
 func AppendSeriesMetadataFromPool(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
-	for _, metadata := range otherSeriesMetadata {
+	for i, metadata := range otherSeriesMetadata {
 		if err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels); err != nil {
+			// Roll back the accounting done for earlier items in this call (they were never
+			// appended anywhere), then return base to the pool.
+			for _, m := range otherSeriesMetadata[:i] {
+				tracker.DecreaseMemoryConsumptionForLabels(m.Labels)
+			}
 			SeriesMetadataSlicePool.Put(&base, tracker)
 			return nil, err
 		}
 	}
-	return SeriesMetadataSlicePool.AppendToSlice(base, tracker, otherSeriesMetadata...)
+
+	result, err := SeriesMetadataSlicePool.AppendToSlice(base, tracker, otherSeriesMetadata...)
+	if err != nil {
+		// AppendToSlice has already returned base to the pool (decreasing the accounting for its
+		// existing elements), but the new items were never appended, so undo their label
+		// accounting from the loop above here.
+		for _, metadata := range otherSeriesMetadata {
+			tracker.DecreaseMemoryConsumptionForLabels(metadata.Labels)
+		}
+		return nil, err
+	}
+
+	return result, nil
 }
 
 type InstantVectorSeriesData struct {
