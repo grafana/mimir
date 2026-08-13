@@ -3,6 +3,7 @@
 package core
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -165,6 +166,32 @@ func TestBinaryExpression_Describe(t *testing.T) {
 				},
 			},
 			expected: `LHS + on (cluster) fill (0) RHS`,
+		},
+		"fill on both sides with NaN": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On:             true,
+						MatchingLabels: []string{"cluster"},
+						FillValues:     VectorMatchFillValues{Lhs: math.NaN(), LhsSet: true, Rhs: math.NaN(), RhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + on (cluster) fill (NaN) RHS`,
+		},
+		"fill NaN lhs and finite rhs": {
+			node: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On:             true,
+						MatchingLabels: []string{"cluster"},
+						FillValues:     VectorMatchFillValues{Lhs: math.NaN(), LhsSet: true, Rhs: 1, RhsSet: true},
+					},
+				},
+			},
+			expected: `LHS + on (cluster) fill_left (NaN) fill_right (1) RHS`,
 		},
 		"fill on both sides with different values": {
 			node: &BinaryExpression{

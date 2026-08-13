@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -77,7 +78,7 @@ func (b *BinaryExpression) Describe() string {
 		}
 
 		fv := b.VectorMatching.FillValues
-		if fv.LhsSet && fv.RhsSet && fv.Lhs == fv.Rhs {
+		if fv.LhsSet && fv.RhsSet && (fv.Lhs == fv.Rhs || (math.IsNaN(fv.Lhs) && math.IsNaN(fv.Rhs))) {
 			fmt.Fprintf(builder, " fill (%v)", fv.Lhs)
 		} else {
 			if fv.LhsSet {

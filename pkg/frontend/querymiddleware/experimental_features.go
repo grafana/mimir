@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/go-kit/log"
@@ -162,7 +163,7 @@ func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeat
 			if n.VectorMatching != nil {
 				lhs := n.VectorMatching.FillValues.LHS
 				rhs := n.VectorMatching.FillValues.RHS
-				if lhs != nil && rhs != nil && *lhs == *rhs {
+				if lhs != nil && rhs != nil && (*lhs == *rhs || (math.IsNaN(*lhs) && math.IsNaN(*rhs))) {
 					// Both sides set to the same value: written as fill(v).
 					expFuncNames["fill"] = binopFillModifierType
 				} else {

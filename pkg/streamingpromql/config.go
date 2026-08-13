@@ -221,7 +221,7 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 	return nil
 }
 
-	func NewTestEngineOpts() EngineOpts {
+func NewTestEngineOpts() EngineOpts {
 	parserOpts := promqlext.NewPromQLParserOptions()
 
 	return EngineOpts{
