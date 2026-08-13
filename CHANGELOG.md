@@ -39,6 +39,8 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Add support for multi-zone query-tee. #16360
+
 ### Documentation
 
 ### Tools
