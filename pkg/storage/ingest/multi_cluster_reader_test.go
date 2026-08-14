@@ -180,6 +180,37 @@ func multiClusterTestOffsetFilePath(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 }
 
+// Asserts that the multi-cluster reader reports its own service state, and not just the per-cluster
+// readers' state. The multi-cluster reader owns state the per-cluster readers don't (for example the heap
+// merger), so it can stop or fail while every per-cluster reader is still running.
+func TestMultiClusterPartitionReader_CheckReady(t *testing.T) {
+	const (
+		readTopic   = "ingest-rc-0"
+		partitionID = int32(0)
+	)
+
+	ctx := context.Background()
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
+	clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, readTopic), createTestKafkaConfig(clusterAddr, readTopic)}
+
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	// Not started yet, so not ready. No per-cluster reader has failed: the error comes from the
+	// multi-cluster reader's own state.
+	require.ErrorContains(t, reader.CheckReady(), "multi-cluster partition reader service is not running")
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
+
+	require.NoError(t, reader.CheckReady())
+
+	// Once stopped, it's not ready again, even though every per-cluster reader stopped cleanly.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	require.ErrorContains(t, reader.CheckReady(), "multi-cluster partition reader service is not running")
+}
+
 func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RejectsKafkaClusterCountMismatch(t *testing.T) {
 	const (
 		readTopic   = "ingest-rc-0"
