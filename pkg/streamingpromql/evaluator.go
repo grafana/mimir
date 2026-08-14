@@ -5,6 +5,7 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
@@ -91,14 +92,41 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
-	// Recover from panics during evaluation so the stats logging above reports the query as failed
-	// instead of successful. Re-panic afterward to crash.
+	// Recover from panics during evaluation.
+	//
+	// A genuine Go runtime error (nil dereference, index out of range, ...) indicates a bug in
+	// the engine, so we re-panic to crash the process: engine bugs are typically reproducible in
+	// test environments, and failing fast there surfaces them before they reach production.
+	//
+	// Any other panic is converted into a query error rather than crashing. In particular, the
+	// Prometheus histogram library uses panic-with-an-error as an error channel when it encounters
+	// invalid data during evaluation (for example a stored native histogram with a negative-offset
+	// span, which older versions could write). Such data is only ever seen in production, so a
+	// crash there cannot be caught earlier and would take down a querier or ruler shared by other
+	// tenants. Converting it into a failed query matches how the Prometheus engine behaves.
+	//
+	// Either way the stats logging above reports the query as failed instead of successful.
 	defer func() {
-		if r := recover(); r != nil {
+		r := recover()
+		if r == nil {
+			return
+		}
+
+		if _, isRuntimeErr := r.(runtime.Error); isRuntimeErr {
+			level.Error(logger).Log("msg", "runtime error while evaluating query, re-panicking to crash", "err", r, "expr", e.originalExpression)
 			if err == nil {
 				err = fmt.Errorf("panic during query evaluation: %v", r)
 			}
 			panic(r)
+		}
+
+		level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
+		if err == nil {
+			if rErr, ok := r.(error); ok {
+				err = rErr
+			} else {
+				err = fmt.Errorf("panic during query evaluation: %v", r)
+			}
 		}
 	}()
 
