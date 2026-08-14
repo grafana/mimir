@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -1786,66 +1787,145 @@ func assertEstimatedPeakMemoryConsumption(
 
 type panickingOperator struct {
 	*operators.TestOperator
-	panicValue string
+	panicFn func()
 }
 
 func (o *panickingOperator) SeriesMetadata(context.Context, types.Matchers) ([]types.SeriesMetadata, error) {
-	panic(o.panicValue)
+	o.panicFn()
+	return nil, nil
 }
 
-func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T) {
-	opts := NewTestEngineOpts()
-	opts.CommonOpts.Reg = prometheus.NewPedanticRegistry()
-
-	spanExporter.Reset()
-
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
-	require.NoError(t, err)
-
-	memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
-	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
-
-	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
+func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
+	// A genuine Go runtime error indicates an engine bug, so it is re-panicked to crash the process
+	// (fail-fast). Any other panic — including the panic-as-error channel the Prometheus histogram
+	// library uses on invalid stored data — is converted into a query error so a single bad series
+	// cannot crash a querier or ruler shared by other tenants. Either way the query is logged as
+	// failed. Recovered panics are counted so they can be alerted on; re-panicked runtime errors are
+	// not, because the process exits before the counter could be reliably scraped.
+	testCases := map[string]struct {
+		panicFn        func()
+		expectRePanic  bool
+		expectedErr    string
+		expectedReason string
+	}{
+		"runtime error is re-panicked": {
+			panicFn:       func() { s := make([]int, 0); _ = s[1] }, // index out of range -> runtime.Error
+			expectRePanic: true,
 		},
-	}}
-	op := &panickingOperator{
-		TestOperator: &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker},
-		panicValue:   "injected panic during evaluation",
+		"string panic is converted to a query error": {
+			panicFn:        func() { panic("injected panic during evaluation") },
+			expectRePanic:  false,
+			expectedErr:    "injected panic during evaluation",
+			expectedReason: "other",
+		},
+		"histogram library error panic is converted to a query error": {
+			panicFn:        func() { panic(histogram.ErrHistogramSpanNegativeOffset) },
+			expectRePanic:  false,
+			expectedErr:    "histogram has a span whose offset is negative",
+			expectedReason: "invalid_data",
+		},
 	}
 
-	nodeRequests := []NodeEvaluationRequest{
-		{Node: node, TimeRange: timeRange, operator: op},
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			opts := NewTestEngineOpts()
+			opts.CommonOpts.Reg = reg
+
+			spanExporter.Reset()
+
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+			require.NoError(t, err)
+
+			memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
+			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
+
+			node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
+				Matchers: []core.LabelMatcher{
+					{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
+				},
+			}}
+			op := &panickingOperator{
+				TestOperator: &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker},
+				panicFn:      tc.panicFn,
+			}
+
+			nodeRequests := []NodeEvaluationRequest{
+				{Node: node, TimeRange: timeRange, operator: op},
+			}
+			params := &planning.OperatorParameters{MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			evaluator, err := NewEvaluator(nodeRequests, params, engine, "panicking_query")
+			require.NoError(t, err)
+
+			observer := &noopEvaluationObserver{}
+
+			ctx := user.InjectOrgID(context.Background(), "test-tenant")
+			var evalErr error
+			run := func() { evalErr = evaluator.Evaluate(ctx, observer) }
+
+			if tc.expectRePanic {
+				require.Panics(t, run)
+			} else {
+				require.NotPanics(t, run)
+				require.Error(t, evalErr)
+				require.Contains(t, evalErr.Error(), tc.expectedErr)
+			}
+
+			// A recovered panic is counted exactly once, labelled by the affected tenant and the reason,
+			// so it can be alerted on. A re-panicked runtime error is not counted: the process exits
+			// before the counter could be reliably scraped, and the crash is visible on its own.
+			expectedMetrics := ""
+			if !tc.expectRePanic {
+				expectedMetrics = fmt.Sprintf(`
+					# HELP cortex_mimir_query_engine_evaluation_panics_total Total number of panics recovered during query evaluation and converted into query errors, labelled by the affected tenant and the reason: 'invalid_data' for validation errors raised by invalid stored data, 'other' for anything else, which may indicate an engine bug. Panics caused by Go runtime errors are not counted: they crash the process on purpose and are visible in logs and as process restarts.
+					# TYPE cortex_mimir_query_engine_evaluation_panics_total counter
+					cortex_mimir_query_engine_evaluation_panics_total{reason="%s",user="test-tenant"} 1
+				`, tc.expectedReason)
+			}
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_evaluation_panics_total"))
+
+			// The deferred "evaluation stats" log event must report the query as failed (not successful) and
+			// include the original expression, so the offending query is diagnosable.
+			spans := filter(spanExporter.GetSpans(), func(s tracetest.SpanStub) bool {
+				return s.Name == "Evaluator.Evaluate"
+			})
+			require.Len(t, spans, 1)
+
+			logEvents := filter(spans[0].Events, func(e tracesdk.Event) bool {
+				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
+			})
+			require.Len(t, logEvents, 1)
+
+			require.Contains(t, logEvents[0].Attributes, attribute.String("status", "failed"))
+			require.Contains(t, logEvents[0].Attributes, attribute.String("originalExpression", "panicking_query"))
+
+			// A recovered panic from invalid data is logged without a stack trace (its origin is known
+			// and it can recur on every evaluation over the same series), while any other recovered
+			// panic includes the stack trace of the panic site, as the log is the only remaining
+			// pointer to a possible engine bug now that the process no longer crashes.
+			if !tc.expectRePanic {
+				recoveredEvents := filter(spans[0].Events, func(e tracesdk.Event) bool {
+					return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "recovered from panic while evaluating query, returning it as a query error"))
+				})
+				require.Len(t, recoveredEvents, 1)
+
+				stacktraces := filter(recoveredEvents[0].Attributes, func(a attribute.KeyValue) bool {
+					return a.Key == "stacktrace"
+				})
+
+				if tc.expectedReason == "other" {
+					require.Len(t, stacktraces, 1)
+					// The stack trace must point at the panic site.
+					require.Contains(t, stacktraces[0].Value.AsString(), "panickingOperator")
+				} else {
+					require.Empty(t, stacktraces)
+				}
+			}
+		})
 	}
-	params := &planning.OperatorParameters{MemoryConsumptionTracker: memoryConsumptionTracker}
-
-	evaluator, err := NewEvaluator(nodeRequests, params, engine, "panicking_query")
-	require.NoError(t, err)
-
-	observer := &noopEvaluationObserver{}
-
-	// The panic must propagate: we only add diagnostics, we do not contain it.
-	require.PanicsWithValue(t, "injected panic during evaluation", func() {
-		_ = evaluator.Evaluate(context.Background(), observer)
-	})
-
-	// The deferred "evaluation stats" log event must report the query as failed (not successful) and
-	// include the original expression, so the offending query is diagnosable.
-	spans := filter(spanExporter.GetSpans(), func(s tracetest.SpanStub) bool {
-		return s.Name == "Evaluator.Evaluate"
-	})
-	require.Len(t, spans, 1)
-
-	logEvents := filter(spans[0].Events, func(e tracesdk.Event) bool {
-		return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
-	})
-	require.Len(t, logEvents, 1)
-
-	require.Contains(t, logEvents[0].Attributes, attribute.String("status", "failed"))
-	require.Contains(t, logEvents[0].Attributes, attribute.String("originalExpression", "panicking_query"))
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {

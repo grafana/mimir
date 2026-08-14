@@ -166,6 +166,28 @@ groups:
             )
           labels:
             severity: warning
+        - alert: MimirQueryEngineEvaluationPanics
+          annotations:
+            message: 'Mimir query engine in {{ $labels.cluster }}/{{ $labels.namespace }} is recovering from panics (reason: {{ $labels.reason }}) during query evaluation and failing the affected queries.'
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirqueryengineevaluationpanics
+          expr: |
+            sum by (cluster, namespace, reason) (
+              rate(cortex_mimir_query_engine_evaluation_panics_total{reason="invalid_data"}[5m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirQueryEngineEvaluationPanics
+          annotations:
+            message: 'Mimir query engine in {{ $labels.cluster }}/{{ $labels.namespace }} is recovering from panics (reason: {{ $labels.reason }}) during query evaluation and failing the affected queries. This may indicate an engine bug.'
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirqueryengineevaluationpanics
+          expr: |
+            sum by (cluster, namespace, reason) (
+              rate(cortex_mimir_query_engine_evaluation_panics_total{reason!="invalid_data"}[5m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
         - alert: MimirKVStoreFailure
           annotations:
             message: |
