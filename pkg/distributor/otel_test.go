@@ -2379,7 +2379,9 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
@@ -2424,7 +2426,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -2453,7 +2457,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
