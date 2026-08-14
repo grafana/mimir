@@ -277,6 +277,7 @@ mimir:
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
+      rejoin_interval: 60s
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
