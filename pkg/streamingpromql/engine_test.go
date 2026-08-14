@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -1799,32 +1800,37 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 	// (fail-fast). Any other panic — including the panic-as-error channel the Prometheus histogram
 	// library uses on invalid stored data — is converted into a query error so a single bad series
 	// cannot crash a querier or ruler shared by other tenants. Either way the query is logged as
-	// failed.
+	// failed. Recovered panics are counted so they can be alerted on; re-panicked runtime errors are
+	// not, because the process exits before the counter could be reliably scraped.
 	testCases := map[string]struct {
-		panicFn       func()
-		expectRePanic bool
-		expectedErr   string
+		panicFn        func()
+		expectRePanic  bool
+		expectedErr    string
+		expectedReason string
 	}{
 		"runtime error is re-panicked": {
 			panicFn:       func() { s := make([]int, 0); _ = s[1] }, // index out of range -> runtime.Error
 			expectRePanic: true,
 		},
 		"string panic is converted to a query error": {
-			panicFn:       func() { panic("injected panic during evaluation") },
-			expectRePanic: false,
-			expectedErr:   "injected panic during evaluation",
+			panicFn:        func() { panic("injected panic during evaluation") },
+			expectRePanic:  false,
+			expectedErr:    "injected panic during evaluation",
+			expectedReason: "other",
 		},
 		"histogram library error panic is converted to a query error": {
-			panicFn:       func() { panic(histogram.ErrHistogramSpanNegativeOffset) },
-			expectRePanic: false,
-			expectedErr:   "histogram has a span whose offset is negative",
+			panicFn:        func() { panic(histogram.ErrHistogramSpanNegativeOffset) },
+			expectRePanic:  false,
+			expectedErr:    "histogram has a span whose offset is negative",
+			expectedReason: "invalid_data",
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
 			opts := NewTestEngineOpts()
-			opts.CommonOpts.Reg = prometheus.NewPedanticRegistry()
+			opts.CommonOpts.Reg = reg
 
 			spanExporter.Reset()
 
@@ -1856,8 +1862,9 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 
 			observer := &noopEvaluationObserver{}
 
+			ctx := user.InjectOrgID(context.Background(), "test-tenant")
 			var evalErr error
-			run := func() { evalErr = evaluator.Evaluate(context.Background(), observer) }
+			run := func() { evalErr = evaluator.Evaluate(ctx, observer) }
 
 			if tc.expectRePanic {
 				require.Panics(t, run)
@@ -1866,6 +1873,19 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 				require.Error(t, evalErr)
 				require.Contains(t, evalErr.Error(), tc.expectedErr)
 			}
+
+			// A recovered panic is counted exactly once, labelled by the affected tenant and the reason,
+			// so it can be alerted on. A re-panicked runtime error is not counted: the process exits
+			// before the counter could be reliably scraped, and the crash is visible on its own.
+			expectedMetrics := ""
+			if !tc.expectRePanic {
+				expectedMetrics = fmt.Sprintf(`
+					# HELP cortex_mimir_query_engine_evaluation_panics_total Total number of panics recovered during query evaluation and converted into query errors, labelled by the affected tenant and the reason: 'invalid_data' for validation errors raised by invalid stored data, 'other' for anything else, which may indicate an engine bug. Panics caused by Go runtime errors are not counted: they crash the process on purpose and are visible in logs and as process restarts.
+					# TYPE cortex_mimir_query_engine_evaluation_panics_total counter
+					cortex_mimir_query_engine_evaluation_panics_total{reason="%s",user="test-tenant"} 1
+				`, tc.expectedReason)
+			}
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_evaluation_panics_total"))
 
 			// The deferred "evaluation stats" log event must report the query as failed (not successful) and
 			// include the original expression, so the offending query is diagnosable.

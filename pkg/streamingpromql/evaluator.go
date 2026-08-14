@@ -9,8 +9,10 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -105,7 +107,10 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	// crash there cannot be caught earlier and would take down a querier or ruler shared by other
 	// tenants. Converting it into a failed query matches how the Prometheus engine behaves.
 	//
-	// Either way the stats logging above reports the query as failed instead of successful.
+	// Either way the stats logging above reports the query as failed instead of successful. Recovered
+	// panics are counted, labelled by the affected tenant and a coarse reason, so they can be alerted
+	// on; re-panicked runtime errors are not, because the process exits before the counter could be
+	// reliably scraped, and the crash is visible on its own.
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -120,9 +125,27 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 			panic(r)
 		}
 
+		userID := ""
+		if tenantIDs, tenantErr := tenant.TenantIDs(ctx); tenantErr == nil {
+			userID = tenant.JoinTenantIDs(tenantIDs)
+		}
+
+		// Classify the panic so data problems can be told apart from possible engine bugs without
+		// reading logs. Validation errors raised by the histogram library indicate invalid stored
+		// data; anything else may be a bug even though nothing crashed.
+		reason := "other"
+		rErr, isErr := r.(error)
+		if isErr {
+			var validationErr histogram.Error
+			if errors.As(rErr, &validationErr) {
+				reason = "invalid_data"
+			}
+		}
+
+		e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
 		level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
 		if err == nil {
-			if rErr, ok := r.(error); ok {
+			if isErr {
 				err = rErr
 			} else {
 				err = fmt.Errorf("panic during query evaluation: %v", r)

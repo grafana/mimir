@@ -19,12 +19,13 @@
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
-* [BUGFIX] MQE: Fail the query with an error instead of crashing the querier or ruler process when evaluation encounters invalid stored data, such as a native histogram with a negative-offset span written by Mimir 2.14 to 2.17. Genuine runtime errors are still re-panicked so engine bugs remain visible. #16383
+* [BUGFIX] MQE: Fail the query with an error instead of crashing the querier or ruler process when evaluation encounters invalid stored data, such as a native histogram with a negative-offset span written by Mimir 2.14 to 2.17. Genuine runtime errors are still re-panicked so engine bugs remain visible. Recovered panics are counted by the new `cortex_mimir_query_engine_evaluation_panics_total` metric, labelled by the affected tenant (`user`) and a coarse `reason` (`invalid_data` or `other`). #16383
 
 ### Mixin
 
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
+* [FEATURE] Alerts: Add `MimirQueryEngineEvaluationPanics`, firing with warning severity when MQE recovers from panics during query evaluation and fails the affected queries. Any reason other than `invalid_data` may indicate an engine bug. #16383
 * [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
 * [ENHANCEMENT] Dashboards: Make the boot/root disk device regex used to filter it out of the "Disk writes" and "Disk reads" panels configurable via `_config.node_boot_disk_device_regex` (default unchanged: `.*sda.*`), so clusters where the root device isn't `sda` (e.g. `vda` on some cloud providers) don't lose data on those panels. #16235
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
