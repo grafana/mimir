@@ -1710,6 +1710,14 @@ See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/
 
 See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
 
+### MimirKubernetesAPIClientRateLimited
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientratelimited)
+
+### MimirKubernetesAPIClientApproachingRateLimit
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientapproachingratelimit)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.

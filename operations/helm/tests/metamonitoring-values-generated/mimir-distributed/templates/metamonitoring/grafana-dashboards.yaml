@@ -52175,6 +52175,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### p99 latency by webhook\nThe dashed \"Handler deadline\" line is the deadline imposed on each webhook handler's context (90% of -server-tls.request-timeout). A webhook whose p99 tracks up towards it is at risk of its Kubernetes API calls being cancelled, including while waiting on the client-side rate limiter.\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -52196,7 +52197,33 @@ data:
                             },
                             "unit": "ms"
                          },
-                         "overrides": [ ]
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Handler deadline"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "dash": [
+                                           10,
+                                           10
+                                        ],
+                                        "fill": "dash"
+                                     }
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#808080",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
                       },
                       "id": 4,
                       "links": [ ],
@@ -52221,6 +52248,12 @@ data:
                             "expr": "(histogram_quantile(0.99, sum by (route) (rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "__auto",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "1e3 * max(rollout_operator_admission_webhook_handler_timeout_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"})",
+                            "format": "time_series",
+                            "legendFormat": "Handler deadline",
                             "legendLink": null
                          }
                       ],
@@ -52815,6 +52848,213 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Rate limited requests by API group\nShows requests which failed to acquire a token from the client-side rate limiter and were never sent, by Kubernetes API group and by component (core-controller, pod-eviction, no-downscale, prepare-downscale), since each component has its own independent bucket. There is no healthy non-zero level for this: any sustained rate means the rate limiter, rather than the Kubernetes API, is the bottleneck. See the KubernetesAPIClientRateLimited alert runbook.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rate limited requests by API group",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Percent of requests rejected by rate limiter\nShare of Kubernetes API requests which never left the client because the client-side rate limiter had no token available, by API group and by component (core-controller, pod-eviction, no-downscale, prepare-downscale). Kept per component since each has its own independent rate limiter bucket: combining them could dilute one saturated component behind several healthy ones. There is no healthy non-zero level for this.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "max": 1,
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "percentunit"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / (sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) + (sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) or (sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 0)))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / (sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) + (sum by (component, api_group) (histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) or (sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 0)))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Percent of requests rejected by rate limiter",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Throughput vs recent peak by API group\nCompares observed throughput against the highest sustained rate observed in the trailing 30 minutes, by API group and by component (core-controller, pod-eviction, no-downscale, prepare-downscale). Kept per component since each has its own independent rate limiter bucket at the same nominal QPS: a peak summed across components is not a valid ceiling for any one of their buckets. The peak line is a lower bound on the -kubernetes.client-qps needed for that component to avoid self-throttling this traffic pattern. It says nothing about -kubernetes.client-burst: burst absorbs sub-second spikes that a rate() computed over minutes cannot see, so no line for it is derivable from this data.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": ".*peak \\(30m\\)$"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "dash": [
+                                           10,
+                                           10
+                                        ],
+                                        "fill": "dash"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 14,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum by (component, api_group) (histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(max_over_time((sum by (component, api_group) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))[30m:])) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}} peak (30m)",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(max_over_time((sum by (component, api_group) (histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))))[30m:])) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "{{component}}/{{api_group}} peak (30m)",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Throughput vs recent peak by API group",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Kubernetes API client rate limiting",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -52889,7 +53129,7 @@ data:
                             }
                          ]
                       },
-                      "id": 12,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -53000,7 +53240,7 @@ data:
                             }
                          ]
                       },
-                      "id": 13,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -53060,7 +53300,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -53167,7 +53407,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -53292,7 +53532,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -53341,7 +53581,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
