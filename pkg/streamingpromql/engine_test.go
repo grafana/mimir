@@ -1901,6 +1901,29 @@ func TestEvaluator_PanicDuringEvaluation(t *testing.T) {
 
 			require.Contains(t, logEvents[0].Attributes, attribute.String("status", "failed"))
 			require.Contains(t, logEvents[0].Attributes, attribute.String("originalExpression", "panicking_query"))
+
+			// A recovered panic from invalid data is logged without a stack trace (its origin is known
+			// and it can recur on every evaluation over the same series), while any other recovered
+			// panic includes the stack trace of the panic site, as the log is the only remaining
+			// pointer to a possible engine bug now that the process no longer crashes.
+			if !tc.expectRePanic {
+				recoveredEvents := filter(spans[0].Events, func(e tracesdk.Event) bool {
+					return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "recovered from panic while evaluating query, returning it as a query error"))
+				})
+				require.Len(t, recoveredEvents, 1)
+
+				stacktraces := filter(recoveredEvents[0].Attributes, func(a attribute.KeyValue) bool {
+					return a.Key == "stacktrace"
+				})
+
+				if tc.expectedReason == "other" {
+					require.Len(t, stacktraces, 1)
+					// The stack trace must point at the panic site.
+					require.Contains(t, stacktraces[0].Value.AsString(), "panickingOperator")
+				} else {
+					require.Empty(t, stacktraces)
+				}
+			}
 		})
 	}
 }
