@@ -130,7 +130,7 @@ The following features are currently experimental:
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
   - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
     - `-distributor.ha-tracker.per-sample-dedupe`
-  - Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted instead of being silently dropped by the ingesters
+  - Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted instead of being silently dropped by ingesters
     - `-distributor.merge-duplicate-timeseries`
 - Ingester
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.

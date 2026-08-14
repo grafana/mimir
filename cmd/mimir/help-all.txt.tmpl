@@ -1514,7 +1514,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
   -distributor.merge-duplicate-timeseries
-    	[experimental] Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by the ingesters.
+    	[experimental] Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled

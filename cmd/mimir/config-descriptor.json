@@ -5626,7 +5626,7 @@
           "kind": "field",
           "name": "merge_duplicate_timeseries",
           "required": false,
-          "desc": "Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by the ingesters.",
+          "desc": "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.merge-duplicate-timeseries",

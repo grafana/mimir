@@ -156,12 +156,15 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		assert.Len(t, got.Timeseries[0].Histograms, 2)
 		require.Len(t, got.Timeseries[0].Exemplars, 2)
 
-		// Pool safety: the merged-in (duplicate) timeseries is returned to the
-		// pool inside the middleware. Its exemplars were shallow-appended into
-		// the surviving series, so they share the same backing label strings. If
-		// the middleware didn't nil the duplicate's slices before reuse,
-		// ReuseTimeseries -> ClearExemplars would zero those label strings in
-		// place, corrupting the survivor's exemplars. Assert they're intact.
+		// Smoke test that the middleware nils the duplicate's Exemplars slice
+		// before returning it to the pool. The merge appends the duplicate's
+		// exemplars into the survivor by shallow struct copy, so the appended
+		// exemplar's Labels backing array is shared with the entry still on
+		// the duplicate. If the duplicate were returned to the pool with its
+		// Exemplars still set, ReusePreallocTimeseries -> ClearExemplars would
+		// zero those label strings in place, corrupting the survivor. Assert
+		// that both trace_id labels are still readable on the survivor after
+		// the pool return.
 		gotTraceIDs := []string{
 			exemplarTraceID(got.Timeseries[0].Exemplars[0]),
 			exemplarTraceID(got.Timeseries[0].Exemplars[1]),
@@ -642,25 +645,90 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 	}
 }
 
-// BenchmarkDistributor_prePushMergeMiddleware measures the middleware on the two
-// extremes it runs on: a request with no cross-object duplicates (the common,
-// hot-path case, where the middleware only tracks each series) and a request
-// where every object shares one label set (worst case for merging).
+// BenchmarkDistributor_prePushMergeMiddleware measures the middleware across the
+// axes that matter for the distributor hot path: the flag disabled (default
+// tenants pay only the entry check), and the flag enabled at several duplicate
+// ratios and request sizes, plus fixed scenarios that exercise native-histogram
+// merging and the NonStableHash streaming fallback for label sets that overflow
+// its scratch buffer.
 func BenchmarkDistributor_prePushMergeMiddleware(b *testing.B) {
-	const numSeriesPerRequest = 1000
 	ctx := user.InjectOrgID(context.Background(), "user")
 
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
-	limits.MergeDuplicateTimeseries = true
-
-	cases := map[string]func(s int) []string{
-		"no duplicates":  func(s int) []string { return []string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)} },
-		"all duplicates": func(int) []string { return []string{model.MetricNameLabel, "series"} },
+	// build returns a fresh WriteRequest of numSeries timeseries where dupCount
+	// of them share the label set of the first series. The remaining
+	// numSeries-dupCount are unique. With dupCount=0 nothing merges and the
+	// middleware only tracks each series; with dupCount=numSeries every series
+	// merges into the first, exercising the worst case.
+	build := func(numSeries, dupCount int, mkLabels func(seed int) []string, mkPayload func(seed int) ([]mimirpb.Sample, []mimirpb.Histogram)) *mimirpb.WriteRequest {
+		ts := make([]mimirpb.PreallocTimeseries, 0, numSeries)
+		for s := 0; s < numSeries; s++ {
+			seed := s
+			if s < dupCount {
+				seed = 0
+			}
+			samples, histograms := mkPayload(s)
+			ts = append(ts, makeTimeseries(mkLabels(seed), samples, histograms, nil))
+		}
+		return &mimirpb.WriteRequest{Timeseries: ts}
 	}
 
-	for name, labelsFor := range cases {
-		b.Run(name, func(b *testing.B) {
+	simpleLabels := func(seed int) []string {
+		return []string{model.MetricNameLabel, fmt.Sprintf("series_%d", seed)}
+	}
+	floatPayload := func(s int) ([]mimirpb.Sample, []mimirpb.Histogram) {
+		return makeSamples(int64(s), float64(s)), nil
+	}
+	histogramPayload := func(s int) ([]mimirpb.Sample, []mimirpb.Histogram) {
+		return nil, makeHistograms(int64(s), generateTestHistogram(s))
+	}
+	// largeLabels emits a label set whose serialization exceeds the 1024-byte
+	// scratch buffer in mimirpb.NonStableHash so the streaming fallback runs
+	// (see mimirpb/compat.go). 32 labels of ~48 bytes each is well over 1KB.
+	largeLabels := func(seed int) []string {
+		out := make([]string, 0, 2+2*32)
+		out = append(out, model.MetricNameLabel, fmt.Sprintf("series_%d", seed))
+		for i := 0; i < 32; i++ {
+			out = append(out, fmt.Sprintf("label_%02d", i), strings.Repeat("v", 40))
+		}
+		return out
+	}
+
+	cases := []struct {
+		name      string
+		flag      bool
+		numSeries int
+		dupCount  int
+		mkLabels  func(int) []string
+		mkPayload func(int) ([]mimirpb.Sample, []mimirpb.Histogram)
+	}{
+		// Default tenants: measures the entry-check overhead the middleware
+		// adds to every push when the feature is off.
+		{"flag_off/n=1000", false, 1000, 0, simpleLabels, floatPayload},
+
+		// Hot path: flag on, nothing to merge. Small and large request sizes.
+		{"flag_on/n=100/dup=0", true, 100, 0, simpleLabels, floatPayload},
+		{"flag_on/n=1000/dup=0", true, 1000, 0, simpleLabels, floatPayload},
+
+		// Realistic misconfigured-producer ratios.
+		{"flag_on/n=1000/dup=1%", true, 1000, 10, simpleLabels, floatPayload},
+		{"flag_on/n=1000/dup=10%", true, 1000, 100, simpleLabels, floatPayload},
+
+		// Worst case: every series merges into the first.
+		{"flag_on/n=1000/dup=100%", true, 1000, 1000, simpleLabels, floatPayload},
+
+		// Native-histogram merge path.
+		{"flag_on/n=500/histograms/dup=10%", true, 500, 50, simpleLabels, histogramPayload},
+
+		// Large label sets that force NonStableHash streaming fallback.
+		{"flag_on/n=200/largeLabels/dup=10%", true, 200, 20, largeLabels, floatPayload},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			limits.MergeDuplicateTimeseries = tc.flag
+
 			ds, _, _, _ := prepare(b, prepConfig{numDistributors: 1, limits: &limits})
 			noop := func(context.Context, *Request) error { return nil }
 			fn := ds[0].prePushMergeMiddleware(noop)
@@ -676,20 +744,207 @@ func BenchmarkDistributor_prePushMergeMiddleware(b *testing.B) {
 				// which excludes both its time and its allocations from the report,
 				// rather than pre-generating b.N requests up front: at this
 				// microsecond-scale cost per op the benchmark calibrates to a b.N
-				// large enough that holding numSeriesPerRequest timeseries per
-				// iteration alive at once would exhaust memory.
+				// large enough that holding numSeries timeseries per iteration alive
+				// at once would exhaust memory.
 				b.StopTimer()
-				ts := make([]mimirpb.PreallocTimeseries, 0, numSeriesPerRequest)
-				for s := 0; s < numSeriesPerRequest; s++ {
-					ts = append(ts, makeTimeseries(labelsFor(s), makeSamples(int64(s), float64(s)), nil, nil))
-				}
-				req := &mimirpb.WriteRequest{Timeseries: ts}
+				req := build(tc.numSeries, tc.dupCount, tc.mkLabels, tc.mkPayload)
+				pushReq := NewParsedRequest(req, req.Size())
 				b.StartTimer()
 
-				err := fn(ctx, newRequest(func() (*mimirpb.WriteRequest, func(), int, error) {
-					return req, func() {}, 0, nil
-				}))
-				require.NoError(b, err)
+				require.NoError(b, fn(ctx, pushReq))
+			}
+		})
+	}
+}
+
+// BenchmarkDistributor_prePushMergeMiddleware_TwoSeries measures the middleware
+// on requests composed of exactly two timeseries that share the same label set,
+// with the merge_duplicate_timeseries limit turned on and off for each scenario.
+// The scenarios mirror the ones added in PR #10145 for the within-timeseries
+// dedup, so opt-in cost and default-path cost can be read off directly:
+//
+//	go test -run '^$' -bench BenchmarkDistributor_prePushMergeMiddleware_TwoSeries \
+//	    -benchtime=1000x -count=6 -benchmem -tags=netgo,stringlabels ./pkg/distributor
+//	benchstat -col /merge <out>
+//
+// With merge=false the middleware early-exits; with merge=true it hashes both
+// series, verifies they match, appends samples/histograms/exemplars from the
+// second into the first, nils the pooled slices on the duplicate and returns
+// it to the pool. The 80K scenarios dominate opt-in cost because they exercise
+// per-sample append.
+func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	lbls := []string{model.MetricNameLabel, "series_1"}
+
+	// twoSeriesFloats builds a 2-timeseries request with the same label set,
+	// carrying floatsPerSeries samples in each series at distinct timestamps.
+	// Suitable for the small "no timestamp duplication" scenarios (1 or 2
+	// samples per series) where after merge every sample survives downstream
+	// within-timeseries dedup.
+	twoSeriesFloats := func(floatsPerSeries int) *mimirpb.WriteRequest {
+		buildOne := func(offset int) mimirpb.PreallocTimeseries {
+			samples := make([]mimirpb.Sample, floatsPerSeries)
+			for i := 0; i < floatsPerSeries; i++ {
+				samples[i] = mimirpb.Sample{TimestampMs: int64(offset + i), Value: float64(i)}
+			}
+			return makeTimeseries(lbls, samples, nil, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(floatsPerSeries),
+		}}
+	}
+
+	// twoSeriesHistograms is the histogram counterpart of twoSeriesFloats.
+	twoSeriesHistograms := func(histogramsPerSeries int) *mimirpb.WriteRequest {
+		buildOne := func(offset int) mimirpb.PreallocTimeseries {
+			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
+			for i := 0; i < histogramsPerSeries; i++ {
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+			}
+			return makeTimeseries(lbls, nil, histograms, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(histogramsPerSeries),
+		}}
+	}
+
+	// twoSeriesMixed carries both floats and histograms per series, again at
+	// distinct timestamps.
+	twoSeriesMixed := func(floatsPerSeries, histogramsPerSeries int) *mimirpb.WriteRequest {
+		buildOne := func(offset int) mimirpb.PreallocTimeseries {
+			samples := make([]mimirpb.Sample, floatsPerSeries)
+			for i := 0; i < floatsPerSeries; i++ {
+				samples[i] = mimirpb.Sample{TimestampMs: int64(offset + i), Value: float64(i)}
+			}
+			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
+			for i := 0; i < histogramsPerSeries; i++ {
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+			}
+			return makeTimeseries(lbls, samples, histograms, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(max(floatsPerSeries, histogramsPerSeries)),
+		}}
+	}
+
+	// The 80K scenarios mirror PR #10145's within-timeseries generator so
+	// benchstat numbers here are directly comparable to that PR's. Each
+	// scenario carries 80K items (samples, histograms, or both) across the
+	// pair of timeseries, all sharing one timestamp, split into 40K
+	// duplicated values (value=0, matching #10145's "same value" bucket)
+	// and 40K unique values (matching #10145's "different values" bucket).
+	// Downstream within-timeseries dedup does not run in this benchmark
+	// (next is noop); the numbers reflect the middleware's per-sample
+	// append cost only.
+	const (
+		sharedTS       = int64(1000)
+		sameValueCount = 40_000
+		diffValueCount = 40_000
+		perSeriesCount = (sameValueCount + diffValueCount) / 2
+		sharedValue    = 0.0
+	)
+
+	twoSeriesFloats80KSameTimestamp := func() *mimirpb.WriteRequest {
+		buildOne := func(diffValueOffset int) mimirpb.PreallocTimeseries {
+			samples := make([]mimirpb.Sample, 0, perSeriesCount)
+			for i := 0; i < sameValueCount/2; i++ {
+				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: sharedValue})
+			}
+			for i := 0; i < diffValueCount/2; i++ {
+				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: float64(diffValueOffset + i + 1)})
+			}
+			return makeTimeseries(lbls, samples, nil, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(diffValueCount / 2),
+		}}
+	}
+
+	twoSeriesHistograms80KSameTimestamp := func() *mimirpb.WriteRequest {
+		buildOne := func(diffValueOffset int) mimirpb.PreallocTimeseries {
+			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
+			for i := 0; i < sameValueCount/2; i++ {
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+			}
+			for i := 0; i < diffValueCount/2; i++ {
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+			}
+			return makeTimeseries(lbls, nil, histograms, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(diffValueCount / 2),
+		}}
+	}
+
+	twoSeriesMixed80KSameTimestamp := func() *mimirpb.WriteRequest {
+		buildOne := func(diffValueOffset int) mimirpb.PreallocTimeseries {
+			samples := make([]mimirpb.Sample, 0, perSeriesCount)
+			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
+			for i := 0; i < sameValueCount/2; i++ {
+				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: sharedValue})
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+			}
+			for i := 0; i < diffValueCount/2; i++ {
+				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: float64(diffValueOffset + i + 1)})
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+			}
+			return makeTimeseries(lbls, samples, histograms, nil)
+		}
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			buildOne(0),
+			buildOne(diffValueCount / 2),
+		}}
+	}
+
+	scenarios := []struct {
+		name  string
+		build func() *mimirpb.WriteRequest
+	}{
+		{"1_float_sample", func() *mimirpb.WriteRequest { return twoSeriesFloats(1) }},
+		{"1_histogram", func() *mimirpb.WriteRequest { return twoSeriesHistograms(1) }},
+		{"1_float_and_1_histogram", func() *mimirpb.WriteRequest { return twoSeriesMixed(1, 1) }},
+		{"2_float_samples", func() *mimirpb.WriteRequest { return twoSeriesFloats(2) }},
+		{"2_histograms", func() *mimirpb.WriteRequest { return twoSeriesHistograms(2) }},
+		{"2_floats_and_2_histograms", func() *mimirpb.WriteRequest { return twoSeriesMixed(2, 2) }},
+		{"80k_float_samples_shared_timestamp", twoSeriesFloats80KSameTimestamp},
+		{"80k_histograms_shared_timestamp", twoSeriesHistograms80KSameTimestamp},
+		{"80k_floats_and_80k_histograms_shared_timestamp", twoSeriesMixed80KSameTimestamp},
+	}
+
+	for _, scn := range scenarios {
+		b.Run(scn.name, func(b *testing.B) {
+			for _, enabled := range []bool{false, true} {
+				b.Run(fmt.Sprintf("merge=%t", enabled), func(b *testing.B) {
+					var limits validation.Limits
+					flagext.DefaultValues(&limits)
+					limits.MergeDuplicateTimeseries = enabled
+
+					ds, _, _, _ := prepare(b, prepConfig{numDistributors: 1, limits: &limits})
+					noop := func(context.Context, *Request) error { return nil }
+					fn := ds[0].prePushMergeMiddleware(noop)
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						// Rebuild per iteration: the middleware consumes the request in
+						// place (merges, returns duplicates to the pool, truncates the
+						// slice). Sharing pointers with a template across iterations
+						// would let the pool hand a duplicate's backing array to the
+						// next iteration's builder, corrupting it. Build time is
+						// excluded from the measurement via StopTimer.
+						b.StopTimer()
+						req := scn.build()
+						pushReq := NewParsedRequest(req, req.Size())
+						b.StartTimer()
+
+						require.NoError(b, fn(ctx, pushReq))
+					}
+				})
 			}
 		})
 	}

@@ -361,7 +361,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
-	f.BoolVar(&l.MergeDuplicateTimeseries, "distributor.merge-duplicate-timeseries", false, "Merge timeseries that share the same label set and created timestamp within a write request, so that duplicated samples are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by the ingesters.")
+	f.BoolVar(&l.MergeDuplicateTimeseries, "distributor.merge-duplicate-timeseries", false, "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -923,8 +923,8 @@ func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
 }
 
 // MergeDuplicateTimeseries returns whether timeseries sharing the same label set
-// and created timestamp within a write request should be merged into a single
-// timeseries for this user.
+// and created timestamp within a single write request should be merged into a
+// single timeseries for this user.
 func (o *Overrides) MergeDuplicateTimeseries(userID string) bool {
 	return o.getOverridesForUser(userID).MergeDuplicateTimeseries
 }
