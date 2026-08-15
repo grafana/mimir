@@ -2737,7 +2737,12 @@ chunks-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the chunks-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # To change how much memory the chunks-cache uses, set allocatedMemory rather than overriding this directly:
+  # memcached's own memory ceiling (the -m flag) is always derived from allocatedMemory, and by default
+  # requests.memory is set to (round (* 1.2 allocatedMemory) + 100Mi) and limits.memory to
+  # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
+  # Overriding resources here does not change the -m flag, so the container's memory limit can end up
+  # inconsistent with the amount of memory memcached is configured to use.
   resources: null
 
   # -- Service annotations and labels
@@ -2845,7 +2850,12 @@ index-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the index-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # To change how much memory the index-cache uses, set allocatedMemory rather than overriding this directly:
+  # memcached's own memory ceiling (the -m flag) is always derived from allocatedMemory, and by default
+  # requests.memory is set to (round (* 1.2 allocatedMemory) + 100Mi) and limits.memory to
+  # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
+  # Overriding resources here does not change the -m flag, so the container's memory limit can end up
+  # inconsistent with the amount of memory memcached is configured to use.
   resources: null
 
   # -- Service annotations and labels
@@ -2953,7 +2963,12 @@ metadata-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the metadata-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # To change how much memory the metadata-cache uses, set allocatedMemory rather than overriding this directly:
+  # memcached's own memory ceiling (the -m flag) is always derived from allocatedMemory, and by default
+  # requests.memory is set to (round (* 1.2 allocatedMemory) + 100Mi) and limits.memory to
+  # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
+  # Overriding resources here does not change the -m flag, so the container's memory limit can end up
+  # inconsistent with the amount of memory memcached is configured to use.
   resources: null
 
   # -- Service annotations and labels
@@ -3061,7 +3076,12 @@ results-cache:
   volumeClaimTemplates: []
 
   # -- Resource requests and limits for the results-cache
-  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  # To change how much memory the results-cache uses, set allocatedMemory rather than overriding this directly:
+  # memcached's own memory ceiling (the -m flag) is always derived from allocatedMemory, and by default
+  # requests.memory is set to (round (* 1.2 allocatedMemory) + 100Mi) and limits.memory to
+  # (round (* 1.5 allocatedMemory)), giving memcached headroom before the container is OOM killed.
+  # Overriding resources here does not change the -m flag, so the container's memory limit can end up
+  # inconsistent with the amount of memory memcached is configured to use.
   resources: null
 
   # -- Service annotations and labels

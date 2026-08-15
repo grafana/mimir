@@ -52,10 +52,10 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             limits:
-              memory: 2458Mi
+              memory: 3072Mi
             requests:
               cpu: 500m
-              memory: 2458Mi
+              memory: 2558Mi
           ports:
             - containerPort: 11211
               name: client
