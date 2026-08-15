@@ -576,6 +576,115 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	assert.Empty(t, c.deleted.keys)
 }
 
+// newCostAttributionTrackerForTest builds a cost attribution ActiveSeriesTracker that attributes
+// cost by the "a" label for tenant "user5", registering its metrics into the given registry.
+func newCostAttributionTrackerForTest(t *testing.T, reg *prometheus.Registry) *costattribution.ActiveSeriesTracker {
+	t.Helper()
+	user := &validation.Limits{
+		MaxCostAttributionCardinality: 10,
+		CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+		},
+	}
+	user.CostAttributionBaseTrackers.Canonicalize()
+	user.ComputeCostAttributionConfigHash()
+	limits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{"user5": user}))
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, reg)
+	require.NoError(t, err)
+	return manager.ActiveSeriesTracker("user5")
+}
+
+// newActiveSeriesWithCostAttribution builds an ActiveSeries that attributes cost by the "a" label,
+// returning the ActiveSeries and the registry exposing the cost attribution metrics.
+func newActiveSeriesWithCostAttribution(t *testing.T) (*ActiveSeries, *prometheus.Registry) {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	return NewActiveSeries(&asmodel.Matchers{}, DefaultTimeout, newCostAttributionTrackerForTest(t, reg)), reg
+}
+
+func TestActiveSeries_CostAttribution_SeriesDeletedFromHeadWhileActive(t *testing.T) {
+	attributed := `
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+		# TYPE cortex_ingester_attributed_active_series gauge
+		cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	`
+
+	t.Run("purge decrements using captured labels", func(t *testing.T) {
+		c, reg := newActiveSeriesWithCostAttribution(t)
+		ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+		idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1}}
+
+		now := time.Now()
+		c.UpdateSeries(ls1, ref1, now, -1, false, idx)
+		c.Purge(now, idx)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(attributed), "cortex_ingester_attributed_active_series"))
+
+		// Series removed from the head while still active; capture its labels, then make the ref
+		// unresolvable via the index (as if it was dropped by early head compaction).
+		c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{chunks.HeadSeriesRef(ref1): ls1})
+		delete(idx.existingLabels, ref1)
+
+		// It becomes inactive and is purged: cost attribution is decremented from the captured
+		// labels, with no attribution failure.
+		c.Purge(now.Add(DefaultTimeout+time.Minute), idx)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(``), "cortex_ingester_attributed_active_series"))
+		assert.Equal(t, float64(0), c.ActiveSeriesAttributionFailureCount())
+	})
+
+	t.Run("remove decrements using captured labels when the series returns with a new ref", func(t *testing.T) {
+		c, reg := newActiveSeriesWithCostAttribution(t)
+		ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+		ref2 := storage.SeriesRef(2) // Same labels as ref1.
+		idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1}}
+
+		now := time.Now()
+		c.UpdateSeries(ls1, ref1, now, -1, false, idx)
+		c.Purge(now, idx)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(attributed), "cortex_ingester_attributed_active_series"))
+
+		// Series removed from the head while still active, then it comes back with a new ref before
+		// becoming inactive. The old ref can no longer be resolved via the index.
+		c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{chunks.HeadSeriesRef(ref1): ls1})
+		delete(idx.existingLabels, ref1)
+		idx.existingLabels[ref2] = ls1
+		c.UpdateSeries(ls1, ref2, now, -1, false, idx)
+
+		// The new ref is attributed and the stale one was decremented from the captured labels: net
+		// count stays 1, with no attribution failure.
+		c.Purge(now, idx)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(attributed), "cortex_ingester_attributed_active_series"))
+		assert.Equal(t, float64(0), c.ActiveSeriesAttributionFailureCount())
+	})
+
+	t.Run("purge after reload decrements using captured labels", func(t *testing.T) {
+		c, reg := newActiveSeriesWithCostAttribution(t)
+		ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+		idx := &mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1}}
+
+		now := time.Now()
+		c.UpdateSeries(ls1, ref1, now, -1, false, idx)
+		c.Purge(now, idx)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(attributed), "cortex_ingester_attributed_active_series"))
+
+		// Series removed from the head while still active; its labels are captured and its ref becomes
+		// unresolvable via the index.
+		c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{chunks.HeadSeriesRef(ref1): ls1})
+		delete(idx.existingLabels, ref1)
+
+		// Reload the cost attribution config while the series is still active-but-deleted. The reloaded
+		// tracker must re-count the series from its captured labels, with no attribution failure.
+		reg2 := prometheus.NewRegistry()
+		c.ReloadSeriesConfig(&asmodel.Matchers{}, newCostAttributionTrackerForTest(t, reg2), false, true, idx)
+		require.NoError(t, testutil.GatherAndCompare(reg2, strings.NewReader(attributed), "cortex_ingester_attributed_active_series"))
+		assert.Equal(t, float64(0), c.ActiveSeriesAttributionFailureCount())
+
+		// When the series becomes inactive it is purged from the reloaded tracker, without leaking or panicking.
+		c.Purge(now.Add(DefaultTimeout+time.Minute), idx)
+		assert.NoError(t, testutil.GatherAndCompare(reg2, strings.NewReader(``), "cortex_ingester_attributed_active_series"))
+		assert.Equal(t, float64(0), c.ActiveSeriesAttributionFailureCount())
+	})
+}
+
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~"2|3|4"}`}))
 	c := NewActiveSeries(asm, DefaultTimeout, nil)
