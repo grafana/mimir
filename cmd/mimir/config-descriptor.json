@@ -10405,6 +10405,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -10617,6 +10628,17 @@
                   "fieldFlag": "blocks-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -10841,6 +10863,17 @@
                   "fieldFlag": "blocks-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -17995,6 +18028,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -18207,6 +18251,17 @@
                   "fieldFlag": "ruler-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -18431,6 +18486,17 @@
                   "fieldFlag": "ruler-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -20308,6 +20374,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -20520,6 +20597,17 @@
                   "fieldFlag": "alertmanager-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -20744,6 +20832,17 @@
                   "fieldFlag": "alertmanager-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -23396,6 +23495,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.s3.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_ca_path",
                       "required": false,
                       "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -23608,6 +23718,17 @@
                       "fieldFlag": "common.storage.gcs.max-connections-per-host",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.gcs.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -23832,6 +23953,17 @@
                       "fieldFlag": "common.storage.azure.max-connections-per-host",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.azure.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
