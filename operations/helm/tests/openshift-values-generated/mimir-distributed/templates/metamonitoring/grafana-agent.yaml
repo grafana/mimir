@@ -3,15 +3,15 @@
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: GrafanaAgent
 metadata:
-  name: metamonitoring-values-mimir-meta-monitoring
-  namespace: "citestns"
+  name: openshift-values-mimir-meta-monitoring
+  namespace: "citestns-monitoring"
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/instance: openshift-values
     app.kubernetes.io/component: meta-monitoring
     app.kubernetes.io/managed-by: Helm
 spec:
-  serviceAccountName: metamonitoring-values-mimir-grafana-agent
+  serviceAccountName: openshift-values-mimir-grafana-agent
   containers:
     # The container specs here are merged with the ones in the operator using a strategic merge patch.
     - name: config-reloader
@@ -23,13 +23,13 @@ spec:
     labelSelector:
       matchLabels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/instance: openshift-values
         app.kubernetes.io/component: meta-monitoring
   logs:
     instanceSelector:
       matchLabels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/instance: openshift-values
         app.kubernetes.io/component: meta-monitoring
     # cluster label for logs is added in the LogsInstance
   metrics:
@@ -37,8 +37,8 @@ spec:
     instanceSelector:
       matchLabels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/instance: openshift-values
         app.kubernetes.io/component: meta-monitoring
     externalLabels:
-      cluster: metamonitoring-values
+      cluster: openshift-values
 
