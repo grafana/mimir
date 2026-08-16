@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -841,4 +843,101 @@ func makeSeries(n int) [][]LabelAdapter {
 	}
 
 	return series
+}
+
+func TestNonStableHash(t *testing.T) {
+	// serializedHash replicates the name\xffvalue\xff serialization NonStableHash
+	// hashes over, so we can assert both the fast path and the >1KB streaming
+	// fallback produce xxhash.Sum64 of exactly those bytes.
+	serializedHash := func(ls []LabelAdapter) uint64 {
+		var b []byte
+		for _, l := range ls {
+			b = append(b, l.Name...)
+			b = append(b, '\xff')
+			b = append(b, l.Value...)
+			b = append(b, '\xff')
+		}
+		return xxhash.Sum64(b)
+	}
+
+	small := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "value"}}
+
+	// big is sized relative to the fast-path cap so its serialization always
+	// overflows into the streaming fallback branch — even if the cap changes —
+	// rather than pinning a duplicated magic number.
+	big := make([]LabelAdapter, 0)
+	bigLen := 0
+	for bigLen <= nonStableHashFastPathCap*2 {
+		l := LabelAdapter{Name: fmt.Sprintf("label_%03d", len(big)), Value: strings.Repeat("v", 40)}
+		big = append(big, l)
+		bigLen += len(l.Name) + len(l.Value) + 2
+	}
+	require.Greater(t, bigLen, nonStableHashFastPathCap, "big must exceed the fast-path cap to cover the streaming fallback branch")
+
+	t.Run("is deterministic", func(t *testing.T) {
+		assert.Equal(t, NonStableHash(small), NonStableHash(small))
+		assert.Equal(t, NonStableHash(big), NonStableHash(big))
+	})
+
+	t.Run("fast path equals xxhash of serialized labels", func(t *testing.T) {
+		assert.Equal(t, serializedHash(small), NonStableHash(small))
+	})
+
+	t.Run("streaming fallback (>1KB) equals xxhash of serialized labels", func(t *testing.T) {
+		// This pins that the two branches implement the identical hashing scheme.
+		assert.Equal(t, serializedHash(big), NonStableHash(big))
+	})
+
+	t.Run("nil and empty hash equally", func(t *testing.T) {
+		assert.Equal(t, NonStableHash(nil), NonStableHash([]LabelAdapter{}))
+	})
+
+	t.Run("distinct label sets hash differently", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "a"}}
+		b := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "b"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+
+	t.Run("is order sensitive", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}}
+		b := []LabelAdapter{{Name: "b", Value: "2"}, {Name: "a", Value: "1"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+
+	t.Run("separator prevents name/value boundary collisions", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "ab", Value: "c"}}
+		b := []LabelAdapter{{Name: "a", Value: "bc"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+}
+
+// benchHashSink prevents the compiler from eliminating the hashed value.
+var benchHashSink uint64
+
+// BenchmarkNonStableHash compares hashing LabelAdapters directly against the
+// previous FromLabelAdaptersToLabels(...).Hash(), which allocates a labels.Labels
+// on every call in the default (stringlabels) build.
+func BenchmarkNonStableHash(b *testing.B) {
+	ls := []LabelAdapter{
+		{Name: "__name__", Value: "http_requests_total"},
+		{Name: "handler", Value: "/api/v1/query_range"},
+		{Name: "instance", Value: "10.0.0.1:9090"},
+		{Name: "job", Value: "api-server"},
+		{Name: "method", Value: "GET"},
+		{Name: "status", Value: "200"},
+	}
+
+	b.Run("NonStableHash", func(b *testing.B) {
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			benchHashSink = NonStableHash(ls)
+		}
+	})
+
+	b.Run("FromLabelAdaptersToLabels.Hash", func(b *testing.B) {
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			benchHashSink = FromLabelAdaptersToLabels(ls).Hash()
+		}
+	})
 }
