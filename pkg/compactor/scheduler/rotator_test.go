@@ -6,6 +6,8 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -72,8 +74,8 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			metrics := newSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+			metrics := newTestSchedulerMetrics(reg)
+			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
 			r.clock = clock
 
 			r.RecoverFrom(tc.jobTrackers, tc.creationTime)
@@ -84,14 +86,14 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 
 func newRotatorForTest() *Rotator {
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
-	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+	metrics := newTestSchedulerMetrics(reg)
+	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
 }
 
 // newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
 // compaction jobs (numJobs == 0 yields an empty tracker).
 func newTrackerWithPendingJobs(clk clock.Clock, name string, numJobs int) *JobTracker {
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jt := NewJobTracker(&NopJobPersister{}, name, clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
 	for j := range numJobs {
 		id := fmt.Sprintf("%s-%d", name, j)
@@ -228,8 +230,8 @@ func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	clk := clock.New()
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, log.NewNopLogger())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
 	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
@@ -286,29 +288,65 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		action   func(r *Rotator, clk *clock.Mock)
-		expected int64
+		action func(r *Rotator, clk *clock.Mock)
+		// expected is for the whole queue, expectedByLane for each lane on its own.
+		expected       int64
+		expectedByLane map[lane]int64
 	}{
 		"recovery with no pending jobs": {
-			action:   func(r *Rotator, _ *clock.Mock) { r.RecoverFrom(nil, now) },
-			expected: now.Unix(),
+			action:         func(r *Rotator, _ *clock.Mock) { r.RecoverFrom(nil, now) },
+			expected:       now.Unix(),
+			expectedByLane: map[lane]int64{planLane: now.Unix(), compactionLane: now.Unix()},
 		},
-		"recovery with pending jobs leaves metric at 0": {
+		"recovery with pending jobs leaves only their lane unset": {
 			action: func(r *Rotator, clk *clock.Mock) {
 				r.RecoverFrom(map[string]*JobTracker{"t1": pendingTracker(clk)}, now)
 			},
-			expected: 0,
+			expected:       0,
+			expectedByLane: map[lane]int64{planLane: 0, compactionLane: now.Unix()},
+		},
+		// The point of tracking this per lane: a compaction backlog must not hide that planning is idle.
+		"recovery with a pending compaction job leaves only the compaction lane unset": {
+			action: func(r *Rotator, clk *clock.Mock) {
+				jt, _ := newTestJobTracker(clk)
+				jt.toPendingBack(NewTrackedCompactionJob("c1", &CompactionJob{}, 1, 0, clk.Now()))
+				r.RecoverFrom(map[string]*JobTracker{"t1": jt}, now)
+			},
+			expected:       0,
+			expectedByLane: map[lane]int64{planLane: now.Unix(), compactionLane: 0},
 		},
 		"maintenance over empty rotation": {
-			action:   func(r *Rotator, _ *clock.Mock) { r.Maintenance(context.Background(), false, false) },
-			expected: now.Unix(),
+			action:         func(r *Rotator, _ *clock.Mock) { r.Maintenance(context.Background(), false, false) },
+			expected:       now.Unix(),
+			expectedByLane: map[lane]int64{planLane: now.Unix(), compactionLane: now.Unix()},
 		},
+		// The clock advances so the assertion pins when the lanes were stamped, not merely that they were.
 		"removing the last tenant in rotation": {
 			action: func(r *Rotator, clk *clock.Mock) {
 				r.AddTenant("t1", pendingTracker(clk))
+				clk.Add(time.Minute)
 				_, _ = r.RemoveTenant("t1")
 			},
-			expected: now.Unix(),
+			expected:       now.Add(time.Minute).Unix(),
+			expectedByLane: map[lane]int64{planLane: now.Add(time.Minute).Unix(), compactionLane: now.Add(time.Minute).Unix()},
+		},
+		"maintenance mid-shutdown records nothing": {
+			action: func(r *Rotator, _ *clock.Mock) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				r.Maintenance(ctx, false, false)
+			},
+			expected:       0,
+			expectedByLane: map[lane]int64{planLane: 0, compactionLane: 0},
+		},
+		"maintenance moving a tenant into a rotation still records the idle lanes": {
+			action: func(r *Rotator, clk *clock.Mock) {
+				jt, _ := newTestJobTracker(clk)
+				r.AddTenant("t1", jt)
+				r.Maintenance(context.Background(), false, true)
+			},
+			expected:       0,
+			expectedByLane: map[lane]int64{planLane: 0, compactionLane: now.Unix()},
 		},
 	}
 
@@ -317,18 +355,24 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 			clk := clock.NewMock()
 			clk.Set(now)
 			reg := prometheus.NewPedanticRegistry()
-			metrics := newSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+			metrics := newTestSchedulerMetrics(reg)
+			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
 			r.clock = clk
 
 			tc.action(r, clk)
 
-			metricName := "cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds"
-			require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP %s Unix timestamp of the last time there were no pending jobs remaining.
-				# TYPE %s gauge
-				%s %d
-			`, metricName, metricName, metricName, tc.expected)), metricName))
+			const (
+				laneMetric = "cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds"
+				anyMetric  = "cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds"
+			)
+			var expected strings.Builder
+			fmt.Fprintf(&expected, "# HELP %s Unix timestamp of the last time there were no pending jobs remaining in this lane.\n# TYPE %s gauge\n", laneMetric, laneMetric)
+			for _, l := range slices.Sorted(maps.Keys(tc.expectedByLane)) {
+				fmt.Fprintf(&expected, "%s{lane=%q} %d\n", laneMetric, l, tc.expectedByLane[l])
+			}
+			fmt.Fprintf(&expected, "# HELP %s Unix timestamp of the last time there were no pending jobs remaining.\n# TYPE %s gauge\n%s %d\n", anyMetric, anyMetric, anyMetric, tc.expected)
+
+			require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(expected.String()), laneMetric, anyMetric))
 		})
 	}
 }

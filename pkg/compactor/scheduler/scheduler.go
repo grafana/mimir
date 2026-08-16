@@ -119,7 +119,6 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
-	metrics := newSchedulerMetrics(registerer)
 	allowList := util.NewAllowList(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants)
 
 	jpm, err := jobPersistenceManagerFactory(cfg, logger)
@@ -132,7 +131,7 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, logger)
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, registerer, logger)
 }
 
 func newCompactorScheduler(
@@ -141,13 +140,15 @@ func newCompactorScheduler(
 	allowList *util.AllowList,
 	bkt objstore.Bucket,
 	jpm JobPersistenceManager,
-	metrics *schedulerMetrics,
+	registerer prometheus.Registerer,
 	logger log.Logger) (*Scheduler, error) {
 
 	lanePolicy, err := newLanePolicy(cfg.LanePolicy)
 	if err != nil {
 		return nil, err
 	}
+
+	metrics := newSchedulerMetrics(registerer, lanePolicy)
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
@@ -158,6 +159,7 @@ func newCompactorScheduler(
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
 		lanePolicy,
 		metrics.pendingJobsLastEmpty,
+		metrics.lanePendingJobsLastEmptyGauges,
 		logger,
 	)
 

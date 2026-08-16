@@ -21,9 +21,13 @@ func at(hour, minute int) time.Time {
 	return time.Date(2026, 1, 2, hour, minute, 0, 0, time.UTC)
 }
 
+func newTestSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
+	return newSchedulerMetrics(reg, newSimpleLanePolicy())
+}
+
 func newTestJobTracker(clk clock.Clock) (*JobTracker, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
+	metrics := newTestSchedulerMetrics(reg)
 	return NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
 }
 
@@ -103,7 +107,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	}
 
 	t.Run("returns error on persist failure", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+		metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
@@ -113,7 +117,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	})
 
 	t.Run("planning skipped when plan is false", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+		metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
 		require.NoError(t, err)
@@ -253,8 +257,8 @@ func assertTrackerBytes(t *testing.T, reg *prometheus.Registry, msg string, spli
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 		# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
 		# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",lane="compaction"} %g
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",lane="compaction"} %g
 	`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
 }
 
@@ -335,7 +339,7 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()
-	sm := newSchedulerMetrics(reg)
+	sm := newTestSchedulerMetrics(reg)
 
 	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
 	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
@@ -397,7 +401,7 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 	const maxLeases = 2
 
 	clk := clock.NewMock()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
@@ -447,7 +451,7 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clk := clock.NewMock()
-			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+			metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 			jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 			lane := compactionLane
