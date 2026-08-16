@@ -20,6 +20,7 @@
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
+* [FEATURE] Ruler: Add experimental per-tenant `external_labels` and `alert_relabel_configs` options to `ruler_alertmanager_client_config`. External labels are added to alerts sent to Alertmanager (matching Prometheus, only when the alert does not already define a label with the same name) and are made available to alerting rule templates; alert relabel configs are applied to alerts before they are sent to Alertmanager and can rewrite or drop them. #15972
 
 ### Mixin
 
