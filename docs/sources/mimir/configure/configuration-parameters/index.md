@@ -286,9 +286,22 @@ compactor_scheduler:
 
   lane_policy:
     # (experimental) The lane policy the compactor scheduler should use. Valid
-    # values: simple
-    # CLI flag: -compactor-scheduler.lane-policy.policy
-    [policy: <string> | default = "simple"]
+    # values: simple, compaction-urgency
+    # CLI flag: -compactor-scheduler.lane-policy.type
+    [type: <string> | default = "simple"]
+
+    compaction_urgency:
+      # (experimental) Compaction jobs whose source blocks span at most this
+      # duration are served from the p1 lane. Jobs spanning longer are served
+      # from the p2 lane.
+      # CLI flag: -compactor-scheduler.lane-policy.compaction-urgency.p1-max-span
+      [p1_max_span: <duration> | default = 2h]
+
+      # (experimental) Serve out-of-order compaction jobs from the p1 lane
+      # regardless of the duration they span. Disable if out-of-order jobs for a
+      # tenant grow large enough to dominate the p1 lane.
+      # CLI flag: -compactor-scheduler.lane-policy.compaction-urgency.out-of-order-p1
+      [out_of_order_p1: <boolean> | default = true]
 
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
@@ -6941,7 +6954,10 @@ scheduler_client:
   [terminating_final_status_timeout: <duration> | default = 30s]
 
   # (experimental) Lanes to request for each worker goroutine. Each entry is a
-  # '+'-separated list of job types in priority order.
+  # '+'-separated list of lanes, in the order they should be served. Valid
+  # lanes: plan, compact, compact-p1, compact-p2. The compact-p1 and compact-p2
+  # lanes only differ from compact when the scheduler's lane policy separates
+  # compaction by urgency.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 

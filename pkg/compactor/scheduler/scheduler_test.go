@@ -175,6 +175,143 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	})
 }
 
+func TestScheduler_IncompleteBytesByLane(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	cfg := newTestSchedulerConfig()
+	cfg.LanePolicy.Policy = lanePolicyCompactionUrgency
+	scheduler, reg := newTestScheduler(t, bkt, cfg)
+	ctx := context.Background()
+
+	scheduler.rotator.Maintenance(ctx, false, true)
+	leaseResp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+
+	_, err = scheduler.PlannedJobs(ctx, &compactorschedulerpb.PlannedJobsRequest{
+		Key:    leaseResp.Key,
+		Tenant: leaseResp.Spec.Tenant,
+		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+			{Id: "fresh-2h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-a")}, TotalBlocksBytes: 100, MinTime: 0, MaxTime: 2 * hour,
+			}},
+			{Id: "periodic-24h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-b")}, TotalBlocksBytes: 900, MinTime: 0, MaxTime: 24 * hour,
+			}},
+			{Id: "out-of-order-24h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-c")}, TotalBlocksBytes: 50, MinTime: 0, MaxTime: 24 * hour, OutOfOrder: true,
+			}},
+		},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
+		# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",lane="compaction-p1"} 150
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge",lane="compaction-p2"} 900
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",lane="compaction-p1"} 0
+		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split",lane="compaction-p2"} 0
+	`), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"))
+}
+
+func TestScheduler_CompactionUrgencyLanes(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	cfg := newTestSchedulerConfig()
+	cfg.LanePolicy.Policy = lanePolicyCompactionUrgency
+	scheduler, _ := newTestScheduler(t, bkt, cfg)
+	ctx := context.Background()
+
+	scheduler.rotator.Maintenance(ctx, false, true)
+	leaseResp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+	require.NoError(t, err)
+	require.NotNil(t, leaseResp.Key)
+
+	// Offered p2 first, so passing requires lane ordering rather than FIFO.
+	_, err = scheduler.PlannedJobs(ctx, &compactorschedulerpb.PlannedJobsRequest{
+		Key:    leaseResp.Key,
+		Tenant: leaseResp.Spec.Tenant,
+		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+			{Id: "periodic-24h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-p2")}, TotalBlocksBytes: 900, MinTime: 0, MaxTime: 24 * hour,
+			}},
+			{Id: "fresh-2h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-p1")}, TotalBlocksBytes: 100, MinTime: 0, MaxTime: 2 * hour,
+			}},
+		},
+	})
+	require.NoError(t, err)
+
+	leaseIDs := func() []string {
+		var ids []string
+		for {
+			resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "worker1"})
+			require.NoError(t, err)
+			if resp.Key == nil {
+				return ids
+			}
+			ids = append(ids, resp.Key.Id)
+		}
+	}
+	require.Equal(t, []string{"fresh-2h", "periodic-24h"}, leaseIDs(), "p1 lane should be served before the p2 lane")
+}
+
+// A worker dedicated to the p2 lane makes progress even while p1 work is pending, which is what
+// lets the two classes be served by separately sized fleets.
+func TestScheduler_CompactionUrgencyLanes_DedicatedWorker(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	cfg := newTestSchedulerConfig()
+	cfg.LanePolicy.Policy = lanePolicyCompactionUrgency
+	scheduler, _ := newTestScheduler(t, bkt, cfg)
+	ctx := context.Background()
+
+	scheduler.rotator.Maintenance(ctx, false, true)
+	planResp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{WorkerId: "planner"})
+	require.NoError(t, err)
+	require.NotNil(t, planResp.Key)
+
+	_, err = scheduler.PlannedJobs(ctx, &compactorschedulerpb.PlannedJobsRequest{
+		Key:    planResp.Key,
+		Tenant: planResp.Spec.Tenant,
+		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
+			{Id: "fresh-2h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-p1")}, TotalBlocksBytes: 100, MinTime: 0, MaxTime: 2 * hour,
+			}},
+			{Id: "periodic-24h", Job: &compactorschedulerpb.CompactionJob{
+				BlockIds: [][]byte{[]byte("block-p2")}, TotalBlocksBytes: 900, MinTime: 0, MaxTime: 24 * hour,
+			}},
+		},
+	})
+	require.NoError(t, err)
+
+	leaseUrgency := func(urgency compactorschedulerpb.CompactionUrgency) string {
+		resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{
+			WorkerId: "worker",
+			LaneRequests: []*compactorschedulerpb.LaneRequest{
+				{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: urgency},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp.Key)
+		return resp.Key.Id
+	}
+
+	// The p1 job is still pending, so a shared worker would take it first.
+	require.Equal(t, "periodic-24h", leaseUrgency(compactorschedulerpb.COMPACTION_URGENCY_P2))
+	require.Equal(t, "fresh-2h", leaseUrgency(compactorschedulerpb.COMPACTION_URGENCY_P1))
+}
+
 func newTestSchedulerConfig() Config {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))

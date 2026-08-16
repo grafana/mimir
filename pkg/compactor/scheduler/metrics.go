@@ -285,12 +285,12 @@ func (q *queueMetrics) bytesFor(cj *TrackedCompactionJob) *incompleteBytes {
 
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
 	b := q.bytesFor(cj)
-	b.contributed += cj.totalBlockBytes
-	b.gauge.Add(float64(cj.totalBlockBytes))
+	b.contributed += cj.value.totalBlockBytes
+	b.gauge.Add(float64(cj.value.totalBlockBytes))
 }
 
 func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
 	b := q.bytesFor(cj)
-	b.contributed -= cj.totalBlockBytes
-	b.gauge.Sub(float64(cj.totalBlockBytes))
+	b.contributed -= cj.value.totalBlockBytes
+	b.gauge.Sub(float64(cj.value.totalBlockBytes))
 }

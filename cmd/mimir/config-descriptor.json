@@ -14640,7 +14640,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.",
+              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of lanes, in the order they should be served. Valid lanes: plan, compact, compact-p1, compact-p2. The compact-p1 and compact-p2 lanes only differ from compact when the scheduler's lane policy separates compaction by urgency.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -14856,12 +14856,44 @@
               "kind": "field",
               "name": "policy",
               "required": false,
-              "desc": "The lane policy the compactor scheduler should use. Valid values: simple",
+              "desc": "The lane policy the compactor scheduler should use. Valid values: simple, compaction-urgency",
               "fieldValue": null,
               "fieldDefaultValue": "simple",
               "fieldFlag": "compactor-scheduler.lane-policy.policy",
               "fieldType": "string",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "compaction_urgency",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "p1_max_span",
+                  "required": false,
+                  "desc": "Compaction jobs whose source blocks span at most this duration are served from the p1 lane. Jobs spanning longer are served from the p2 lane.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 7200000000000,
+                  "fieldFlag": "compactor-scheduler.lane-policy.compaction-urgency.p1-max-span",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "out_of_order_p1",
+                  "required": false,
+                  "desc": "Serve out-of-order compaction jobs from the p1 lane regardless of the duration they span. Disable if out-of-order jobs for a tenant grow large enough to dominate the p1 lane.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "compactor-scheduler.lane-policy.compaction-urgency.out-of-order-p1",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
