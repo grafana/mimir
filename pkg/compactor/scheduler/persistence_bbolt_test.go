@@ -74,7 +74,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	})
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
@@ -108,7 +108,7 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 		require.NoError(t, mgr.Close())
 	})
 
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
@@ -256,7 +256,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	require.Len(t, mgr.dbs, 2)
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
@@ -318,7 +318,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "extra shard file should be deleted")
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
