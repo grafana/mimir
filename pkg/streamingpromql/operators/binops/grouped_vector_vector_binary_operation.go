@@ -495,14 +495,22 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 		}
 	}
 
-	labelsToRemove := g.VectorMatching.Include
+	labelsToRemove := make([]string, 0, len(g.VectorMatching.Include)+1)
+	for _, l := range g.VectorMatching.Include {
+		// Remove the include labels from the key of the many side when the grouping is `on(label)`.
+		// When it's `ignore(label)` we need to keep the include labels that aren't part of the matching
+		// set otherwise the series is non-unique. __name__ is never part of the key when used as an
+		// include label.
+		if l == model.MetricNameLabel || g.VectorMatching.On || slices.Contains(g.VectorMatching.MatchingLabels, l) {
+			labelsToRemove = append(labelsToRemove, l)
+		}
+	}
 
 	if g.shouldRemoveMetricNameFromManySide() {
-		labelsToRemove = make([]string, 0, len(g.VectorMatching.Include)+1)
 		labelsToRemove = append(labelsToRemove, model.MetricNameLabel)
-		labelsToRemove = append(labelsToRemove, g.VectorMatching.Include...)
-		slices.Sort(labelsToRemove)
 	}
+
+	slices.Sort(labelsToRemove)
 
 	return func(manySideLabels labels.Labels) []byte {
 		buf = manySideLabels.BytesWithoutLabels(buf, labelsToRemove...)
