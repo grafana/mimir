@@ -80,6 +80,9 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.podAutomountServiceAccountToken" (dict "ctx" . "component" "ingester")) }}
+      automountServiceAccountToken: {{ . }}
+      {{- end }}
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
