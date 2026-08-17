@@ -31,7 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
-
+* [BUGFIX] Gateway: update the default NGINX unprivileged image tag to a maintained mainline Alpine tag. #16167
 
 ## 6.2.0
 
