@@ -35,6 +35,13 @@
     autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
+    // Target utilization of the -distributor.instance-limits.max-inflight-push-requests limit.
+    // Distributor CPU utilization scales with the number of samples, while the inflight limit caps the
+    // number of concurrent requests, so a workload made of many small write requests can saturate the
+    // limit and shed load with 503 "limit exceeded" while CPU utilization sits comfortably at target.
+    // Set to a value > 0 to add a trigger scaling on inflight push requests. Disabled by default
+    // because it requires cortex_distributor_inflight_push_requests to be queryable by the autoscaler.
+    autoscaling_distributor_inflight_push_requests_target_utilization: 0,
 
     autoscaling_ruler_enabled: false,
     autoscaling_ruler_min_replicas_per_zone: error 'you must set autoscaling_ruler_min_replicas_per_zone in the _config',
@@ -760,6 +767,38 @@
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
       weight=weight,
+      extra_triggers=if $._config.autoscaling_distributor_inflight_push_requests_target_utilization <= 0 then [] else [
+        {
+          local trigger_name = '%s-inflight-push-requests' % name,
+          local max_inflight_push_requests =
+            if std.objectHas($.distributor_args, 'distributor.instance-limits.max-inflight-push-requests')
+            then $.distributor_args['distributor.instance-limits.max-inflight-push-requests']
+            else $.util.getFlagDefault('distributor.instance-limits.max-inflight-push-requests'),
+          local query_params = {
+            namespace: $._config.namespace,
+            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+          },
+
+          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(trigger_name, '-', '_'), $._config.namespace],
+
+          // Each distributor tracks the number of push requests it is currently handling. With the
+          // following query we target to keep the peak observed concurrency below the configured
+          // fraction of -distributor.instance-limits.max-inflight-push-requests, so we have room for
+          // higher peaks before the distributor starts shedding load with 503 "limit exceeded".
+          //
+          // This metric covers the case where write requests are small enough that request concurrency
+          // saturates the inflight limit while CPU and memory utilization stay at target, so no other
+          // scaling metric reacts. The limit counts requests, whereas distributor CPU scales with the
+          // number of samples, so the two diverge as the average request gets smaller.
+          query: queryWithWeight('sum(max_over_time(cortex_distributor_inflight_push_requests{container="distributor",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % query_params, weight),
+
+          threshold: '%d' % std.floor(max_inflight_push_requests * $._config.autoscaling_distributor_inflight_push_requests_target_utilization),
+
+          // Do not let KEDA use the value "0" as scaling metric if the query returns no result
+          // (e.g. distributors are crashing).
+          ignore_null_values: false,
+        },
+      ],
     ) + (
       {
         spec+: {

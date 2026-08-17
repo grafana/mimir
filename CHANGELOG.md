@@ -218,6 +218,7 @@
 * [CHANGE] Query-frontend: Enable query sharding by default. Disable it by setting `_config.query_sharding_enabled` to `false`. #16212
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
+* [FEATURE] Distributor: add an optional autoscaling trigger on inflight push requests, enabled by setting `autoscaling_distributor_inflight_push_requests_target_utilization` to a value greater than 0. Distributor CPU utilization scales with the number of samples while `-distributor.instance-limits.max-inflight-push-requests` caps the number of concurrent requests, so a workload made of many small write requests can saturate the limit and shed load with 503s while CPU utilization stays at target. Requires `cortex_distributor_inflight_push_requests` to be queryable by the autoscaler. #16394
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.1. #15328, #15626, #16129
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757

@@ -2141,6 +2141,14 @@ spec:
       threshold: "3058016714"
     name: cortex_distributor_memory_hpa_default
     type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_distributor_inflight_push_requests_hpa_default
+      query: sum(max_over_time(cortex_distributor_inflight_push_requests{container="distributor",namespace="default"}[1m]))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "1780"
+    name: cortex_distributor_inflight_push_requests_hpa_default
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
