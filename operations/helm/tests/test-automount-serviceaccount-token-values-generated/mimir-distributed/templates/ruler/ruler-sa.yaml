@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-sa.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-automount-serviceaccount-token-values-mimir-ruler
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-automount-serviceaccount-token-values
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+automountServiceAccountToken: false
+
