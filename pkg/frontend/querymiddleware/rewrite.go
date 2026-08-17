@@ -27,8 +27,6 @@ type rewriteMiddleware struct {
 type rewriteMetrics struct {
 	reorderHistogramAggregationAttempts prometheus.Counter
 	reorderHistogramAggregationRewrites prometheus.Counter
-	propagateMatchersAttempts           prometheus.Counter
-	propagateMatchersRewrites           prometheus.Counter
 }
 
 // newRewriteMiddleware creates a middleware that optimises queries by rewriting them to avoid
@@ -46,14 +44,6 @@ func newRewriteMiddleware(
 		reorderHistogramAggregationRewrites: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_rewrites_reorder_histogram_aggregation_succeeded_total",
 			Help: "Total number of queries where the query-frontend has rewritten the query by reordering histogram aggregations.",
-		}),
-		propagateMatchersAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_rewrites_propagate_matchers_attempted_total",
-			Help: "Total number of queries the query-frontend attempted to rewrite by propagating matchers across binary operations.",
-		}),
-		propagateMatchersRewrites: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_rewrites_propagate_matchers_succeeded_total",
-			Help: "Total number of queries where the query-frontend has rewritten the query by propagating matchers across binary operations.",
 		}),
 	}
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
@@ -108,20 +98,6 @@ func (m *rewriteMiddleware) rewriteRequestQuery(ctx context.Context, r MetricsQu
 		if mapperHistogram.HasChanged() {
 			changed = true
 			m.reorderHistogramAggregationRewrites.Inc()
-		}
-	}
-
-	if m.cfg.RewriteQueriesPropagateMatchers {
-		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
-		m.propagateMatchersAttempts.Inc()
-		var err error
-		rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
-		if err != nil {
-			return nil, false, err
-		}
-		if mapperPropagateMatchers.HasChanged() {
-			changed = true
-			m.propagateMatchersRewrites.Inc()
 		}
 	}
 
