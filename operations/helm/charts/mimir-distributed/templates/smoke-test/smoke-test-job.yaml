@@ -20,6 +20,9 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "smoke-test") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "smoke-test")) }}
+      {{ . }}
+      {{- end }}
       {{- if .Values.smoke_test.priorityClassName }}
       priorityClassName: {{ .Values.smoke_test.priorityClassName }}
       {{- end }}
