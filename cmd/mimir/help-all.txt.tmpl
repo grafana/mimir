@@ -847,8 +847,6 @@ Usage of ./cmd/mimir/mimir:
     	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
     	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
-  -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
     	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
@@ -881,8 +879,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
     	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
-  -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
@@ -1815,8 +1811,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream. (default 3)
   -ingest-storage.kafka.warpstream-hedge-min-delay duration
     	[experimental] Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream. (default 500ms)
-  -ingest-storage.kafka.write-clients int
-    	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.kafka.write-timeout-overhead duration
@@ -2429,8 +2423,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.experimental-search-api-enabled
     	[experimental] If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.
-  -querier.filter-queryables-enabled
-    	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration
@@ -2801,8 +2793,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
-  -query-frontend.cache-samples-processed-stats
-    	[deprecated] Cache statistics of processed samples on results cache. Deprecated: has no effect.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.cardinality-sharding-max-sharded-queries int
