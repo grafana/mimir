@@ -120,6 +120,13 @@ type oneToOneBinaryOperationOutputSeries struct {
 	leftSeriesIndices []int
 	rightSide         *oneToOneBinaryOperationRightSide
 
+	// fill is non-nil when a fill modifier is active for this series.
+	fill *oneToOneBinaryOperationFillState
+}
+
+// oneToOneBinaryOperationFillState holds the fill-specific state for an output series.
+// It is non-nil only when a fill modifier is active for this series.
+type oneToOneBinaryOperationFillState struct {
 	// fillMissingLeft is true when this output series has no real left side and the left operand is
 	// synthesised from the LHS fill value. leftSeriesIndices is then empty and rightSide is populated.
 	fillMissingLeft bool
@@ -208,8 +215,8 @@ type oneToOneBinaryOperationSplitGroup struct {
 // The operator must read the carrier after every other matched output series of its group (see
 // groupLatestLeftSeriesIndex).
 func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
-	if s.fillLeftCarrier {
-		return s.groupLatestLeftSeriesIndex
+	if s.fill != nil && s.fill.fillLeftCarrier {
+		return s.fill.groupLatestLeftSeriesIndex
 	}
 
 	if len(s.leftSeriesIndices) == 0 {
@@ -625,7 +632,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			// every matched output series of the group, a second pass
 			// (addNameDroppedFillLeftSiblings) adds the sibling.
 			if splitFillLeftName {
-				series.splitHolder = splitGroup.holder
+				series.fill = &oneToOneBinaryOperationFillState{splitHolder: splitGroup.holder}
 				splitGroup.matchedSeriesCount++
 			}
 
@@ -733,7 +740,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 		outputSeries, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]
 
 		if exists {
-			if !outputSeries.series.fillMissingRight {
+			if outputSeries.series.fill == nil || !outputSeries.series.fill.fillMissingRight {
 				// This branch is unreachable. A collision here means a bug in the query engine.
 				//
 				// The operator could not merge into the existing series anyway. The existing series is a
@@ -787,7 +794,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
-			series: &oneToOneBinaryOperationOutputSeries{fillMissingRight: true, leftSeriesIndices: []int{leftSeriesIndex}},
+			series: &oneToOneBinaryOperationOutputSeries{fill: &oneToOneBinaryOperationFillState{fillMissingRight: true}, leftSeriesIndices: []int{leftSeriesIndex}},
 		}
 	}
 
@@ -853,7 +860,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 		if existing, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
 			// Only a matched output series of this same group can collide here. Every other collision
 			// is impossible (see the doc comment), so treat one as a bug.
-			if existing.series.splitHolder != group.holder {
+			if existing.series.fill == nil || existing.series.fill.splitHolder != group.holder {
 				return fmt.Errorf("unexpected output series collision for match group %v while adding the name-dropped fill-left series for operator %v; this indicates a bug in the query engine", outputSeriesLabels, b.Op)
 			}
 
@@ -862,15 +869,15 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 				// left-side presence is therefore the whole group's presence. The group has no other
 				// matched output series to keep the fill-left points out of. The split serves no
 				// purpose. Clear it and let the series emit its fill-left points inline.
-				existing.series.splitHolder = nil
+				existing.series.fill.splitHolder = nil
 				continue
 			}
 
 			// The group has more than one matched output series. So the operator must still keep the
 			// fill-left points out of the other matched output series. Make the colliding series the
 			// group's fill-left carrier.
-			existing.series.fillLeftCarrier = true
-			existing.series.groupLatestLeftSeriesIndex = group.latestLeftSeriesIndex
+			existing.series.fill.fillLeftCarrier = true
+			existing.series.fill.groupLatestLeftSeriesIndex = group.latestLeftSeriesIndex
 			continue
 		}
 
@@ -885,11 +892,13 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
 			series: &oneToOneBinaryOperationOutputSeries{
-				rightSide:                  group.rightSide,
-				splitHolder:                group.holder,
-				fillLeftCarrier:            true,
-				nameDropped:                true,
-				groupLatestLeftSeriesIndex: group.latestLeftSeriesIndex,
+				rightSide: group.rightSide,
+				fill: &oneToOneBinaryOperationFillState{
+					splitHolder:                group.holder,
+					fillLeftCarrier:            true,
+					nameDropped:                true,
+					groupLatestLeftSeriesIndex: group.latestLeftSeriesIndex,
+				},
 			},
 		}
 	}
@@ -963,7 +972,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedRightGroupsWithFilledL
 
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
-			series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide, fillMissingLeft: true},
+			series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide, fill: &oneToOneBinaryOperationFillState{fillMissingLeft: true}},
 		}
 	}
 
@@ -1106,7 +1115,7 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 // series as equal. sort.Sort is not stable, so the carrier could then run before the group's
 // left-side presence is complete.
 func fillLeftCarrierLast(i, j *oneToOneBinaryOperationOutputSeries) bool {
-	return !i.fillLeftCarrier && j.fillLeftCarrier
+	return (i.fill == nil || !i.fill.fillLeftCarrier) && j.fill != nil && j.fill.fillLeftCarrier
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -1117,16 +1126,16 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
 
-	if thisSeries.fillMissingLeft {
+	if thisSeries.fill != nil && thisSeries.fill.fillMissingLeft {
 		return b.nextFilledLeftSeries(ctx, thisSeries)
 	}
 
-	if thisSeries.nameDropped {
+	if thisSeries.fill != nil && thisSeries.fill.nameDropped {
 		// This is the name-dropped sibling of a name-retaining fill-left split group. sortSeries places
 		// the sibling after every matched output series of its group. The last matched read has
 		// therefore already computed and stored the group's fill-left points. Take them and clear the
 		// holder, so the operator neither returns them twice nor frees them twice.
-		holder := thisSeries.splitHolder
+		holder := thisSeries.fill.splitHolder
 
 		if !holder.computed {
 			return types.InstantVectorSeriesData{}, fmt.Errorf("read the name-dropped fill-left series of a match group before the group was evaluated for operator %v; this indicates a bug in the query engine", b.Op)
@@ -1140,7 +1149,9 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	rightSide := thisSeries.rightSide
 
-	if !thisSeries.fillMissingRight && rightSide.rightSeriesIndices != nil {
+	fillMissingRight := thisSeries.fill != nil && thisSeries.fill.fillMissingRight
+
+	if !fillMissingRight && rightSide.rightSeriesIndices != nil {
 		// Right side hasn't been populated yet.
 		if err := b.populateRightSide(ctx, rightSide); err != nil {
 			return types.InstantVectorSeriesData{}, err
@@ -1149,7 +1160,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	var isLastUseOfRightSide bool
 
-	if thisSeries.fillMissingRight {
+	if fillMissingRight {
 		// A filled-right output series has no shared right side, so this is always its last use.
 		isLastUseOfRightSide = true
 	} else {
@@ -1158,7 +1169,9 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		isLastUseOfRightSide = rightSide.outputSeriesCount == 0
 	}
 
-	if thisSeries.fillLeftCarrier && !isLastUseOfRightSide {
+	fillLeftCarrier := thisSeries.fill != nil && thisSeries.fill.fillLeftCarrier
+
+	if fillLeftCarrier && !isLastUseOfRightSide {
 		// sortSeries places the fill-left carrier after every other matched output series of its group.
 		// The read of the carrier is therefore always the last use of the group's right side.
 		return types.InstantVectorSeriesData{}, fmt.Errorf("read the fill-left carrier of a match group before the group was evaluated for operator %v; this indicates a bug in the query engine", b.Op)
@@ -1171,7 +1184,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	// If the right side matches to many output series, check for conflicts between those left side series
 	// before we apply any filtering operations (https://github.com/prometheus/prometheus/pull/17668).
-	if !thisSeries.fillMissingRight && rightSide.leftSidePresence != nil {
+	if !fillMissingRight && rightSide.leftSidePresence != nil {
 		for i, leftSeries := range allLeftSeries {
 			seriesIdx := thisSeries.leftSeriesIndices[i]
 
@@ -1190,7 +1203,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	// then produces output at every left timestep, via the same per-timestep fill path used for
 	// intermittently matched groups.
 	var rightData types.InstantVectorSeriesData
-	if !thisSeries.fillMissingRight {
+	if !fillMissingRight {
 		rightData = rightSide.mergedData
 	}
 
@@ -1201,7 +1214,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if thisSeries.fillMissingRight {
+	if fillMissingRight {
 		// There was no real right side to release.
 		return finalResult, nil
 	}
@@ -1209,7 +1222,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	if fillLeft.mode == missingLeftSeparate {
 		// This is the last matched read of a split group, so fillLeftResult holds the group's fill-left
 		// points.
-		if thisSeries.fillLeftCarrier {
+		if fillLeftCarrier {
 			// This matched output series already carries the group's match key labels. So the group has
 			// no name-dropped sibling, and this series emits the group's fill-left points itself.
 			finalResult, err = b.mergeGroupFillLeftPoints(finalResult, fillLeftResult)
@@ -1218,8 +1231,8 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 			}
 		} else {
 			// Keep the group's fill-left points for the name-dropped sibling.
-			thisSeries.splitHolder.fillLeft = fillLeftResult
-			thisSeries.splitHolder.computed = true
+			thisSeries.fill.splitHolder.fillLeft = fillLeftResult
+			thisSeries.fill.splitHolder.computed = true
 		}
 	}
 
@@ -1252,7 +1265,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 // right side. The group then has a single matched output series. The left side of this read is
 // therefore the whole left side of the group, and the evaluator skips no step.
 func (b *OneToOneVectorVectorBinaryOperation) fillLeftOptionsFor(thisSeries *oneToOneBinaryOperationOutputSeries, rightSide *oneToOneBinaryOperationRightSide, isLastUseOfRightSide bool) fillLeftOptions {
-	if thisSeries.splitHolder == nil {
+	if thisSeries.fill == nil || thisSeries.fill.splitHolder == nil {
 		return fillLeftOptions{mode: missingLeftInResult}
 	}
 
@@ -1450,10 +1463,10 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 		//
 		// Every remaining output series of the group points at the same holder, so clear the holder
 		// here. That releases the points exactly once.
-		if s.splitHolder != nil {
-			types.PutInstantVectorSeriesData(s.splitHolder.fillLeft, b.MemoryConsumptionTracker)
-			s.splitHolder.fillLeft = types.InstantVectorSeriesData{}
-			s.splitHolder.computed = false
+		if s.fill != nil && s.fill.splitHolder != nil {
+			types.PutInstantVectorSeriesData(s.fill.splitHolder.fillLeft, b.MemoryConsumptionTracker)
+			s.fill.splitHolder.fillLeft = types.InstantVectorSeriesData{}
+			s.fill.splitHolder.computed = false
 		}
 	}
 

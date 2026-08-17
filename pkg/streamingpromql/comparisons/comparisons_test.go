@@ -30,7 +30,6 @@ func TestUpstreamTestCases(t *testing.T) {
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.EnableDelayedNameRemoval = true
 	opts.Limits = limits
-
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)

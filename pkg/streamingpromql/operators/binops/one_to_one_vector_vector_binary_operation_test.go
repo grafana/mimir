@@ -419,19 +419,19 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 					leftSeriesIndices: []int{2},
 					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
-				{
-					leftSeriesIndices: []int{1},
-					rightSide:         nil,
-					fillMissingRight:  true,
-				},
+			{
+				leftSeriesIndices: []int{1},
+				rightSide:         nil,
+				fill:              &oneToOneBinaryOperationFillState{fillMissingRight: true},
 			},
-
-			// Favour left (left asc, tie right asc): input[1](L=1) < input[0](L=2).
-			expectedOrderFavouringLeftSide: []int{1, 0},
-			// Favour right (right asc, tie left asc): input[1](R=-1) < input[0](R=2).
-			expectedOrderFavouringRightSide: []int{1, 0},
 		},
-		"fill-missing-left series mixed with a normal series": {
+
+		// Favour left (left asc, tie right asc): input[1](L=1) < input[0](L=2).
+		expectedOrderFavouringLeftSide: []int{1, 0},
+		// Favour right (right asc, tie left asc): input[1](R=-1) < input[0](R=2).
+		expectedOrderFavouringRightSide: []int{1, 0},
+	},
+	"fill-missing-left series mixed with a normal series": {
 			// input[0]: normal           -> latestLeftSeries=2, latestRightSeries=2
 			// input[1]: fill-missing-left -> latestLeftSeries=-1, latestRightSeries=1
 			series: []*oneToOneBinaryOperationOutputSeries{
@@ -439,19 +439,19 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 					leftSeriesIndices: []int{2},
 					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
-				{
-					leftSeriesIndices: nil,
-					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
-					fillMissingLeft:   true,
-				},
+			{
+				leftSeriesIndices: nil,
+				rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
+				fill:              &oneToOneBinaryOperationFillState{fillMissingLeft: true},
 			},
-
-			// Favour left (left asc, tie right asc): input[1](L=-1) < input[0](L=2).
-			expectedOrderFavouringLeftSide: []int{1, 0},
-			// Favour right (right asc, tie left asc): input[1](R=1) < input[0](R=2).
-			expectedOrderFavouringRightSide: []int{1, 0},
 		},
-		"mix of one fill-missing-left, one fill-missing-right, and one normal series": {
+
+		// Favour left (left asc, tie right asc): input[1](L=-1) < input[0](L=2).
+		expectedOrderFavouringLeftSide: []int{1, 0},
+		// Favour right (right asc, tie left asc): input[1](R=1) < input[0](R=2).
+		expectedOrderFavouringRightSide: []int{1, 0},
+	},
+	"mix of one fill-missing-left, one fill-missing-right, and one normal series": {
 			// input[0]: normal            -> latestLeftSeries=2, latestRightSeries=2
 			// input[1]: fill-missing-left  -> latestLeftSeries=-1, latestRightSeries=3
 			// input[2]: fill-missing-right -> latestLeftSeries=3, latestRightSeries=-1
@@ -460,16 +460,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 					leftSeriesIndices: []int{2},
 					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
-				{
-					leftSeriesIndices: nil,
-					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
-					fillMissingLeft:   true,
-				},
-				{
-					leftSeriesIndices: []int{3},
-					rightSide:         nil,
-					fillMissingRight:  true,
-				},
+			{
+				leftSeriesIndices: nil,
+				rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
+				fill:              &oneToOneBinaryOperationFillState{fillMissingLeft: true},
+			},
+			{
+				leftSeriesIndices: []int{3},
+				rightSide:         nil,
+				fill:              &oneToOneBinaryOperationFillState{fillMissingRight: true},
+			},
 			},
 
 			// Favour left (left asc): L values input[0]=2, input[1]=-1, input[2]=3 -> -1, 2, 3.
@@ -484,16 +484,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			// input[1]: fill-missing-right -> latestLeftSeries=1, latestRightSeries=-1
 			// input[2]: normal             -> latestLeftSeries=2, latestRightSeries=2
 			series: []*oneToOneBinaryOperationOutputSeries{
-				{
-					leftSeriesIndices: []int{3},
-					rightSide:         nil,
-					fillMissingRight:  true,
-				},
-				{
-					leftSeriesIndices: []int{1},
-					rightSide:         nil,
-					fillMissingRight:  true,
-				},
+			{
+				leftSeriesIndices: []int{3},
+				rightSide:         nil,
+				fill:              &oneToOneBinaryOperationFillState{fillMissingRight: true},
+			},
+			{
+				leftSeriesIndices: []int{1},
+				rightSide:         nil,
+				fill:              &oneToOneBinaryOperationFillState{fillMissingRight: true},
+			},
 				{
 					leftSeriesIndices: []int{2},
 					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
@@ -513,16 +513,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			// input[1]: fill-missing-left -> latestLeftSeries=-1, latestRightSeries=1
 			// input[2]: normal            -> latestLeftSeries=2, latestRightSeries=2
 			series: []*oneToOneBinaryOperationOutputSeries{
-				{
-					leftSeriesIndices: nil,
-					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
-					fillMissingLeft:   true,
-				},
-				{
-					leftSeriesIndices: nil,
-					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
-					fillMissingLeft:   true,
-				},
+			{
+				leftSeriesIndices: nil,
+				rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
+				fill:              &oneToOneBinaryOperationFillState{fillMissingLeft: true},
+			},
+			{
+				leftSeriesIndices: nil,
+				rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
+				fill:              &oneToOneBinaryOperationFillState{fillMissingLeft: true},
+			},
 				{
 					leftSeriesIndices: []int{2},
 					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
@@ -544,60 +544,64 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			// input[0]: sibling -> latestLeftSeries=1, latestRightSeries=0
 			// input[1]: matched -> latestLeftSeries=0, latestRightSeries=0
 			// input[2]: matched -> latestLeftSeries=1, latestRightSeries=0
-			series: []*oneToOneBinaryOperationOutputSeries{
-				{
-					rightSide:                  siblingGroupRightSide,
+		series: []*oneToOneBinaryOperationOutputSeries{
+			{
+				rightSide: siblingGroupRightSide,
+				fill: &oneToOneBinaryOperationFillState{
 					splitHolder:                &oneToOneBinaryOperationSplitHolder{},
 					fillLeftCarrier:            true,
 					nameDropped:                true,
 					groupLatestLeftSeriesIndex: 1,
 				},
-				{
-					leftSeriesIndices: []int{0},
-					rightSide:         siblingGroupRightSide,
-					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
-				},
-				{
-					leftSeriesIndices: []int{1},
-					rightSide:         siblingGroupRightSide,
-					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
-				},
 			},
-
-			expectedOrderFavouringLeftSide:  []int{1, 2, 0},
-			expectedOrderFavouringRightSide: []int{1, 2, 0},
+			{
+				leftSeriesIndices: []int{0},
+				rightSide:         siblingGroupRightSide,
+				fill:              &oneToOneBinaryOperationFillState{splitHolder: &oneToOneBinaryOperationSplitHolder{}},
+			},
+			{
+				leftSeriesIndices: []int{1},
+				rightSide:         siblingGroupRightSide,
+				fill:              &oneToOneBinaryOperationFillState{splitHolder: &oneToOneBinaryOperationSplitHolder{}},
+			},
 		},
-		"fill-left carrier that is a matched series sorts after every other matched series of the group": {
+
+		expectedOrderFavouringLeftSide:  []int{1, 2, 0},
+		expectedOrderFavouringRightSide: []int{1, 2, 0},
+	},
+	"fill-left carrier that is a matched series sorts after every other matched series of the group": {
 			// A split group whose fill-left carrier is one of its matched output series. The carrier
 			// reads left series 0, but it reports the group's highest left series index (2). So it ties
 			// with input[2] on both sides, and only the final tie-break puts it last.
 			// input[0]: carrier -> latestLeftSeries=2, latestRightSeries=0
 			// input[1]: matched -> latestLeftSeries=1, latestRightSeries=0
 			// input[2]: matched -> latestLeftSeries=2, latestRightSeries=0
-			series: []*oneToOneBinaryOperationOutputSeries{
-				{
-					leftSeriesIndices:          []int{0},
-					rightSide:                  carrierGroupRightSide,
+		series: []*oneToOneBinaryOperationOutputSeries{
+			{
+				leftSeriesIndices: []int{0},
+				rightSide:         carrierGroupRightSide,
+				fill: &oneToOneBinaryOperationFillState{
 					splitHolder:                &oneToOneBinaryOperationSplitHolder{},
 					fillLeftCarrier:            true,
 					groupLatestLeftSeriesIndex: 2,
 				},
-				{
-					leftSeriesIndices: []int{1},
-					rightSide:         carrierGroupRightSide,
-					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
-				},
-				{
-					leftSeriesIndices: []int{2},
-					rightSide:         carrierGroupRightSide,
-					splitHolder:       &oneToOneBinaryOperationSplitHolder{},
-				},
 			},
-
-			expectedOrderFavouringLeftSide:  []int{1, 2, 0},
-			expectedOrderFavouringRightSide: []int{1, 2, 0},
+			{
+				leftSeriesIndices: []int{1},
+				rightSide:         carrierGroupRightSide,
+				fill:              &oneToOneBinaryOperationFillState{splitHolder: &oneToOneBinaryOperationSplitHolder{}},
+			},
+			{
+				leftSeriesIndices: []int{2},
+				rightSide:         carrierGroupRightSide,
+				fill:              &oneToOneBinaryOperationFillState{splitHolder: &oneToOneBinaryOperationSplitHolder{}},
+			},
 		},
-	}
+
+		expectedOrderFavouringLeftSide:  []int{1, 2, 0},
+		expectedOrderFavouringRightSide: []int{1, 2, 0},
+	},
+}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -1582,54 +1586,56 @@ func TestOneToOneVectorVectorBinaryOperation_FillLeft_NameRetainingSplitOutputSe
 						groupRightSide *oneToOneBinaryOperationRightSide
 					)
 
-					for l, expectedLeftSeriesIndices := range group.matchedSeries {
-						series := seriesByLabels[l]
-						require.NotNilf(t, series, "expected an output series with labels %v", l)
-						require.Equalf(t, expectedLeftSeriesIndices, series.leftSeriesIndices, "unexpected left series indices for %v", l)
-						require.Falsef(t, series.nameDropped, "%v is a matched output series, so it must not be name-dropped", l)
-						require.NotNilf(t, series.rightSide, "expected %v to have a right side", l)
+				for l, expectedLeftSeriesIndices := range group.matchedSeries {
+					series := seriesByLabels[l]
+					require.NotNilf(t, series, "expected an output series with labels %v", l)
+					require.Equalf(t, expectedLeftSeriesIndices, series.leftSeriesIndices, "unexpected left series indices for %v", l)
+					require.Falsef(t, series.fill != nil && series.fill.nameDropped, "%v is a matched output series, so it must not be name-dropped", l)
+					require.NotNilf(t, series.rightSide, "expected %v to have a right side", l)
 
-						if groupRightSide == nil {
-							groupRightSide = series.rightSide
-						}
-
-						require.Samef(t, groupRightSide, series.rightSide, "every matched output series of the group must share one right side, but %v does not", l)
-
-						if group.fillLeftCarrier == "" {
-							// The collision path cleared the split for the whole group.
-							require.Nilf(t, series.splitHolder, "expected the split to be cleared for %v", l)
-							require.Falsef(t, series.fillLeftCarrier, "expected %v not to carry the group's fill-left points", l)
-							continue
-						}
-
-						require.NotNilf(t, series.splitHolder, "expected %v to have a split holder", l)
-
-						if groupHolder == nil {
-							groupHolder = series.splitHolder
-						}
-
-						require.Samef(t, groupHolder, series.splitHolder, "every output series of the group must share one split holder, but %v does not", l)
+					if groupRightSide == nil {
+						groupRightSide = series.rightSide
 					}
 
-					require.NotNil(t, groupRightSide)
-					require.Equal(t, group.rightSideOutputSeriesCount, groupRightSide.outputSeriesCount, "unexpected number of output series counted against the group's right side")
+					require.Samef(t, groupRightSide, series.rightSide, "every matched output series of the group must share one right side, but %v does not", l)
 
 					if group.fillLeftCarrier == "" {
-						return
+						// The collision path cleared the split for the whole group.
+						require.Truef(t, series.fill == nil || series.fill.splitHolder == nil, "expected the split to be cleared for %v", l)
+						require.Falsef(t, series.fill != nil && series.fill.fillLeftCarrier, "expected %v not to carry the group's fill-left points", l)
+						continue
 					}
 
-					carrier := seriesByLabels[group.fillLeftCarrier]
-					require.NotNilf(t, carrier, "expected a fill-left carrier with labels %v", group.fillLeftCarrier)
-					require.True(t, carrier.fillLeftCarrier, "expected the carrier to be marked as such")
-					require.Same(t, groupHolder, carrier.splitHolder, "the carrier must share the group's split holder")
-					require.Same(t, groupRightSide, carrier.rightSide, "the carrier must share the group's right side")
-					require.Equal(t, group.latestLeftSeriesIndex, carrier.groupLatestLeftSeriesIndex)
-					require.Equal(t, group.latestLeftSeriesIndex, carrier.latestLeftSeries(), "the carrier must report the group's highest left series index")
+					require.NotNilf(t, series.fill, "expected %v to have fill state", l)
+					require.NotNilf(t, series.fill.splitHolder, "expected %v to have a split holder", l)
 
-					require.Equal(t, group.carrierIsSibling, carrier.nameDropped)
-					if group.carrierIsSibling {
-						require.Empty(t, carrier.leftSeriesIndices, "the name-dropped sibling must read no left series of its own")
+					if groupHolder == nil {
+						groupHolder = series.fill.splitHolder
 					}
+
+					require.Samef(t, groupHolder, series.fill.splitHolder, "every output series of the group must share one split holder, but %v does not", l)
+				}
+
+				require.NotNil(t, groupRightSide)
+				require.Equal(t, group.rightSideOutputSeriesCount, groupRightSide.outputSeriesCount, "unexpected number of output series counted against the group's right side")
+
+				if group.fillLeftCarrier == "" {
+					return
+				}
+
+				carrier := seriesByLabels[group.fillLeftCarrier]
+				require.NotNilf(t, carrier, "expected a fill-left carrier with labels %v", group.fillLeftCarrier)
+				require.NotNilf(t, carrier.fill, "expected the carrier to have fill state")
+				require.True(t, carrier.fill.fillLeftCarrier, "expected the carrier to be marked as such")
+				require.Same(t, groupHolder, carrier.fill.splitHolder, "the carrier must share the group's split holder")
+				require.Same(t, groupRightSide, carrier.rightSide, "the carrier must share the group's right side")
+				require.Equal(t, group.latestLeftSeriesIndex, carrier.fill.groupLatestLeftSeriesIndex)
+				require.Equal(t, group.latestLeftSeriesIndex, carrier.latestLeftSeries(), "the carrier must report the group's highest left series index")
+
+				require.Equal(t, group.carrierIsSibling, carrier.fill.nameDropped)
+				if group.carrierIsSibling {
+					require.Empty(t, carrier.leftSeriesIndices, "the name-dropped sibling must read no left series of its own")
+				}
 
 					// Each group must have its own holder. The map key is a pointer, so the lookup
 					// compares identity and not the holder's contents.
