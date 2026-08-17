@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.40.0. The rendered rollout-operator manifests no longer set the deprecated `-zpdb.pod-ready-annotation-patch-timeout` flag and no longer grant the `patch` verb on pods, because cross-zone eviction delays now read the Pod Ready condition instead of patching the `grafana.com/ready-time` annotation. #16564
+* [ENHANCEMENT] Allow opting out of ServiceAccount token auto-mounting either on PodSpec or ServiceAccount level per the CIS Kubernetes Benchmark recommendation "Ensure that Service Account Tokens are only mounted where necessary". #16127
 * [BUGFIX] Gateway: use the distributor ClusterIP Service when `distributor.service.trafficDistribution` is configured so that Kubernetes traffic distribution can take effect. #16448
 * [BUGFIX] Alertmanager: Render priorityClassName in Deployment based on the `alertmanager` per-component value. Historically the value from `query_frontend` was being mistakenly rendered. #16537
 

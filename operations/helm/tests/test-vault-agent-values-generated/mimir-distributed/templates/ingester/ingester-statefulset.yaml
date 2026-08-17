@@ -66,6 +66,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-vault-agent-values-mimir
+      automountServiceAccountToken: true
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -213,6 +214,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-vault-agent-values-mimir
+      automountServiceAccountToken: true
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -360,6 +362,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-vault-agent-values-mimir
+      automountServiceAccountToken: true
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
