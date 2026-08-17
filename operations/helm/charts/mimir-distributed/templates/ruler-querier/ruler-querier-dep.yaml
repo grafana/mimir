@@ -31,6 +31,9 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler-querier") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "ruler-querier")) }}
+      {{ . }}
+      {{- end }}
       {{- if .Values.ruler_querier.priorityClassName }}
       priorityClassName: {{ .Values.ruler_querier.priorityClassName }}
       {{- end }}

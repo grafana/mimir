@@ -47,6 +47,9 @@ spec:
 
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" $.ctx }}
+      {{- with (include "mimir.lib.automountServiceAccountToken" (dict "ctx" $.ctx "component" $.component)) }}
+      {{ . }}
+      {{- end }}
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
