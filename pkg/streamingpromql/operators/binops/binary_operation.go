@@ -343,8 +343,10 @@ const (
 
 // fillLeftOptions controls the fill-left branch of computeResult.
 //
-// The zero value keeps every kept fill-left point in result. That is what every caller that does not
-// split a match group needs.
+// The zero value (mode == missingLeftInResult, leftSidePresence == nil) keeps every fill-left point
+// in result. A nil leftSidePresence means "evaluate every fill-left timestep"; an empty non-nil
+// slice means "no timestep has a left sample", which is a different value. Every caller that does
+// not split a match group uses the zero value.
 type fillLeftOptions struct {
 	// mode selects what computeResult does at a timestep where only the right side has a sample.
 	mode missingLeftMode
@@ -501,7 +503,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	e.leftIterator.Reset(left)
 	e.rightIterator.Reset(right)
 
-	// Get first sample from left and right
+	// Get the first sample from the left and right iterators.
 	lT, lF, lH, lHIndex, lOk := e.leftIterator.Next()
 	rT, rF, rH, rHIndex, rOk := e.rightIterator.Next()
 
@@ -583,7 +585,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	// is true only in the missingLeftSeparate mode, and only at a fill-left timestep.
 	//
 	// appendHistogram compares its result against the outer loop values to decide whether to nil them for
-	// safe slice reuse, and on fill paths lHOp/rHOp differ from them (ie if one operand is nil).
+	// safe slice reuse. On fill paths lHOp/rHOp are nil because fill values are floats, not histograms.
 	appendNextSample := func(t int64, lF, rF float64, lHOp, rHOp *histogram.FloatHistogram, toFillLeftSeparate bool) error {
 		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lHOp, rHOp, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
 

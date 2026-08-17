@@ -265,7 +265,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.oneSideMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
+		// No series on the "one" side. With fill, the "many" side could still produce output,
+		// but grouped fill is not yet implemented — the planner rejects it before reaching here.
 		return false, nil
 	}
 
@@ -750,7 +751,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context
 		return nil
 	}
 
-	// First time we've used this "one" side, populate it.
+	// First time we've used this "many" side, populate it.
 	data, err := g.manySideBuffer.GetSeries(ctx, side.seriesIndices)
 	if err != nil {
 		return err

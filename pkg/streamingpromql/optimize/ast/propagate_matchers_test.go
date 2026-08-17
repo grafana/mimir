@@ -163,6 +163,15 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
+
+	// Fill modifiers: matchers must not propagate into the filled side.
+	// fill_right: the right side is filled, so matchers from the left must not propagate to the right.
+	`up{foo="bar"} + fill_right(0) down`:  `up{foo="bar"} + fill_right(0) down`,
+	// fill_left: the left side is filled, so matchers from the right must not propagate to the left.
+	`up + fill_left(0) down{foo="bar"}`:   `up + fill_left(0) down{foo="bar"}`,
+	// fill (both sides): no propagation in either direction.
+	`up{foo="bar"} + fill(0) down`:        `up{foo="bar"} + fill(0) down`,
+	`up + fill(0) down{foo="bar"}`:        `up + fill(0) down{foo="bar"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.

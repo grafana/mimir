@@ -422,8 +422,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		core.BINARY_POW,
 		core.BINARY_SUB:
 		// Arithmetic operations are always no-ops when one side of the operation is a no-op since
-		// they won't have any matching labels.
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// they won't have any matching labels. A fill modifier synthesises a value for the covered
+		// side, so a statically empty covered side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 
 	case core.BINARY_LAND:
 		return isEitherBinaryExpressionSideEmpty(node, params)
@@ -527,6 +528,35 @@ func isEitherBinaryExpressionSideEmpty(node *core.BinaryExpression, params *plan
 	}
 
 	return isAlwaysEmpty(node.RHS, childParams)
+}
+
+// isEitherBinaryExpressionSideEmptyWithFill returns true if either side of a binary expression
+// is empty and has no fill modifier covering it. A fill modifier synthesises a value for the
+// covered side, so a statically empty covered side still produces output.
+func isEitherBinaryExpressionSideEmptyWithFill(node *core.BinaryExpression, params *planning.QueryParameters) (bool, error) {
+	childParams := childParameters(node, params)
+
+	lhsEmpty, err := isAlwaysEmpty(node.LHS, childParams)
+	if err != nil {
+		return false, err
+	}
+
+	lhsFillSet := node.VectorMatching != nil && node.VectorMatching.FillValues.LhsSet
+	if lhsEmpty && !lhsFillSet {
+		return true, nil
+	}
+
+	rhsEmpty, err := isAlwaysEmpty(node.RHS, childParams)
+	if err != nil {
+		return false, err
+	}
+
+	rhsFillSet := node.VectorMatching != nil && node.VectorMatching.FillValues.RhsSet
+	if rhsEmpty && !rhsFillSet {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // isAlwaysEmptyTimestampComparison returns true if timestampSide and constantSide represent

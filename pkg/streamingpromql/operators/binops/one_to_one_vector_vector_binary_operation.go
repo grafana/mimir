@@ -493,7 +493,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	// With fillLeft the operator uses every right series in the same way. Every unmatched right group
 	// makes output, and addUnmatchedRightGroupsWithFilledLeftSides never skips a group.
 	// TODO: the nil "all used" optimization now also applies to rightSeriesUsed with fillLeft. A later
-	// change can apply it.
+	// change can apply it. File a GitHub issue to track this before closing the fill PR.
 	var (
 		leftSeriesUsed []bool
 		err            error
@@ -781,9 +781,9 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 			// Note: this branch is unreachable when outputSeriesLabels includes __name__ (name-retaining
 			// operators), because two distinct left series then produce distinct output labels and cannot
 			// collide here. It can only be reached by a name-dropping operator, where both left series
-			// produce identical output labels. Those two series share a match group key, which the
-			// seenGroupKeys check above already rejects. This branch therefore remains for completeness
-			// but is dead code in practice.
+			// produce identical output labels. Those two series share a match group key. The seenGroupKeys
+			// check at the top of this loop already rejects that case, so this branch is dead code in
+			// practice. It is kept for completeness.
 			outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
 			continue
 		}
@@ -1325,11 +1325,11 @@ func (b *OneToOneVectorVectorBinaryOperation) nextFilledLeftSeries(ctx context.C
 	rightSide.outputSeriesCount--
 	isLastUseOfRightSide := rightSide.outputSeriesCount == 0
 
-	// We pass an empty left operand. The evaluator's LHS fill value then produces output at every
-	// right timestep, through the same per-timestep fill path used for intermittently matched groups.
-	// This is a fill-left-only output series. Its labels already have no metric name, so we do not
-	// split its points.
-	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, true, isLastUseOfRightSide, fillLeftOptions{})
+	// Pass an empty left operand with no ownership. The evaluator's LHS fill value produces output
+	// at every right timestep, through the same per-timestep fill path used for intermittently matched
+	// groups. This is a fill-left-only output series; its labels already have no metric name, so the
+	// split path is not needed.
+	finalResult, _, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, false, isLastUseOfRightSide, fillLeftOptions{})
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -1466,6 +1466,8 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 		if s.fill != nil && s.fill.splitHolder != nil {
 			types.PutInstantVectorSeriesData(s.fill.splitHolder.fillLeft, b.MemoryConsumptionTracker)
 			s.fill.splitHolder.fillLeft = types.InstantVectorSeriesData{}
+			// Reset computed so that if FinishedReading is called again (e.g. by a test double),
+			// the holder does not appear to hold valid data.
 			s.fill.splitHolder.computed = false
 		}
 	}
