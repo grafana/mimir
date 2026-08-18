@@ -542,6 +542,7 @@ func newQueryMiddlewares(
 		)
 
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
+		remoteReadMiddleware = append(remoteReadMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
 	}
 
 	// When subquery spin-off runs inside MQE (as part of splitting and caching results inside MQE), we
