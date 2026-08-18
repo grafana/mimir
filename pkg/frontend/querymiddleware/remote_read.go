@@ -308,7 +308,7 @@ func (r *remoteReadQueryRequest) GetHints() *Hints {
 
 func (r *remoteReadQueryRequest) GetStep() int64 {
 	// Step is ignored when the remote read query is executed.
-	return 0
+	return 1
 }
 
 func (r *remoteReadQueryRequest) GetID() int64 {
@@ -436,7 +436,13 @@ func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQu
 }
 
 func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequest, error) {
-	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithTotalQueriesHint not implemented")
+	newRequest := *r
+	var err error
+	newRequest.hints, err = cloneHints(r.hints)
+	if err != nil {
+		return nil, err
+	}
+	return &newRequest, nil
 }
 
 func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
@@ -446,6 +452,9 @@ func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, e
 // cloneHints returns a deep copy of the input prompb.ReadHints. To keep this function safe,
 // this function does a full marshal and then unmarshal of the prompb.Hints.
 func cloneHints(hints *prompb.ReadHints) (*prompb.ReadHints, error) {
+	if hints == nil {
+		return nil, nil
+	}
 	data, err := hints.Marshal()
 	if err != nil {
 		return nil, err
