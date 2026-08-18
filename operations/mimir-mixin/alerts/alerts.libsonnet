@@ -226,7 +226,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockedQueryRuleExpired'),
           expr: |||
-            max by (%(alert_aggregation_labels)s, user, id) (cortex_blocked_query_rule_expires_at) < time()
+            # min() picks the earliest expiry among the tenant's blocked_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_blocked_query_rule_expires_at) < time()
           ||| % $._config,
           'for': '15m',
           labels: {
@@ -234,16 +236,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Blocked-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
-              expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
-              and does not disable it. Remove or renew the rule if it's no longer needed.
+              At least one blocked_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              blocked_queries configuration and remove or renew any rule that's no longer needed.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('LimitedQueryRuleExpired'),
           expr: |||
-            max by (%(alert_aggregation_labels)s, user, id) (cortex_limited_query_rule_expires_at) < time()
+            # min() picks the earliest expiry among the tenant's limited_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_limited_query_rule_expires_at) < time()
           ||| % $._config,
           'for': '15m',
           labels: {
@@ -251,9 +256,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Rate-limited-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
-              expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
-              and does not disable it. Remove or renew the rule if it's no longer needed.
+              At least one limited_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              limited_queries configuration and remove or renew any rule that's no longer needed.
             ||| % $._config,
           },
         },

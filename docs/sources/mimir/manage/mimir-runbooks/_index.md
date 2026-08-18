@@ -1092,33 +1092,39 @@ How to **investigate**:
 
 ### MimirBlockedQueryRuleExpired
 
-This alert fires if a `blocked_queries` rule has both an `id` and an `expires_at` set, and `expires_at` has passed.
+This alert fires if at least one of a tenant's `blocked_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
 
 `expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
 blocking matching queries until it's explicitly removed from the tenant's configuration. This alert exists so that
 rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
 
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `blocked_queries` rules, and this alert fires as long as any one of them is expired.
+
 How to **investigate**:
 
-- The firing alert's `user` and `id` labels identify the specific tenant and rule that expired.
-- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules per tenant, to help spot trends and scope; it doesn't break results down by rule `id`.
-- Find the matching entry in the tenant's `blocked_queries` runtime config and check its `note`, `created_by`, and `created_at` fields for context on why the rule was added.
-- If the rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `blocked_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
 
 ### MimirLimitedQueryRuleExpired
 
-This alert fires if a `limited_queries` rule has both an `id` and an `expires_at` set, and `expires_at` has passed.
+This alert fires if at least one of a tenant's `limited_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
 
 `expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
 rate-limiting matching queries until it's explicitly removed from the tenant's configuration. This alert exists so
 that rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
 
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `limited_queries` rules, and this alert fires as long as any one of them is expired.
+
 How to **investigate**:
 
-- The firing alert's `user` and `id` labels identify the specific tenant and rule that expired.
-- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules per tenant, to help spot trends and scope; it doesn't break results down by rule `id`.
-- Find the matching entry in the tenant's `limited_queries` runtime config and check its `note`, `created_by`, and `created_at` fields for context on why the rule was added.
-- If the rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `limited_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
 
 ### MimirSchedulerQueriesStuck
 
