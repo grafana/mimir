@@ -4899,6 +4899,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         regex: true
 #         reason: expensive queries over 7 days are blocked
 #         time_range_longer_than: 1w
+#         id: block-expensive-queries
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 #       - pattern: .*
 #         regex: true
 #         reason: queries longer than 21 days are blocked
@@ -4930,6 +4933,25 @@ blocked_queries:
     # queries and queries with no step are not blocked. Set to 0 to disable.
     [step_size_shorter_than: <duration> | default = ]
 
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
@@ -4937,6 +4959,9 @@ blocked_queries:
 #   limited_queries:
 #       - query: rate(metric_counter[5m])
 #         allowed_frequency: 1m0s
+#         id: limit-metric-counter-rate
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 limited_queries:
   - # Literal PromQL expression to match.
     [query: <string> | default = ""]
@@ -4944,6 +4969,25 @@ limited_queries:
     # Minimum duration between matching queries. If a matching query arrives
     # more often than this, it is rejected.
     [allowed_frequency: <duration> | default = ]
+
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
 
 # (experimental) List of HTTP requests to block.
 # Example:
