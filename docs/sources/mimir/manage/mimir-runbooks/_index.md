@@ -1710,6 +1710,14 @@ See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/
 
 See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
 
+### MimirKubernetesAPIClientRateLimited
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientratelimited)
+
+### MimirKubernetesAPIClientApproachingRateLimit
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientapproachingratelimit)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
@@ -1785,6 +1793,17 @@ How to **fix** it:
   - Resize the volume
   - Delete the compactor StatefulSet and its PersistentVolumeClaims, then re-create the compactor StatefulSet with a bigger volume size request
 - Check if the compactor is configured with `-compactor.compaction-concurrency` greater than 1 and there are multiple concurrent compactions running in the affected compactor. If so, you can consider lowering the concurrency.
+
+#### Compactor-scheduler
+
+How it **works**:
+
+- The compactor-scheduler uses the volume to persist its per-tenant job queues, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. Disk utilization is a function of the number of tenants and pending jobs, and is typically small.
+
+How to **fix** it:
+
+- Increase the compactor-scheduler volume size.
+- As a last resort, the persistent state can be wiped and rebuilt. Follow the recovery steps described in [MimirCompactorSchedulerUnreachable](#MimirCompactorSchedulerUnreachable).
 
 #### Store-gateway
 
@@ -3405,6 +3424,8 @@ When the compactor is **halted**:
 
 - No new blocks will be compacted
 - No blocks will be deleted (soft and hard deletion)
+
+Even when compactors run in scheduler mode, halting the compactors is sufficient: the compactor-scheduler doesn't compact or delete blocks itself.
 
 ### Recover source blocks from ingesters
 

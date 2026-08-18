@@ -27,13 +27,19 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-
 ## main / unreleased
 
+* [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
+* [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
+* [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
+
+
+## 6.2.0
+
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
+* [CHANGE] Upgrade Mimir to [3.2.0](https://github.com/grafana/mimir/blob/release-3.2/CHANGELOG.md). #15839
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
-* [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #PR
 * [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #15950
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.38.1](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator--v0380). Note required actions for upgrading the rollout-operator chart. #16129
 * [ENHANCEMENT] Ruler: make the memory ballast size configurable via `ruler.memBallastSizeBytes` and allow disabling it by setting the value to `0`. The default stays at 1GiB. A ballast larger than the ruler's `GOMEMLIMIT` causes permanent GC thrashing, so deployments setting a lower `GOMEMLIMIT` need to lower or disable the ballast. #16159

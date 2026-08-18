@@ -94,7 +94,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      The parameter is `MIMIR_VERSION`. With the exception of the release notes, the Helm chart documentation should refer to the documentation of Mimir that is actually included in the Helm chart.
 
-   - Update the Mimir version in the [deploy preview workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/deploy-pr-preview.yml).
+   - Update the Mimir version in the [deploy preview workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/deploy-pr-preview-helm-charts.yml).
 
      This ensures the deploy preview mounts the Mimir documentation in PRs to the directory expected by the Helm chart documentation.
 

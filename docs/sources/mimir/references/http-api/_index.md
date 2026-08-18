@@ -1417,7 +1417,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 GET /compactor/ring
 ```
 
-Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor.
+Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor. When compactors run in [scheduler mode](../architecture/components/compactor-scheduler/), the compactor ring is only used to shard blocks cleanup.
 
 ### Start block upload
 

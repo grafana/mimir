@@ -2060,12 +2060,6 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
-# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
-# filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation. Deprecated: has no effect.
-# CLI flag: -querier.filter-queryables-enabled
-[filter_queryables_enabled: <boolean> | default = false]
-
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -2501,11 +2495,6 @@ results_cache:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
-
-# (deprecated) Cache statistics of processed samples on results cache.
-# Deprecated: has no effect.
-# CLI flag: -query-frontend.cache-samples-processed-stats
-[cache_samples_processed_stats: <boolean> | default = false]
 
 client_cluster_validation:
   # (experimental) Primary cluster validation label.
@@ -4743,6 +4732,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-estimated-memory-consumption-per-query
 [max_estimated_memory_consumption_per_query: <int> | default = 0]
 
+# (experimental) Maximum number of blocks that a querier will reference in a
+# single request to a store-gateway. When a request would exceed this, it is
+# split into multiple requests to the same store-gateway. 0 disables the limit.
+# CLI flag: -querier.max-blocks-per-store-request
+[max_blocks_per_store_request: <int> | default = 0]
+
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
 # and ruler for instant, range and remote read queries. For metadata queries
@@ -5594,14 +5589,6 @@ kafka:
   # latency.
   # CLI flag: -ingest-storage.kafka.write-timeout-overhead
   [write_timeout_overhead: <duration> | default = 2s]
-
-  # (deprecated) The number of Kafka clients used by producers. When the
-  # configured number of clients is greater than 1, partitions are sharded among
-  # Kafka clients. A higher number of clients may provide higher write
-  # throughput at the cost of additional Metadata requests pressure to Kafka.
-  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
-  # CLI flag: -ingest-storage.kafka.write-clients
-  [write_clients: <int> | default = 1]
 
   # (experimental) Mark an agent as slow when its window-average latency exceeds
   # this multiple of the cluster baseline. Only applies when
@@ -6525,11 +6512,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in the Head and OOOHead when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
-  [head_postings_for_matchers_cache_size: <int> | default = 100]
-
   # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
   # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
@@ -6545,11 +6527,6 @@ tsdb:
   # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
-
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in each compacted block when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
-  [block_postings_for_matchers_cache_size: <int> | default = 100]
 
   # (advanced) Maximum size in bytes of the cache for postings for matchers in
   # each compacted block when TTL is greater than 0.
@@ -7411,6 +7388,12 @@ http:
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.s3.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7518,6 +7501,12 @@ http:
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.gcs.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7623,6 +7612,12 @@ http:
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
+
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.azure.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
 
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are

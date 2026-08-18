@@ -5,12 +5,16 @@
 ### Grafana Mimir
 
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
+* [CHANGE] Removed the following deprecated config: `-querier.filter-queryables-enabled`, `-query-frontend.cache-samples-processed-stats`, `-ingest-storage.kafka.write-clients`, `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`, `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`. #16352
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
 * [ENHANCEMENT] Ruler: Split oversized remote distributor writes to keep resulting calls within the configured gRPC maximum send size, and expose the number of generated requests in `cortex_ruler_remote_distributor_requests_per_write_request`. #16160
 * [ENHANCEMENT] Alerts: Don't fire `MimirMemberlistZoneAwareRoutingAutoFailover` while the node is still joining the cluster. #16315
+* [ENHANCEMENT] Store-gateway: added a `route` label to the `cortex_bucket_store_series_request_stage_duration_seconds` metric to match the `route` label of `cortex_request_duration_seconds`. #16374
+* [ENHANCEMENT] Store-gateway: Add `force_attempt_http2` option to block storage client config to enable HTTP/2. #16385
+* [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
 * [BUGFIX] Query-frontend: Wait for the querier ring to be populated during startup, up to 30 seconds, before reporting the query-frontend as ready. Previously a query-frontend could become ready before it had seen any querier in the ring and fail every query it received until the ring was populated. Only applies when remote execution is enabled, and can be disabled with the experimental `-query-frontend.wait-for-querier-ring-on-startup=false`. #16333
 * [BUGFIX] Query-frontend: Fail queries with a clear error, rather than planning them against an invalid maximum supported query plan version, when the querier ring contains only unhealthy queriers. #16333
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
@@ -18,6 +22,7 @@
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
 * [BUGFIX] MQE: Propagate an `@` modifier or offset from the `info` function's first argument to its info series matchers, matching Prometheus. #16220
+* [BUGFIX] MQE: Fix an issue where series were joined in binary operations using the wrong labels when `group_left()`/`group_right()` were used in combination with `ignoring()`. This bug manifested as valid queries returning an error `grouping labels must ensure unique matches`. #16387
 
 ### Mixin
 
@@ -26,11 +31,13 @@
 * [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
 * [ENHANCEMENT] Dashboards: Make the boot/root disk device regex used to filter it out of the "Disk writes" and "Disk reads" panels configurable via `_config.node_boot_disk_device_regex` (default unchanged: `.*sda.*`), so clusters where the root device isn't `sda` (e.g. `vda` on some cloud providers) don't lose data on those panels. #16235
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
+* [ENHANCEMENT] Alerts, Dashboards: Vendor rollout-operator's alerts and dashboard mixin. Adds the `MimirKubernetesAPIClientRateLimited` and `MimirKubernetesAPIClientApproachingRateLimit` alerts and a corresponding "Kubernetes API client rate limiting" dashboard row. #16382
 * [BUGFIX] Recording rules: Add the `image!=""` selector to the `cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate` recording rule, consistently with the memory one. Where cAdvisor sandbox and parent cgroup series are not dropped at scrape time, CPU usage was counted twice, which also inflated the replica count recommended by the Scaling dashboard. #16320
 * [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #16329
 
 ### Jsonnet
 
+* [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
@@ -39,7 +46,11 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Add support for multi-zone query-tee. #16360
+
 ### Documentation
+
+* [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
 
 ### Tools
 

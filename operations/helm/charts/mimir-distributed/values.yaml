@@ -277,6 +277,7 @@ mimir:
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
+      rejoin_interval: 60s
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
@@ -481,7 +482,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0-rc.0
 
   statefulSet:
     enabled: true
@@ -491,7 +492,8 @@ alertmanager:
   # This service account can be used even if the default one is not set.
   serviceAccount:
     create: false
-    # -- Alertmanager specific service account name. If not set and create is set to true, the default
+    # -- Alertmanager specific service account name. Only takes effect when create is set to true;
+    # otherwise the default service account is used. If not set and create is set to true, the default
     # name will be the default mimir service account's name with the "-alertmanager" suffix.
     name: ""
     annotations: {}
@@ -1360,7 +1362,8 @@ ruler:
   # This service account can be used even if the default one is not set.
   serviceAccount:
     create: false
-    # -- Ruler specific service account name. If not set and create is set to true, the default
+    # -- Ruler specific service account name. Only takes effect when create is set to true;
+    # otherwise the default service account is used. If not set and create is set to true, the default
     # name will be the default mimir service account's name with the "-ruler" suffix.
     name: ""
     annotations: {}
@@ -2586,7 +2589,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.39-alpine
+    tag: 1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2609,7 +2612,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.3
+    tag: v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
     pullPolicy: IfNotPresent
 
   resources:
@@ -3850,6 +3853,22 @@ metaMonitoring:
     # -- Annotations to add to all monitoring.grafana.com custom resources.
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
     annotations: {}
+
+    # -- Dedicated service account for Grafana Agent pods.
+    # If not set, the default service account defined at the beginning of this file will be used.
+    # This service account can be used even if the default one is not set.
+    # The service account is created in the namespace set in metaMonitoring.grafanaAgent.namespace.
+    # When rbac.create is enabled, a Role and RoleBinding granting use of the chart's
+    # PodSecurityPolicy or SecurityContextConstraints are created in that namespace as well, since a
+    # RoleBinding in the release namespace does not authorize pods running in another namespace.
+    serviceAccount:
+      create: false
+      # -- Grafana Agent specific service account name. Only takes effect when create is set to true;
+      # otherwise the default service account is used. If not set and create is set to true, the default
+      # name will be the default mimir service account's name with the "-grafana-agent" suffix.
+      name: ""
+      annotations: {}
+      labels: {}
 
     # -- SecurityContext of Grafana Agent pods. This is different from the SecurityContext that the operator pod runs with.
     # The operator pod SecurityContext is configured in the grafana-agent-operator.podSecurityContext value.
