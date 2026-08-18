@@ -456,7 +456,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return false, nil
 		}
 
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// A fill modifier synthesises a value for the covered side, so a statically empty covered
+		// side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
@@ -469,7 +471,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return true, nil
 		}
 
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// A fill modifier synthesises a value for the covered side, so a statically empty covered
+		// side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 
 	case core.BINARY_LTE:
 		// Check for timestamp(v) <= C.
@@ -482,7 +486,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return true, nil
 		}
 
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// A fill modifier synthesises a value for the covered side, so a statically empty covered
+		// side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 
 	case core.BINARY_GTR:
 		// Check for C > timestamp(v), equivalent to timestamp(v) < C.
@@ -495,7 +501,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return true, nil
 		}
 
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// A fill modifier synthesises a value for the covered side, so a statically empty covered
+		// side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 
 	case core.BINARY_GTE:
 		// Check for C >= timestamp(v), equivalent to timestamp(v) <= C.
@@ -508,7 +516,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 			return true, nil
 		}
 
-		return isEitherBinaryExpressionSideEmpty(node, params)
+		// A fill modifier synthesises a value for the covered side, so a statically empty covered
+		// side still produces output — do not collapse it.
+		return isEitherBinaryExpressionSideEmptyWithFill(node, params)
 	}
 
 	return false, nil

@@ -832,10 +832,18 @@ func TestRemoveStaticallyEmptyExpressions_DoesNotCollapseFilledBinop(t *testing.
 	`
 
 	// vector(0) == 1 is statically empty (constant comparison that never matches).
-	// With fill_right(3), the left side still produces output using the fill value.
+	// A fill modifier synthesises a value for the empty side, so the overall expression still
+	// produces output. This must hold for both arithmetic and comparison operators.
+	// real_metric evaluates to 10 at t=10m; fill values are chosen so each comparison passes.
 	queries := []string{
 		`real_metric + fill_right(3) (vector(0) == 1)`,
 		`(vector(0) == 1) + fill_left(3) real_metric`,
+		`real_metric == fill_right(10) (vector(0) == 1)`,
+		`(vector(0) == 1) == fill_left(10) real_metric`,
+		`real_metric > fill_right(0) (vector(0) == 1)`,
+		`(vector(0) == 1) < fill_left(0) real_metric`,
+		`real_metric >= fill_right(0) (vector(0) == 1)`,
+		`(vector(0) == 1) <= fill_left(0) real_metric`,
 	}
 
 	ctx := context.Background()

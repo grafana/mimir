@@ -77,8 +77,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
 		// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
 		newMatchersL = make([]*labels.Matcher, 0)
-	} else if e.VectorMatching.FillValues.LHS != nil {
-		// The LHS is filled: its value is synthesised, so RHS matchers must not narrow it.
+	} else if e.VectorMatching.FillValues.RHS != nil {
+		// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
+		// produces output. RHS matchers must not narrow the LHS.
 		newMatchersL = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
@@ -90,8 +91,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		}
 	}
 	var newMatchersR []*labels.Matcher
-	if e.VectorMatching.FillValues.RHS != nil {
-		// The RHS is filled: its value is synthesised, so LHS matchers must not narrow it.
+	if e.VectorMatching.FillValues.LHS != nil {
+		// fill_left synthesises the LHS for every unmatched RHS series, so every RHS series
+		// produces output. LHS matchers must not narrow the RHS.
 		newMatchersR = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersR = mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
