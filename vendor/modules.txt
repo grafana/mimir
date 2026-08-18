@@ -1127,7 +1127,7 @@ github.com/prometheus/alertmanager/template
 github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
-# github.com/prometheus/client_golang v1.24.1
+# github.com/prometheus/client_golang v1.24.2-0.20260812154952-0c5dccd910c0
 ## explicit; go 1.25.0
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
