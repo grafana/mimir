@@ -224,6 +224,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
+          alert: $.alertName('BlockedQueryRuleExpired'),
+          expr: |||
+            max by (%(alert_aggregation_labels)s, user, id) (cortex_blocked_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Blocked-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
+              and does not disable it. Remove or renew the rule if it's no longer needed.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: $.alertName('LimitedQueryRuleExpired'),
+          expr: |||
+            max by (%(alert_aggregation_labels)s, user, id) (cortex_limited_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Rate-limited-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
+              and does not disable it. Remove or renew the rule if it's no longer needed.
+            ||| % $._config,
+          },
+        },
+        {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             # There are some queries in the queue.

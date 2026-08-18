@@ -6387,6 +6387,49 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "id",
+                "required": false,
+                "desc": "Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "note",
+                "required": false,
+                "desc": "Freeform operator note describing why this rule exists (e.g. an incident reference or chat link).",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "created_by",
+                "required": false,
+                "desc": "Identity of whoever created this rule, if known.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "block",
+                "name": "created_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "block",
+                "name": "expires_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
               }
             ],
             "fieldValue": null,
@@ -6424,6 +6467,49 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "id",
+                "required": false,
+                "desc": "Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "note",
+                "required": false,
+                "desc": "Freeform operator note describing why this rule exists (e.g. an incident reference or chat link).",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "created_by",
+                "required": false,
+                "desc": "Identity of whoever created this rule, if known.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "block",
+                "name": "created_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "block",
+                "name": "expires_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
               }
             ],
             "fieldValue": null,

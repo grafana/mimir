@@ -28,6 +28,8 @@
 
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
+* [FEATURE] Alerts: Add `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired`, firing when a `blocked_queries`/`limited_queries` rule's `expires_at` has passed. #16395
+* [FEATURE] Dashboards: Add a "Query blocking and rate limiting" row to the `Mimir / Queries` dashboard, showing blocked and limited queries by tenant and expired blocked/limited-query rules by tenant. #16395
 * [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
 * [ENHANCEMENT] Dashboards: Make the boot/root disk device regex used to filter it out of the "Disk writes" and "Disk reads" panels configurable via `_config.node_boot_disk_device_regex` (default unchanged: `.*sda.*`), so clusters where the root device isn't `sda` (e.g. `vda` on some cloud providers) don't lose data on those panels. #16235
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346

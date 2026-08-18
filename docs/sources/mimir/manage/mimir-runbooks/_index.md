@@ -1090,6 +1090,36 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
 
+### MimirBlockedQueryRuleExpired
+
+This alert fires if a `blocked_queries` rule has both an `id` and an `expires_at` set, and `expires_at` has passed.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+blocking matching queries until it's explicitly removed from the tenant's configuration. This alert exists so that
+rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+How to **investigate**:
+
+- The firing alert's `user` and `id` labels identify the specific tenant and rule that expired.
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules per tenant, to help spot trends and scope; it doesn't break results down by rule `id`.
+- Find the matching entry in the tenant's `blocked_queries` runtime config and check its `note`, `created_by`, and `created_at` fields for context on why the rule was added.
+- If the rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
+### MimirLimitedQueryRuleExpired
+
+This alert fires if a `limited_queries` rule has both an `id` and an `expires_at` set, and `expires_at` has passed.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+rate-limiting matching queries until it's explicitly removed from the tenant's configuration. This alert exists so
+that rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+How to **investigate**:
+
+- The firing alert's `user` and `id` labels identify the specific tenant and rule that expired.
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules per tenant, to help spot trends and scope; it doesn't break results down by rule `id`.
+- Find the matching entry in the tenant's `limited_queries` runtime config and check its `note`, `created_by`, and `created_at` fields for context on why the rule was added.
+- If the rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
 ### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.

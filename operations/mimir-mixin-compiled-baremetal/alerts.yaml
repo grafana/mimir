@@ -105,6 +105,30 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirBlockedQueryRuleExpired
+          annotations:
+            message: |
+                Blocked-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
+                and does not disable it. Remove or renew the rule if it's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockedqueryruleexpired
+          expr: |
+            max by (cluster, namespace, user, id) (cortex_blocked_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirLimitedQueryRuleExpired
+          annotations:
+            message: |
+                Rate-limited-query rule "{{ $labels.id }}" for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                expired at {{ $value | humanizeTimestamp }}. The rule is still being enforced: expiry is informational only
+                and does not disable it. Remove or renew the rule if it's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirlimitedqueryruleexpired
+          expr: |
+            max by (cluster, namespace, user, id) (cortex_limited_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
         - alert: MimirSchedulerQueriesStuck
           annotations:
             message: |
