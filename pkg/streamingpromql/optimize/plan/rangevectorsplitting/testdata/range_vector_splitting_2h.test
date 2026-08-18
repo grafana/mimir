@@ -740,3 +740,88 @@ eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
   {env="prod"} 12
 
 clear
+
+# ===== subqueries =====
+
+load 1h
+  subquery_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+clear
+
+load 1h
+  subquery_metric_mod{env="prod"} 1 2 3 4 5 6 7
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+clear
+
+# A subquery whose own inner expression is itself a subquery.
+
+load 1h
+  nested_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+clear
+
+# A subquery nested inside another subquery, with a step that doesn't line up with the split interval.
+load 1h
+  nested_metric2{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+clear
+
+# Same shape, but with a step equal to the split interval.
+load 1h
+  nested_metric3{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+clear
+
+# The outer subquery's range (7m) is smaller than its own step (1h), so it has zero real output points, split or
+# not. Splitting still divides it into several empty pieces, and two different blocks end up materializing
+# the identical nested subquery time range (see core/subquery.go#MaterializeSubquery StepCount == 0).
+load 1m
+  collision_metric{env="prod"} 0+1x400
+
+eval instant at 3h30m count_over_time(sum_over_time(collision_metric[5m:2m])[7m:1h])
+
+eval instant at 3h30m count_over_time(sum_over_time(collision_metric[5m:2m])[7m:1h])
+
+clear

@@ -54,6 +54,43 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	return SubqueryChildrenTimeRange(timeRange, s.Range, s.Step, s.Offset, s.Timestamp)
 }
 
+// IsSplittable returns false if the subquery's inner expression contains a StepInvariantExpression anywhere below it
+// (including inside nested subqueries): such a node always materializes at the same canonical time range regardless
+// of its caller, so splitting a subquery block by block would make every block collide on that one cached,
+// single-use operator factory.
+//
+// TODO: support splitting subqueries whose inner expression contains StepInvariantExpressions
+func (s *Subquery) IsSplittable() bool {
+	return !containsStepInvariantExpression(s.Inner)
+}
+
+func containsStepInvariantExpression(n planning.Node) bool {
+	if _, ok := n.(*StepInvariantExpression); ok {
+		return true
+	}
+	for child := range planning.ChildrenIter(n) {
+		if containsStepInvariantExpression(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Subquery) GetRangeParams() planning.RangeParams {
+	params := planning.RangeParams{
+		IsSet:  true,
+		Range:  s.Range,
+		Offset: s.Offset,
+	}
+	if s.Timestamp != nil {
+		params.HasTimestamp = true
+		params.Timestamp = *s.Timestamp
+	}
+	return params
+}
+
+var _ planning.SplitNode = &Subquery{}
+
 // SubqueryChildrenTimeRange computes the time range used by the children of a subquery with the given
 // range, step, offset and @ timestamp (ts, nil if the subquery does not use the @ modifier), when the
 // subquery is evaluated over parentTimeRange.
@@ -118,14 +155,38 @@ func (s *Subquery) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	innerTimeRange := s.ChildrenTimeRange(timeRange)
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, s.Inner, innerTimeRange)
-	if err != nil {
-		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
+func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	subqueryRange := s.Range
+	subqueryOffset := s.Offset
+	subqueryTimestamp := s.Timestamp
+
+	if overrideRangeParams.IsSet {
+		subqueryRange = overrideRangeParams.Range
+		subqueryOffset = overrideRangeParams.Offset
+		if overrideRangeParams.HasTimestamp {
+			subqueryTimestamp = &overrideRangeParams.Timestamp
+		} else {
+			subqueryTimestamp = nil
+		}
 	}
 
-	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.GetExpressionPosition().ToPrometheusType(), params.MemoryConsumptionTracker)
+	innerTimeRange := SubqueryChildrenTimeRange(timeRange, subqueryRange, s.Step, subqueryOffset, subqueryTimestamp)
+
+	var inner types.InstantVectorOperator
+	if innerTimeRange.StepCount == 0 {
+		// Skip materialization for a subquery with zero steps. Passing this range with no steps further
+		// down as the parent range for a nested subquery can make two different blocks collapse to the same inner
+		// time range there, colliding on its single-use cached operator factory under range vector splitting.
+		inner = operators.NewNoOpInstant(innerTimeRange, params.MemoryConsumptionTracker)
+	} else {
+		var err error
+		inner, err = materializer.ConvertNodeToInstantVectorOperator(ctx, s.Inner, innerTimeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
+		}
+	}
+
+	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(subqueryTimestamp), subqueryOffset, subqueryRange, s.GetExpressionPosition().ToPrometheusType(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}

@@ -131,7 +131,14 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	}
 
 	inner, ok := functionCall.Child(0).(planning.SplitNode)
-	if !ok || !inner.IsSplittable() {
+	if !ok {
+		return nil, "unsupported_inner_node", nil
+	}
+
+	if !inner.IsSplittable() {
+		if _, isSubquery := inner.(*core.Subquery); isSubquery {
+			return nil, "unsupported_subquery_step_invariant", nil
+		}
 		return nil, "unsupported_inner_node", nil
 	}
 

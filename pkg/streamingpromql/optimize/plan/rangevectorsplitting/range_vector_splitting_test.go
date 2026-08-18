@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1380,6 +1382,76 @@ func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
 	result, _ := runInstantQuery(t, mimirEngine, storage, `sum_over_time(__subquery_spinoff__{__query__="some_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`, ts)
 	require.NoError(t, result.Err)
 	verifyCacheStats(t, testCache, 0, 0, 0)
+}
+
+func TestQuerySplitting_NotSplitReasons(t *testing.T) {
+	promStorage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{env="test"} 0+1x600
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	testCases := map[string]struct {
+		expr       string
+		rangeQuery bool
+		reason     string
+	}{
+		"subquery inner expression contains a step-invariant expression": {
+			expr:   `count_over_time(sum_over_time(test_metric{job="1"}[100s] @ 100)[7m:25s])`,
+			reason: "unsupported_subquery_step_invariant",
+		},
+		"subquery range not longer than the split interval": {
+			expr:   `count_over_time(test_metric{job="1"}[1h:5m])`,
+			reason: "too_short_interval",
+		},
+		"outer function not registered for splitting": {
+			expr:   `stddev_over_time(test_metric{job="1"}[3h:5m])`,
+			reason: "unsupported_function",
+		},
+		"subquery spinoff": {
+			expr:   `sum_over_time(__subquery_spinoff__{__query__="test_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`,
+			reason: "subquery_spinoff",
+		},
+		"range query": {
+			expr:       `sum_over_time(test_metric{job="1"}[5h])`,
+			rangeQuery: true,
+			reason:     "range_query",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			splitEngine, _ := createSplittingEngineWithCache(t, registry, 2*time.Hour, true, true)
+
+			var result *promql.Result
+			if tc.rangeQuery {
+				ctx := user.InjectOrgID(context.Background(), "test-user")
+				q, err := splitEngine.NewRangeQuery(ctx, promStorage, nil, tc.expr, timestamp.Time(0).Add(10*time.Hour), timestamp.Time(0).Add(11*time.Hour), time.Minute)
+				require.NoError(t, err)
+				t.Cleanup(q.Close)
+				result = q.Exec(ctx)
+			} else {
+				var ranges []storageQueryRange
+				result, _, ranges = executeQuery(t, splitEngine, promStorage, tc.expr, timestamp.Time(0).Add(10*time.Minute))
+				require.Len(t, ranges, 1)
+			}
+
+			require.NoError(t, result.Err)
+			requireUnsplitReasonCount(t, registry, tc.reason, 1)
+		})
+	}
+}
+
+func requireUnsplitReasonCount(t *testing.T, g prometheus.Gatherer, reason string, expected int) {
+	const metricName = "cortex_mimir_query_engine_range_vector_splitting_function_nodes_unsplit_total"
+
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of function nodes inspected by range vector splitting but not split.
+# TYPE %[1]v counter
+%[1]v{reason=%[2]q} %[3]v
+`, metricName, reason, expected)
+
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricName))
 }
 
 func TestQuerySplitting_SplittingDisabledOnQuerier_FallsBackToRegularNode(t *testing.T) {
