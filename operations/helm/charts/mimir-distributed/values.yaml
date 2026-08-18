@@ -151,7 +151,7 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
-        {{- if index .Values "chunks-cache" "enabled" }}
+        {{- if or (index .Values "chunks-cache" "enabled") (index .Values "chunks-cache" "addresses") }}
         chunks_cache:
           backend: memcached
           memcached:
@@ -160,7 +160,7 @@ mimir:
             timeout: 750ms
             max_idle_connections: 150
         {{- end }}
-        {{- if index .Values "index-cache" "enabled" }}
+        {{- if or (index .Values "index-cache" "enabled") (index .Values "index-cache" "addresses") }}
         index_cache:
           backend: memcached
           memcached:
@@ -169,7 +169,7 @@ mimir:
             timeout: 750ms
             max_idle_connections: 150
         {{- end }}
-        {{- if index .Values "metadata-cache" "enabled" }}
+        {{- if or (index .Values "metadata-cache" "enabled") (index .Values "metadata-cache" "addresses") }}
         metadata_cache:
           backend: memcached
           memcached:
@@ -214,7 +214,7 @@ mimir:
 
     frontend:
       parallelize_shardable_queries: true
-      {{- if index .Values "results-cache" "enabled" }}
+      {{- if or (index .Values "results-cache" "enabled") (index .Values "results-cache" "addresses") }}
       results_cache:
         backend: memcached
         memcached:
@@ -297,7 +297,7 @@ mimir:
         address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
       {{- end }}
 
-    {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") }}
+    {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") (index .Values "metadata-cache" "addresses") }}
     ruler_storage:
       {{- if .Values.minio.enabled }}
       backend: s3
@@ -308,7 +308,7 @@ mimir:
         secret_access_key: {{ .Values.minio.rootPassword }}
         insecure: true
       {{- end }}
-      {{- if index .Values "metadata-cache" "enabled" }}
+      {{- if or (index .Values "metadata-cache" "enabled") (index .Values "metadata-cache" "addresses") }}
       cache:
         backend: memcached
         memcached:
@@ -2644,6 +2644,11 @@ chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
 
+  # -- Comma-separated list of addresses of an existing memcached to use for the chunks-cache instead of the one bundled with the chart.
+  # When set, the chart does not deploy the bundled chunks-cache and Mimir is configured to use these addresses. Templated. Set enabled to false when using this.
+  # Example: "dns+chunks-cache.memcached.svc:11211"
+  addresses: ""
+
   # -- How long each pod must be ready for before the next one is started/restarted
   minReadySeconds: 60
 
@@ -2751,6 +2756,11 @@ chunks-cache:
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
+
+  # -- Comma-separated list of addresses of an existing memcached to use for the index-cache instead of the one bundled with the chart.
+  # When set, the chart does not deploy the bundled index-cache and Mimir is configured to use these addresses. Templated. Set enabled to false when using this.
+  # Example: "dns+index-cache.memcached.svc:11211"
+  addresses: ""
 
   # -- How long each pod must be ready for before the next one is started/restarted
   minReadySeconds: 60
@@ -2860,6 +2870,11 @@ metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
 
+  # -- Comma-separated list of addresses of an existing memcached to use for the metadata-cache instead of the one bundled with the chart.
+  # When set, the chart does not deploy the bundled metadata-cache and Mimir is configured to use these addresses. Templated. Set enabled to false when using this.
+  # Example: "dns+metadata-cache.memcached.svc:11211"
+  addresses: ""
+
   # -- How long each pod must be ready for before the next one is started/restarted
   minReadySeconds: 60
 
@@ -2967,6 +2982,11 @@ metadata-cache:
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
+
+  # -- Comma-separated list of addresses of an existing memcached to use for the results-cache instead of the one bundled with the chart.
+  # When set, the chart does not deploy the bundled results-cache and Mimir is configured to use these addresses. Templated. Set enabled to false when using this.
+  # Example: "dns+results-cache.memcached.svc:11211"
+  addresses: ""
 
   # -- How long each pod must be ready for before the next one is started/restarted
   minReadySeconds: 60

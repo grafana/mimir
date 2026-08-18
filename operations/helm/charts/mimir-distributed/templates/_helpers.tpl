@@ -194,19 +194,39 @@ Alertmanager cluster bind address
 {{- end -}}
 
 {{- define "mimir.chunksCacheAddress" -}}
-dnssrvnoa+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "chunks-cache").port }}
+{{- $cache := index .Values "chunks-cache" -}}
+{{- if $cache.addresses -}}
+{{- tpl $cache.addresses . -}}
+{{- else -}}
+dnssrvnoa+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ $cache.port }}
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.indexCacheAddress" -}}
-dnssrvnoa+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "index-cache").port }}
+{{- $cache := index .Values "index-cache" -}}
+{{- if $cache.addresses -}}
+{{- tpl $cache.addresses . -}}
+{{- else -}}
+dnssrvnoa+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ $cache.port }}
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.metadataCacheAddress" -}}
-dnssrvnoa+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "metadata-cache").port }}
+{{- $cache := index .Values "metadata-cache" -}}
+{{- if $cache.addresses -}}
+{{- tpl $cache.addresses . -}}
+{{- else -}}
+dnssrvnoa+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ $cache.port }}
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.resultsCacheAddress" -}}
-dnssrvnoa+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "results-cache").port }}
+{{- $cache := index .Values "results-cache" -}}
+{{- if $cache.addresses -}}
+{{- tpl $cache.addresses . -}}
+{{- else -}}
+dnssrvnoa+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ $cache.port }}
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.adminCacheAddress" -}}
