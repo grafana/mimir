@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -21,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
@@ -101,7 +103,10 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		//       conditions. In such case, since we don't have a way to return an empty response for the
 		//       selected query, we simply keep the original one and let it pass-through the downstream.
 		if updatedQueryReq != nil {
-			queries[i] = updatedQueryReq.query
+			queries[i], err = updatedQueryReq.GetRemoteReadQuery()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -212,22 +217,73 @@ func remoteReadQueryMatchersToString(q *prompb.Query) (string, error) {
 }
 
 func remoteReadToMetricsQueryRequest(path string, query *prompb.Query) (MetricsQueryRequest, error) {
-	metricsQuery := &remoteReadQueryRequest{
-		path:  path,
-		query: query,
-	}
-	var err error
-	metricsQuery.promQuery, err = remoteReadQueryMatchersToString(query)
+	promQuery, err := remoteReadQueryMatchersToString(query)
 	if err != nil {
 		return nil, err
 	}
+
+	expr, err := promqlext.NewPromQLParser().ParseExpr(promQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	metricsQuery := &remoteReadQueryRequest{
+		path:      path,
+		queryExpr: expr,
+		start:     query.StartTimestampMs,
+		end:       query.EndTimestampMs,
+		hints:     query.Hints,
+	}
+
 	return metricsQuery, nil
 }
 
 type remoteReadQueryRequest struct {
 	path      string
-	query     *prompb.Query
-	promQuery string
+	queryExpr parser.Expr
+	start     int64
+	end       int64
+	hints     *prompb.ReadHints
+
+	// ID of the request used to correlate downstream requests and responses.
+	id int64
+}
+
+func (r *remoteReadQueryRequest) GetRemoteReadQuery() (*prompb.Query, error) {
+	vecSel, ok := r.queryExpr.(*parser.VectorSelector)
+	if ok != true {
+		return nil, fmt.Errorf("Expecting 'VectorSelector', got %T", r.queryExpr)
+	}
+
+	convertType := func(matchType labels.MatchType) prompb.LabelMatcher_Type {
+		switch matchType {
+		case labels.MatchEqual:
+			return prompb.LabelMatcher_EQ
+		case labels.MatchNotEqual:
+			return prompb.LabelMatcher_NEQ
+		case labels.MatchRegexp:
+			return prompb.LabelMatcher_RE
+		case labels.MatchNotRegexp:
+			return prompb.LabelMatcher_NRE
+		}
+		panic("todo: should we panic or error here?")
+	}
+
+	matchers := make([]*prompb.LabelMatcher, 0, len(vecSel.LabelMatchers))
+	for _, matcher := range vecSel.LabelMatchers {
+		matchers = append(matchers, &prompb.LabelMatcher{
+			Type:  convertType(matcher.Type),
+			Name:  matcher.Name,
+			Value: matcher.Value,
+		})
+	}
+
+	return &prompb.Query{
+		StartTimestampMs: r.start,
+		EndTimestampMs:   r.end,
+		Matchers:         matchers,
+		Hints:            r.hints,
+	}, nil
 }
 
 func (r *remoteReadQueryRequest) GetQueryOpts() (promql.QueryOpts, error) {
@@ -239,11 +295,11 @@ func (r *remoteReadQueryRequest) AddSpanTags(_ trace.Span) {
 }
 
 func (r *remoteReadQueryRequest) GetStart() int64 {
-	return r.query.GetStartTimestampMs()
+	return r.start
 }
 
 func (r *remoteReadQueryRequest) GetEnd() int64 {
-	return r.query.GetEndTimestampMs()
+	return r.end
 }
 
 func (r *remoteReadQueryRequest) GetHints() *Hints {
@@ -256,14 +312,14 @@ func (r *remoteReadQueryRequest) GetStep() int64 {
 }
 
 func (r *remoteReadQueryRequest) GetID() int64 {
-	return 0
+	return r.id
 }
 
 func (r *remoteReadQueryRequest) GetMaxT() int64 {
 	// Mimir honors the start/end timerange defined in the read hints, but protects from the case
 	// the passed read hints are zero values (because unintentionally initialised but not set).
-	if r.query.Hints != nil && r.query.Hints.EndMs > 0 {
-		return r.query.Hints.EndMs
+	if r.hints != nil && r.hints.EndMs > 0 {
+		return r.hints.EndMs
 	}
 
 	return r.GetEnd()
@@ -272,8 +328,8 @@ func (r *remoteReadQueryRequest) GetMaxT() int64 {
 func (r *remoteReadQueryRequest) GetMinT() int64 {
 	// Mimir honors the start/end timerange defined in the read hints, but protects from the case
 	// the passed read hints are zero values (because unintentionally initialised but not set).
-	if r.query.Hints != nil && r.query.Hints.StartMs > 0 {
-		return r.query.Hints.StartMs
+	if r.hints != nil && r.hints.StartMs > 0 {
+		return r.hints.StartMs
 	}
 
 	return r.GetStart()
@@ -288,7 +344,10 @@ func (r *remoteReadQueryRequest) GetPath() string {
 }
 
 func (r *remoteReadQueryRequest) GetQuery() string {
-	return r.promQuery
+	if r.queryExpr != nil {
+		return r.queryExpr.String()
+	}
+	return ""
 }
 
 func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
@@ -296,11 +355,11 @@ func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
 }
 
 func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
-	if r.promQuery == "" {
+	if r.queryExpr == nil {
 		return nil, errRequestNoQuery
 	}
 
-	return promqlext.NewPromQLParser().ParseExpr(r.promQuery)
+	return astmapper.CloneExpr(r.queryExpr)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
@@ -315,16 +374,32 @@ func (r *remoteReadQueryRequest) GetStats() string {
 	return ""
 }
 
-func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {
-	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithID not implemented")
+func (r *remoteReadQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
+	newRequest := *r
+	var err error
+	newRequest.hints, err = cloneHints(r.hints)
+	if err != nil {
+		return nil, err
+	}
+
+	newRequest.id = id
+	return &newRequest, nil
 }
 
 func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithEstimatedSeriesCountHint not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) (MetricsQueryRequest, error) {
-	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithExpr not implemented")
+func (r *remoteReadQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQueryRequest, error) {
+	newRequest := *r
+	var err error
+	newRequest.hints, err = cloneHints(r.hints)
+	if err != nil {
+		return nil, err
+	}
+
+	newRequest.queryExpr = queryExpr
+	return &newRequest, nil
 }
 
 func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error) {
@@ -337,25 +412,27 @@ func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) (MetricsQuer
 
 // WithStartEnd clones the current remoteReadQueryRequest with a new start and end timestamp.
 func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQueryRequest, error) {
-	clonedQuery, err := cloneRemoteReadQuery(r.query)
+	newRequest := *r
+	newRequest.start = start
+	newRequest.end = end
+
+	var err error
+	newRequest.hints, err = cloneHints(r.hints)
 	if err != nil {
 		return nil, err
 	}
 
-	clonedQuery.StartTimestampMs = start
-	clonedQuery.EndTimestampMs = end
-
 	// We only clamp the hints time range (and not extend it). If, for any reason, the hints start/end
 	// time range is shorter than the query start/end range, then we manipulate only to clamp it to keep
 	// it within the requested range.
-	if clonedQuery.Hints != nil && clonedQuery.Hints.StartMs < start {
-		clonedQuery.Hints.StartMs = start
+	if newRequest.hints != nil && newRequest.hints.StartMs < start {
+		newRequest.hints.StartMs = start
 	}
-	if clonedQuery.Hints != nil && clonedQuery.Hints.EndMs > end {
-		clonedQuery.Hints.EndMs = end
+	if newRequest.hints != nil && newRequest.hints.EndMs > end {
+		newRequest.hints.EndMs = end
 	}
 
-	return remoteReadToMetricsQueryRequest(r.path, clonedQuery)
+	return &newRequest, nil
 }
 
 func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequest, error) {
@@ -366,15 +443,15 @@ func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, e
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithStats not implemented")
 }
 
-// cloneRemoteReadQuery returns a deep copy of the input prompb.Query. To keep this function safe,
-// this function does a full marshal and then unmarshal of the prompb.Query.
-func cloneRemoteReadQuery(orig *prompb.Query) (*prompb.Query, error) {
-	data, err := orig.Marshal()
+// cloneHints returns a deep copy of the input prompb.ReadHints. To keep this function safe,
+// this function does a full marshal and then unmarshal of the prompb.Hints.
+func cloneHints(hints *prompb.ReadHints) (*prompb.ReadHints, error) {
+	data, err := hints.Marshal()
 	if err != nil {
 		return nil, err
 	}
 
-	cloned := &prompb.Query{}
+	cloned := &prompb.ReadHints{}
 	if err := cloned.Unmarshal(data); err != nil {
 		return nil, err
 	}
