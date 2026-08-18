@@ -39,17 +39,13 @@
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
-* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
-
-### Mixin
-
-### Jsonnet
-
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
+* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 
 ### Documentation
 
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
+* [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
 
 ### Tools
 
