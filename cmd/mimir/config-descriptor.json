@@ -6470,6 +6470,15 @@
               },
               {
                 "kind": "field",
+                "name": "reason",
+                "required": false,
+                "desc": "Reason returned to clients when rejecting matching queries.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
                 "name": "id",
                 "required": false,
                 "desc": "Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export.",

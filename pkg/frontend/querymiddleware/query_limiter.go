@@ -74,6 +74,7 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 				}
 				if limitedQuery.AllowedFrequency > limitedQueryToEnforce.AllowedFrequency {
 					limitedQueryToEnforce.AllowedFrequency = limitedQuery.AllowedFrequency
+					limitedQueryToEnforce.Reason = limitedQuery.Reason
 					limitedQueryToEnforce.ID = limitedQuery.ID
 					limitedQueryToEnforce.ExpiresAt = limitedQuery.ExpiresAt
 					tenantMinAllowedFrequency = tenantID
@@ -92,9 +93,10 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 					"query", query,
 					"id", limitedQueryToEnforce.ID,
 					"allowed_frequency", limitedQueryToEnforce.AllowedFrequency,
+					"reason", limitedQueryToEnforce.Reason,
 					"expired", limitedQueryToEnforce.IsExpired(time.Now()),
 				)
-				return nil, newQueryLimitedError(limitedQueryToEnforce.AllowedFrequency, tenantMinAllowedFrequency)
+				return nil, newQueryLimitedError(limitedQueryToEnforce.AllowedFrequency, tenantMinAllowedFrequency, limitedQueryToEnforce.Reason)
 			}
 			level.Warn(ql.logger).Log("msg", "error while adding to query limiter cache", "err", err)
 		}

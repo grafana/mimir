@@ -34,6 +34,7 @@ func TestLimitedQuery_MetadataFieldsRoundTripThroughYAML(t *testing.T) {
 	input := LimitedQuery{
 		Query:            "rate(metric_counter[5m])",
 		AllowedFrequency: time.Minute,
+		Reason:           "the query is expensive and should not run more than once a minute",
 		ID:               "limit-metric-counter-rate",
 		Note:             "added per incident INC-1234",
 		CreatedBy:        "alice",
