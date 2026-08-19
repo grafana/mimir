@@ -38,6 +38,7 @@
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the cardinality `label_names` and `label_values` endpoints when the merged response exceeds `-querier.label-names-and-values-results-max-size-bytes`. #16452
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the active series endpoint's framed response format when a single series' JSON exceeds the maximum frame size. #16452
 * [BUGFIX] Ingester, Block-builder: Honor a start timestamp attached to any sample or histogram within a batch, not just the first one. Previously, only the first sample or histogram in a Remote Write 2.0 request's batch could ever trigger a zero sample for its start timestamp; now each distinct start timestamp within the same batch does. #16470
+* [BUGFIX] Distributor: Restore wire compatibility with Remote Write 2.0 senders that still set the deprecated per-series `created_timestamp` field, by decoding it and applying it to every sample and histogram in that series that doesn't already carry its own start timestamp. #16470
 
 ### Mixin
 
