@@ -11535,6 +11535,11 @@ func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 }
 func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	var metricName string
+	// legacyCreatedTimestamp decodes the reserved field 6 (formerly created_timestamp), kept only
+	// for wire compatibility with senders still using the pre-final Remote Write 2.0 shape. It is
+	// fanned out to every Sample/Histogram in this series once the rest of the message is decoded,
+	// see below.
+	var legacyCreatedTimestamp int64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -11786,6 +11791,25 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 				return err
 			}
 			iNdEx = postIndex
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CreatedTimestamp", wireType)
+			}
+			legacyCreatedTimestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				legacyCreatedTimestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMimir(dAtA[iNdEx:])
@@ -11804,6 +11828,21 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 
 	if iNdEx > l {
 		return io.ErrUnexpectedEOF
+	}
+	if legacyCreatedTimestamp != 0 {
+		// Fan the legacy per-series value out to every sample/histogram that doesn't already carry
+		// its own StartTimestamp, for wire compatibility with senders still using the pre-final
+		// Remote Write 2.0 shape.
+		for i := range m.Samples {
+			if m.Samples[i].StartTimestamp == 0 {
+				m.Samples[i].StartTimestamp = legacyCreatedTimestamp
+			}
+		}
+		for i := range m.Histograms {
+			if m.Histograms[i].StartTimestamp == 0 {
+				m.Histograms[i].StartTimestamp = legacyCreatedTimestamp
+			}
+		}
 	}
 	return nil
 }
