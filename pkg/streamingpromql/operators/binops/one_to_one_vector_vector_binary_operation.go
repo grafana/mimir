@@ -135,6 +135,12 @@ type oneToOneBinaryOperationFillState struct {
 	// synthesised from the RHS fill value. rightSide is then nil and leftSeriesIndices is populated.
 	fillMissingRight bool
 
+	// fillRightGroupTracker is non-nil for fill-right output series that share a match-group key with
+	// another fill-right output series but produce different output labels (name-retaining operators).
+	// All such series in the same group share one tracker. The tracker detects per-step duplicates
+	// across those series, mirroring the leftSidePresence check that the matched path uses.
+	fillRightGroupTracker *fillRightGroupTracker
+
 	// splitHolder is non-nil for every output series of a name-retaining fill-left split group (see
 	// computeOutputSeries). One group has one holder. Every matched output series of the group and the
 	// group's single name-dropped sibling share that holder. The last matched read of the group
@@ -187,6 +193,23 @@ type oneToOneBinaryOperationSplitHolder struct {
 
 	// fillLeft holds the group's fill-left points until the name-dropped sibling takes them.
 	fillLeft types.InstantVectorSeriesData
+}
+
+// fillRightGroupTracker tracks per-step left-side presence for fill-right output series that share a
+// match-group key but produce different output labels (name-retaining operators). One tracker is
+// shared by all fill-right output series of one group. It mirrors the leftSidePresence mechanism
+// used for the matched path.
+//
+// seriesRemaining counts how many output series in the group have not yet been evaluated. The last
+// reader frees the presence slice.
+type fillRightGroupTracker struct {
+	// presence is indexed by step index. Each entry is the left series index of the first series that
+	// had a sample at that step, or -1 if no series has had a sample yet.
+	presence []int
+
+	// seriesRemaining is the number of fill-right output series in this group that have not yet been
+	// evaluated. The last reader (seriesRemaining == 0 after decrement) frees presence.
+	seriesRemaining int
 }
 
 // oneToOneBinaryOperationSplitGroup collects one name-retaining fill-left split group while
@@ -712,27 +735,22 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 	groupKeyFunc func(labels.Labels) []byte,
 	unmatchedLeftSeries []int,
 ) error {
-	// seenGroupKeys tracks which match-group keys have already produced a filled-right output series.
-	// One-to-one matching requires at most one left series per match group. If a second unmatched left
-	// series carries the same group key, the group has multiple left series and no right match, which
-	// is a many-to-one violation.
-	seenGroupKeys := make(map[string]int, len(unmatchedLeftSeries)) // group key → first left series index
+	// seenGroupKeys maps a match-group key to the first fill-right output series registered for that
+	// group. It is used to detect when two unmatched left series share the same group key and to set
+	// up a shared fillRightGroupTracker for per-step duplicate detection in that case.
+	//
+	// One-to-one matching disallows two left series in the same match group having a sample at the
+	// same timestep. However, the check must be per-step, not per-series: two left series whose
+	// samples never overlap in time are valid — each step sees at most one series from the group.
+	// The per-step check is deferred to NextSeries via fillRightGroupTracker (for name-retaining
+	// operators, where the two series produce different output labels and therefore land in separate
+	// outputSeriesMap entries) or to mergeSingleSide (for name-dropping operators, where they produce
+	// the same output labels and are merged into the same entry via leftSeriesIndices).
+	seenGroupKeys := make(map[string]*oneToOneBinaryOperationOutputSeries, len(unmatchedLeftSeries))
 
 	for _, leftSeriesIndex := range unmatchedLeftSeries {
 		leftLabels := b.leftMetadata[leftSeriesIndex].Labels
 		groupKey := groupKeyFunc(leftLabels)
-
-		if firstIndex, seen := seenGroupKeys[string(groupKey)]; seen {
-			groupLabels := labelsFunc(b.leftMetadata[firstIndex].Labels)
-			return fmt.Errorf(
-				"found duplicate series for the match group %s on the left side of the operation: %s and %s",
-				groupLabels,
-				b.leftMetadata[firstIndex].Labels,
-				leftLabels,
-			)
-		}
-
-		seenGroupKeys[string(groupKey)] = leftSeriesIndex
 
 		// Use the same label function as a real match. The result metric comes from the left operand.
 		outputSeriesLabels := labelsFunc(leftLabels)
@@ -774,19 +792,47 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 				return fmt.Errorf("unexpected output series collision during right-side fill for operator %v: this indicates a bug in the query engine", b.Op)
 			}
 
-			// Collision with another filled-right series. Both build their right side from the same RHS
-			// fill value. Merge by appending this left index and let them compete per-timestep, the same
-			// way the matched path does for comparison filters.
+			// Collision with another filled-right series (name-dropping operator). Both build their
+			// right side from the same RHS fill value. Merge by appending this left index and let them
+			// compete per-timestep via mergeSingleSide.
 			//
-			// Note: this branch is unreachable when outputSeriesLabels includes __name__ (name-retaining
-			// operators), because two distinct left series then produce distinct output labels and cannot
-			// collide here. It can only be reached by a name-dropping operator, where both left series
-			// produce identical output labels. Those two series share a match group key. The seenGroupKeys
-			// check at the top of this loop already rejects that case, so this branch is dead code in
-			// practice. It is kept for completeness.
+			// This path is reached for name-dropping operators (e.g. +), where two left series with the
+			// same group key produce identical output labels and therefore collide in outputSeriesMap.
+			// For name-retaining operators (e.g. !=), the two left series produce different output
+			// labels and do not collide here; the seenGroupKeys path below handles them instead.
 			outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
+			seenGroupKeys[string(groupKey)] = outputSeries.series
 			continue
 		}
+
+		// No collision in outputSeriesMap. Check whether another fill-right series already occupies
+		// this match group. If so, the two series have different output labels (name-retaining operator)
+		// and we need a shared fillRightGroupTracker to do the per-step duplicate check at evaluation
+		// time. If not, record this series as the first occupant of the group.
+		newSeries := &oneToOneBinaryOperationOutputSeries{
+			fill:              &oneToOneBinaryOperationFillState{fillMissingRight: true},
+			leftSeriesIndices: []int{leftSeriesIndex},
+		}
+
+		if firstSeries, seen := seenGroupKeys[string(groupKey)]; seen {
+			// A second (or later) fill-right output series for the same match group, producing a
+			// different output label set (name-retaining operator). Wire up the shared tracker.
+			if firstSeries.fill.fillRightGroupTracker == nil {
+				// Lazily create the tracker on the first collision for this group.
+				tracker := &fillRightGroupTracker{
+					presence:        make([]int, b.timeRange.StepCount),
+					seriesRemaining: 1, // for firstSeries; incremented below for each subsequent series
+				}
+				for i := range tracker.presence {
+					tracker.presence[i] = -1
+				}
+				firstSeries.fill.fillRightGroupTracker = tracker
+			}
+			firstSeries.fill.fillRightGroupTracker.seriesRemaining++
+			newSeries.fill.fillRightGroupTracker = firstSeries.fill.fillRightGroupTracker
+		}
+
+		seenGroupKeys[string(groupKey)] = newSeries
 
 		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
 			return err
@@ -794,7 +840,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 
 		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
 			labels: outputSeriesLabels,
-			series: &oneToOneBinaryOperationOutputSeries{fill: &oneToOneBinaryOperationFillState{fillMissingRight: true}, leftSeriesIndices: []int{leftSeriesIndex}},
+			series: newSeries,
 		}
 	}
 
@@ -1194,6 +1240,24 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		}
 	}
 
+	// For fill-right output series that share a match-group key but produce different output labels
+	// (name-retaining operators), check per-step duplicates across the group's output series via the
+	// shared fillRightGroupTracker. This mirrors the leftSidePresence check above.
+	//
+	// For name-dropping operators the output-labels collision path already merges multiple left series
+	// into one output series via leftSeriesIndices, so mergeSingleSide below handles the duplicate
+	// check there instead.
+	if fillMissingRight && thisSeries.fill.fillRightGroupTracker != nil {
+		tracker := thisSeries.fill.fillRightGroupTracker
+		for i, leftSeries := range allLeftSeries {
+			seriesIdx := thisSeries.leftSeriesIndices[i]
+			if err := b.updateFillRightGroupPresence(tracker, leftSeries, seriesIdx); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+		}
+		tracker.seriesRemaining--
+	}
+
 	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -1370,6 +1434,29 @@ func (b *OneToOneVectorVectorBinaryOperation) populateRightSide(ctx context.Cont
 
 	// Signal that the right side has been populated.
 	rightSide.rightSeriesIndices = nil
+
+	return nil
+}
+
+// updateFillRightGroupPresence checks for per-step duplicates across fill-right output series that
+// share a match-group key but produce different output labels (name-retaining operators). It records
+// the left-side presence in the shared tracker and returns an error if a duplicate is found.
+func (b *OneToOneVectorVectorBinaryOperation) updateFillRightGroupPresence(tracker *fillRightGroupTracker, leftSideData types.InstantVectorSeriesData, leftSideSeriesIdx int) error {
+	for _, p := range leftSideData.Floats {
+		stepIdx := b.timeRange.PointIndex(p.T)
+		if existing := tracker.presence[stepIdx]; existing != -1 {
+			return formatConflictError(existing, leftSideSeriesIdx, "duplicate series", p.T, b.leftMetadata, "left", b.VectorMatching, b.Op, b.ReturnBool)
+		}
+		tracker.presence[stepIdx] = leftSideSeriesIdx
+	}
+
+	for _, p := range leftSideData.Histograms {
+		stepIdx := b.timeRange.PointIndex(p.T)
+		if existing := tracker.presence[stepIdx]; existing != -1 {
+			return formatConflictError(existing, leftSideSeriesIdx, "duplicate series", p.T, b.leftMetadata, "left", b.VectorMatching, b.Op, b.ReturnBool)
+		}
+		tracker.presence[stepIdx] = leftSideSeriesIdx
+	}
 
 	return nil
 }

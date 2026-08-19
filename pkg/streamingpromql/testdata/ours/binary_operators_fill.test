@@ -443,3 +443,29 @@ eval_fail instant at 0 {__name__=~"dup_a|dup_b"} + fill_right(0) missing_metric
 #
 # Prometheus fails: found duplicate series for the match group {g="b"} on the right hand-side.
 # MQE passes and returns {g="a"} 2.
+
+# ---------- BUG: time-disjoint series within an unmatched match group must not be rejected ----------
+#
+# One-to-one matching is validated per step, not over the whole query range. Two left series that
+# share a match-group key are only a genuine one-to-one violation if they both have a sample at the
+# *same* timestep. If their samples never coexist at any step, each step sees at most one series
+# for that group, so the query is valid, and it should merge per timestep - the same way the
+# matched (non-fill) path already merges time-disjoint series that share a match group.
+#
+# This fails against the current code: addUnmatchedLeftSeriesWithFilledRightSides's seenGroupKeys
+# check rejects the second series using only series metadata (i.e. that it exists anywhere in the
+# query's time range), before ever looking at which steps actually have samples. Real Prometheus
+# does not error here - verified directly against the vendored Prometheus engine.
+#
+# A label value moving from one series to another over a range query (e.g. pod/container churn
+# during a rollout, with another label held constant) is exactly this shape, so this is not a
+# contrived case.
+
+clear
+
+load 5m
+  churned_a{label="x"} 1 _ _ _ _
+  churned_b{label="x"} _ _ _ _ 2
+
+eval range from 0 to 20m step 5m {__name__=~"churned_a|churned_b"} + fill_right(0) missing_metric
+  {label="x"} 1 _ _ _ 2
