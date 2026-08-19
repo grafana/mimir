@@ -159,7 +159,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 			for _, c := range targets {
 				r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
 				if err != nil {
-					return nil, err
+					return nil, errors.Wrapf(err, "read compartment %d", c)
 				}
 
 				// If the lookback cap filters out every partition in a targeted compartment,
@@ -167,7 +167,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 				// empty compartments (serving that data from storage instead) is left to a follow-up.
 				sets, err := r.GetReplicationSetsForOperation(readNoExtend)
 				if err != nil {
-					return nil, err
+					return nil, errors.Wrapf(err, "read compartment %d", c)
 				}
 				replicationSets = append(replicationSets, sets...)
 			}
