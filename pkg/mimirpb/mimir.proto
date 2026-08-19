@@ -78,12 +78,10 @@ message TimeSeries {
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 
-  // Copy from remote write 2.0.
-  // Note that the "optional" keyword is omitted due to
-  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
-  // Zero value means value not set. If you need to use exactly zero value for
-  // the timestamp, use 1 millisecond before or after.
-  int64 created_timestamp = 6;
+  // Formerly: created_timestamp. Moved to Sample.start_timestamp and Histogram.start_timestamp,
+  // matching the Remote Write 2.0 spec.
+  reserved 6;
+  reserved "created_timestamp";
 }
 
 message LabelPair {
@@ -96,6 +94,13 @@ message LabelPair {
 message Sample {
   int64 timestamp_ms = 2;
   double value = 1;
+
+  // Copy from remote write 2.0.
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 3;
 }
 
 message MetricMetadata {
@@ -189,6 +194,13 @@ message Histogram {
   // Used only for converting from OpenTelemetry to Prometheus internally and
   // to unmarshal Remote Write 2.0 messages.
   repeated double custom_values = 16;
+
+  // Copy from remote write 2.0.
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 17;
 }
 
 //
@@ -382,23 +394,10 @@ message TimeSeriesRW2 {
   // metadata represents the metadata associated with the given series' samples.
   MetadataRW2 metadata = 5 [(gogoproto.nullable) = false];
 
-  // created_timestamp represents an optional created timestamp associated with
-  // this series' samples in ms format, typically for counter or histogram type
-  // metrics. Created timestamp represents the time when the counter started
-  // counting (sometimes referred to as start timestamp), which can increase
-  // the accuracy of query results.
-  //
-  // Note that some receivers might require this and in return fail to
-  // ingest such samples within the Request.
-  //
-  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
-  // for conversion from/to time.Time to Prometheus timestamp.
-  //
-  // Note that the "optional" keyword is omitted due to
-  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
-  // Zero value means value not set. If you need to use exactly zero value for
-  // the timestamp, use 1 millisecond before or after.
-  int64 created_timestamp = 6;
+  // Formerly: created_timestamp. Moved to Sample.start_timestamp and Histogram.start_timestamp,
+  // matching the Remote Write 2.0 spec.
+  reserved 6;
+  reserved "created_timestamp";
 }
 
 message ExemplarRW2 {
