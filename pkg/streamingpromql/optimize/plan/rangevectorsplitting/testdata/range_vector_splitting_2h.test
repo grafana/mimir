@@ -814,8 +814,8 @@ eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])
 
 clear
 
-# The outer subquery's range (7m) is smaller than its own step (1h), so it has zero real output points, split or
-# not. Splitting still divides it into several empty pieces, and two different blocks end up materializing
+# The outer subquery's range is smaller than its own step, so it has zero real output pointsnot.
+# Splitting still divides it into several empty pieces, and two different blocks end up materializing
 # the identical nested subquery time range (see core/subquery.go#MaterializeSubquery StepCount == 0).
 load 1m
   collision_metric{env="prod"} 0+1x400
@@ -823,5 +823,30 @@ load 1m
 eval instant at 3h30m count_over_time(sum_over_time(collision_metric[5m:2m])[7m:1h])
 
 eval instant at 3h30m count_over_time(sum_over_time(collision_metric[5m:2m])[7m:1h])
+
+clear
+
+# shared, split subquery deduplicated by common subexpression elimination
+load 1h
+  cse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+clear
+
+# query with subset selector elimination
+load 1h
+  sse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+  sse_subquery_metric{env="prod", code="err"} 100 200 300 400 500 600 700 800 900 1000
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
 
 clear

@@ -117,7 +117,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.

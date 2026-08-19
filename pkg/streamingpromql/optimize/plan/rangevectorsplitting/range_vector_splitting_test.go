@@ -559,6 +559,96 @@ func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
 	})
 }
 
+// TestQuerySplitting_MinimumRequiredPlanVersion verifies that a SplitFunctionCall reports QueryPlanV18 when it
+// wraps a plain selector and QueryPlanV20 when it wraps a subquery, in each case regardless of whether CSE has
+// inserted a Duplicate node between the SplitFunctionCall and what it wraps.
+func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		expr            string
+		expectedPlan    string
+		expectedVersion planning.QueryPlanVersion
+	}{
+		"selector, no CSE duplication": {
+			expr: `sum_over_time(test_metric[5h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: sum_over_time(...)
+						- MatrixSelector: {__name__="test_metric"}[5h0m0s]
+			`,
+			expectedVersion: planning.QueryPlanV18,
+		},
+		"selector, CSE inserts Duplicate below SplitFunctionCall": {
+			expr: `sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude ()
+					- LHS: SplitFunctionCall
+						- FunctionCall: sum_over_time(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="test_metric"}[5h0m0s]
+					- RHS: SplitFunctionCall
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate ...
+			`,
+			expectedVersion: planning.QueryPlanV18,
+		},
+		"subquery, no CSE duplication": {
+			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: sum_over_time(...)
+						- Subquery: [5h0m0s:1h0m0s]
+							- FunctionCall: max_over_time(...)
+								- MatrixSelector: {__name__="test_metric"}[10m0s]
+			`,
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"subquery, CSE inserts Duplicate below SplitFunctionCall": {
+			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h]) / count_over_time(max_over_time(test_metric[10m])[5h:1h])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude ()
+					- LHS: SplitFunctionCall
+						- FunctionCall: sum_over_time(...)
+							- ref#1 Duplicate
+								- Subquery: [5h0m0s:1h0m0s]
+									- FunctionCall: max_over_time(...)
+										- MatrixSelector: {__name__="test_metric"}[10m0s]
+					- RHS: SplitFunctionCall
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate ...
+			`,
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"subquery, CSE inserts Duplicate above SplitFunctionCall": {
+			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h]) + sum_over_time(max_over_time(test_metric[10m])[5h:1h])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS, hints exclude ()
+					- LHS: ref#1 Duplicate
+						- SplitFunctionCall
+							- FunctionCall: sum_over_time(...)
+								- Subquery: [5h0m0s:1h0m0s]
+									- FunctionCall: max_over_time(...)
+										- MatrixSelector: {__name__="test_metric"}[10m0s]
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedVersion: planning.QueryPlanV20,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
+				streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			require.Equal(t, testutils.TrimIndent(tc.expectedPlan), plan.String())
+			require.Equal(t, tc.expectedVersion, plan.Version)
+		})
+	}
+}
+
 func TestQuerySplitting_WithSSE(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(4 * time.Hour)
@@ -1586,6 +1676,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	opts.CommonOpts.Reg = registry
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
@@ -1671,6 +1762,7 @@ func defaultSplittingOpts() streamingpromql.EngineOpts {
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	return opts
 }
 

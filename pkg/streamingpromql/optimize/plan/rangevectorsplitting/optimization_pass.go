@@ -20,7 +20,8 @@ import (
 )
 
 type OptimizationPass struct {
-	splitInterval time.Duration
+	splitInterval           time.Duration
+	enableSubquerySplitting bool
 
 	splitNodesIntroduced   prometheus.Counter
 	functionNodesInspected prometheus.Counter
@@ -29,9 +30,10 @@ type OptimizationPass struct {
 	logger log.Logger
 }
 
-func NewOptimizationPass(splitInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(splitInterval time.Duration, enableSubquerySplitting bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
-		splitInterval: splitInterval,
+		splitInterval:           splitInterval,
+		enableSubquerySplitting: enableSubquerySplitting,
 		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total",
 			Help: "Total number of SplitFunctionCall nodes introduced by the range vector splitting optimization pass.",
@@ -57,8 +59,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
+	// Splitting a subquery requires all queriers to support SplitFunctionCall nodes that wrap a Subquery, which is
+	// only guaranteed from V20 onwards.
+	enableSubquerySplitting := o.enableSubquerySplitting && maximumSupportedQueryPlanVersion >= planning.QueryPlanV20
+
 	var err error
-	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
+	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange, enableSubquerySplitting)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +72,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange, enableSubquerySplitting bool) (planning.Node, error) {
 	logger := spanlogger.FromContext(ctx, o.logger)
 
 	// Skip processing children of subqueries - range vectors inside subqueries
@@ -77,7 +83,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, notAppliedReason, err := o.trySplitFunction(functionCall, timeRange)
+		wrappedNode, notAppliedReason, err := o.trySplitFunction(functionCall, timeRange, enableSubquerySplitting)
 		if err != nil {
 			o.functionNodesUnsplit.WithLabelValues("error").Inc()
 			return nil, err
@@ -94,7 +100,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	for i := range n.ChildCount() {
 		child := n.Child(i)
-		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange)
+		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange, enableSubquerySplitting)
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +122,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 // computed at materialize time (see Materializer.computeRanges), because they depend on the querier's current time and
 // the tenant's out-of-order window, as well as the exact time range being evaluated (which can vary if splitting
 // and caching applies).
-func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
+func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange, enableSubquerySplitting bool) (planning.Node, string, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, "range_query", nil
@@ -135,8 +141,13 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, "unsupported_inner_node", nil
 	}
 
+	_, isSubquery := inner.(*core.Subquery)
+	if isSubquery && !enableSubquerySplitting {
+		return nil, "unsupported_inner_node", nil
+	}
+
 	if !inner.IsSplittable() {
-		if _, isSubquery := inner.(*core.Subquery); isSubquery {
+		if isSubquery {
 			return nil, "unsupported_subquery_step_invariant", nil
 		}
 		return nil, "unsupported_inner_node", nil

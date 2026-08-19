@@ -99,7 +99,11 @@ const QueryPlanV18 = QueryPlanVersion(18)
 // QueryPlanV19 introduces support for deduplicating scalar expressions.
 const QueryPlanV19 = QueryPlanVersion(19)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV19
+// QueryPlanV20 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV20 = QueryPlanVersion(20)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV20
 
 type QueryPlan struct {
 	Root       Node
