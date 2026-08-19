@@ -4959,6 +4959,7 @@ blocked_queries:
 #   limited_queries:
 #       - query: rate(metric_counter[5m])
 #         allowed_frequency: 1m0s
+#         reason: the query is expensive and should not run more than once a minute
 #         id: limit-metric-counter-rate
 #         note: added per incident INC-1234, see https://example.com/incident/1234
 #         expires_at: 2026-12-31T00:00:00Z
@@ -4969,6 +4970,9 @@ limited_queries:
     # Minimum duration between matching queries. If a matching query arrives
     # more often than this, it is rejected.
     [allowed_frequency: <duration> | default = ]
+
+    # Reason returned to clients when rejecting matching queries.
+    [reason: <string> | default = ""]
 
     # Stable identifier for this rule. Optional; used by tooling to correlate
     # edits and as a metric label for expiry export.
