@@ -183,6 +183,73 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, int64(1500), received.Timeseries[0].Histograms[0].StartTimestamp)
 	})
 
+	t.Run("legacy per-series created_timestamp (pre-final RW2 wire shape) fans out to Samples and Histograms", func(t *testing.T) {
+		// Simulate a legacy sender that still sets the reserved TimeSeriesRW2 field 6 (formerly
+		// created_timestamp) instead of a per-sample/per-histogram StartTimestamp. The current
+		// TimeSeriesRW2 Go type can no longer express that field (it's reserved), so the wire bytes
+		// are built by hand.
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+				{Value: 2, TimestampMs: 2000},
+			},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		tsData, err := ts.Marshal()
+		require.NoError(t, err)
+		tsData = appendVarintField(tsData, 6, 500)
+
+		var data []byte
+		for _, s := range syms.GetSymbols() {
+			data = appendBytesField(data, 4, []byte(s))
+		}
+		data = appendBytesField(data, 5, tsData)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 2)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[1].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Histograms[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp does not override an explicit per-sample StartTimestamp", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 900},
+			},
+		}
+		tsData, err := ts.Marshal()
+		require.NoError(t, err)
+		tsData = appendVarintField(tsData, 6, 500)
+
+		var data []byte
+		for _, s := range syms.GetSymbols() {
+			data = appendBytesField(data, 4, []byte(s))
+		}
+		data = appendBytesField(data, 5, tsData)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(900), received.Timeseries[0].Samples[0].StartTimestamp)
+	})
+
 	t.Run("zero timeseries does not panic", func(t *testing.T) {
 		syms := rw2util.NewSymbolTableBuilder(nil)
 		syms.GetSymbol("unused_symbol")
@@ -956,4 +1023,28 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *WriteRequest {
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+// appendVarint appends v to buf using standard protobuf varint encoding.
+func appendVarint(buf []byte, v uint64) []byte {
+	for v >= 0x80 {
+		buf = append(buf, byte(v)|0x80)
+		v >>= 7
+	}
+	return append(buf, byte(v))
+}
+
+// appendVarintField appends a varint-wiretype field (tag + value) to buf, to hand-craft wire
+// messages containing fields that are no longer expressible through the generated Go types
+// (e.g. reserved fields).
+func appendVarintField(buf []byte, fieldNum int, value int64) []byte {
+	buf = appendVarint(buf, uint64(fieldNum)<<3) // wire type 0: varint
+	return appendVarint(buf, uint64(value))
+}
+
+// appendBytesField appends a length-delimited-wiretype field (tag + length + data) to buf.
+func appendBytesField(buf []byte, fieldNum int, data []byte) []byte {
+	buf = appendVarint(buf, uint64(fieldNum)<<3|2)
+	buf = appendVarint(buf, uint64(len(data)))
+	return append(buf, data...)
 }

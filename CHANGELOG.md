@@ -117,6 +117,7 @@
 * [BUGFIX] Distributor: Fix the OTLP request size limit error, which labeled the size of a compressed request as uncompressed when the compressed request was already larger than `-distributor.max-otlp-request-size`. #16877
 * [BUGFIX] MQE: Fix `histogram_count()`, `histogram_sum()` and `histogram_avg()` returning wrong results when they wrap an `==` or `!=` comparison of native histograms, `changes()` or `count_values()`. Native histograms with the same count and sum but different buckets were treated as equal. #16913
 * [BUGFIX] Ingester, Block-builder: Honor a start timestamp attached to any sample or histogram within a batch, not just the first one. Previously, only the first sample or histogram in a Remote Write 2.0 request's batch could ever trigger a zero sample for its start timestamp; now each distinct start timestamp within the same batch does. #16470
+* [BUGFIX] Distributor: Restore wire compatibility with Remote Write 2.0 senders that still set the deprecated per-series `created_timestamp` field, by decoding it and applying it to every sample and histogram in that series that doesn't already carry its own start timestamp. #16470
 
 ### Mixin
 
