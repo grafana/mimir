@@ -44,16 +44,8 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
-	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
-	rootNode, _ = expectedTree.(*treeprint.Node)
-	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
-	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
-	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
-	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]
-	require.Contains(t, rootNode.Nodes[1].Nodes[2].Nodes[14].String(), " StartTimestamp:")
-	// TimeSeries is node 1 of the request, Histogram is node 2 of TimeSeries, StartTimestamp is node 14 of Histogram.
-	rootNode.Nodes[1].Nodes[2].Nodes = rootNode.Nodes[1].Nodes[2].Nodes[0:14]
-
+	// Our Sample and Histogram messages now carry StartTimestamp (matching upstream's RW2 spec), and
+	// TimeSeries/TimeSeriesRW2 no longer carry CreatedTimestamp (reserved), so the shapes should match directly.
 	require.Equal(t, expectedTree.String(), actualTree.String(), "Proto types are not compatible")
 }
 
@@ -126,6 +118,69 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+	})
+
+	t.Run("Sample and Histogram StartTimestamp round-trip via RW2", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		writeRequest := &WriteRequest{
+			TimeseriesRW2: []TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+					Samples: []Sample{
+						{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
+					},
+					Histograms: []Histogram{
+						FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+					},
+				},
+			},
+		}
+		writeRequest.TimeseriesRW2[0].Histograms[0].StartTimestamp = 1500
+		writeRequest.SymbolsRW2 = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(1500), received.Timeseries[0].Histograms[0].StartTimestamp)
+	})
+
+	t.Run("Sample and Histogram StartTimestamp round-trip via RW1", func(t *testing.T) {
+		writeRequest := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+						Samples: []Sample{
+							{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
+						},
+						Histograms: []Histogram{
+							FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+						},
+					},
+				},
+			},
+		}
+		writeRequest.Timeseries[0].Histograms[0].StartTimestamp = 1500
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(1500), received.Timeseries[0].Histograms[0].StartTimestamp)
 	})
 
 	t.Run("zero timeseries does not panic", func(t *testing.T) {
