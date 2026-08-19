@@ -241,7 +241,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               still being enforced: expiry is informational only and does not disable them. Check the tenant's
               blocked_queries configuration and remove or renew any rule that's no longer needed.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
         },
         {
           alert: $.alertName('LimitedQueryRuleExpired'),
@@ -261,7 +261,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               still being enforced: expiry is informational only and does not disable them. Check the tenant's
               limited_queries configuration and remove or renew any rule that's no longer needed.
             ||| % $._config,
-          },
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
