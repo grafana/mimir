@@ -72,7 +72,7 @@ require (
 	github.com/prometheus/sigv4 v0.4.1
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/spf13/pflag v1.0.10
-	github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a
+	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
 	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
@@ -366,6 +366,3 @@ replace github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-2024
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-
-// Use temporary fork of objstore for `force-enable-http2` flag.
-replace github.com/thanos-io/objstore => github.com/francoposa/objstore v0.0.0-20260730205958-44bf50474b87
