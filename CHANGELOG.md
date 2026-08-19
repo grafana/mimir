@@ -14,7 +14,7 @@
 
 * [CHANGE] `create-draft-release-notes.sh` doesn't require release notes ready for release candidate. #16286
 
-## 3.2.0-rc.0
+## 3.2.0
 
 ### Grafana Mimir
 
