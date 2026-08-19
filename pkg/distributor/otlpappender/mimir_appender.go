@@ -28,8 +28,12 @@ type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
 
-	series   []mimirpb.PreallocTimeseries
-	metadata []*mimirpb.MetricMetadata
+	series []mimirpb.PreallocTimeseries
+	// seriesStartTimestamp tracks the start timestamp of the last data point appended to the
+	// corresponding entry in series, parallel to it by index. Used by ctRequiresNewSeries to
+	// detect a new counter generation (a different start timestamp) within the same push.
+	seriesStartTimestamp []int64
+	metadata             []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
 	// multiple times, we keep track of the appended time series.
 	refs          map[uint64]labelsIdx
@@ -67,11 +71,15 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 
 	switch {
 	case fh != nil:
-		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, fh))
+		hp := mimirpb.FromFloatHistogramToHistogramProto(t, fh)
+		hp.StartTimestamp = ct
+		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, hp)
 	case h != nil:
-		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+		hp := mimirpb.FromHistogramToHistogramProto(t, h)
+		hp.StartTimestamp = ct
+		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, hp)
 	default:
-		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
+		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v, StartTimestamp: ct})
 	}
 	c.appendExemplars(idx.idx, opts.Exemplars)
 	c.appendMetadata(opts.MetricFamilyName, opts.Metadata)
@@ -91,9 +99,9 @@ func (c *MimirAppender) recalcCreatedTimestamp(t, ct int64) int64 {
 }
 
 // ctRequiresNewSeries checks if the created timestamp is meaningful and different
-// from the one already stored in the series at the given index.
+// from the one already stored for the series at the given index.
 func (c *MimirAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
-	return ct > 0 && c.series[seriesIdx].CreatedTimestamp != ct
+	return ct > 0 && c.seriesStartTimestamp[seriesIdx] != ct
 }
 
 // processLabelsAndMetadata figures out if we have already seen this
@@ -142,8 +150,8 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
-	ts.CreatedTimestamp = ct
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+	c.seriesStartTimestamp = append(c.seriesStartTimestamp, ct)
 	idx.idx = len(c.series) - 1
 
 	if collisionIdx == -1 {

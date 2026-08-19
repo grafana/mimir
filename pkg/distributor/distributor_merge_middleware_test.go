@@ -103,9 +103,10 @@ func sampleTimestamps(ts mimirpb.PreallocTimeseries) []int64 {
 }
 
 func makeTimeseriesWithCT(lbls []string, samples []mimirpb.Sample, createdTimestamp int64) mimirpb.PreallocTimeseries {
-	ts := makeTimeseries(lbls, samples, nil, nil)
-	ts.CreatedTimestamp = createdTimestamp
-	return ts
+	for i := range samples {
+		samples[i].StartTimestamp = createdTimestamp
+	}
+	return makeTimeseries(lbls, samples, nil, nil)
 }
 
 // labelsWithNonStableHashCollision returns two DIFFERENT label sets that produce
@@ -199,7 +200,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		got := runPrePushMerge(t, d, req)
 
 		require.Len(t, got.Timeseries, 1)
-		assert.Equal(t, int64(42), got.Timeseries[0].CreatedTimestamp)
+		assert.Equal(t, int64(42), got.Timeseries[0].Samples[0].StartTimestamp)
 		assert.Equal(t, []int64{100, 200}, sampleTimestamps(got.Timeseries[0]))
 	})
 
@@ -222,7 +223,7 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		require.Len(t, got.Timeseries, 2)
 		byCT := map[int64][]int64{}
 		for _, ts := range got.Timeseries {
-			byCT[ts.CreatedTimestamp] = sampleTimestamps(ts)
+			byCT[ts.Samples[0].StartTimestamp] = sampleTimestamps(ts)
 		}
 		assert.Equal(t, []int64{100, 300}, byCT[10])
 		assert.Equal(t, []int64{200}, byCT[20])
@@ -636,7 +637,7 @@ func TestDistributor_prePushMergeMiddleware_CountsCrossObjectDuplicates(t *testi
 			for i := range ingesters {
 				for _, s := range ingesters[i].series() {
 					sawSeries = true
-					assert.Equal(t, createdTS, s.CreatedTimestamp, "the created timestamp must survive the middleware")
+					assert.Equal(t, createdTS, s.Samples[0].StartTimestamp, "the created timestamp must survive the middleware")
 					assert.Len(t, s.Samples, expectedSamples, "unexpected number of samples reached the ingester")
 				}
 			}
