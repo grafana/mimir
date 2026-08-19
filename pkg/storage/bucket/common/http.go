@@ -21,6 +21,7 @@ type HTTPConfig struct {
 	MaxIdleConns          int           `yaml:"max_idle_connections" category:"advanced"`
 	MaxIdleConnsPerHost   int           `yaml:"max_idle_connections_per_host" category:"advanced"`
 	MaxConnsPerHost       int           `yaml:"max_connections_per_host" category:"advanced"`
+	ForceAttemptHTTP2     bool          `yaml:"force_attempt_http2" category:"experimental"`
 
 	// Allow upstream callers to inject a round tripper
 	Transport http.RoundTripper `yaml:"-"`
@@ -37,6 +38,7 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxIdleConns, prefix+"max-idle-connections", 100, "Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit.")
 	f.IntVar(&cfg.MaxIdleConnsPerHost, prefix+"max-idle-connections-per-host", 100, "Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2.")
 	f.IntVar(&cfg.MaxConnsPerHost, prefix+"max-connections-per-host", 0, "Maximum number of connections per host. Set to 0 for no limit.")
+	f.BoolVar(&cfg.ForceAttemptHTTP2, prefix+"http.force-attempt-http2", false, "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.")
 	cfg.TLSConfig.RegisterFlagsWithPrefix(prefix, f)
 }
 
@@ -50,6 +52,7 @@ func (cfg *HTTPConfig) ToExtHTTP() exthttp.HTTPConfig {
 		MaxIdleConns:          cfg.MaxIdleConns,
 		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
 		MaxConnsPerHost:       cfg.MaxConnsPerHost,
+		ForceAttemptHTTP2:     cfg.ForceAttemptHTTP2,
 		Transport:             cfg.Transport,
 		TLSConfig:             cfg.TLSConfig.ToExtHTTP(),
 	}

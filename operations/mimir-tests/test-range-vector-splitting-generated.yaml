@@ -550,6 +550,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -643,6 +644,7 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
@@ -899,6 +901,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
@@ -987,6 +990,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1092,6 +1096,7 @@ spec:
         - -compactor.symbols-flushers-concurrency=4
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1199,6 +1204,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1289,7 +1295,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1304,7 +1310,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1349,7 +1355,7 @@ spec:
         - -I 25m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1364,7 +1370,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1409,7 +1415,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1424,7 +1430,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1469,7 +1475,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1484,7 +1490,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1529,7 +1535,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1544,7 +1550,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1614,6 +1620,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s

@@ -105,6 +105,36 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirBlockedQueryRuleExpired
+          annotations:
+            message: |
+                At least one blocked_queries rule for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+                still being enforced: expiry is informational only and does not disable them. Check the tenant's
+                blocked_queries configuration and remove or renew any rule that's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockedqueryruleexpired
+          expr: |
+            # min() picks the earliest expiry among the tenant's blocked_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (cluster, namespace, user) (cortex_blocked_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirLimitedQueryRuleExpired
+          annotations:
+            message: |
+                At least one limited_queries rule for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+                still being enforced: expiry is informational only and does not disable them. Check the tenant's
+                limited_queries configuration and remove or renew any rule that's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirlimitedqueryruleexpired
+          expr: |
+            # min() picks the earliest expiry among the tenant's limited_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (cluster, namespace, user) (cortex_limited_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
         - alert: MimirSchedulerQueriesStuck
           annotations:
             message: |
@@ -1673,7 +1703,7 @@ groups:
             message: |
                 A validating or mutating rollout-operator webhook has an Ignore policy set. This should be set to Fail.
             runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirincorrectwebhookconfigurationfailurepolicy
-          expr: count by(type, webhook) (kube_validating_webhook_failure_policy{policy="Ignore", webhook=~"^(pod-eviction|zpdb-validation).+"} > 0)
+          expr: count by(type, webhook, namespace) (kube_validating_webhook_failure_policy{policy="Ignore", webhook=~"^(pod-eviction|zpdb-validation).+"} > 0)
           for: 5m
           labels:
             severity: warning
@@ -1681,7 +1711,7 @@ groups:
           annotations:
             message: An invalid zone aware pod disruption budget configuration has been observed.
             runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirbadzoneawarepoddisruptionbudgetconfiguration
-          expr: sum by (job)(rate(rollout_operator_zpdb_configurations_observed_total{result="invalid"}[5m])) > 0
+          expr: sum by (job, namespace)(rate(rollout_operator_zpdb_configurations_observed_total{result="invalid"}[5m])) > 0
           for: 5m
           labels:
             severity: warning
@@ -1691,6 +1721,30 @@ groups:
             runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirhighnumberinflightzpdbrequests
           expr: avg_over_time(rollout_operator_zpdb_inflight_eviction_requests[5m]) > 10
           for: 5m
+          labels:
+            severity: warning
+        - alert: MimirKubernetesAPIClientRateLimited
+          annotations:
+            message: The rollout-operator is dropping Kubernetes API requests against the {{ $labels.api_group }} API group because its client-side rate limiter is exhausted.
+            runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirkubernetesapiclientratelimited
+          expr: sum by (namespace, api_group) (rate(rollout_operator_kubernetes_api_client_rate_limited_requests_total[5m])) > 0
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirKubernetesAPIClientApproachingRateLimit
+          annotations:
+            message: The rollout-operator pod {{ $labels.pod }}'s {{ $labels.component }} client is sustaining over 80% of its configured client-side rate limit for the {{ $labels.api_group }} Kubernetes API group. It is not yet dropping requests, but is at risk of doing so.
+            runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirkubernetesapiclientapproachingratelimit
+          expr: |
+            sum by (namespace, pod, component, api_group) (
+              rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count[5m])
+              or
+              histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds[5m]))
+            )
+            / on (namespace, pod, component) group_left()
+            max by (namespace, pod, component) (rollout_operator_kubernetes_api_client_rate_limit_qps)
+            > 0.8
+          for: 10m
           labels:
             severity: warning
     - name: mimir_continuous_test

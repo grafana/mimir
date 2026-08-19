@@ -95,6 +95,7 @@ data:
       compression_enabled: false
       join_members:
       - dns+keda-autoscaling-metamonitoring-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+      rejoin_interval: 60s
     querier:
       max_concurrent: 8
     query_scheduler:

@@ -8,6 +8,7 @@ package exporter
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -448,4 +449,74 @@ func TestConfig_Validate_floatChunkEncoding(t *testing.T) {
 	cfg := Config{EnabledMetrics: []string{floatChunkEncoding}}
 	cfg.Ring.Enabled = false
 	require.NoError(t, cfg.Validate())
+}
+
+func TestOverridesExporter_blockedAndLimitedQueryRuleExpiry(t *testing.T) {
+	earlier := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	later := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-with-id-and-expiry": {
+			BlockedQueries: validation.BlockedQueriesConfig{
+				{Pattern: "rate(metric_counter[5m])", ID: "block-1", ExpiresAt: later},
+			},
+			LimitedQueries: validation.LimitedQueriesConfig{
+				{Query: "rate(metric_counter[5m])", ID: "limit-1", ExpiresAt: later},
+			},
+		},
+		"tenant-with-duplicate-id": {
+			// Two rules sharing the same id: the exported series must be the earlier of the two, and there
+			// must be exactly one series (client_golang rejects two series with identical labels).
+			BlockedQueries: validation.BlockedQueriesConfig{
+				{Pattern: "rate(metric_counter[5m])", ID: "block-dup", ExpiresAt: later},
+				{Pattern: "sum(metric_counter)", ID: "block-dup", ExpiresAt: earlier},
+			},
+			LimitedQueries: validation.LimitedQueriesConfig{
+				{Query: "rate(metric_counter[5m])", ID: "limit-dup", ExpiresAt: later},
+				{Query: "sum(metric_counter)", ID: "limit-dup", ExpiresAt: earlier},
+			},
+		},
+		"tenant-with-expiry-no-id": {
+			// Rules without an id are grouped under an empty id, keyed on the earliest expiry among them.
+			BlockedQueries: validation.BlockedQueriesConfig{
+				{Pattern: "rate(metric_counter[5m])", ExpiresAt: later},
+				{Pattern: "sum(metric_counter)", ExpiresAt: earlier},
+			},
+			LimitedQueries: validation.LimitedQueriesConfig{
+				{Query: "rate(metric_counter[5m])", ExpiresAt: later},
+				{Query: "sum(metric_counter)", ExpiresAt: earlier},
+			},
+		},
+		"tenant-with-neither": {
+			BlockedQueries: validation.BlockedQueriesConfig{
+				{Pattern: "rate(metric_counter[5m])"},
+			},
+			LimitedQueries: validation.LimitedQueriesConfig{
+				{Query: "rate(metric_counter[5m])"},
+			},
+		},
+	}
+
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	// testutil.CollectAndCompare gathers via a Registry, which sorts each metric family's samples by label
+	// value (id, then user) before encoding — so the expected text below must be in that same sorted order.
+	expectedBlockedExpiry := fmt.Sprintf(`
+# HELP cortex_blocked_query_rule_expires_at Unix timestamp of the earliest expires_at among a tenant's blocked-query rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.
+# TYPE cortex_blocked_query_rule_expires_at gauge
+cortex_blocked_query_rule_expires_at{id="",user="tenant-with-expiry-no-id"} %d
+cortex_blocked_query_rule_expires_at{id="block-1",user="tenant-with-id-and-expiry"} %d
+cortex_blocked_query_rule_expires_at{id="block-dup",user="tenant-with-duplicate-id"} %d
+`, earlier.Unix(), later.Unix(), earlier.Unix())
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedBlockedExpiry), "cortex_blocked_query_rule_expires_at"))
+
+	expectedLimitedExpiry := fmt.Sprintf(`
+# HELP cortex_limited_query_rule_expires_at Unix timestamp of the earliest expires_at among a tenant's limited-query (rate-limit) rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.
+# TYPE cortex_limited_query_rule_expires_at gauge
+cortex_limited_query_rule_expires_at{id="",user="tenant-with-expiry-no-id"} %d
+cortex_limited_query_rule_expires_at{id="limit-1",user="tenant-with-id-and-expiry"} %d
+cortex_limited_query_rule_expires_at{id="limit-dup",user="tenant-with-duplicate-id"} %d
+`, earlier.Unix(), later.Unix(), earlier.Unix())
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedLimitedExpiry), "cortex_limited_query_rule_expires_at"))
 }
