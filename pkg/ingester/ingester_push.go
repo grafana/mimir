@@ -614,7 +614,7 @@ func (i *Ingester) pushSamplesToAppender(
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+		var prevSampleStartTimestamp int64
 
 		for _, s := range ts.Samples {
 			var err error
@@ -628,13 +628,13 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
-					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+					_, err = app.Append(ref, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+					ref, err = app.Append(0, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
@@ -645,9 +645,9 @@ func (i *Ingester) pushSamplesToAppender(
 					// samples. Thus we ignore if zero sample would cause duplicate.
 					// We also ignore out of order sample as created timestamp is out of order most of the time,
 					// except when written before the first sample.
-					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+					errProcessor.ProcessErr(err, s.StartTimestamp, ts.Labels)
 				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
 
 			// If the cached reference exists, we try to use it.
@@ -678,6 +678,8 @@ func (i *Ingester) pushSamplesToAppender(
 
 		numNativeHistogramBuckets := -1
 		if nativeHistogramsIngestionEnabled {
+			var prevHistogramStartTimestamp int64
+
 			for _, h := range ts.Histograms {
 				var (
 					err error
@@ -699,14 +701,14 @@ func (i *Ingester) pushSamplesToAppender(
 					ih = mimirpb.FromHistogramProtoToHistogram(&h)
 				}
 
-				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+				if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
 					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 					if ref != 0 {
-						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+						_, err = app.Append(ref, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
 					} else {
 						// Copy the label set because both TSDB and the active series tracker may retain it.
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+						ref, err = app.Append(0, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
@@ -717,9 +719,9 @@ func (i *Ingester) pushSamplesToAppender(
 						// samples. Thus we ignore if zero sample would cause duplicate.
 						// We also ignore out of order sample as created timestamp is out of order most of the time,
 						// except when written before the first sample.
-						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
+						errProcessor.ProcessErr(err, h.StartTimestamp, ts.Labels)
 					}
-					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+					prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 				}
 
 				// If the cached reference exists, we try to use it.

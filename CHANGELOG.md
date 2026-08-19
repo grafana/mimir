@@ -13,6 +13,7 @@
 * [CHANGE] Removed the following deprecated config: `-querier.filter-queryables-enabled`, `-query-frontend.cache-samples-processed-stats`, `-ingest-storage.kafka.write-clients`, `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`, `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`. #16352
 * [CHANGE] The `bucket` label of the `thanos_objstore_bucket_*` metrics, previously always empty, is now set to the name of the bucket the metrics refer to. This lets a component that accesses more than one bucket report each of them separately. The `thanos_store_bucket_cache_*` and `cortex_bucket_index_load*` metrics gained a `bucket` label carrying the same bucket name, for the same reason. #16265
 * [CHANGE] Compactor: Stabilize `-compactor.first-level-compaction-skip-future-max-time` to `true` and `-compactor.first-level-compaction-ooo-wait-period` to 5 minutes, both of which have been shown to improve batching during the split phase and reduce the total volume of L2 blocks in deployments with lots of out-of-order writes. #16464
+* [CHANGE] Distributor: Remote Write 2.0's `created_timestamp` field on `TimeSeries` has moved to a `start_timestamp` field on each `Sample` and `Histogram`, matching the upstream Remote Write 2.0 specification. The old per-series field is now reserved. #16470
 * [CHANGE] Compactor: Sparse index-header generation for compacted blocks is now required. A failure to build a block's sparse index-header now fails the compaction job, instead of just skipping the upload of that block's sparse index-header. #16657
 * [CHANGE] Querier, Store-gateway: Remove support for opaque GRPC hint types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.2. See associated release notes for more information. #16481
 * [CHANGE] Ingester: Rename experimental index lookup planning metrics from `cortex_ingester_lookup_planning_*` to `cortex_tsdb_index_lookup_planning_*` to reflect they are component-agnostic. #16665
@@ -148,6 +149,8 @@
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
+* [BUGFIX] MQE: Fix `histogram_count()`, `histogram_sum()` and `histogram_avg()` returning wrong results when they wrap an `==` or `!=` comparison of native histograms, `changes()` or `count_values()`. Native histograms with the same count and sum but different buckets were treated as equal. #16913
+* [BUGFIX] Ingester, Block-builder: Honor a start timestamp attached to any sample or histogram within a batch, not just the first one. Previously, only the first sample or histogram in a Remote Write 2.0 request's batch could ever trigger a zero sample for its start timestamp; now each distinct start timestamp within the same batch does. #16470
 
 ### Mixin
 

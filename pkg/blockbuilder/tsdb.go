@@ -151,18 +151,18 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+		var prevSampleStartTimestamp int64
 
 		for _, s := range ts.Samples {
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
+			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs &&
 				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
 					// If the cached reference exists, we try to use it.
-					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+					_, err = app.Append(ref, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					// Copy the label set because TSDB may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+					ref, err = app.Append(0, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
@@ -174,7 +174,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
 					discardedSamples++
 				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
 
 			if ref != 0 {
@@ -204,6 +204,8 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			continue
 		}
 
+		var prevHistogramStartTimestamp int64
+
 		for _, h := range ts.Histograms {
 			var (
 				ih *histogram.Histogram
@@ -216,14 +218,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+			if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
 				zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 				if ref != 0 {
-					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+					_, err = app.Append(ref, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+					ref, err = app.Append(0, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
 				}
 				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
@@ -235,7 +237,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
 					discardedSamples++
 				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
 
 			if ref != 0 {
