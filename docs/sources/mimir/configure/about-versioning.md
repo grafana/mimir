@@ -320,6 +320,8 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.role`
 - Memberlist rejoin custom seed nodes
   - `-memberlist.rejoin-seed-nodes`
+- Runtime configuration
+  - Method used to decode runtime configuration files (`-runtime-config.loader`)
 - Jsonnet
   - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
