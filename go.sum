@@ -1084,8 +1084,8 @@ go.etcd.io/etcd/api/v3 v3.5.4/go.mod h1:5GB2vv4A4AOn3yk7MftYGHkUfGtDHnEraIjym4dY
 go.etcd.io/etcd/api/v3 v3.6.9 h1:UA7iKfEW1AzgihcBSGXci2kDGQiokSq41F9HMCI/RTI=
 go.etcd.io/etcd/api/v3 v3.6.9/go.mod h1:csEk/qTfxKL36NqJdU15Tgtl65A8dyEY2BYo7PRsIwk=
 go.etcd.io/etcd/client/pkg/v3 v3.5.4/go.mod h1:IJHfcCEKxYu1Os13ZdwCwIUTUVGYTSAM3YSwc9/Ac1g=
-go.etcd.io/etcd/client/pkg/v3 v3.6.9 h1:T8nuk8Lz64C+Hzb0coBFLMSlVSQZBpAtFk46swdM1DA=
-go.etcd.io/etcd/client/pkg/v3 v3.6.9/go.mod h1:WEy3PpwbbEBVRdh1NVJYsuUe/8eyI21PNJRazeD8z/Y=
+go.etcd.io/etcd/client/pkg/v3 v3.6.14 h1:kqZf/BCRDWk9u5cNwBn1mTA+4GIZAU0POFPHmWHvo/I=
+go.etcd.io/etcd/client/pkg/v3 v3.6.14/go.mod h1:Po3WXW01VRS7/gSDf8xjiY2rJTLmAwq/YmKAEz6u1+E=
 go.etcd.io/etcd/client/v2 v2.305.4/go.mod h1:Ud+VUwIi9/uQHOMA+4ekToJ12lTxlv0zB/+DHwTGEbU=
 go.etcd.io/etcd/client/v3 v3.5.4/go.mod h1:ZaRkVgBZC+L+dLCjTcF1hRXpgZXQPOvnA/Ak/gq3kiY=
 go.etcd.io/etcd/client/v3 v3.6.9 h1:3X555hQXmhRr27O37wls53g68CpUiPOiHXrZfz2Al+o=
