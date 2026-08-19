@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16077-aaed952d9c@sha256:4515f3fef3a21ecd0b24b565e81c0dea3ce8ad111e629ef03b976ae35a6b2c10
+LATEST_BUILD_IMAGE_TAG ?= pr16421-5528dedd9a@sha256:3f1f54b9f90366e1b26935f60af446ca6acdff708a4153e8328eef64c33f576e
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
