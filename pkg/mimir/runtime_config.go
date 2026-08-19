@@ -87,18 +87,40 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 		return nil, errMultipleDocuments
 	}
 
-	if l.validate != nil {
-		for tenantID, limits := range overrides.TenantLimits {
-			if limits == nil {
-				continue
-			}
-			if err := l.validate(limits); err != nil {
-				return nil, fmt.Errorf("tenant %q: %w", tenantID, err)
-			}
-		}
+	if err := l.validateAll(overrides); err != nil {
+		return nil, err
 	}
 
 	return overrides, nil
+}
+
+func (l *runtimeConfigLoader) loadFromMap(m map[string]interface{}) (interface{}, error) {
+	overrides := &runtimeConfigValues{}
+
+	if err := validation.DecodeLimitsMap(m, overrides); err != nil {
+		return nil, err
+	}
+
+	if err := l.validateAll(overrides); err != nil {
+		return nil, err
+	}
+
+	return overrides, nil
+}
+
+func (l *runtimeConfigLoader) validateAll(overrides *runtimeConfigValues) error {
+	if l.validate == nil {
+		return nil
+	}
+	for tenantID, limits := range overrides.TenantLimits {
+		if limits == nil {
+			continue
+		}
+		if err := l.validate(limits); err != nil {
+			return fmt.Errorf("tenant %q: %w", tenantID, err)
+		}
+	}
+	return nil
 }
 
 func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-chan kv.MultiRuntimeConfig {
@@ -205,8 +227,10 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 // NewRuntimeManager returns a runtimeconfig.Manager, a services.Service that must be explicitly started to perform any work.
 // cfg is initialized as necessary, before being passed to runtimeconfig.New.
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
-	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
-	cfg.RuntimeConfig.Loader = loader.load
+	if cfg.RuntimeConfig.Loader == nil && cfg.RuntimeConfig.MapLoader == nil {
+		loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
+		cfg.RuntimeConfig.MapLoader = loader.loadFromMap
+	}
 
 	// Make sure to set default limits before we start loading configuration into memory.
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)

@@ -48,6 +48,15 @@ func (s *LabelValueLengthOverLimitStrategy) UnmarshalJSON(bytes []byte) error {
 	return s.Set(repr)
 }
 
+// UnmarshalMapstructure implements [mapstructure.Unmarshaler].
+func (s *LabelValueLengthOverLimitStrategy) UnmarshalMapstructure(input any) error {
+	repr, ok := input.(string)
+	if !ok {
+		return fmt.Errorf("expected a string, got %T", input)
+	}
+	return s.Set(repr)
+}
+
 func (s LabelValueLengthOverLimitStrategy) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
 }

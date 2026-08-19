@@ -576,7 +576,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	})
 }
 
-// unmarshal does both YAML and JSON.
+// unmarshal does YAML, JSON and mapstructure.
 func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
