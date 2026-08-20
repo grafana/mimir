@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1352,6 +1353,69 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_FilledLabelsCollisionIsAn
 	}
 }
 
+func TestOneToOneVectorVectorBinaryOperation_FillRight_GroupPresenceRespectsMemoryLimit(t *testing.T) {
+	ctx := context.Background()
+	fillZero := 0.0
+	start := timestamp.Time(0)
+	timeRange := types.NewRangeQueryTimeRange(start, start.Add(10_999*time.Second), time.Second)
+	rejectionCount := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fill_right_group_presence_rejections_total"})
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 64*1024, rejectionCount, "fill-right group presence test")
+
+	leftSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "left_a", "group", "x"),
+		labels.FromStrings(model.MetricNameLabel, "left_b", "group", "x"),
+	}
+	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}}
+
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	defer o.Close()
+
+	_, err = o.SeriesMetadata(ctx, nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "maximum allowed estimated amount of memory")
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillRight_ReleasesGroupPresenceIfStoppedEarly(t *testing.T) {
+	for seriesToRead := 0; seriesToRead <= 2; seriesToRead++ {
+		t.Run(fmt.Sprintf("stop after reading %d output series", seriesToRead), func(t *testing.T) {
+			ctx := context.Background()
+			fillZero := 0.0
+			start := timestamp.Time(0)
+			timeRange := types.NewRangeQueryTimeRange(start, start.Add(time.Minute), time.Minute)
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+			leftSeries := []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_a", "group", "x"),
+				labels.FromStrings(model.MetricNameLabel, "left_b", "group", "x"),
+			}
+			left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}}
+
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			metadata, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, 2)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+
+			for range seriesToRead {
+				data, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+			}
+
+			require.NoError(t, o.FinishedReading(ctx))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			o.Close()
+		})
+	}
+}
+
 // expectedSplitGroup describes the output series that computeOutputSeries must build for one
 // name-retaining fill-left split group.
 type expectedSplitGroup struct {
@@ -2026,6 +2090,7 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 	// exclude hints (set by an up-to-date query-frontend). When hints are nil
 	// (old query-frontend plans), no matchers are generated to avoid incorrect
 	// filtering of labels synthesized by label_replace/label_join.
+	fillZero := 0.0
 	testCases := map[string]struct {
 		vectorMatching       parser.VectorMatching
 		hints                *Hints
@@ -2144,6 +2209,30 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 			},
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
+			},
+		},
+		"fill_right with hints preserves unmatched left output": {
+			vectorMatching: parser.VectorMatching{
+				Card:           parser.CardOneToOne,
+				On:             true,
+				MatchingLabels: []string{"env"},
+				FillValues:     parser.VectorMatchFillValues{RHS: &fillZero},
+			},
+			hints: &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "dev"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"),
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "dev|prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "dev"),
 			},
 		},
 		"on matching without hints: RHS receives nil matchers": {

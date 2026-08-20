@@ -77,10 +77,8 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
-		// Skip narrowing when a fill value is set: narrowing the filled side would drop the unmatched
-		// series that fill relies on to produce output.
-		// TODO: still narrow the non-filled side, which is safe.
-		if e.VectorMatching.FillValues.RhsSet || e.VectorMatching.FillValues.LhsSet {
+		// A left fill requires unmatched right-side series, so narrowing would change the result.
+		if e.VectorMatching.FillValues.LhsSet {
 			return true, nil
 		}
 

@@ -212,6 +212,18 @@ type fillRightGroupTracker struct {
 	seriesRemaining int
 }
 
+func (g *fillRightGroupTracker) seriesRead(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.seriesRemaining--
+	if g.seriesRemaining == 0 {
+		g.FinishedReading(memoryConsumptionTracker)
+	}
+}
+
+func (g *fillRightGroupTracker) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.IntSlicePool.Put(&g.presence, memoryConsumptionTracker)
+	g.seriesRemaining = 0
+}
+
 // oneToOneBinaryOperationSplitGroup collects one name-retaining fill-left split group while
 // computeOutputSeries builds the group's output series. addNameDroppedFillLeftSiblings then gives
 // each group its fill-left carrier.
@@ -405,8 +417,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
 	// to labels that don't exist on the RHS of this binary operation.
 	//
-	// b.hints is nil for fill expressions (the optimisation pass sets no hints for them), so we
-	// won't narrow the right side here.
+	// Fill-left expressions have no hints because they require unmatched right-side series.
 	if b.hints != nil {
 		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
@@ -818,9 +829,14 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 			// A second (or later) fill-right output series for the same match group, producing a
 			// different output label set (name-retaining operator). Wire up the shared tracker.
 			if firstSeries.fill.fillRightGroupTracker == nil {
-				// Lazily create the tracker on the first collision for this group.
+				presence, err := types.IntSlicePool.Get(b.timeRange.StepCount, b.MemoryConsumptionTracker)
+				if err != nil {
+					return err
+				}
+				presence = presence[:b.timeRange.StepCount]
+
 				tracker := &fillRightGroupTracker{
-					presence:        make([]int, b.timeRange.StepCount),
+					presence:        presence,
 					seriesRemaining: 1, // for firstSeries; incremented below for each subsequent series
 				}
 				for i := range tracker.presence {
@@ -1255,7 +1271,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 				return types.InstantVectorSeriesData{}, err
 			}
 		}
-		tracker.seriesRemaining--
+		tracker.seriesRead(b.MemoryConsumptionTracker)
 	}
 
 	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
@@ -1556,6 +1572,10 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 			// Reset computed so that if FinishedReading is called again (e.g. by a test double),
 			// the holder does not appear to hold valid data.
 			s.fill.splitHolder.computed = false
+		}
+
+		if s.fill != nil && s.fill.fillRightGroupTracker != nil {
+			s.fill.fillRightGroupTracker.FinishedReading(b.MemoryConsumptionTracker)
 		}
 	}
 
