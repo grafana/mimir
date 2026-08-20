@@ -900,14 +900,14 @@ func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		v.Result.ToVal(&sv)
 		d.Result = []SampleStream{{
 			Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
-			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(sv.Timestamp)}},
 		}}
 
 	case model.ValScalar:
 		var sv model.Scalar
 		v.Result.ToVal(&sv)
 		d.Result = []SampleStream{{
-			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
 		}}
 
 	case model.ValVector:
@@ -1020,7 +1020,7 @@ func fromVectorSamples(vss []vectorSample) ([]SampleStream, string) {
 		}
 		ret[i] = SampleStream{
 			Labels:  s.Labels,
-			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
 		}
 	}
 	return ret, ""
@@ -1048,7 +1048,7 @@ func vectorSampleStreamEncode(vss []SampleStream, stream *jsoniter.Stream) {
 		stream.WriteMore()
 		if len(vs.Samples) == 1 {
 			stream.WriteObjectField(`value`)
-			mimirpb.SampleJsoniterEncode(vs.Samples[0], stream)
+			mimirpb.FloatSampleJsoniterEncode(vs.Samples[0], stream)
 		} else {
 			stream.WriteObjectField(`histogram`)
 			mimirpb.HistogramJsoniterEncode(vs.Histograms[0], stream)

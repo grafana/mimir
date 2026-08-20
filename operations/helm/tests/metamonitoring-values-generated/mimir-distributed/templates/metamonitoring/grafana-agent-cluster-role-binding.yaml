@@ -15,6 +15,6 @@ roleRef:
   name: metamonitoring-values-mimir-grafana-agent
 subjects:
   - kind: ServiceAccount
-    name: metamonitoring-values-mimir
+    name: metamonitoring-values-mimir-grafana-agent
     namespace: citestns
 

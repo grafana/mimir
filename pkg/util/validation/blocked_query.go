@@ -18,6 +18,11 @@ type BlockedQuery struct {
 	UnalignedRangeQueries bool           `yaml:"unaligned_range_queries,omitempty" doc:"description=If true, only block the query if the query time range is not aligned to the step, meaning the query is not eligible for range query result caching. If enabled, instant queries and remote read requests will not be blocked."`
 	TimeRangeLongerThan   model.Duration `yaml:"time_range_longer_than,omitempty" doc:"description=Block queries with time range longer than this duration. Set to 0 to disable."`
 	StepSizeShorterThan   model.Duration `yaml:"step_size_shorter_than,omitempty" doc:"description=Block queries where the step is shorter than this duration. Instant queries and queries with no step are not blocked. Set to 0 to disable."`
+	ID                    string         `yaml:"id,omitempty" doc:"description=Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export."`
+	Note                  string         `yaml:"note,omitempty" doc:"description=Freeform operator note describing why this rule exists (e.g. an incident reference or chat link)."`
+	CreatedBy             string         `yaml:"created_by,omitempty" doc:"description=Identity of whoever created this rule, if known."`
+	CreatedAt             time.Time      `yaml:"created_at,omitempty" doc:"description=When this rule was created, if known."`
+	ExpiresAt             time.Time      `yaml:"expires_at,omitempty" doc:"description=Optional expiry timestamp. Purely informational: exported as a metric for alerting on stale rules. Never enforced — an expired rule keeps blocking/limiting queries until explicitly removed."`
 }
 
 type BlockedQueriesConfig []BlockedQuery
@@ -36,6 +41,12 @@ func (lq BlockedQueriesConfig) Validate() error {
 	return nil
 }
 
+// IsExpired reports whether ExpiresAt is set and in the past, relative to now. Purely informational: an expired
+// rule is still enforced.
+func (q BlockedQuery) IsExpired(now time.Time) bool {
+	return !q.ExpiresAt.IsZero() && now.After(q.ExpiresAt)
+}
+
 func (lq *BlockedQueriesConfig) ExampleDoc() (comment string, yaml any) {
 	return `The following configuration shows various ways to block queries: by pattern, by time range, or by combining both. ` +
 			`Rules are validated at configuration load; an error is returned if the pattern is missing or, when regex: true, the pattern is not a valid regular expression. ` +
@@ -51,6 +62,9 @@ func (lq *BlockedQueriesConfig) ExampleDoc() (comment string, yaml any) {
 				Regex:               true,
 				TimeRangeLongerThan: model.Duration(7 * 24 * time.Hour), // 7 days
 				Reason:              "expensive queries over 7 days are blocked",
+				ID:                  "block-expensive-queries",
+				Note:                "added per incident INC-1234, see https://example.com/incident/1234",
+				ExpiresAt:           time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC),
 			},
 			{
 				Pattern:             ".*",

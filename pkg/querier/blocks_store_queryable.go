@@ -846,7 +846,7 @@ func (q *blocksStoreQuerier) targetCompartments(tenantID string, matchers []*lab
 // and returns the first error, cancelling the in-flight siblings on error.
 func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []int, fn func(ctx context.Context, c blocksStoreCompartment) error) error {
 	if len(targets) == 1 {
-		return fn(ctx, q.compartments[targets[0]])
+		return q.wrapCompartmentError(targets[0], fn(ctx, q.compartments[targets[0]]))
 	}
 
 	// fn may open store-gateway streams that are read lazily after this returns, so the context passed to
@@ -856,7 +856,7 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 	g := &errgroup.Group{}
 	for _, c := range targets {
 		g.Go(func() error {
-			if err := fn(ctx, q.compartments[c]); err != nil {
+			if err := q.wrapCompartmentError(c, fn(ctx, q.compartments[c])); err != nil {
 				cancel(err)
 				return err
 			}
@@ -864,6 +864,16 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 		})
 	}
 	return g.Wait() //nolint:govet // OK to return without cancelling ctx on success, see comment above.
+}
+
+// wrapCompartmentError annotates err with the read compartment it came from, and returns it unchanged
+// when compartments are disabled.
+func (q *blocksStoreQuerier) wrapCompartmentError(compartmentID int, err error) error {
+	if err == nil || q.router == nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "read compartment %d", compartmentID)
 }
 
 // queryCompartmentsWithConsistencyCheck runs queryWithConsistencyCheck against each targeted compartment

@@ -207,6 +207,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   trace:
     enable: false
@@ -405,6 +406,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   chunk_size_bytes: 0
   max_retries: 0
@@ -511,6 +513,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   msi_resource: ""
 prefix: ""
@@ -574,6 +577,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```
@@ -609,6 +613,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```
@@ -775,6 +780,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```

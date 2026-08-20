@@ -224,6 +224,46 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
+          alert: $.alertName('BlockedQueryRuleExpired'),
+          expr: |||
+            # min() picks the earliest expiry among the tenant's blocked_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_blocked_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              At least one blocked_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              blocked_queries configuration and remove or renew any rule that's no longer needed.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
+        },
+        {
+          alert: $.alertName('LimitedQueryRuleExpired'),
+          expr: |||
+            # min() picks the earliest expiry among the tenant's limited_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_limited_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              At least one limited_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              limited_queries configuration and remove or renew any rule that's no longer needed.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
+        },
+        {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             # There are some queries in the queue.
@@ -358,8 +398,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               or
               ( # Ingest storage timeseries
                 sum by(%(alert_aggregation_labels)s) (
-                  max by(ingester_id, %(alert_aggregation_labels)s) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, %(alert_aggregation_labels)s) (
+                    label_replace(%(memory_series)s,
                       "ingester_id", "$1",
                       "%(per_instance_label)s", ".*-([0-9]+)$"
                     )
@@ -367,7 +407,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
             ) > 100000
-          ||| % $._config,
+          ||| % $._config {
+            memory_series: $.withReadCompartmentLabel('cortex_ingester_memory_series'),
+          },
           labels: {
             severity: 'warning',
           },
