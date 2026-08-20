@@ -10,7 +10,7 @@
 
 # If you want to get the values file from Github, build the URL as follows because we git tag every release:
 # `https://github.com/grafana/mimir/blob/mimir-distributed-<chart-version>/operations/helm/charts/mimir-distributed/values.yaml`.
-# For example, https://github.com/grafana/mimir/blob/mimir-distributed-3.2.0/operations/helm/charts/mimir-distributed/values.yaml.
+# For example, https://github.com/grafana/mimir/blob/mimir-distributed-release-6.2/operations/helm/charts/mimir-distributed/values.yaml.
 
 # -- Overrides the version used to determine compatibility of resources with the target Kubernetes cluster.
 # This is useful when using `helm template`, because then helm will use the client version of kubectl as the Kubernetes version,
