@@ -7,6 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR="${SCRIPT_DIR}"/test-compartments
 ALERTS_FILE="${TEST_DIR}"/alerts.yaml
 RULES_FILE="${TEST_DIR}"/rules.yaml
+ROLLOUT_DASHBOARD="${TEST_DIR}"/dashboards/mimir-rollout-progress.json
 FAILED=0
 
 assert_failed() {
@@ -39,6 +40,10 @@ assert_matches() {
   fi
 }
 
+count_occurrences() {
+  { grep -o -F -- "$2" "$1" || true; } | wc -l | tr -d ' '
+}
+
 echo "Checking ${ALERTS_FILE}"
 
 # See stripDashboardVars in alerts/alerts-utils.libsonnet.
@@ -67,6 +72,17 @@ PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewer
 for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
   if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then
     assert_failed "MimirFewerIngestersConsumingThanActivePartitions does not derive a read_compartment label from ${METRIC}.\nPartition IDs collide across compartments, so both sides must be compared per compartment."
+  fi
+done
+
+ZONE_ONLY_REGEX='(.*?)(?:-zone-[a-z])?'
+COMPARTMENT_AWARE_REGEX='(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?'
+for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
+  TOTAL=$(count_occurrences "${FILEPATH}" "${ZONE_ONLY_REGEX}")
+  COMPARTMENT_AWARE=$(count_occurrences "${FILEPATH}" "${COMPARTMENT_AWARE_REGEX}")
+
+  if [ "${TOTAL}" != "${COMPARTMENT_AWARE}" ]; then
+    assert_failed "$(basename "${FILEPATH}") contains $((TOTAL - COMPARTMENT_AWARE)) zone-only workload regexes."
   fi
 done
 

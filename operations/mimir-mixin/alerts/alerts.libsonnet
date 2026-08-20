@@ -5,23 +5,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
   local groupDeploymentByRolloutGroup(metricName, ignore) =
-    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "%s", "deployment", "%s"))' % [
       metricName,
       excludeWorkloads('deployment', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroup(metricName, ignore) =
-    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local request_metric = 'cortex_request_duration_seconds',

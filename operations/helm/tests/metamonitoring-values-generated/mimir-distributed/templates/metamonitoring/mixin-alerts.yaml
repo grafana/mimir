@@ -540,20 +540,20 @@ spec:
               (
                 # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
                 max by (cluster, namespace, rollout_group) (
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     unless
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
                   # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                   *
                 (
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     !=
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
               ) and (
                 # Pick only those which are unchanging for the interval.
-                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -572,20 +572,20 @@ spec:
               (
                 # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
                 max by (cluster, namespace, rollout_group) (
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     unless
-                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
                   # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                   *
                 (
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                     !=
-                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                  sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 )
               ) and (
                 # Pick only those which are unchanging for the interval.
-                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -602,11 +602,11 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrolloutstuck
             expr: |
               (
-                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               ) and (
-                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
@@ -622,11 +622,11 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrolloutstuck
             expr: |
               (
-                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               ) and (
-                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                   ==
                 0
               )
