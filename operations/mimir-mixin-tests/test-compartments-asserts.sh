@@ -53,7 +53,7 @@ for RING_NAME in "ingester-partitions" "compactor" "store-gateway"; do
   done
 done
 
-for ALERT in "MimirBucketIndexNotUpdated"; do
+for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJobs" "MimirCompactorSchedulerRepeatedJobFailure"; do
   EXPR=$(ALERT="${ALERT}" yq eval '.groups[].rules[] | select(.alert == env(ALERT)) | .expr' "${ALERTS_FILE}")
 
   if [ -z "${EXPR}" ]; then
