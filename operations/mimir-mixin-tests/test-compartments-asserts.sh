@@ -63,6 +63,14 @@ for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJ
   fi
 done
 
+HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirHighVolumeLevel1BlocksQueried") | .expr' "${ALERTS_FILE}")
+for SELECTOR in 'level="1"' 'component="store-gateway",out_of_order="false"'; do
+  OPERAND=$(echo "${HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR}" | grep -F -- "${SELECTOR}" || true)
+  if [ -z "${OPERAND}" ] || ! echo "${OPERAND}" | grep -q -F -- 'label_replace(' || ! echo "${OPERAND}" | grep -qE -- 'sum by[[:space:]]*\([^)]*read_compartment'; then
+    assert_failed "MimirHighVolumeLevel1BlocksQueried does not derive and group the operand matched by ${SELECTOR} by read_compartment.\nBoth sides of the ratio need identical compartment labels."
+  fi
+done
+
 PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewerIngestersConsumingThanActivePartitions") | .expr' "${ALERTS_FILE}")
 for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
   if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then
