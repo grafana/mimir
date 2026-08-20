@@ -527,7 +527,7 @@ func parseEncodings(s string) (codings, error) {
 	c := make(codings)
 	var e []string
 
-	for _, ss := range strings.Split(s, ",") {
+	for ss := range strings.SplitSeq(s, ",") {
 		coding, qvalue, err := parseCoding(ss)
 
 		if err != nil {
@@ -550,7 +550,8 @@ func parseEncodings(s string) (codings, error) {
 // as might appear in an Accept-Encoding header. It attempts to forgive minor
 // formatting errors.
 func parseCoding(s string) (coding string, qvalue float64, err error) {
-	for n, part := range strings.Split(s, ";") {
+	n := 0
+	for part := range strings.SplitSeq(s, ";") {
 		part = strings.TrimSpace(part)
 		qvalue = DefaultQValue
 
@@ -565,6 +566,7 @@ func parseCoding(s string) (coding string, qvalue float64, err error) {
 				qvalue = 1.0
 			}
 		}
+		n++
 	}
 
 	if coding == "" {

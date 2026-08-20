@@ -651,7 +651,7 @@ func parseDocTag(f reflect.StructField) map[string]string {
 		return cfg
 	}
 
-	for _, entry := range strings.Split(tag, "|") {
+	for entry := range strings.SplitSeq(tag, "|") {
 		parts := strings.SplitN(entry, "=", 2)
 
 		switch len(parts) {

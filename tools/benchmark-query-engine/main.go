@@ -337,9 +337,9 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 	}
 
 	usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
-	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	outputLines := strings.SplitSeq(strings.TrimSpace(buf.String()), "\n")
 
-	for _, l := range outputLines {
+	for l := range outputLines {
 		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg") || strings.HasPrefix(l, "cpu")
 		isBenchmarkLine := strings.HasPrefix(l, benchmarkName)
 		isPassLine := l == "PASS"

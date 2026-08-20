@@ -263,9 +263,9 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	// Parse the backend endpoints (comma separated).
-	parts := strings.Split(cfg.BackendEndpoints, ",")
-
-	for idx, part := range parts {
+	idx := -1
+	for part := range strings.SplitSeq(cfg.BackendEndpoints, ",") {
+		idx++
 		// Skip empty ones.
 		part = strings.TrimSpace(part)
 		if part == "" {

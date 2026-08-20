@@ -464,7 +464,7 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	for _, line := range strings.Split(output.String(), "\n") {
+	for line := range strings.SplitSeq(output.String(), "\n") {
 		if len(line) != 0 {
 			level.Info(c.logger).Log("msg", line)
 		}

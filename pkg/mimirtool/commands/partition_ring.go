@@ -322,7 +322,7 @@ func parsePartitionState(stateStr string) (ring.PartitionState, error) {
 func parsePartitionIDs(input string) ([]int32, error) {
 	seen := map[int32]struct{}{}
 	var ids []int32
-	for _, s := range strings.Split(input, ",") {
+	for s := range strings.SplitSeq(input, ",") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -714,7 +714,7 @@ func removeAllOwnersAndPartitions(ctx context.Context, kvClient kv.Client, ringK
 func parseOwnerIDs(input string) ([]string, error) {
 	seen := map[string]struct{}{}
 	var ids []string
-	for _, s := range strings.Split(input, ",") {
+	for s := range strings.SplitSeq(input, ",") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue

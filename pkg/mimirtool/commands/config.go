@@ -92,7 +92,7 @@ func (c *ConfigCommand) prepareInputs() ([]byte, []string, error) {
 		return nil, nil, errors.Wrap(err, "could not read flags-file")
 	}
 	if len(flagsContents) > 1 {
-		for _, flag := range strings.Split(string(flagsContents), "\n") {
+		for flag := range strings.SplitSeq(string(flagsContents), "\n") {
 			flag = strings.TrimSpace(flag)
 			if len(flag) > 0 {
 				flags = append(flags, flag)

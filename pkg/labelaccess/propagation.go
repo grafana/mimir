@@ -149,7 +149,7 @@ func ExtractLabelMatchersSlice(values []string) (LabelPolicySet, error) {
 	// Iterate through each set header value
 	for _, headerValue := range values {
 		// Split the header value on a comma and iterate through each policy.
-		for _, v := range strings.Split(headerValue, ",") {
+		for v := range strings.SplitSeq(headerValue, ",") {
 			instanceName, policy, err := policyFromHeaderValue(v)
 			if err != nil {
 				return nil, err

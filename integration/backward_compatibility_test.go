@@ -380,7 +380,7 @@ func parsePreviousImageVersionOverrides(env string, logger testingLogger) (map[s
 	overrides := map[string]e2emimir.FlagMapper{}
 	if strings.TrimSpace(env)[0] != '{' {
 		logger.Logf("Overriding previous images with comma separated image names: %s", env)
-		for _, image := range strings.Split(env, ",") {
+		for image := range strings.SplitSeq(env, ",") {
 			overrides[image] = e2emimir.NoopFlagMapper
 		}
 		return overrides, nil

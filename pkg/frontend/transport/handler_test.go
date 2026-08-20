@@ -1128,7 +1128,7 @@ func TestHandler_QueryStringLoggedLast(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	var sawSlowQuery, sawQueryStats bool
-	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 		switch {
 		case strings.Contains(line, `msg="slow query detected"`):
 			sawSlowQuery = true

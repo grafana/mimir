@@ -127,18 +127,17 @@ func getAllTests(testFile string) ([]disabledTest, error) {
 		return nil, err
 	}
 
-	fileContents := string(fileBytes)
-	lines := strings.Split(fileContents, "\n")
 	var disabledTests []disabledTest
 
-	for lineIdx, line := range lines {
+	lineNumber := 0
+	for line := range strings.SplitSeq(string(fileBytes), "\n") {
+		lineNumber++
 		if !strings.HasPrefix(line, "eval") {
 			continue
 		}
 
-		testLineNumber := lineIdx + 1
 		testLine := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		test, err := parseDisabledTest(testLine, testLineNumber)
+		test, err := parseDisabledTest(testLine, lineNumber)
 		if err != nil {
 			return nil, err
 		}

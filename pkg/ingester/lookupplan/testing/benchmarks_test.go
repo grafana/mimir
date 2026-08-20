@@ -227,10 +227,9 @@ func parseQueryIDs(queryIDsStr string) ([]int, error) {
 		return nil, nil
 	}
 
-	parts := strings.Split(queryIDsStr, ",")
-	queryIDs := make([]int, 0, len(parts))
+	queryIDs := make([]int, 0, strings.Count(queryIDsStr, ",")+1)
 
-	for _, part := range parts {
+	for part := range strings.SplitSeq(queryIDsStr, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue

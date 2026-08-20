@@ -412,9 +412,8 @@ func TestRateLimitedReader(t *testing.T) {
 
 // requireLineContaining requires that some line in the output contains all the given substrings.
 func requireLineContaining(t *testing.T, output string, substrs ...string) {
-	lines := strings.Split(output, "\n")
 linesLoop:
-	for _, line := range lines {
+	for line := range strings.SplitSeq(output, "\n") {
 		for _, substr := range substrs {
 			if !strings.Contains(line, substr) {
 				continue linesLoop

@@ -134,8 +134,8 @@ func (c *CustomTrackersConfig) Set(s string) error {
 
 func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 	source := map[string]string{}
-	pairs := strings.Split(s, ";")
-	for i, p := range pairs {
+	i := 0
+	for p := range strings.SplitSeq(s, ";") {
 		split := strings.SplitN(p, ":", 2)
 		if len(split) != 2 {
 			return nil, fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
@@ -148,6 +148,7 @@ func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 			return nil, fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
 		}
 		source[name] = matcher
+		i++
 	}
 	return source, nil
 }

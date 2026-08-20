@@ -138,9 +138,8 @@ func (d *DurationList) String() string {
 
 // Set implements the flag.Value interface
 func (d *DurationList) Set(s string) error {
-	values := strings.Split(s, ",")
-	*d = make([]time.Duration, 0, len(values)) // flag.Parse may be called twice, so overwrite instead of append
-	for _, v := range values {
+	*d = make([]time.Duration, 0, strings.Count(s, ",")+1) // flag.Parse may be called twice, so overwrite instead of append
+	for v := range strings.SplitSeq(s, ",") {
 		t, err := time.ParseDuration(v)
 		if err != nil {
 			return err

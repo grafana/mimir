@@ -329,9 +329,9 @@ func (a *AlertCommand) verifyConfig(logger log.Logger) error {
 	var empty interface{}
 	if a.IgnoreString != "" {
 		a.IgnoreAlerts = make(map[string]interface{})
-		chunks := strings.Split(a.IgnoreString, ",")
+		chunks := strings.SplitSeq(a.IgnoreString, ",")
 
-		for _, name := range chunks {
+		for name := range chunks {
 			a.IgnoreAlerts[name] = empty
 			level.Info(logger).Log("msg", "Ignoring alerts with name", "name", name)
 		}

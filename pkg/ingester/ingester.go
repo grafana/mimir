@@ -305,7 +305,7 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 
 	result := map[string]struct{}{}
 
-	for _, s := range strings.Split(cfg.IgnoreSeriesLimitForMetricNames, ",") {
+	for s := range strings.SplitSeq(cfg.IgnoreSeriesLimitForMetricNames, ",") {
 		tr := strings.TrimSpace(s)
 		if tr != "" {
 			result[tr] = struct{}{}

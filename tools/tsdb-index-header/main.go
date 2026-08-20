@@ -107,8 +107,8 @@ func main() {
 
 	// Analyze specific labels if requested.
 	if *analyzeLabels != "" {
-		labelNames := strings.Split(*analyzeLabels, ",")
-		for _, labelName := range labelNames {
+		labelNames := strings.SplitSeq(*analyzeLabels, ",")
+		for labelName := range labelNames {
 			labelName = strings.TrimSpace(labelName)
 			if labelName == "" {
 				continue
