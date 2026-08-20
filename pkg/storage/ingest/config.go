@@ -161,7 +161,6 @@ type KafkaConfig struct {
 	DialTimeout          time.Duration          `yaml:"dial_timeout"`
 	WriteTimeout         time.Duration          `yaml:"write_timeout"`
 	WriteTimeoutOverhead time.Duration          `yaml:"write_timeout_overhead" category:"experimental"`
-	WriteClients         int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
 
 	// Warpstream-only settings, ignored when Backend != KafkaBackendWarpstream.
 	WarpstreamHealthCheckSlowMultiplier    float64 `yaml:"warpstream_health_check_slow_multiplier" category:"experimental"`
@@ -272,7 +271,6 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 	f.DurationVar(&cfg.WriteTimeoutOverhead, prefix+"write-timeout-overhead", DefaultKafkaRequestTimeoutOverhead, "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.")
-	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+"consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -73,6 +74,9 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 				}
 				if limitedQuery.AllowedFrequency > limitedQueryToEnforce.AllowedFrequency {
 					limitedQueryToEnforce.AllowedFrequency = limitedQuery.AllowedFrequency
+					limitedQueryToEnforce.Reason = limitedQuery.Reason
+					limitedQueryToEnforce.ID = limitedQuery.ID
+					limitedQueryToEnforce.ExpiresAt = limitedQuery.ExpiresAt
 					tenantMinAllowedFrequency = tenantID
 				}
 			}
@@ -84,7 +88,15 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			// If we receive ErrNotStored, the entry is still in the cache and the query should be blocked
 			if errors.Is(err, cache.ErrNotStored) {
 				ql.blockedQueriesCounter.WithLabelValues(tenantMinAllowedFrequency, "limited").Inc()
-				return nil, newQueryLimitedError(limitedQueryToEnforce.AllowedFrequency, tenantMinAllowedFrequency)
+				level.Info(log.With(spanLog, "user", tenantMinAllowedFrequency)).Log(
+					"msg", "query limited",
+					"query", query,
+					"id", limitedQueryToEnforce.ID,
+					"allowed_frequency", limitedQueryToEnforce.AllowedFrequency,
+					"reason", limitedQueryToEnforce.Reason,
+					"expired", limitedQueryToEnforce.IsExpired(time.Now()),
+				)
+				return nil, newQueryLimitedError(limitedQueryToEnforce.AllowedFrequency, tenantMinAllowedFrequency, limitedQueryToEnforce.Reason)
 			}
 			level.Warn(ql.logger).Log("msg", "error while adding to query limiter cache", "err", err)
 		}

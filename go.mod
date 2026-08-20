@@ -29,7 +29,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.33.1
-	github.com/prometheus/client_golang v1.24.1
+	github.com/prometheus/client_golang v1.24.2-0.20260812154952-0c5dccd910c0
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.1
 	github.com/prometheus/prometheus v1.99.0
@@ -72,7 +72,7 @@ require (
 	github.com/prometheus/sigv4 v0.4.1
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/spf13/pflag v1.0.10
-	github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a
+	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
 	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72

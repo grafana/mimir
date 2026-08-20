@@ -1127,7 +1127,7 @@ github.com/prometheus/alertmanager/template
 github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
-# github.com/prometheus/client_golang v1.24.1
+# github.com/prometheus/client_golang v1.24.2-0.20260812154952-0c5dccd910c0
 ## explicit; go 1.25.0
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -1297,7 +1297,7 @@ github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a
+# github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 ## explicit; go 1.24.0
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp

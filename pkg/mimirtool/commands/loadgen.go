@@ -263,7 +263,7 @@ func (c *LoadgenCommand) runQuery() {
 		Step:  time.Minute,
 	}
 	start := time.Now()
-	_, _, err := c.queryClient.QueryRange(ctx, c.query, r)
+	_, _, _, err := c.queryClient.QueryRange(ctx, c.query, r)
 	if err != nil {
 		c.queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		stdlog.Printf("error doing query: %v", err)
