@@ -86,6 +86,11 @@ for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
   fi
 done
 
+ACTUAL_REPLICA_RULES=$(yq eval '[.groups[].rules[] | select(.record == "cluster_namespace_deployment:actual_replicas:count")] | length' "${RULES_FILE}")
+if [ "${ACTUAL_REPLICA_RULES}" -ne 2 ]; then
+  assert_failed "Expected per-compartment and component-wide actual replica rules."
+fi
+
 if [ $FAILED -ne 0 ]; then
   exit 1
 fi
