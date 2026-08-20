@@ -141,16 +141,19 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, "unsupported_inner_node", nil
 	}
 
-	_, isSubquery := inner.(*core.Subquery)
+	subquery, isSubquery := inner.(*core.Subquery)
 	if isSubquery && !enableSubquerySplitting {
 		return nil, "unsupported_inner_node", nil
 	}
 
 	if !inner.IsSplittable() {
-		if isSubquery {
-			return nil, "unsupported_subquery_step_invariant", nil
-		}
 		return nil, "unsupported_inner_node", nil
+	}
+
+	if isSubquery {
+		if err := shareAcrossSplitBlocks(subquery.Child(0)); err != nil {
+			return nil, "", err
+		}
 	}
 
 	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
@@ -174,4 +177,65 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		Inner:                    functionCall,
 	}
 	return n, "", nil
+}
+
+// shareAcrossSplitBlocks wraps the child of every core.Subquery/core.StepInvariantExpression in subtree in a Duplicate node,
+// so two different split blocks can safely materialize it. Different blocks can compute the identical child time range
+// for a nested Subquery or StepInvariantExpression (see range_vector_splitting_2h.test:830), at any nesting depth,
+// breaking an invariant of a single-use operator factory. In addition, it helps to prevent doing the same job twice.
+func shareAcrossSplitBlocks(n planning.Node) error {
+	if mayBeMaterializedByMultipleBlocks(n) {
+		if n.ChildCount() != 1 {
+			return fmt.Errorf("expected node of type %s to have exactly one child, got %d", n.NodeType(), n.ChildCount())
+		}
+
+		child := n.Child(0)
+
+		if child.NodeType() == planning.NODE_TYPE_DUPLICATE {
+			return nil
+		}
+
+		// Recurse first, so that anything nested even deeper (eg. a subquery nested inside this one) is
+		// already shareable before wrapping child itself.
+		if err := shareAcrossSplitBlocks(child); err != nil {
+			return err
+		}
+
+		wrapped, err := wrapInDuplicate(child)
+		if err != nil {
+			return err
+		}
+
+		return n.ReplaceChild(0, wrapped)
+	}
+
+	for i := range n.ChildCount() {
+		if err := shareAcrossSplitBlocks(n.Child(i)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func mayBeMaterializedByMultipleBlocks(n planning.Node) bool {
+	switch n.(type) {
+	case *core.Subquery, *core.StepInvariantExpression:
+		return true
+	default:
+		return false
+	}
+}
+
+// wrapInDuplicate uses planning.NewNodeOfType instead of importing commonsubexpressionelimination.Duplicate
+// directly, since that package already imports rvs (an import back would cycle).
+func wrapInDuplicate(n planning.Node) (planning.Node, error) {
+	dup, err := planning.NewNodeOfType(planning.NODE_TYPE_DUPLICATE)
+	if err != nil {
+		return nil, err
+	}
+	if err := dup.SetChildren([]planning.Node{n}); err != nil {
+		return nil, err
+	}
+	return dup, nil
 }

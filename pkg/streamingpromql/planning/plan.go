@@ -549,6 +549,17 @@ func RegisterNodeFactory(f NodeFactory) {
 	knownNodeTypes[id] = f
 }
 
+// NewNodeOfType creates a new, empty instance of the given node type, using the same factory registered by
+// RegisterNodeFactory
+func NewNodeOfType(nodeType NodeType) (Node, error) {
+	factory, exists := knownNodeTypes[nodeType]
+	if !exists {
+		return nil, fmt.Errorf("unknown node type: %d", nodeType)
+	}
+
+	return factory(), nil
+}
+
 // String returns a human-readable representation of the query plan, intended for use during debugging and tests.
 func (p *QueryPlan) String() string {
 	printer := &planPrinter{

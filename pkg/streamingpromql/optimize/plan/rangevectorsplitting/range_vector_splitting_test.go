@@ -649,6 +649,96 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 	}
 }
 
+// TestQuerySplitting_ShareAcrossSplitBlocks checks that shareAcrossSplitBlocks (see optimization_pass.go) wraps
+// exactly the nodes it needs to in a Duplicate node: any core.Subquery or core.StepInvariantExpression nested
+// below a split target's own child, at any depth, but not the split target's own child itself.
+func TestQuerySplitting_ShareAcrossSplitBlocks(t *testing.T) {
+	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		expr         string
+		expectedPlan string
+	}{
+		"no nested subquery or step-invariant expression: nothing is wrapped": {
+			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: sum_over_time(...)
+						- Subquery: [5h0m0s:1h0m0s]
+							- FunctionCall: max_over_time(...)
+								- MatrixSelector: {__name__="test_metric"}[10m0s]
+			`,
+		},
+		"subquery nested one level below the split target: only the nested subquery's own child is wrapped": {
+			expr: `count_over_time(sum_over_time(min_over_time(test_metric[2h])[20h:2h])[5h:12h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: count_over_time(...)
+						- Subquery: [5h0m0s:12h0m0s]
+							- FunctionCall: sum_over_time(...)
+								- Subquery: [20h0m0s:2h0m0s]
+									- Duplicate
+										- FunctionCall: min_over_time(...)
+											- MatrixSelector: {__name__="test_metric"}[2h0m0s]
+			`,
+		},
+		"subquery nested two levels below the split target: every nested level's own child is wrapped": {
+			expr: `count_over_time(sum_over_time(avg_over_time(min_over_time(test_metric[1h])[3h:30m])[10h:1h])[5h:12h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: count_over_time(...)
+						- Subquery: [5h0m0s:12h0m0s]
+							- FunctionCall: sum_over_time(...)
+								- Subquery: [10h0m0s:1h0m0s]
+									- Duplicate
+										- FunctionCall: avg_over_time(...)
+											- Subquery: [3h0m0s:30m0s]
+												- Duplicate
+													- FunctionCall: min_over_time(...)
+														- MatrixSelector: {__name__="test_metric"}[1h0m0s]
+			`,
+		},
+		"step-invariant expression nested below the split target: its child is wrapped": {
+			expr: `count_over_time(sum_over_time(test_metric[2h] @ 10h)[5h:3h])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- SplitFunctionCall
+						- FunctionCall: count_over_time(...)
+							- Subquery: [5h0m0s:3h0m0s]
+								- StepInvariantExpression
+									- Duplicate
+										- FunctionCall: sum_over_time(...)
+											- MatrixSelector: {__name__="test_metric"}[2h0m0s] @ 36000000 (1970-01-01T10:00:00Z)
+			`,
+		},
+		"step-invariant expression (vector(1)) as one operand of a binary expression: only that operand is wrapped": {
+			expr: `sum_over_time((vector(1) + on() test_metric)[5h:1h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: sum_over_time(...)
+						- Subquery: [5h0m0s:1h0m0s]
+							- BinaryExpression: LHS + on () RHS
+								- LHS: StepInvariantExpression
+									- Duplicate
+										- FunctionCall: vector(...)
+											- NumberLiteral: 1
+								- RHS: VectorSelector: {__name__="test_metric"}
+			`,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(t.Context(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(24*time.Hour)),
+				streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			require.Equal(t, testutils.TrimIndent(tc.expectedPlan), plan.String())
+		})
+	}
+}
+
 func TestQuerySplitting_WithSSE(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(4 * time.Hour)
@@ -1486,10 +1576,6 @@ func TestQuerySplitting_NotSplitReasons(t *testing.T) {
 		rangeQuery bool
 		reason     string
 	}{
-		"subquery inner expression contains a step-invariant expression": {
-			expr:   `count_over_time(sum_over_time(test_metric{job="1"}[100s] @ 100)[7m:25s])`,
-			reason: "unsupported_subquery_step_invariant",
-		},
 		"subquery range not longer than the split interval": {
 			expr:   `count_over_time(test_metric{job="1"}[1h:5m])`,
 			reason: "too_short_interval",
