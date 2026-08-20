@@ -10,7 +10,7 @@
 
 # If you want to get the values file from Github, build the URL as follows because we git tag every release:
 # `https://github.com/grafana/mimir/blob/mimir-distributed-<chart-version>/operations/helm/charts/mimir-distributed/values.yaml`.
-# For example, https://github.com/grafana/mimir/blob/mimir-distributed-3.1.0/operations/helm/charts/mimir-distributed/values.yaml.
+# For example, https://github.com/grafana/mimir/blob/mimir-distributed-release-6.2/operations/helm/charts/mimir-distributed/values.yaml.
 
 # -- Overrides the version used to determine compatibility of resources with the target Kubernetes cluster.
 # This is useful when using `helm template`, because then helm will use the client version of kubectl as the Kubernetes version,
@@ -32,7 +32,7 @@ image:
   repository: docker.io/grafana/mimir
   # -- Grafana Mimir container image tag
   # When set it takes precedence over what is defined as "appVersion" in Chart.yaml.
-  # tag: 3.0.0
+  # tag: 3.2.0
   # -- Container pull policy
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets
@@ -481,7 +481,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.2.0-rc.0
+    # tag: 3.2.0
 
   statefulSet:
     enabled: true
@@ -797,7 +797,7 @@ distributor:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -924,7 +924,7 @@ ingester:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1219,7 +1219,7 @@ overrides_exporter:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 1
   revisionHistoryLimit: null
@@ -1314,7 +1314,7 @@ ruler:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 1
   revisionHistoryLimit: null
@@ -1452,7 +1452,7 @@ ruler_querier:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1577,7 +1577,7 @@ ruler_query_frontend:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1698,7 +1698,7 @@ ruler_query_scheduler:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1792,7 +1792,7 @@ querier:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1932,7 +1932,7 @@ query_frontend:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -2056,7 +2056,7 @@ query_scheduler:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -2152,7 +2152,7 @@ store_gateway:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2437,7 +2437,7 @@ compactor:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
 
   replicas: 1
   revisionHistoryLimit: null
@@ -3913,7 +3913,7 @@ smoke_test:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 3.0.0
+    # tag: 3.2.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -3938,7 +3938,7 @@ continuous_test:
   # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir-continuous-test
-    # tag: 3.0.0
+    # tag: 3.2.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   revisionHistoryLimit: null
