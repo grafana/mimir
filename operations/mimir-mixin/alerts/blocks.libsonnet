@@ -1,4 +1,7 @@
 (import 'alerts-utils.libsonnet') {
+  local withCompartmentAndZoneLabels(query) =
+    'label_replace(%s, "zone", "$1", "%s", ".*-(zone-[a-z]).*")' % [$.withReadCompartmentLabel(query), $._config.per_job_label],
+
   local alertGroups = [
     {
       name: 'mimir_blocks_alerts',
@@ -153,12 +156,13 @@
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
             # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0) > 1
+            count by (%(alert_aggregation_labels)s, read_compartment) (%(corruption_rate_by_zone)s) > 1
             and
             # and there is only one zone
-            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+            count by (%(alert_aggregation_labels)s, read_compartment) (group by (%(alert_aggregation_labels)s, read_compartment, zone) (%(corruptions_by_zone)s)) == 1
           ||| % $._config {
-            rate_interval: $.rateInterval('5m'),
+            corruption_rate_by_zone: withCompartmentAndZoneLabels('(rate(cortex_ingester_tsdb_wal_corruptions_total[%s]) > 0)' % $.rateInterval('5m')),
+            corruptions_by_zone: withCompartmentAndZoneLabels('cortex_ingester_tsdb_wal_corruptions_total'),
           },
           labels: {
             severity: 'critical',
@@ -171,13 +175,14 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
-            # alert when there are more than one corruptions
-            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[%(rate_interval)s]) > 0)) > 1
+            # alert when there are corruptions in more than one zone
+            count by (%(alert_aggregation_labels)s, read_compartment) (group by (%(alert_aggregation_labels)s, read_compartment, zone) (%(corruption_rate_by_zone)s)) > 1
             and
             # and there are multiple zones
-            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+            count by (%(alert_aggregation_labels)s, read_compartment) (group by (%(alert_aggregation_labels)s, read_compartment, zone) (%(corruptions_by_zone)s)) > 1
           ||| % $._config {
-            rate_interval: $.rateInterval('5m'),
+            corruption_rate_by_zone: withCompartmentAndZoneLabels('(rate(cortex_ingester_tsdb_wal_corruptions_total[%s]) > 0)' % $.rateInterval('5m')),
+            corruptions_by_zone: withCompartmentAndZoneLabels('cortex_ingester_tsdb_wal_corruptions_total'),
           },
           labels: {
             severity: 'critical',

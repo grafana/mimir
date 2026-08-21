@@ -70,6 +70,16 @@ for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_l
   fi
 done
 
+for DEPLOYMENT in single-zone multi-zone; do
+  EXPR=$(yq eval ".groups[].rules[] | select(.alert == \"MimirIngesterTSDBWALCorrupted\" and .labels.deployment == \"${DEPLOYMENT}\") | .expr" "${ALERTS_FILE}")
+  if echo "${EXPR}" | grep -q -F -- ', job)' ||
+    ! echo "${EXPR}" | grep -q -F -- '"read_compartment"' ||
+    ! echo "${EXPR}" | grep -q -F -- 'count by (cluster, namespace, read_compartment)' ||
+    ! echo "${EXPR}" | grep -q -F -- 'group by (cluster, namespace, read_compartment, zone)'; then
+    assert_failed "MimirIngesterTSDBWALCorrupted (${DEPLOYMENT}) does not count zones per read compartment."
+  fi
+done
+
 if [ $FAILED -ne 0 ]; then
   exit 1
 fi
