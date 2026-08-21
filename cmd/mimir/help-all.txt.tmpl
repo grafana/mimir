@@ -2544,7 +2544,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.range-vector-splitting.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
   -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
-    	[experimental] Enable splitting subqueries, in addition to range vector selectors. Requires range vector splitting to be enabled.
+    	[experimental] Enable splitting subqueries, in addition to range vector selectors. Requires range vector splitting and common subexpression elimination to be enabled.
   -querier.mimir-query-engine.range-vector-splitting.enabled
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
