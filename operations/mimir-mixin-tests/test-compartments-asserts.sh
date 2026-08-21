@@ -7,6 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 TEST_DIR="${SCRIPT_DIR}"/test-compartments
 ALERTS_FILE="${TEST_DIR}"/alerts.yaml
 RULES_FILE="${TEST_DIR}"/rules.yaml
+ROLLOUT_DASHBOARD="${TEST_DIR}"/dashboards/mimir-rollout-progress.json
 FAILED=0
 
 assert_failed() {
@@ -39,6 +40,10 @@ assert_matches() {
   fi
 }
 
+count_occurrences() {
+  { grep -o -F -- "$2" "$1" || true; } | wc -l | tr -d ' '
+}
+
 echo "Checking ${ALERTS_FILE}"
 
 # See stripDashboardVars in alerts/alerts-utils.libsonnet.
@@ -46,11 +51,47 @@ assert_absent "${ALERTS_FILE}" '$read_compartment' \
   "Alerts must not reference the \$read_compartment dashboard variable: it is not interpolated in rules, so the matcher would never match."
 
 # The ingester ring ("ingester") is intentionally not in this list: it is shared by all compartments.
-for RING_NAME in "compactor" "store-gateway"; do
+for RING_NAME in "ingester-partitions" "compactor" "store-gateway"; do
   for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}"; do
     assert_absent "${FILEPATH}" "name=\"${RING_NAME}\"" \
       "Ring \"${RING_NAME}\" is suffixed with \"-rc-<id>\" when compartments are enabled, so an equality matcher on the bare name never matches. Use a matcher that accepts the suffix."
   done
+done
+
+for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJobs" "MimirCompactorSchedulerRepeatedJobFailure" "MimirHighVolumeLevel1BlocksQueried" "MimirIngesterInstanceHasNoTenants"; do
+  EXPR=$(ALERT="${ALERT}" yq eval '.groups[].rules[] | select(.alert == env(ALERT)) | .expr' "${ALERTS_FILE}")
+
+  if [ -z "${EXPR}" ]; then
+    assert_failed "Alert ${ALERT} was not found in $(basename "${ALERTS_FILE}"): this assertion is checking nothing."
+  elif ! echo "${EXPR}" | grep -q -F -- 'read_compartment'; then
+    assert_failed "Alert ${ALERT} does not group by read_compartment, so a healthy compartment can mask a failing one."
+  fi
+done
+
+HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirHighVolumeLevel1BlocksQueried") | .expr' "${ALERTS_FILE}")
+for SELECTOR in 'level="1"' 'component="store-gateway",out_of_order="false"'; do
+  OPERAND=$(echo "${HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR}" | grep -F -- "${SELECTOR}" || true)
+  if [ -z "${OPERAND}" ] || ! echo "${OPERAND}" | grep -q -F -- 'label_replace(' || ! echo "${OPERAND}" | grep -qE -- 'sum by[[:space:]]*\([^)]*read_compartment'; then
+    assert_failed "MimirHighVolumeLevel1BlocksQueried does not derive and group the operand matched by ${SELECTOR} by read_compartment.\nBoth sides of the ratio need identical compartment labels."
+  fi
+done
+
+PARTITION_ALERT_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirFewerIngestersConsumingThanActivePartitions") | .expr' "${ALERTS_FILE}")
+for METRIC in "cortex_partition_ring_partitions" "cortex_ingest_storage_reader_last_consumed_offset"; do
+  if ! echo "${PARTITION_ALERT_EXPR}" | grep -F -- "${METRIC}" | grep -q -F -- 'read_compartment'; then
+    assert_failed "MimirFewerIngestersConsumingThanActivePartitions does not derive a read_compartment label from ${METRIC}.\nPartition IDs collide across compartments, so both sides must be compared per compartment."
+  fi
+done
+
+ZONE_ONLY_REGEX='(.*?)(?:-zone-[a-z])?'
+COMPARTMENT_AWARE_REGEX='(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?'
+for FILEPATH in "${ALERTS_FILE}" "${RULES_FILE}" "${ROLLOUT_DASHBOARD}"; do
+  TOTAL=$(count_occurrences "${FILEPATH}" "${ZONE_ONLY_REGEX}")
+  COMPARTMENT_AWARE=$(count_occurrences "${FILEPATH}" "${COMPARTMENT_AWARE_REGEX}")
+
+  if [ "${TOTAL}" != "${COMPARTMENT_AWARE}" ]; then
+    assert_failed "$(basename "${FILEPATH}") contains $((TOTAL - COMPARTMENT_AWARE)) zone-only workload regexes."
+  fi
 done
 
 if [ $FAILED -ne 0 ]; then

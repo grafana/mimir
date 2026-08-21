@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -256,6 +257,46 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
+}
+
+// The response body from RoundTripGRPC reaches the query-frontend middleware chain as an
+// http.Response.Body, and that chain closes it more than once:
+// httpQueryRequestRoundTripperHandler.Do closes it, and so does readResponseBody in the
+// codec it hands the response to. Every extra close used to decrement the in-flight gauge
+// again, so it walked below zero and stayed there until the process restarted.
+func TestFrontend_HTTPGRPC_ClosingResponseBodyMoreThanOnceDoesNotSkewInflightRequests(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+
+	require.NoError(t, respBody.Close())
+	require.NoError(t, respBody.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_frontend_queries_in_progress Number of queries in progress handled by this frontend.
+		# TYPE cortex_query_frontend_queries_in_progress gauge
+		cortex_query_frontend_queries_in_progress 0
+	`), "cortex_query_frontend_queries_in_progress"))
 }
 
 func TestFrontend_Protobuf_HappyPath(t *testing.T) {

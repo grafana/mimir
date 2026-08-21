@@ -1503,6 +1503,7 @@ spec:
       containers:
       - args:
         - -blocks-storage.azure.container-name=blocks-bucket
+        - -blocks-storage.azure.http.force-attempt-http2=true
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
