@@ -21,10 +21,18 @@ func at(hour, minute int) time.Time {
 	return time.Date(2026, 1, 2, hour, minute, 0, 0, time.UTC)
 }
 
+func newTestSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
+	return newSchedulerMetrics(reg, newSimpleLanePolicy())
+}
+
 func newTestJobTracker(clk clock.Clock) (*JobTracker, *prometheus.Registry) {
+	return newTestJobTrackerWithPolicy(clk, newSimpleLanePolicy())
+}
+
+func newTestJobTrackerWithPolicy(clk clock.Clock, policy lanePolicy) (*JobTracker, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newSchedulerMetrics(reg)
-	return NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
+	metrics := newSchedulerMetrics(reg, policy)
+	return NewJobTracker(&NopJobPersister{}, "test", clk, policy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger()), reg
 }
 
 type errJobPersister struct{ NopJobPersister }
@@ -72,7 +80,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		},
 		"plan lane transitions even when compaction lane already pending": {
 			setup: func(jt *JobTracker) {
-				jt.toPendingBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, time.Now()))
+				jt.toPendingBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, time.Now()))
 			},
 			now:                at(3, 0),
 			expectedPlan:       true,
@@ -103,7 +111,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	}
 
 	t.Run("returns error on persist failure", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+		metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 		transition, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
@@ -113,7 +121,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 	})
 
 	t.Run("planning skipped when plan is false", func(t *testing.T) {
-		metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+		metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 		jt := NewJobTracker(&errJobPersister{}, "test", clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 		transition, err := jt.Maintenance(leaseDuration, false, false, planningInterval, compactionWaitPeriod)
 		require.NoError(t, err)
@@ -141,17 +149,17 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 func TestJobTracker_recoverFrom(t *testing.T) {
 	newAvailableCompaction := func(id string, order uint32) *TrackedCompactionJob {
-		return NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
+		return NewTrackedCompactionJob(id, &CompactionJob{}, order, at(1, 0))
 	}
 
 	newLeasedCompaction := func(id string, order uint32, statusTime time.Time) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, at(1, 0))
 		j.MarkLeased(statusTime)
 		return j
 	}
 
 	newCompleteCompaction := func(id string) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, 0, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, at(1, 0))
 		j.MarkComplete(at(2, 0))
 		return j
 	}
@@ -248,46 +256,58 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 	}
 }
 
-func assertTrackerBytes(t *testing.T, reg *prometheus.Registry, msg string, splitBytes, mergeBytes float64) {
-	t.Helper()
-	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-		# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).
-		# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="merge"} %g
-		cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type="split"} %g
-	`, mergeBytes, splitBytes)), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
+type splitMerge struct{ split, merge float64 }
+
+// trackerBytesAsserter builds an assertion over every lane of a policy; lanes left out of an
+// expectation are asserted to be zero.
+func trackerBytesAsserter(t *testing.T, reg *prometheus.Registry, lanes []lane) func(string, map[lane]splitMerge) {
+	return func(msg string, want map[lane]splitMerge) {
+		t.Helper()
+		var sb strings.Builder
+		sb.WriteString("# HELP cortex_compactor_scheduler_incomplete_compaction_jobs_bytes The total bytes of blocks in compaction jobs that have not yet completed (pending or active).\n")
+		sb.WriteString("# TYPE cortex_compactor_scheduler_incomplete_compaction_jobs_bytes gauge\n")
+		for _, l := range lanes {
+			fmt.Fprintf(&sb, "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type=\"merge\",lane=%q} %g\n", l, want[l].merge)
+			fmt.Fprintf(&sb, "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{compaction_type=\"split\",lane=%q} %g\n", l, want[l].split)
+		}
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(sb.String()), "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes"), msg)
+	}
 }
 
 func TestJobTracker_ByteTracking(t *testing.T) {
 	clk := clock.NewMock()
-	jt, reg := newTestJobTracker(clk)
+	policy := newCompactionUrgencyLanePolicy(testCompactionUrgencyConfig())
+	jt, reg := newTestJobTrackerWithPolicy(clk, policy)
+	assertBytes := trackerBytesAsserter(t, reg, policy.CompactionLanes())
 
-	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now())
-	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 2, 200, clk.Now())
+	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true, totalBlockBytes: 100}, 1, clk.Now())
+	// Spans 24h, so it lands in the p2 lane.
+	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false, maxTime: int64(24 * time.Hour / time.Millisecond), totalBlockBytes: 200}, 2, clk.Now())
+	bothPending := map[lane]splitMerge{compactionP1Lane: {split: 100}, compactionP2Lane: {merge: 200}}
 
 	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil)
-	assertTrackerBytes(t, reg, "both jobs pending after recovery", 100, 200)
+	assertBytes("both jobs pending after recovery", bothPending)
 
-	leaseResp, _, err := jt.Lease(compactionLane)
+	leaseResp, _, err := jt.Lease(compactionP1Lane)
 	require.NoError(t, err)
-	assertTrackerBytes(t, reg, "split job leased (still incomplete)", 100, 200)
+	assertBytes("split job leased (still incomplete)", bothPending)
 
 	canceled, _, err := jt.CancelLease(leaseResp.Key.Id, leaseResp.Key.Epoch, false)
 	require.NoError(t, err)
 	require.True(t, canceled)
-	assertTrackerBytes(t, reg, "split job revived to pending (bytes unchanged)", 100, 200)
+	assertBytes("split job revived to pending (bytes unchanged)", bothPending)
 
-	leaseResp, _, err = jt.Lease(compactionLane)
+	leaseResp, _, err = jt.Lease(compactionP1Lane)
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
-	assertTrackerBytes(t, reg, "split job complete", 0, 200)
+	assertBytes("split job complete", map[lane]splitMerge{compactionP2Lane: {merge: 200}})
 
-	leaseResp, _, err = jt.Lease(compactionLane)
+	leaseResp, _, err = jt.Lease(compactionP2Lane)
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
-	assertTrackerBytes(t, reg, "merge job complete", 0, 0)
+	assertBytes("merge job complete", nil)
 }
 
 func TestJobTracker_PlanJobTracking(t *testing.T) {
@@ -335,19 +355,21 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()
-	sm := newSchedulerMetrics(reg)
+	sm := newTestSchedulerMetrics(reg)
+	policy := newSimpleLanePolicy()
+	assertBytes := trackerBytesAsserter(t, reg, policy.CompactionLanes())
 
 	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
-	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
-	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
+	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, policy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
+	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, policy, infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
 
 	jt1.recoverFrom([]*TrackedCompactionJob{
-		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now()),
+		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true, totalBlockBytes: 100}, 1, clk.Now()),
 	}, nil)
 	jt2.recoverFrom([]*TrackedCompactionJob{
-		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 1, 200, clk.Now()),
+		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false, totalBlockBytes: 200}, 1, clk.Now()),
 	}, nil)
-	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
+	assertBytes("both tenants contributing before cleanup", map[lane]splitMerge{compactionLane: {split: 100, merge: 200}})
 
 	// Set time past the first planning window to force planning on Maintenance()
 	clk.Set(at(3, 0))
@@ -375,7 +397,7 @@ func TestJobTracker_Cleanup(t *testing.T) {
 
 	// Cleaning up tenant1 should only subtract its contribution, not zero the shared gauges.
 	jt1.CleanupMetrics()
-	assertTrackerBytes(t, reg, "only tenant1 bytes removed", 0, 200)
+	assertBytes("only tenant1 bytes removed", map[lane]splitMerge{compactionLane: {merge: 200}})
 	require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_compactor_scheduler_pending_jobs_by_user The number of queued pending jobs, broken down by user.
 		# TYPE cortex_compactor_scheduler_pending_jobs_by_user gauge
@@ -397,7 +419,7 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 	const maxLeases = 2
 
 	clk := clock.NewMock()
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute)
@@ -447,7 +469,7 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clk := clock.NewMock()
-			metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+			metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 			jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), tc.maxLeases, tc.threshold, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
 
 			lane := compactionLane
@@ -457,7 +479,7 @@ func TestJobTracker_CancelLease_Interrupted(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				jt.recoverFrom([]*TrackedCompactionJob{
-					NewTrackedCompactionJob("merge-job", &CompactionJob{}, 1, 100, clk.Now()),
+					NewTrackedCompactionJob("merge-job", &CompactionJob{totalBlockBytes: 100}, 1, clk.Now()),
 				}, nil)
 			}
 

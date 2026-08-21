@@ -36,7 +36,6 @@ func newTestCompactionJob(id string) TrackedJob {
 		id,
 		&CompactionJob{blocks: nil, isSplit: false},
 		1,
-		0,
 		time.Now(),
 	)
 	return job
@@ -74,7 +73,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	})
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
@@ -108,7 +107,7 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 		require.NoError(t, mgr.Close())
 	})
 
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
@@ -169,6 +168,40 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+// Records written before the planner reported block stats carry only block_ids, split and
+// total_blocks_bytes. They must still decode, and must classify the same way on every path.
+func TestDeserializeCompactionJob_RecordWrittenBeforePlannerStats(t *testing.T) {
+	now := time.Now()
+	stored := &compactorschedulerpb.StoredCompactionJob{
+		Info: &compactorschedulerpb.StoredJobInfo{
+			CreationTime: now.Unix(),
+			Status:       compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE,
+			StatusTime:   now.Unix(),
+			NumLeases:    1,
+			Epoch:        234,
+		},
+		Job: &compactorschedulerpb.CompactionJob{
+			BlockIds:         testBlockIDs,
+			Split:            true,
+			TotalBlocksBytes: 12345,
+		},
+		Order: 7,
+	}
+	content, err := stored.Marshal()
+	require.NoError(t, err)
+
+	job, err := deserializeCompactionJob([]byte("id"), content)
+	require.NoError(t, err)
+	require.Equal(t, testBlockIDs, job.value.blocks)
+	require.True(t, job.value.isSplit)
+	require.Equal(t, uint64(12345), job.value.totalBlockBytes)
+	require.Equal(t, uint32(7), job.order)
+
+	// Absent stats leave the job spanning nothing, so it lands in the p1 lane.
+	require.Zero(t, job.value.Duration())
+	require.Equal(t, compactionP1Lane, newCompactionUrgencyLanePolicy(testCompactionUrgencyConfig()).LaneForJob(job))
 }
 
 func TestBboltJobPersister_Drop(t *testing.T) {
@@ -256,7 +289,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	require.Len(t, mgr.dbs, 2)
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
@@ -318,7 +351,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "extra shard file should be deleted")
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
 		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
@@ -346,18 +379,23 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					numLeases:    1,
 					epoch:        234,
 				},
-				value:           &CompactionJob{blocks: testBlockIDs, isSplit: true},
-				order:           1,
-				totalBlockBytes: 12345,
+				value: &CompactionJob{
+					blocks:             testBlockIDs,
+					isSplit:            true,
+					totalBlockBytes:    12345,
+					minTime:            1000,
+					maxTime:            8_200_000,
+					maxCompactionLevel: 4,
+					outOfOrder:         true,
+				},
+				order: 1,
 			},
 			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
 				writtenJob := written.(*TrackedCompactionJob)
 				readJob, ok := read.(*TrackedCompactionJob)
 				require.True(t, ok)
-				require.Equal(t, writtenJob.value.blocks, readJob.value.blocks)
-				require.Equal(t, writtenJob.value.isSplit, readJob.value.isSplit)
+				require.Equal(t, writtenJob.value, readJob.value)
 				require.Equal(t, writtenJob.order, readJob.order)
-				require.Equal(t, writtenJob.totalBlockBytes, readJob.totalBlockBytes)
 			},
 		},
 		"plan job": {

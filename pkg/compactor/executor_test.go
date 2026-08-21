@@ -194,6 +194,7 @@ func TestParseLaneRequests(t *testing.T) {
 		input   flagext.StringSliceCSV
 		wantErr bool
 		workers [][]compactorschedulerpb.JobType
+		classes [][]compactorschedulerpb.CompactionUrgency
 	}{
 		"no lanes rejected": {
 			input:   flagext.StringSliceCSV{},
@@ -225,6 +226,17 @@ func TestParseLaneRequests(t *testing.T) {
 				{compaction},
 			},
 		},
+		"compaction classes split across workers": {
+			input: flagext.StringSliceCSV{"compact-p1+plan", "compact-p2"},
+			workers: [][]compactorschedulerpb.JobType{
+				{compaction, planning},
+				{compaction},
+			},
+			classes: [][]compactorschedulerpb.CompactionUrgency{
+				{compactorschedulerpb.COMPACTION_URGENCY_P1, compactorschedulerpb.COMPACTION_URGENCY_ANY},
+				{compactorschedulerpb.COMPACTION_URGENCY_P2},
+			},
+		},
 		"duplicate compaction within single worker rejected": {
 			input:   flagext.StringSliceCSV{"compact+compact"},
 			wantErr: true,
@@ -250,6 +262,13 @@ func TestParseLaneRequests(t *testing.T) {
 			require.Len(t, result, len(tc.workers))
 			for i, worker := range tc.workers {
 				require.Equal(t, worker, jobTypes(result[i]))
+			}
+			for i, worker := range tc.classes {
+				classes := make([]compactorschedulerpb.CompactionUrgency, len(result[i]))
+				for j, r := range result[i] {
+					classes[j] = r.CompactionUrgency
+				}
+				require.Equal(t, worker, classes)
 			}
 		})
 	}
@@ -1065,6 +1084,83 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewCompactionJobSpec(t *testing.T) {
+	makeMeta := func(minTime, maxTime int64, level int, sizeBytes int64) *block.Meta {
+		return &block.Meta{
+			BlockMeta: tsdb.BlockMeta{
+				ULID:       ulid.MustNew(uint64(minTime), rand.New(rand.NewSource(minTime))),
+				MinTime:    minTime,
+				MaxTime:    maxTime,
+				Compaction: tsdb.BlockMetaCompaction{Level: level},
+			},
+			Thanos: block.ThanosMeta{Files: []block.File{{RelPath: "index", SizeBytes: sizeBytes}}},
+		}
+	}
+	withOOOHint := func(m *block.Meta) *block.Meta {
+		m.Compaction.SetOutOfOrder()
+		return m
+	}
+	withOOOLabel := func(m *block.Meta) *block.Meta {
+		m.Thanos.Labels = map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}
+		return m
+	}
+
+	tests := map[string]struct {
+		metas    []*block.Meta
+		split    bool
+		expected *compactorschedulerpb.CompactionJob
+	}{
+		"single block": {
+			metas: []*block.Meta{makeMeta(100, 200, 1, 10)},
+			expected: &compactorschedulerpb.CompactionJob{
+				MinTime: 100, MaxTime: 200, MaxCompactionLevel: 1, TotalBlocksBytes: 10,
+			},
+		},
+		"aggregates widest range, highest level and total bytes": {
+			metas: []*block.Meta{makeMeta(200, 300, 2, 10), makeMeta(50, 150, 5, 30), makeMeta(100, 250, 3, 5)},
+			split: true,
+			expected: &compactorschedulerpb.CompactionJob{
+				Split: true, MinTime: 50, MaxTime: 300, MaxCompactionLevel: 5, TotalBlocksBytes: 45,
+			},
+		},
+		// The compactor drops this hint past the first level.
+		"out-of-order detected via the compaction hint": {
+			metas: []*block.Meta{makeMeta(100, 200, 1, 10), withOOOHint(makeMeta(200, 300, 1, 10))},
+			expected: &compactorschedulerpb.CompactionJob{
+				MinTime: 100, MaxTime: 300, MaxCompactionLevel: 1, TotalBlocksBytes: 20, OutOfOrder: true,
+			},
+		},
+		// Only set when the tenant has out-of-order-blocks-external-label-enabled.
+		"out-of-order detected via the external label": {
+			metas: []*block.Meta{withOOOLabel(makeMeta(100, 200, 4, 10))},
+			expected: &compactorschedulerpb.CompactionJob{
+				MinTime: 100, MaxTime: 200, MaxCompactionLevel: 4, TotalBlocksBytes: 10, OutOfOrder: true,
+			},
+		},
+		"recompacted out-of-order blocks are indistinguishable without the external label": {
+			metas: []*block.Meta{makeMeta(100, 200, 4, 10)},
+			expected: &compactorschedulerpb.CompactionJob{
+				MinTime: 100, MaxTime: 200, MaxCompactionLevel: 4, TotalBlocksBytes: 10,
+			},
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tc.expected.BlockIds = serializeBlockIDsForTest(tc.metas)
+			assert.Equal(t, tc.expected, newCompactionJobSpec(tc.metas, tc.split))
+		})
+	}
+}
+
+func serializeBlockIDsForTest(metas []*block.Meta) [][]byte {
+	ids := make([][]byte, 0, len(metas))
+	for _, m := range metas {
+		ids = append(ids, m.ULID.Bytes())
+	}
+	return ids
 }
 
 type blockingBucket struct {

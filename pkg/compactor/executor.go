@@ -122,7 +122,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of lanes, in the order they should be served. Valid lanes: plan, compact, compact-p1, compact-p2. The compact-p1 and compact-p2 lanes only differ from compact when the scheduler's lane policy separates compaction by urgency.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -249,7 +249,8 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 
 // parseLaneRequests parses the requested lanes for each goroutine.
 // An example value is compact+plan,plan
-// '+' separates multiple job types per goroutine, and ',' separates goroutines.
+// '+' separates multiple lanes per goroutine, and ',' separates goroutines.
+// The scheduler's lane policy maps each requested lane onto the lanes it serves.
 func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorschedulerpb.LaneRequest, error) {
 	if len(configuredLanes) == 0 {
 		return nil, fmt.Errorf("invalid empty lane configuration")
@@ -265,7 +266,7 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 		seen := make(map[string]struct{}, len(split))
 		for _, lane := range split {
 			if _, ok := seen[lane]; ok {
-				return nil, fmt.Errorf("duplicate job type %q in lane configuration: %q", lane, workerLane)
+				return nil, fmt.Errorf("duplicate lane %q in lane configuration: %q", lane, workerLane)
 			}
 			seen[lane] = struct{}{}
 			switch lane {
@@ -273,8 +274,12 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING})
 			case "compact":
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION})
+			case "compact-p1":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: compactorschedulerpb.COMPACTION_URGENCY_P1})
+			case "compact-p2":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: compactorschedulerpb.COMPACTION_URGENCY_P2})
 			default:
-				return nil, fmt.Errorf("unknown job type in lane configuration: %q", lane)
+				return nil, fmt.Errorf("unknown lane in lane configuration: %q", lane)
 			}
 		}
 		combined = append(combined, requests)
@@ -755,12 +760,8 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		}
 
 		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
-			Id: job.key,
-			Job: &compactorschedulerpb.CompactionJob{
-				Split:            job.useSplitting,
-				BlockIds:         serializeBlockIds(toCompact),
-				TotalBlocksBytes: sumBlockBytes(toCompact),
-			},
+			Id:  job.key,
+			Job: newCompactionJobSpec(toCompact, job.useSplitting),
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
 	}
@@ -769,20 +770,22 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 	return plannedJobs, nil
 }
 
-func serializeBlockIds(metas []*block.Meta) [][]byte {
-	ids := make([][]byte, 0, len(metas))
-	for _, meta := range metas {
-		ids = append(ids, meta.ULID.Bytes())
+func newCompactionJobSpec(metas []*block.Meta, split bool) *compactorschedulerpb.CompactionJob {
+	spec := &compactorschedulerpb.CompactionJob{
+		Split:    split,
+		BlockIds: make([][]byte, 0, len(metas)),
+		MinTime:  math.MaxInt64,
+		MaxTime:  math.MinInt64,
 	}
-	return ids
-}
-
-func sumBlockBytes(metas []*block.Meta) uint64 {
-	var total uint64
 	for _, meta := range metas {
-		total += uint64(meta.BlockBytes())
+		spec.BlockIds = append(spec.BlockIds, meta.ULID.Bytes())
+		spec.TotalBlocksBytes += uint64(meta.BlockBytes())
+		spec.MinTime = min(spec.MinTime, meta.MinTime)
+		spec.MaxTime = max(spec.MaxTime, meta.MaxTime)
+		spec.MaxCompactionLevel = max(spec.MaxCompactionLevel, int32(meta.Compaction.Level))
+		spec.OutOfOrder = spec.OutOfOrder || meta.IsOutOfOrder()
 	}
-	return total
+	return spec
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
