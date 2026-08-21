@@ -181,10 +181,13 @@ func TestRewrite(t *testing.T) {
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
 
-func TestUpdateStats_XOR2CountedAsFloatSamples(t *testing.T) {
+func TestUpdateStatsCountsSamplesByEncoding(t *testing.T) {
 	xorChunk := chunkenc.NewXORChunk()
 	xor2Chunk := chunkenc.NewXOR2Chunk()
 	histChunk := chunkenc.NewHistogramChunk()
+	floatHistChunk := chunkenc.NewFloatHistogramChunk()
+	histSTChunk := chunkenc.NewHistogramSTChunk()
+	floatHistSTChunk := chunkenc.NewFloatHistogramSTChunk()
 
 	app, err := xorChunk.Appender()
 	require.NoError(t, err)
@@ -200,17 +203,35 @@ func TestUpdateStats_XOR2CountedAsFloatSamples(t *testing.T) {
 	_, _, _, err = histApp.AppendHistogram(nil, 0, 4000, &histogram.Histogram{Count: 5, Sum: 10}, false)
 	require.NoError(t, err)
 
+	floatHistApp, err := floatHistChunk.Appender()
+	require.NoError(t, err)
+	_, _, _, err = floatHistApp.AppendFloatHistogram(nil, 0, 5000, &histogram.FloatHistogram{Count: 5, Sum: 10}, true)
+	require.NoError(t, err)
+
+	histSTApp, err := histSTChunk.Appender()
+	require.NoError(t, err)
+	_, _, _, err = histSTApp.AppendHistogram(nil, 5000, 6000, &histogram.Histogram{Count: 5, Sum: 10}, false)
+	require.NoError(t, err)
+
+	floatHistSTApp, err := floatHistSTChunk.Appender()
+	require.NoError(t, err)
+	_, _, _, err = floatHistSTApp.AppendFloatHistogram(nil, 6000, 7000, &histogram.FloatHistogram{Count: 5, Sum: 10}, true)
+	require.NoError(t, err)
+
 	chks := []chunks.Meta{
 		{Chunk: xorChunk},
 		{Chunk: xor2Chunk},
 		{Chunk: histChunk},
+		{Chunk: floatHistChunk},
+		{Chunk: histSTChunk},
+		{Chunk: floatHistSTChunk},
 	}
 
 	var stats tsdb.BlockStats
 	updateStats(&stats, 1, chks)
 
-	require.Equal(t, uint64(3), stats.NumChunks)
-	require.Equal(t, uint64(4), stats.NumSamples)
+	require.Equal(t, uint64(6), stats.NumChunks)
+	require.Equal(t, uint64(7), stats.NumSamples)
 	require.Equal(t, uint64(3), stats.NumFloatSamples)
-	require.Equal(t, uint64(1), stats.NumHistogramSamples)
+	require.Equal(t, uint64(4), stats.NumHistogramSamples)
 }
