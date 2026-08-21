@@ -655,6 +655,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
+  -query-frontend.enabled-promql-binop-fill-modifiers comma-separated-list-of-strings
+    	Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings

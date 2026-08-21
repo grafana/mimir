@@ -77,6 +77,11 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
+		// A left fill requires unmatched right-side series, so narrowing would change the result.
+		if e.VectorMatching.FillValues.LhsSet {
+			return true, nil
+		}
+
 		// Labels created by label_replace or label_join anywhere within this binary
 		// expression's subtree. We must not generate matchers for these labels because they
 		// don't exist on the raw series fetched from storage.
