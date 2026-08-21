@@ -740,3 +740,27 @@ eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
   {env="prod"} 12
 
 clear
+
+# Cross-block histogram sum loses precision (sum:2 expected, uncompensated Add across split blocks gives sum:0).
+load 1h
+  kahan_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+clear
+
+# Same issue for avg_over_time (count:2.5 sum:0.5 expected, split gives sum:0).
+load 1h
+  kahan_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h avg_over_time(kahan_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+eval instant at 3h avg_over_time(kahan_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+clear
