@@ -90,18 +90,23 @@
 
   compactor_node_affinity_matchers:: [],
 
-  compactor_container::
+  // The container is always named "compactor", whichever StatefulSet runs it, so that dashboards
+  // and alerts selecting on the container name cover every compactor fleet.
+  newCompactorContainer(args, max_concurrency, memory='6Gi', envmap={})::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
-    container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
-    (if std.length($.compactor_env_map) > 0 then container.withEnvMap(std.prune($.compactor_env_map)) else {}) +
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
-    $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
-    $.util.resourcesLimits(null, '6Gi') +
+    $.util.resourcesRequests(max_concurrency, memory) +
+    $.util.resourcesLimits(null, memory) +
     $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
+
+  compactor_container::
+    $.newCompactorContainer($.compactor_args, $._config.compactor_max_concurrency, envmap=$.compactor_env_map),
 
   // Switches a compactor StatefulSet to rollout-operator-coordinated concurrent rollouts: OnDelete updates
   // plus a rollout-group keyed on the StatefulSet name.

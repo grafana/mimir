@@ -26,6 +26,8 @@
          : 'compartments_compactor_enabled requires autoscaling_compactor_enabled',
   assert !$._config.compartments_compactor_enabled || $._config.cortex_compactor_concurrent_rollout_enabled
          : 'compartments_compactor_enabled requires cortex_compactor_concurrent_rollout_enabled',
+  assert !$._config.compartments_compactor_enabled || !$._config.compactor_p2_fleet_enabled
+         : 'compartments_compactor_enabled is not compatible with compactor_p2_fleet_enabled',
 
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,

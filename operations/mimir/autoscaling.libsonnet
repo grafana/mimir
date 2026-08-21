@@ -82,6 +82,12 @@
     // When enabled, the lag trigger uses the last-empty timestamp straight from the
     // cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge instead of deriving it.
     autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric: true,
+
+    // The p2 compactor fleet is sized from its own lane's backlog, so it has no CPU-based fallback:
+    // the fleet only exists alongside the scheduler that queues that lane.
+    autoscaling_compactor_p2_enabled: $._config.compactor_p2_fleet_enabled && $._config.autoscaling_compactor_scheduler_drain_enabled,
+    autoscaling_compactor_p2_min_replicas: error 'you must set autoscaling_compactor_p2_min_replicas in the _config',
+    autoscaling_compactor_p2_max_replicas: error 'you must set autoscaling_compactor_p2_max_replicas in the _config',
   },
 
   // Utility used to override a field only if exists in super.
@@ -942,7 +948,13 @@
       },
     },
 
-  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas)::
+  // A fleet is sized from the compaction lane it serves: `lane` scopes the backlog to that lane,
+  // and is empty when the scheduler queues all compaction work into a single lane. `include_plan_jobs`
+  // must be set on the one fleet that serves the plan lane, and only on it.
+  //
+  // Only the backlog is lane-scoped. The throughput estimate is measured across every fleet, because
+  // the worker-side duration and bytes metrics carry no lane label.
+  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas, lane='', include_plan_jobs=true)::
     // We calculate the estimated time it would take a single worker to drain the queue,
     // then divide by the target drain time to get the desired number of replicas.
     //
@@ -965,6 +977,13 @@
     // Extra label matchers, prefixed with ", " when set so they slot into an existing label set.
     local promql_scheduler_matchers = if scheduler_matchers == '' then '' else ', %s' % scheduler_matchers;
     local promql_compactor_matchers = if compactor_matchers == '' then '' else ', %s' % compactor_matchers;
+    local promql_lane_matcher = if lane == '' then '' else ', lane="%s"' % lane;
+
+    local incomplete_bytes = 'cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_lane_matcher)s%(promql_scheduler_matchers)s}' % {
+      namespace: $._config.namespace,
+      promql_lane_matcher: promql_lane_matcher,
+      promql_scheduler_matchers: promql_scheduler_matchers,
+    };
 
     local estimation_vars = {
       namespace: $._config.namespace,
@@ -997,6 +1016,22 @@
       ||| % estimation_vars;
 
     local indented(expr, spaces) = std.strReplace(std.rstripChars(expr, '\n'), '\n', '\n' + std.repeat(' ', spaces));
+
+    // The plan lane is served by a single fleet, so its term belongs only in that fleet's query.
+    local plan_term = if !include_plan_jobs then '' else '\n' + std.repeat(' ', 6) + indented(|||
+      +
+      # Plan jobs: pending jobs * seconds/job.
+      sum(cortex_compactor_scheduler_pending_jobs{namespace="%(namespace)s", job_type="plan"%(promql_scheduler_matchers)s})
+      * (
+        %(plan_job_seconds)s
+        or on() vector(%(default_plan_job_seconds)d)
+      )
+    ||| % {
+      namespace: $._config.namespace,
+      promql_scheduler_matchers: promql_scheduler_matchers,
+      plan_job_seconds: indented(plan_job_seconds, 2),
+      default_plan_job_seconds: default_plan_job_seconds,
+    }, 6);
 
     // Lag trigger: multiplies the drain-time signal by a factor that grows the longer the pending
     // queue stays non-empty. Starts at 1, grows by `lag_period_increase` per period the queue has
@@ -1040,14 +1075,32 @@
       promql_scheduler_matchers: promql_scheduler_matchers,
     };
 
-    // Same factor, but sourced from the cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge.
+    // The gauge recording when the queue this fleet serves was last empty. The unlabelled one records
+    // when every lane was empty at the same instant, which is not the question a fleet serving a
+    // single lane asks, so a lane-scoped fleet reads the per-lane gauge instead. The plan lane is
+    // left out even for the fleet serving it: plan jobs drain within a planning cycle and would keep
+    // resetting the factor.
+    local last_empty_gauge =
+      if lane == '' then
+        'cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds{namespace="%(namespace)s"%(promql_scheduler_matchers)s}' % {
+          namespace: $._config.namespace,
+          promql_scheduler_matchers: promql_scheduler_matchers,
+        }
+      else
+        'cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="%(namespace)s", lane="%(lane)s"%(promql_scheduler_matchers)s}' % {
+          namespace: $._config.namespace,
+          lane: lane,
+          promql_scheduler_matchers: promql_scheduler_matchers,
+        };
+
+    // Same factor, but sourced from the last-empty timestamp gauge.
     local lag_multiplier_last_empty = |||
       # A [1;%(max_multiplier)d] multiplier, based on the time since we last saw an empty queue.
       # We increment %(period_increase)g every %(period_seconds)d seconds of continuous pending jobs.
       * (
         clamp_max(
           1 + %(period_increase)g * floor(
-            (time() - max(max_over_time(cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds{namespace="%(namespace)s"%(promql_scheduler_matchers)s}[%(lookback_seconds)ds]) > 0)) / %(period_seconds)d
+            (time() - max(max_over_time(%(last_empty_gauge)s[%(lookback_seconds)ds]) > 0)) / %(period_seconds)d
           ),
           %(max_multiplier)d
         )
@@ -1060,7 +1113,7 @@
       lookback_seconds: lag_lookback_seconds,
       max_periods: lag_max_periods,
       max_multiplier: lag_max_multiplier,
-      promql_scheduler_matchers: promql_scheduler_matchers,
+      last_empty_gauge: last_empty_gauge,
     };
 
     local q = |||
@@ -1070,33 +1123,24 @@
             # Compaction jobs: outstanding bytes * seconds/byte per compaction type
             sum(
               (
-                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s})
+                sum by (compaction_type) (%(incomplete_bytes)s)
                 %(bytes_to_seconds)s
               )
               or
-              sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s}) * %(default_compaction_seconds_per_byte)g
-            )
-            +
-            # Plan jobs: pending jobs * seconds/job.
-            sum(cortex_compactor_scheduler_pending_jobs{namespace="%(namespace)s", job_type="plan"%(promql_scheduler_matchers)s})
-            * (
-              %(plan_job_seconds)s
-              or on() vector(%(default_plan_job_seconds)d)
-            )
+              sum by (compaction_type) (%(incomplete_bytes)s) * %(default_compaction_seconds_per_byte)g
+            )%(plan_term)s
           )
           / %(drain_target_seconds)d
         )[%(peak_window)s:5m]
       )
       %(lag_multiplier)s
     ||| % {
-      namespace: $._config.namespace,
       drain_target_seconds: $._config.autoscaling_compactor_scheduler_drain_target_seconds,
+      incomplete_bytes: incomplete_bytes,
       bytes_to_seconds: indented(bytes_to_seconds, 10),
-      plan_job_seconds: indented(plan_job_seconds, 8),
+      plan_term: plan_term,
       default_compaction_seconds_per_byte: default_compaction_seconds_per_byte,
-      default_plan_job_seconds: default_plan_job_seconds,
       peak_window: peak_window,
-      promql_scheduler_matchers: promql_scheduler_matchers,
       lag_multiplier:
         if !$._config.autoscaling_compactor_scheduler_lag_trigger_enabled then ''
         else if $._config.autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric then lag_multiplier_last_empty
@@ -1152,6 +1196,10 @@
       },
     },
 
+  // The compaction lane the "compactor" fleet serves. Empty while the scheduler queues all
+  // compaction work into a single lane, which needs no lane matcher.
+  local compactor_p1_lane = if !$._config.compactor_p2_fleet_enabled then '' else 'compaction-p1',
+
   // When the compactor-scheduler is enabled, scale compactors based on the scheduler queue drain time,
   // otherwise fall back to CPU-based autoscaling.
   compactor_scaled_object:
@@ -1162,6 +1210,7 @@
         '',
         $._config.autoscaling_compactor_min_replicas,
         $._config.autoscaling_compactor_max_replicas,
+        compactor_p1_lane,
       )
     else if $._config.autoscaling_compactor_enabled then
       $.newCompactorScaledObject(
@@ -1175,6 +1224,24 @@
   compactor_statefulset: overrideSuperIfExists(
     'compactor_statefulset',
     if !$._config.autoscaling_compactor_enabled then {} else $.removeReplicasFromSpec
+  ),
+
+  // The p2 fleet serves the p2 lane only, so it is sized from that lane's backlog alone and the
+  // plan-job term stays with the fleet that serves the plan lane.
+  compactor_p2_scaled_object: if !$._config.autoscaling_compactor_p2_enabled then null else
+    $.newCompactorSchedulerDrainScaledObject(
+      'compactor-p2',
+      '',
+      '',
+      $._config.autoscaling_compactor_p2_min_replicas,
+      $._config.autoscaling_compactor_p2_max_replicas,
+      'compaction-p2',
+      false,
+    ),
+
+  compactor_p2_statefulset: overrideSuperIfExists(
+    'compactor_p2_statefulset',
+    if !$._config.autoscaling_compactor_p2_enabled then {} else $.removeReplicasFromSpec
   ),
 
   //
