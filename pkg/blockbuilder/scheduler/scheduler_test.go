@@ -491,6 +491,7 @@ func TestStartup_MultiCluster(t *testing.T) {
 // back to committed offsets.
 func TestStartup_MultiCluster_GapOnOneCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
+	initCommits(sched, "ingest", 64, map[int]int64{0: 100, 1: 100})
 
 	jobA := observedJob(10, schedulerpb.JobSpec{
 		Topic:     "ingest",
@@ -612,6 +613,36 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	requireOffsets(t, schedB, "ingest", 0, map[int]int64{0: 200, 1: 100, 2: 150})
 }
 
+// TestStartup_NoCommit_PartialObservation demonstrates an unsafe startup resume where a partition
+// has no committed offset and only the later of two in-flight jobs is reported during the
+// observation window (the earlier job's worker is down), the scheduler silently skips the earlier job's range.
+func TestStartup_NoCommit_PartialObservation(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+	// No initCommit: simulates a fresh consumer group or a crash before the first
+	// committed-offset flush.  Both committed and planned are empty for partition 0.
+
+	// The previous scheduler had cut two consecutive jobs: [100, 200) and [200, 300).
+	// Worker w0, which holds [100, 200), is down during the observation window.
+	// Only worker w1, holding [200, 300), reports in.
+	jobLate := job[schedulerpb.JobSpec]{
+		key:  jobKey{id: "ingest/0/200", epoch: 11},
+		spec: schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: 200, EndOffset: 300},
+	}
+	require.NoError(t, sched.updateJob(jobLate.key, "w1", false, jobLate.spec))
+
+	sched.completeObservationMode(t.Context())
+
+	ps := sched.getPartitionState("ingest", 0)
+
+	// Without a committed-offset anchor there is no baseline to validate the observation
+	// against.  planned should stay empty so that initSingleClusterConsumptionOffsets falls
+	// back to the safe max(startOffset, fallbackOffset) path, rather than resuming from 300
+	// and silently skipping [100, 200).
+	require.True(t, ps.plannedEmpty(0),
+		"no committed-offset anchor: planned should stay empty to avoid silently "+
+			"skipping [100, 200); got planned=%d", ps.plannedOffset(0))
+}
+
 // TestCompleteObservationMode_ResumesFromImportedPlan verifies that startup cuts pending jobs
 // from the planned frontier established by observation import: ranges recovered from workers are
 // not re-cut, only the data beyond them is.
@@ -624,6 +655,7 @@ func TestCompleteObservationMode_ResumesFromImportedPlan(t *testing.T) {
 	sched.cfg.JobSize = time.Hour
 	sched.cfg.MaxScanAge = 24 * time.Hour
 	sched.cfg.LookbackOnNoCommit = 24 * time.Hour
+	initCommits(sched, "ingest", 0, map[int]int64{0: 0, 1: 0, 2: 0})
 
 	recordTime := time.Now().Add(-2 * time.Hour)
 	produce := func(cli *kgo.Client, n int) {
@@ -944,12 +976,13 @@ func TestObservations(t *testing.T) {
 	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, 12000, 13000, maybeBadEpoch, errBadEpoch)
 	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, 12000, 13000, nil, nil)
 
-	// Partition 6 has a complete job but had no commit at startup. We allow
-	// transitioning from empty to commit to any offset.
+	// Partition 6 has a complete job but had no commit at startup. Without a
+	// committed-offset anchor, observation recovery is skipped and the job is not
+	// imported; the partition falls back to the safe max(startOffset, fallback) resume.
 	mkJob(complete, "w0", 6, "ingest/6/500", 48, 500, 600, nil, nil)
-	// Partition 7 has an in-progress job, but had no commit at startup. We
-	// honor this job and allow it to influence the planned/resumption offset.
-	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, nil)
+	// Partition 7 has an in-progress job, but had no commit at startup. Same as
+	// partition 6: no anchor means no recovery; lease renewal fails in normal mode.
+	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil, errJobNotFound)
 
 	// Partition 8 has a number of reports and has a hole that should should not be passed.
 	mkJob(complete, "w0", 8, "ingest/8/1000", 53, 1000, 1100, nil, nil)
@@ -999,7 +1032,7 @@ func TestObservations(t *testing.T) {
 		requireOffsets(t, sched, "ingest", 3, map[int]int64{0: 974}, "ingest/3 should be unchanged - no updates")
 		requireOffsets(t, sched, "ingest", 4, map[int]int64{0: 900}, "ingest/4 should be moved forward to account for the completed jobs")
 		requireOffsets(t, sched, "ingest", 5, map[int]int64{0: 12000}, "ingest/5 has nothing new completed")
-		requireOffsets(t, sched, "ingest", 6, map[int]int64{0: 600}, "ingest/6 allowed to move the commit")
+		requireOffsets(t, sched, "ingest", 6, map[int]int64{}, "ingest/6 has no committed-offset anchor: observation skipped, no commit advanced")
 		requireOffsets(t, sched, "ingest", 7, map[int]int64{}, "ingest/7 has an in-progress job, but had no commit at startup")
 		requireOffsets(t, sched, "ingest", 8, map[int]int64{0: 1300}, "ingest/8 should be committed only until the gap")
 		requireOffsets(t, sched, "ingest", 9, map[int]int64{0: 1300}, "ingest/9 should be committed only until the gap")
@@ -1020,13 +1053,13 @@ func TestObservations(t *testing.T) {
 		{partition: 3, resume: 974},
 		{partition: 4, resume: 900},
 		{partition: 5, resume: 13000},
-		{partition: 6, resume: 600},
-		{partition: 7, resume: 93874},
+		{partition: 6, resume: 0},
+		{partition: 7, resume: 0},
 		{partition: 8, resume: 1300},
 		{partition: 9, resume: 1300},
 	}, offs)
 
-	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
+	require.Len(t, sched.jobs.jobs, 3, "should be 3 in-progress jobs (partition 7 skipped: no committed-offset anchor)")
 	require.Equal(t, 65, int(sched.jobs.epoch))
 
 	// Verify that the same set of updates can be sent now that we're out of

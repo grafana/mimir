@@ -855,6 +855,24 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			maxEpoch = max(maxEpoch, obs.key.epoch)
 		}
 
+		// Skip recovery when no cluster has a committed offset. Without a committed-offset
+		// anchor, validNextOffsetRange's empty-planned exemption would accept any observed
+		// job start, making it impossible to detect gaps from earlier jobs whose workers
+		// were down during the observation window. The partition falls back to
+		// max(startOffset, fallbackOffset) in initSingleClusterConsumptionOffsets instead.
+		hasAnchor := false
+		for clusterID := range ps.offsets {
+			if !ps.committedEmpty(clusterID) {
+				hasAnchor = true
+				break
+			}
+		}
+		if !hasAnchor {
+			level.Info(s.logger).Log("msg", "startup: skipping observation recovery for partition without committed-offset anchor",
+				"partition", partition, "observations", len(observations))
+			continue
+		}
+
 		ordered, err := orderObservationsForImport(observations, len(ps.offsets))
 		if err != nil {
 			level.Error(s.logger).Log("msg", "startup: skipping partition recovery",
