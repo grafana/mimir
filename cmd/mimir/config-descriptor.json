@@ -21282,6 +21282,17 @@
           "fieldFlag": "runtime-config.http-client-disable-keep-alives",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "loader",
+          "required": false,
+          "desc": "Method used to decode the runtime configuration files. Supported values are: \"map\" (decode directly using mapstructure) and \"yaml\" (decode by round-tripping through YAML).",
+          "fieldValue": null,
+          "fieldDefaultValue": "map",
+          "fieldFlag": "runtime-config.loader",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -5,6 +5,8 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"reflect"
 
 	"github.com/prometheus/otlptranslator"
 	"github.com/spf13/pflag"
@@ -38,6 +40,15 @@ func (s *OTelTranslationStrategyValue) UnmarshalJSON(bytes []byte) error {
 	return s.Set(repr)
 }
 
+// UnmarshalMapstructure implements [mapstructure.Unmarshaler].
+func (s *OTelTranslationStrategyValue) UnmarshalMapstructure(input any) error {
+	repr, ok := input.(string)
+	if !ok {
+		return fmt.Errorf("expected a string, got %T", input)
+	}
+	return s.Set(repr)
+}
+
 func (s OTelTranslationStrategyValue) String() string {
 	return string(s)
 }
@@ -54,4 +65,15 @@ func (s *OTelTranslationStrategyValue) Set(text string) error {
 
 func (s OTelTranslationStrategyValue) Type() string {
 	return "otelTranslationStrategy"
+}
+
+// Generate implements testing/quick.Generator.
+func (OTelTranslationStrategyValue) Generate(rand *rand.Rand, _ int) reflect.Value {
+	choices := []otlptranslator.TranslationStrategyOption{
+		otlptranslator.NoUTF8EscapingWithSuffixes,
+		otlptranslator.UnderscoreEscapingWithSuffixes,
+		otlptranslator.UnderscoreEscapingWithoutSuffixes,
+		otlptranslator.NoTranslation,
+	}
+	return reflect.ValueOf(OTelTranslationStrategyValue(choices[rand.Intn(len(choices))]))
 }
