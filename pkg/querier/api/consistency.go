@@ -433,8 +433,9 @@ func (p EncodedOffsets) lookupV2(readCompartment int, partitionID int32) (kmeta.
 
 	// Parse the ";"-separated per-Kafka-cluster offsets.
 	serializedOffsets := string(p[start:end])
+	parts := strings.SplitSeq(serializedOffsets, ";")
 	clusterOffsets := make([]int64, 0, strings.Count(serializedOffsets, ";")+1)
-	for part := range strings.SplitSeq(serializedOffsets, ";") {
+	for part := range parts {
 		offset, err := strconv.ParseInt(part, 10, 64)
 		if err != nil {
 			return kmeta.PartitionOffsets{}, false

@@ -158,12 +158,14 @@ func (p *Printer) PrintComparisonResult(results []rules.NamespaceChange, verbose
 				// Print the full diff of the rules if verbose is set
 				if verbose {
 					newYaml, _ := yaml.Marshal(c.New)
-					for l := range strings.SplitSeq(string(newYaml), "\n") {
+					separated := strings.SplitSeq(string(newYaml), "\n")
+					for l := range separated {
 						p.Printf("[green]+ %v\n", l)
 					}
 
 					oldYaml, _ := yaml.Marshal(c.Original)
-					for l := range strings.SplitSeq(string(oldYaml), "\n") {
+					separated = strings.SplitSeq(string(oldYaml), "\n")
+					for l := range separated {
 						p.Printf("[red]- %v\n", l)
 					}
 				}

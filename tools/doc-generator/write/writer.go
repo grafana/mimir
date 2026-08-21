@@ -162,8 +162,9 @@ func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 }
 
 func (w *specWriter) writeWrappedString(s string, firstLineIndent, continuationIndent, innerIndent int) {
+	lines := strings.SplitSeq(strings.TrimSpace(s), "\n")
 	firstLine := true
-	for line := range strings.SplitSeq(strings.TrimSpace(s), "\n") {
+	for line := range lines {
 		indent := firstLineIndent
 		if !firstLine {
 			indent = continuationIndent

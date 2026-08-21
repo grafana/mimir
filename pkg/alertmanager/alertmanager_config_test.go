@@ -147,9 +147,10 @@ inhibit_rules:
 		t.Run(test.name, func(t *testing.T) {
 			buf := bytes.Buffer{}
 			validateMatchersInConfigDesc(log.NewLogfmtLogger(&buf), "test", test.config)
+			allLines := strings.SplitSeq(strings.Trim(buf.String(), "\n"), "\n")
 			// Filter out the SlogFromGoKit probe line.
 			var lines []string
-			for l := range strings.SplitSeq(strings.Trim(buf.String(), "\n"), "\n") {
+			for l := range allLines {
 				if !strings.Contains(l, "probe=") {
 					lines = append(lines, stripSlogFields(l))
 				}

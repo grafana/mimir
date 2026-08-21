@@ -261,9 +261,10 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 			return nil, fmt.Errorf("invalid lane configuration: %q", workerLane)
 		}
 		laneCount := strings.Count(workerLane, "+") + 1
+		split := strings.SplitSeq(workerLane, "+")
 		requests := make([]*compactorschedulerpb.LaneRequest, 0, laneCount)
 		seen := make(map[string]struct{}, laneCount)
-		for lane := range strings.SplitSeq(workerLane, "+") {
+		for lane := range split {
 			if _, ok := seen[lane]; ok {
 				return nil, fmt.Errorf("duplicate job type %q in lane configuration: %q", lane, workerLane)
 			}
