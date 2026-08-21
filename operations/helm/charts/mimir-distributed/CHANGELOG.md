@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440
+* [ENHANCEMENT] Add support for `hostAliases` for all components.
 
 
 ## 6.2.0
