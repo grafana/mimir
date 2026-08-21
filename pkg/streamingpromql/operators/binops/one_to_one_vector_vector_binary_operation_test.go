@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1358,7 +1359,7 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_GroupPresenceRespectsMemo
 	fillZero := 0.0
 	start := timestamp.Time(0)
 	timeRange := types.NewRangeQueryTimeRange(start, start.Add(10_999*time.Second), time.Second)
-	rejectionCount := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fill_right_group_presence_rejections_total"})
+	rejectionCount := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_fill_right_group_presence_rejections_total"})
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 64*1024, rejectionCount, "fill-right group presence test")
 
 	leftSeries := []labels.Labels{
