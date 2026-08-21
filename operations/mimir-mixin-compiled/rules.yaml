@@ -225,14 +225,12 @@ groups:
                 sum by (cluster, namespace, deployment_without_zone) (
                   label_replace(
                     kube_deployment_spec_replicas,
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                    "deployment_without_zone", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
                 or
                 sum by (cluster, namespace, deployment_without_zone) (
-                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?")
                 ),
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
@@ -328,9 +326,7 @@ groups:
                   sum by (cluster, namespace, pod)(rate(container_cpu_usage_seconds_total{image!=""}[4m])),
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
               )
             )
           record: cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate
@@ -351,9 +347,7 @@ groups:
                     kube_pod_container_resource_requests_cpu_cores,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -367,9 +361,7 @@ groups:
                     kube_pod_container_resource_requests{resource="cpu"},
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -397,9 +389,7 @@ groups:
                   container_memory_usage_bytes{image!=""},
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
               )
             )
           record: cluster_namespace_deployment:container_memory_usage_bytes:sum
@@ -420,9 +410,7 @@ groups:
                     kube_pod_container_resource_requests_memory_bytes,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
@@ -436,9 +424,7 @@ groups:
                     kube_pod_container_resource_requests{resource="memory"},
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
             )
