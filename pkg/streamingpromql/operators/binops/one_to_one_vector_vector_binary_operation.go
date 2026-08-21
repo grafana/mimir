@@ -1212,6 +1212,15 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	rightSide := thisSeries.rightSide
 
 	fillMissingRight := thisSeries.fill != nil && thisSeries.fill.fillMissingRight
+	var fillRightGroupTracker *fillRightGroupTracker
+	if fillMissingRight {
+		fillRightGroupTracker = thisSeries.fill.fillRightGroupTracker
+		if fillRightGroupTracker != nil {
+			// This series has already been removed from remainingSeries, so release its share of the
+			// tracker even if reading or validating the series fails.
+			defer fillRightGroupTracker.seriesRead(b.MemoryConsumptionTracker)
+		}
+	}
 
 	if !fillMissingRight && rightSide.rightSeriesIndices != nil {
 		// Right side hasn't been populated yet.
@@ -1263,15 +1272,13 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	// For name-dropping operators the output-labels collision path already merges multiple left series
 	// into one output series via leftSeriesIndices, so mergeSingleSide below handles the duplicate
 	// check there instead.
-	if fillMissingRight && thisSeries.fill.fillRightGroupTracker != nil {
-		tracker := thisSeries.fill.fillRightGroupTracker
+	if fillRightGroupTracker != nil {
 		for i, leftSeries := range allLeftSeries {
 			seriesIdx := thisSeries.leftSeriesIndices[i]
-			if err := b.updateFillRightGroupPresence(tracker, leftSeries, seriesIdx); err != nil {
+			if err := b.updateFillRightGroupPresence(fillRightGroupTracker, leftSeries, seriesIdx); err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 		}
-		tracker.seriesRead(b.MemoryConsumptionTracker)
 	}
 
 	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")

@@ -1416,6 +1416,55 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_ReleasesGroupPresenceIfSt
 	}
 }
 
+func TestOneToOneVectorVectorBinaryOperation_FillRight_ReleasesGroupPresenceAfterError(t *testing.T) {
+	ctx := t.Context()
+	fillZero := 0.0
+	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	leftSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "left_a", "group", "x"),
+		labels.FromStrings(model.MetricNameLabel, "left_b", "group", "x"),
+	}
+	firstPoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+	require.NoError(t, err)
+	firstPoints = append(firstPoints, promql.FPoint{T: 0, F: 1})
+	secondPoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+	require.NoError(t, err)
+	secondPoints = append(secondPoints, promql.FPoint{T: 0, F: 1})
+
+	left := &operators.TestOperator{
+		Series: leftSeries,
+		Data: []types.InstantVectorSeriesData{
+			{Floats: firstPoints},
+			{Floats: secondPoints},
+		},
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+	}
+	right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}}
+
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	metadata, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, metadata, 2)
+	types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+
+	data, err := o.NextSeries(ctx)
+	require.NoError(t, err)
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+
+	_, err = o.NextSeries(ctx)
+	require.ErrorContains(t, err, "found duplicate series")
+
+	require.NoError(t, o.FinishedReading(ctx))
+	types.FPointSlicePool.Put(&secondPoints, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+	o.Close()
+}
+
 // expectedSplitGroup describes the output series that computeOutputSeries must build for one
 // name-retaining fill-left split group.
 type expectedSplitGroup struct {
