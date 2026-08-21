@@ -256,19 +256,19 @@
           'for': '6h',
           expr: |||
             (
-            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(rate_interval)s]))
+            sum by(%(alert_aggregation_labels)s, read_compartment) (%(level_1_blocks_rate)s)
             /
-            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(rate_interval)s]))
+            sum by(%(alert_aggregation_labels)s, read_compartment) (%(blocks_rate)s)
             ) > 0.05
           ||| % $._config {
-            job: $.jobMatcher($._config.job_names.store_gateway),
-            rate_interval: $.rateInterval('10m'),
+            blocks_rate: $.withReadCompartmentLabel('rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%s}[%s])' % [$.jobMatcher($._config.job_names.store_gateway), $.rateInterval('10m')]),
+            level_1_blocks_rate: $.withReadCompartmentLabel('rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%s}[%s])' % [$.jobMatcher($._config.job_names.store_gateway), $.rateInterval('10m')]),
           },
           labels: {
             severity: 'warning',
           },
           annotations: {
-                         message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
+                         message: '%(product)s store-gateway in %(alert_aggregation_variables)s{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
                        }
                        // Alternative dashboards for investigation:
                        //   - Mimir / Queries (mimir-queries.json)

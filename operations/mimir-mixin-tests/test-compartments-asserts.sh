@@ -58,13 +58,21 @@ for RING_NAME in "ingester-partitions" "compactor" "store-gateway"; do
   done
 done
 
-for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJobs" "MimirCompactorSchedulerRepeatedJobFailure" "MimirIngesterInstanceHasNoTenants"; do
+for ALERT in "MimirBucketIndexNotUpdated" "MimirCompactorSchedulerNotCompletingJobs" "MimirCompactorSchedulerRepeatedJobFailure" "MimirHighVolumeLevel1BlocksQueried" "MimirIngesterInstanceHasNoTenants"; do
   EXPR=$(ALERT="${ALERT}" yq eval '.groups[].rules[] | select(.alert == env(ALERT)) | .expr' "${ALERTS_FILE}")
 
   if [ -z "${EXPR}" ]; then
     assert_failed "Alert ${ALERT} was not found in $(basename "${ALERTS_FILE}"): this assertion is checking nothing."
   elif ! echo "${EXPR}" | grep -q -F -- 'read_compartment'; then
     assert_failed "Alert ${ALERT} does not group by read_compartment, so a healthy compartment can mask a failing one."
+  fi
+done
+
+HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR=$(yq eval '.groups[].rules[] | select(.alert == "MimirHighVolumeLevel1BlocksQueried") | .expr' "${ALERTS_FILE}")
+for SELECTOR in 'level="1"' 'component="store-gateway",out_of_order="false"'; do
+  OPERAND=$(echo "${HIGH_VOLUME_LEVEL_1_BLOCKS_EXPR}" | grep -F -- "${SELECTOR}" || true)
+  if [ -z "${OPERAND}" ] || ! echo "${OPERAND}" | grep -q -F -- 'label_replace(' || ! echo "${OPERAND}" | grep -qE -- 'sum by[[:space:]]*\([^)]*read_compartment'; then
+    assert_failed "MimirHighVolumeLevel1BlocksQueried does not derive and group the operand matched by ${SELECTOR} by read_compartment.\nBoth sides of the ratio need identical compartment labels."
   fi
 done
 

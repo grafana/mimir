@@ -1149,13 +1149,13 @@ groups:
             severity: critical
         - alert: MimirHighVolumeLevel1BlocksQueried
           annotations:
-            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
+            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
             (
-            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
+            sum by(cluster, namespace, read_compartment) (label_replace(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
             /
-            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
+            sum by(cluster, namespace, read_compartment) (label_replace(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
             ) > 0.05
           for: 6h
           labels:
