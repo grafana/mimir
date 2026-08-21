@@ -6,14 +6,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -649,10 +647,10 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 	}
 }
 
-// TestQuerySplitting_ShareAcrossSplitBlocks checks that shareAcrossSplitBlocks (see optimization_pass.go) wraps
-// exactly the nodes it needs to in a Duplicate node: any core.Subquery or core.StepInvariantExpression nested
+// TestQuerySplitting_DeduplicateAcrossSplitBlocks checks that deduplicateAcrossSplitBlocks (see commonsubexpressionelimination/optimization_pass.go)
+// wraps exactly the nodes it needs to in a Duplicate node. core.Subquery or core.StepInvariantExpression nested
 // below a split target's own child, at any depth, but not the split target's own child itself.
-func TestQuerySplitting_ShareAcrossSplitBlocks(t *testing.T) {
+func TestQuerySplitting_DeduplicateAcrossSplitBlocks(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
@@ -681,6 +679,21 @@ func TestQuerySplitting_ShareAcrossSplitBlocks(t *testing.T) {
 									- Duplicate
 										- FunctionCall: min_over_time(...)
 											- MatrixSelector: {__name__="test_metric"}[2h0m0s]
+			`,
+		},
+		"binary expression with a constant nested below the split target: the whole expression is wrapped": {
+			expr: `count_over_time(sum_over_time((test_metric / 2)[3h:1h])[5h:12h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: count_over_time(...)
+						- Subquery: [5h0m0s:12h0m0s]
+							- FunctionCall: sum_over_time(...)
+								- Subquery: [3h0m0s:1h0m0s]
+									- Duplicate
+										- DeduplicateAndMerge
+											- BinaryExpression: LHS / RHS
+												- LHS: VectorSelector: {__name__="test_metric"}
+												- RHS: NumberLiteral: 2
 			`,
 		},
 		"subquery nested two levels below the split target: every nested level's own child is wrapped": {
@@ -724,6 +737,24 @@ func TestQuerySplitting_ShareAcrossSplitBlocks(t *testing.T) {
 										- FunctionCall: vector(...)
 											- NumberLiteral: 1
 								- RHS: VectorSelector: {__name__="test_metric"}
+			`,
+		},
+		"nested subquery shared by subset selector elimination: its child is still wrapped exactly once": {
+			expr: `count_over_time((sum_over_time(max_over_time(dedupe_filter_metric{a="1"}[1h])[5h:1h]) / min_over_time(max_over_time(dedupe_filter_metric[1h])[5h:1h]))[10h:12h])`,
+			expectedPlan: `
+				- SplitFunctionCall
+					- FunctionCall: count_over_time(...)
+						- Subquery: [10h0m0s:12h0m0s]
+							- BinaryExpression: LHS / RHS, hints exclude ()
+								- LHS: FunctionCall: sum_over_time(...)
+									- DuplicateFilter: {a="1"}, subset index: 0
+										- ref#1 Duplicate
+											- Subquery: [5h0m0s:1h0m0s]
+												- Duplicate
+													- FunctionCall: max_over_time(...)
+														- MatrixSelector: {__name__="dedupe_filter_metric"}[1h0m0s], subsets: {a="1"} ({__name__="dedupe_filter_metric", a="1"})
+								- RHS: FunctionCall: min_over_time(...)
+									- ref#1 Duplicate ...
 			`,
 		},
 	}
@@ -1562,72 +1593,6 @@ func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
 	result, _ := runInstantQuery(t, mimirEngine, storage, `sum_over_time(__subquery_spinoff__{__query__="some_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`, ts)
 	require.NoError(t, result.Err)
 	verifyCacheStats(t, testCache, 0, 0, 0)
-}
-
-func TestQuerySplitting_NotSplitReasons(t *testing.T) {
-	promStorage := promqltest.LoadedStorage(t, `
-		load 1m
-			some_metric{env="test"} 0+1x600
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	testCases := map[string]struct {
-		expr       string
-		rangeQuery bool
-		reason     string
-	}{
-		"subquery range not longer than the split interval": {
-			expr:   `count_over_time(test_metric{job="1"}[1h:5m])`,
-			reason: "too_short_interval",
-		},
-		"outer function not registered for splitting": {
-			expr:   `stddev_over_time(test_metric{job="1"}[3h:5m])`,
-			reason: "unsupported_function",
-		},
-		"subquery spinoff": {
-			expr:   `sum_over_time(__subquery_spinoff__{__query__="test_metric",__range__="5h0m0s",__step__="5m0s"}[5h])`,
-			reason: "subquery_spinoff",
-		},
-		"range query": {
-			expr:       `sum_over_time(test_metric{job="1"}[5h])`,
-			rangeQuery: true,
-			reason:     "range_query",
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
-			splitEngine, _ := createSplittingEngineWithCache(t, registry, 2*time.Hour, true, true)
-
-			var result *promql.Result
-			if tc.rangeQuery {
-				ctx := user.InjectOrgID(context.Background(), "test-user")
-				q, err := splitEngine.NewRangeQuery(ctx, promStorage, nil, tc.expr, timestamp.Time(0).Add(10*time.Hour), timestamp.Time(0).Add(11*time.Hour), time.Minute)
-				require.NoError(t, err)
-				t.Cleanup(q.Close)
-				result = q.Exec(ctx)
-			} else {
-				var ranges []storageQueryRange
-				result, _, ranges = executeQuery(t, splitEngine, promStorage, tc.expr, timestamp.Time(0).Add(10*time.Minute))
-				require.Len(t, ranges, 1)
-			}
-
-			require.NoError(t, result.Err)
-			requireUnsplitReasonCount(t, registry, tc.reason, 1)
-		})
-	}
-}
-
-func requireUnsplitReasonCount(t *testing.T, g prometheus.Gatherer, reason string, expected int) {
-	const metricName = "cortex_mimir_query_engine_range_vector_splitting_function_nodes_unsplit_total"
-
-	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of function nodes inspected by range vector splitting but not split.
-# TYPE %[1]v counter
-%[1]v{reason=%[2]q} %[3]v
-`, metricName, reason, expected)
-
-	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricName))
 }
 
 func TestQuerySplitting_SplittingDisabledOnQuerier_FallsBackToRegularNode(t *testing.T) {

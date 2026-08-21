@@ -157,11 +157,8 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
   expect no_info
   {} 10.5`,
 
-			// These cases rely on Kahan compensation surviving a cancelling pair of huge opposite-sign values
-			// (eg. +1e100/-1e100) split across a block boundary, but the cross-block histogram combine uses a plain,
-			// uncompensated Add (see sumOverTimeCombine/avgOverTimeCombine) and loses the residual. Pre-existing and
-			// not specific to subqueries - reproduces with a plain selector too - just not previously reachable
-			// since splitting never applied to subqueries before now. Out of scope here; left for follow-up work.
+			// TODO: Precision is lost calculating sum_over_time/avg_over_time across a block boundary, in cases
+			// of huge opposite-sign values (eg. +1e100/-1e100) that should cancel out exactly.
 			`eval instant at 3m sum_over_time(histogram_sum_over_time_3[4m:1m])
     {} {{schema:0 count:10 sum:2}}`,
 

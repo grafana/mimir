@@ -75,8 +75,7 @@ func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (pl
 	return planning.QueryPlanV18, nil
 }
 
-// containsSubquery returns true if n or any of its descendants is a Subquery. This looks through any
-// wrapping nodes that CSE may have inserted between a SplitFunctionCall and the Subquery it wraps.
+// containsSubquery returns true if n or any of its descendants is a Subquery.
 func containsSubquery(n planning.Node) bool {
 	if _, ok := n.(*core.Subquery); ok {
 		return true

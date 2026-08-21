@@ -87,7 +87,8 @@ type RangeVectorSplittingConfig struct {
 	//  parallelisation and just want to use query splitting for that and not cache).
 	IntermediateResultsCache rangevectorsplittingcache.Config `yaml:"intermediate_results_cache" category:"experimental"`
 
-	// EnableSubquerySplitting enables splitting subqueries, in addition to range vector selectors. Requires Enabled.
+	// EnableSubquerySplitting enables splitting subqueries, in addition to range vector selectors. Requires
+	// Enabled and EngineOpts.EnableCommonSubexpressionElimination.
 	EnableSubquerySplitting bool `yaml:"enable_subquery_splitting" category:"experimental"`
 }
 
@@ -144,7 +145,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.Enabled, "querier.mimir-query-engine.range-vector-splitting.enabled", false, "Enable splitting function over range vectors queries into smaller blocks for caching.")
 	f.DurationVar(&c.SplitInterval, "querier.mimir-query-engine.range-vector-splitting.split-interval", 2*time.Hour, "Time interval used for splitting function over range vectors queries into cacheable blocks.")
-	f.BoolVar(&c.EnableSubquerySplitting, "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting", false, "Enable splitting subqueries, in addition to range vector selectors. Requires range vector splitting to be enabled.")
+	f.BoolVar(&c.EnableSubquerySplitting, "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting", false, "Enable splitting subqueries, in addition to range vector selectors. Requires range vector splitting and common subexpression elimination to be enabled.")
 	c.IntermediateResultsCache.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.range-vector-splitting.")
 }
 
