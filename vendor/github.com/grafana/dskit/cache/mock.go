@@ -15,6 +15,7 @@ var (
 	_ Cache = (*MockCache)(nil)
 	_ Cache = (*InstrumentedMockCache)(nil)
 	_ Cache = (*ErroringMockCache)(nil)
+	_ Cache = (*SlowMockCache)(nil)
 )
 
 type MockCache struct {
@@ -238,4 +239,28 @@ func (m *ErroringMockCache) GetMulti(ctx context.Context, keys []string, opts ..
 func (m *ErroringMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
 	result, _ := m.MockCache.GetMultiWithError(ctx, keys, opts...)
 	return result, m.GetMultiErr
+}
+
+// SlowMockCache wraps MockCache and sleeps for a fixed latency on every read.
+// The latency models the network round trip to a remote cache backend.
+type SlowMockCache struct {
+	*MockCache
+	getLatency time.Duration
+}
+
+func NewSlowMockCache(getLatency time.Duration) *SlowMockCache {
+	return &SlowMockCache{
+		MockCache:  NewMockCache(),
+		getLatency: getLatency,
+	}
+}
+
+func (m *SlowMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	result, _ := m.GetMultiWithError(ctx, keys, opts...)
+	return result
+}
+
+func (m *SlowMockCache) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	time.Sleep(m.getLatency)
+	return m.MockCache.GetMultiWithError(ctx, keys, opts...)
 }

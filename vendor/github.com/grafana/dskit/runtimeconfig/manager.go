@@ -37,6 +37,7 @@ type Preprocessor func(b []byte) ([]byte, error)
 type Loader func(r io.Reader) (interface{}, error)
 
 // MapLoader loads the configuration from a map.
+// See [github.com/grafana/dskit/runtimeconfig/mapstructure.Decode] for a proposed implementation.
 type MapLoader func(m map[string]interface{}) (interface{}, error)
 
 type providerHash struct {
@@ -55,6 +56,7 @@ type Config struct {
 	Loader       Loader                 `yaml:"-"`
 	// MapLoader, if set, is used instead of Loader and receives the merged
 	// configuration as a map[string]any directly.
+	// See [github.com/grafana/dskit/runtimeconfig/mapstructure.Decode] for a proposed implementation.
 	MapLoader MapLoader `yaml:"-"`
 
 	// Configurations related to fetching runtime configurations from HTTP URLs rather than local files.
