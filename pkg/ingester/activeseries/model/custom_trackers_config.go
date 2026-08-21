@@ -5,6 +5,7 @@ package activeseriesmodel
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"slices"
 	"strings"
@@ -167,6 +168,45 @@ func (c *CustomTrackersConfig) UnmarshalYAML(value *yaml.Node) error {
 // MarshalYAML implements yaml.Marshaler.
 func (c CustomTrackersConfig) MarshalYAML() (interface{}, error) {
 	return c.source, nil
+}
+
+// Generate implements testing/quick.Generator.
+func (CustomTrackersConfig) Generate(rand *rand.Rand, _ int) reflect.Value {
+	m := map[string]string{}
+	for i := rand.Intn(3); i > 0; i-- {
+		m[randLabelName(rand)] = randMatchers(rand)
+	}
+	c, err := NewCustomTrackersConfig(m)
+	if err != nil {
+		panic(err)
+	}
+	return reflect.ValueOf(c)
+}
+
+func randMatchers(rand *rand.Rand) string {
+	ops := []string{"=", "!=", "=~", "!~"}
+	parts := make([]string, rand.Intn(3)+1)
+	for i := range parts {
+		// Values are alphanumeric, so they are also valid regular expressions
+		// for the =~ and !~ operators.
+		parts[i] = randLabelName(rand) + ops[rand.Intn(len(ops))] + `"` + randAlphaNum(rand, rand.Intn(6)) + `"`
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+func randLabelName(rand *rand.Rand) string {
+	const head = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+	name := []byte{head[rand.Intn(len(head))]}
+	return string(name) + randAlphaNum(rand, rand.Intn(6))
+}
+
+func randAlphaNum(rand *rand.Rand, n int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(b)
 }
 
 // UnmarshalMapstructure implements [mapstructure.Unmarshaler].

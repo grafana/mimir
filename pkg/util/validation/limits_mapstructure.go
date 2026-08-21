@@ -73,10 +73,13 @@ var limitsMapstructureDecodeHook = mapstructure.ComposeDecodeHookFunc(
 var limitsFieldDecoders = map[reflect.Type]mapstructure.DecodeHookFuncValue{
 	reflect.TypeFor[model.Duration]():         mapDecodeAsFlagValue,
 	reflect.TypeFor[model.ValidationScheme](): mapDecodeAsFlagValue,
-	// StringSliceCSV/CIDRSliceCSV parse a comma-separated string in their Set,
-	// which is far cheaper than a YAML round-trip.
+	// StringSliceCSV parses a comma-separated string in its Set, which is far
+	// cheaper than a YAML round-trip.
 	reflect.TypeFor[flagext.StringSliceCSV](): mapDecodeAsFlagValue,
-	reflect.TypeFor[flagext.CIDRSliceCSV]():   mapDecodeAsFlagValue,
+	// CIDRSliceCSV must round-trip through YAML rather than Set: its
+	// UnmarshalYAML treats an empty string (the marshaled form of an unset
+	// value) as "no CIDRs", whereas Set("") fails to parse an empty CIDR.
+	reflect.TypeFor[flagext.CIDRSliceCSV](): mapDecodeAsYAML,
 
 	// flagext.StringSlice is a plain []string with no custom unmarshaler, so
 	// mapstructure decodes it natively (no entry here).

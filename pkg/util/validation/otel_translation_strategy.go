@@ -5,6 +5,8 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"reflect"
 
 	"github.com/prometheus/otlptranslator"
 	"github.com/spf13/pflag"
@@ -63,4 +65,15 @@ func (s *OTelTranslationStrategyValue) Set(text string) error {
 
 func (s OTelTranslationStrategyValue) Type() string {
 	return "otelTranslationStrategy"
+}
+
+// Generate implements testing/quick.Generator.
+func (OTelTranslationStrategyValue) Generate(rand *rand.Rand, _ int) reflect.Value {
+	choices := []otlptranslator.TranslationStrategyOption{
+		otlptranslator.NoUTF8EscapingWithSuffixes,
+		otlptranslator.UnderscoreEscapingWithSuffixes,
+		otlptranslator.UnderscoreEscapingWithoutSuffixes,
+		otlptranslator.NoTranslation,
+	}
+	return reflect.ValueOf(OTelTranslationStrategyValue(choices[rand.Intn(len(choices))]))
 }
