@@ -1520,6 +1520,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
+        - -blocks-storage.s3.http.force-attempt-http2=true
         - -common.storage.backend=s3
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -memberlist.bind-port=7946

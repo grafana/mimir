@@ -278,6 +278,9 @@
     rollout_stuck_alert_ignore_deployments: [],
     rollout_stuck_alert_ignore_statefulsets: [],
 
+    workload_group_regex: '(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?',
+    workload_group_replacement: '$1$2',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -374,14 +377,12 @@
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
                   label_replace(
                     kube_deployment_spec_replicas,
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                    "deployment_without_zone", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                   )
                 )
                 or
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
-                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "%(workload_group_replacement)s", "statefulset", "%(workload_group_regex)s")
                 ),
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
@@ -398,9 +399,7 @@
                   sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""}[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
           |||,
@@ -422,9 +421,7 @@
                     kube_pod_container_resource_requests_cpu_cores,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -438,9 +435,7 @@
                     kube_pod_container_resource_requests{resource="cpu"},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -468,9 +463,7 @@
                   container_memory_usage_bytes{image!=""},
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
           |||,
@@ -492,9 +485,7 @@
                     kube_pod_container_resource_requests_memory_bytes,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -508,9 +499,7 @@
                     kube_pod_container_resource_requests{resource="memory"},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -718,7 +707,7 @@
       workload_label_replaces: [
         { src_label: 'deployment', regex: '(.+)', replacement: '$1' },
         { src_label: 'statefulset', regex: '(.+)', replacement: '$1' },
-        { src_label: 'workload', regex: '(.*?)(?:-zone-[a-z])?', replacement: '$1' },
+        { src_label: 'workload', regex: $._config.workload_group_regex, replacement: $._config.workload_group_replacement },
       ],
     },
 
