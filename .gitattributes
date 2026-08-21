@@ -1,5 +1,9 @@
 **/*.pb.go linguist-generated=true
 vendor/**/* linguist-generated=true
+cmd/mimir/config-descriptor.json linguist-generated=true
+cmd/mimir/*.txt.tmpl linguist-generated=true
+docs/sources/mimir/configure/configuration-parameters/index.md linguist-generated=true
+operations/mimir/mimir-flags-defaults.json linguist-generated=true
 operations/helm/tests/*-values-generated/** linguist-generated=true
 operations/mimir-mixin-compiled*/** linguist-generated=true
 operations/mimir-tests/*-generated.yaml linguist-generated=true
