@@ -68,7 +68,26 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if containsSubquery(s.Inner) {
+		return planning.QueryPlanV20, nil
+	}
+
 	return planning.QueryPlanV18, nil
+}
+
+// containsSubquery returns true if n or any of its descendants is a Subquery.
+func containsSubquery(n planning.Node) bool {
+	if _, ok := n.(*core.Subquery); ok {
+		return true
+	}
+
+	for child := range planning.ChildrenIter(n) {
+		if containsSubquery(child) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // limitsProvider provides the tenant limits needed to compute split ranges at materialize time.
@@ -77,12 +96,13 @@ type limitsProvider interface {
 }
 
 type Materializer struct {
-	enabled       bool
-	splitInterval time.Duration
-	limits        limitsProvider
-	timeNow       func() time.Time
-	cache         *cache.CacheFactory
-	logger        log.Logger
+	enabled                 bool
+	splitInterval           time.Duration
+	enableSubquerySplitting bool
+	limits                  limitsProvider
+	timeNow                 func() time.Time
+	cache                   *cache.CacheFactory
+	logger                  log.Logger
 
 	nodesSplit   prometheus.Counter
 	nodesUnsplit *prometheus.CounterVec
@@ -90,18 +110,19 @@ type Materializer struct {
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(enabled bool, splitInterval time.Duration, limits limitsProvider, timeNow func() time.Time, cache *cache.CacheFactory, reg prometheus.Registerer, logger log.Logger) *Materializer {
+func NewMaterializer(enabled bool, splitInterval time.Duration, enableSubquerySplitting bool, limits limitsProvider, timeNow func() time.Time, cache *cache.CacheFactory, reg prometheus.Registerer, logger log.Logger) *Materializer {
 	if timeNow == nil {
 		timeNow = time.Now
 	}
 
 	return &Materializer{
-		enabled:       enabled,
-		splitInterval: splitInterval,
-		limits:        limits,
-		timeNow:       timeNow,
-		cache:         cache,
-		logger:        logger,
+		enabled:                 enabled,
+		splitInterval:           splitInterval,
+		enableSubquerySplitting: enableSubquerySplitting,
+		limits:                  limits,
+		timeNow:                 timeNow,
+		cache:                   cache,
+		logger:                  logger,
 		nodesSplit: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_materialized_split_total",
 			Help: "Total number of range vector splitting nodes materialized as split operators.",
@@ -141,6 +162,12 @@ func (m Materializer) Materialize(ctx context.Context, n planning.Node, material
 	splitNode, ok := innerNode.(planning.SplitNode)
 	if !ok {
 		return nil, fmt.Errorf("inner node of split function call does not implement SplitNode: %T", innerNode)
+	}
+
+	if containsSubquery(innerNode) && !m.enableSubquerySplitting {
+		level.Warn(m.logger).Log("msg", "split function node wraps a subquery but subquery splitting is disabled, falling back to unsplit execution; this can happen if subquery splitting is enabled on the query-frontend but not yet on the querier")
+		m.nodesUnsplit.WithLabelValues("subquery_splitting_disabled").Inc()
+		return materializer.FactoryForNode(ctx, s.Inner, timeRange)
 	}
 
 	// The split ranges are computed here, at materialize time, rather than at planning time, because they depend on

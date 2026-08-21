@@ -54,6 +54,25 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	return SubqueryChildrenTimeRange(timeRange, s.Range, s.Step, s.Offset, s.Timestamp)
 }
 
+func (s *Subquery) IsSplittable() bool {
+	return true
+}
+
+func (s *Subquery) GetRangeParams() planning.RangeParams {
+	params := planning.RangeParams{
+		IsSet:  true,
+		Range:  s.Range,
+		Offset: s.Offset,
+	}
+	if s.Timestamp != nil {
+		params.HasTimestamp = true
+		params.Timestamp = *s.Timestamp
+	}
+	return params
+}
+
+var _ planning.SplitNode = &Subquery{}
+
 // SubqueryChildrenTimeRange computes the time range used by the children of a subquery with the given
 // range, step, offset and @ timestamp (ts, nil if the subquery does not use the @ modifier), when the
 // subquery is evaluated over parentTimeRange.
@@ -118,14 +137,29 @@ func (s *Subquery) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	innerTimeRange := s.ChildrenTimeRange(timeRange)
+func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	subqueryRange := s.Range
+	subqueryOffset := s.Offset
+	subqueryTimestamp := s.Timestamp
+
+	if overrideRangeParams.IsSet {
+		subqueryRange = overrideRangeParams.Range
+		subqueryOffset = overrideRangeParams.Offset
+		if overrideRangeParams.HasTimestamp {
+			subqueryTimestamp = &overrideRangeParams.Timestamp
+		} else {
+			subqueryTimestamp = nil
+		}
+	}
+
+	innerTimeRange := SubqueryChildrenTimeRange(timeRange, subqueryRange, s.Step, subqueryOffset, subqueryTimestamp)
+
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, s.Inner, innerTimeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}
 
-	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.GetExpressionPosition().ToPrometheusType(), params.MemoryConsumptionTracker)
+	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(subqueryTimestamp), subqueryOffset, subqueryRange, s.GetExpressionPosition().ToPrometheusType(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}

@@ -2975,6 +2975,17 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_subquery_splitting",
+                  "required": false,
+                  "desc": "Enable splitting subqueries, in addition to range vector selectors. Requires range vector splitting and common subexpression elimination to be enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

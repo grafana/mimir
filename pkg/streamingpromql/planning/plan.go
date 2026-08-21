@@ -99,7 +99,11 @@ const QueryPlanV18 = QueryPlanVersion(18)
 // QueryPlanV19 introduces support for deduplicating scalar expressions.
 const QueryPlanV19 = QueryPlanVersion(19)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV19
+// QueryPlanV20 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV20 = QueryPlanVersion(20)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV20
 
 type QueryPlan struct {
 	Root       Node
@@ -543,6 +547,17 @@ func RegisterNodeFactory(f NodeFactory) {
 	}
 
 	knownNodeTypes[id] = f
+}
+
+// NewNodeOfType creates a new, empty instance of the given node type, using the same factory registered by
+// RegisterNodeFactory
+func NewNodeOfType(nodeType NodeType) (Node, error) {
+	factory, exists := knownNodeTypes[nodeType]
+	if !exists {
+		return nil, fmt.Errorf("unknown node type: %d", nodeType)
+	}
+
+	return factory(), nil
 }
 
 // String returns a human-readable representation of the query plan, intended for use during debugging and tests.

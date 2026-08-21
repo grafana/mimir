@@ -2174,6 +2174,12 @@ mimir_query_engine:
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
 
+    # (experimental) Enable splitting subqueries, in addition to range vector
+    # selectors. Requires range vector splitting and common subexpression
+    # elimination to be enabled.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    [enable_subquery_splitting: <boolean> | default = false]
+
   time_splitting_and_caching:
     # (experimental) Enable caching of query results that were not fully
     # consumed by the query. When enabled, if a query stops reading before all
