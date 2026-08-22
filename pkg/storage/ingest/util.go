@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
@@ -271,7 +272,31 @@ func (s KafkaOauthbearerStaticConfig) mechanism() (sasl.Mechanism, bool) {
 }
 
 func (cfg KafkaAuthMSKIAMConfig) mechanism() sasl.Mechanism {
-	return saslMechanism((kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg), awssasl.ManagedStreamingIAM)
+	if cfg.isEmpty() {
+		return awssasl.ManagedStreamingIAM(cfg.irsaAuthFunc())
+	}
+	return saslMechanism(cfg.toSubConfig(), awssasl.ManagedStreamingIAM)
+}
+
+// irsaAuthFunc returns an auth callback that resolves AWS credentials via the
+// SDK default credential chain. On EKS this picks up the workload identity
+// token mounted by IRSA without any additional configuration.
+func (cfg KafkaAuthMSKIAMConfig) irsaAuthFunc() func(context.Context) (awssasl.Auth, error) {
+	return func(ctx context.Context) (awssasl.Auth, error) {
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
+		if err != nil {
+			return awssasl.Auth{}, fmt.Errorf("loading AWS default config for MSK IAM: %w", err)
+		}
+		creds, err := awsCfg.Credentials.Retrieve(ctx)
+		if err != nil {
+			return awssasl.Auth{}, fmt.Errorf("retrieving AWS credentials for MSK IAM: %w", err)
+		}
+		return awssasl.Auth{
+			AccessKey:    creds.AccessKeyID,
+			SecretKey:    creds.SecretAccessKey,
+			SessionToken: creds.SessionToken,
+		}, nil
+	}
 }
 
 func (s KafkaMSKIAMStaticConfig) mechanism() (sasl.Mechanism, bool) {
