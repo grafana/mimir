@@ -32,8 +32,8 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -47,7 +47,6 @@ const (
 	validationDirPrefix         = "upload"              // Prefix of the temporary directories created under the data directory to validate uploaded blocks.
 )
 
-var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
@@ -448,86 +447,27 @@ func (c *MultitenantCompactor) markBlockComplete(ctx context.Context, logger log
 	return nil
 }
 
-// sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
-// message gets returned, otherwise an empty string.
+// sanitizeMeta normalises an uploaded block's meta in place and validates
+// it against the cluster's acceptance rules. It returns an empty string on
+// success or a human-readable error message on failure.
 func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, blockID ulid.ULID, meta *block.Meta) string {
 	if meta == nil {
 		return "missing block metadata"
 	}
 
-	// check that the blocks doesn't contain down-sampled data
-	if meta.Thanos.Downsample.Resolution > 0 {
-		return "block contains downsampled data"
-	}
+	blockvalidation.SanitizeForUpload(logger, meta, blockID)
 
-	meta.ULID = blockID
-	for l, v := range meta.Thanos.Labels {
-		switch l {
-		// Preserve this label
-		case block.CompactorShardIDExternalLabel:
-			if v == "" {
-				level.Debug(logger).Log("msg", "removing empty external label",
-					"label", l)
-				delete(meta.Thanos.Labels, l)
-				continue
-			}
-
-			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
-				return fmt.Sprintf("invalid %s external label: %q",
-					block.CompactorShardIDExternalLabel, v)
-			}
-		// Remove unused labels
-		case block.DeprecatedTenantIDExternalLabel, block.DeprecatedIngesterIDExternalLabel, block.DeprecatedShardIDExternalLabel:
-			level.Debug(logger).Log("msg", "removing unused external label",
-				"label", l, "value", v)
-			delete(meta.Thanos.Labels, l)
-		default:
-			return fmt.Sprintf("unsupported external label: %s", l)
+	err := blockvalidation.CheckMeta(meta, blockvalidation.CheckMetaOptions{
+		MaxBlockSizeBytes: c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID),
+	})
+	if err != nil {
+		// Specifically log for oversized blocks.
+		var sizeErr *blockvalidation.MaxBlockInvalidSizeError
+		if errors.As(err, &sizeErr) {
+			level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", sizeErr.LimitBytes, "size", sizeErr.SizeBytes)
 		}
-	}
-
-	meta.Compaction.Parents = nil
-	meta.Compaction.Sources = []ulid.ULID{blockID}
-
-	for _, f := range meta.Thanos.Files {
-		if f.RelPath == block.MetaFilename {
-			continue
-		}
-
-		if !rePath.MatchString(f.RelPath) {
-			return fmt.Sprintf("file with invalid path: %s", f.RelPath)
-		}
-
-		if f.SizeBytes <= 0 {
-			return fmt.Sprintf("file with invalid size: %s", f.RelPath)
-		}
-	}
-
-	if err := c.validateMaximumBlockSize(logger, meta.Thanos.Files, userID); err != nil {
 		return err.Error()
 	}
-
-	if meta.Version != block.TSDBVersion1 {
-		return fmt.Sprintf("version must be %d", block.TSDBVersion1)
-	}
-
-	// validate minTime/maxTime
-	// basic sanity check
-	if meta.MinTime < 0 || meta.MaxTime < 0 || meta.MaxTime < meta.MinTime {
-		return fmt.Sprintf("invalid minTime/maxTime: minTime=%d, maxTime=%d",
-			meta.MinTime, meta.MaxTime)
-	}
-	// validate that times are in the past
-	now := time.Now()
-	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		return fmt.Sprintf("block time(s) greater than the present: minTime=%d (%s), maxTime=%d (%s)",
-			meta.MinTime, formatTime(time.UnixMilli(meta.MinTime)),
-			meta.MaxTime, formatTime(time.UnixMilli(meta.MaxTime)))
-	}
-
-	// Mark block source
-	meta.Thanos.Source = "upload"
-
 	return ""
 }
 
@@ -611,7 +551,13 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 }
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Logger, blockID ulid.ULID, blockMetadata *block.Meta, userBkt objstore.Bucket, userID string) error {
-	if err := c.validateMaximumBlockSize(logger, blockMetadata.Thanos.Files, userID); err != nil {
+	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
+	if err := blockvalidation.CheckMaxBlockSize(blockMetadata.Thanos.Files, maxBlockSizeBytes); err != nil {
+		// Specifically log for oversized blocks.
+		var sizeErr *blockvalidation.MaxBlockInvalidSizeError
+		if errors.As(err, &sizeErr) {
+			level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", sizeErr.LimitBytes, "size", sizeErr.SizeBytes)
+		}
 		return err
 	}
 
@@ -621,55 +567,10 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 	}
 	defer c.removeTemporaryBlockDirectory(blockDir)
 
-	// check that all files listed in the metadata are present and the correct size
-	for _, f := range blockMetadata.Thanos.Files {
-		fi, err := os.Stat(filepath.Join(blockDir, filepath.FromSlash(f.RelPath)))
-		if err != nil {
-			return fmt.Errorf("failed to stat %s: %w", f.RelPath, err)
-		}
-
-		if !fi.Mode().IsRegular() {
-			return fmt.Errorf("not a file: %s", f.RelPath)
-		}
-
-		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
-			return fmt.Errorf("file size mismatch for %s", f.RelPath)
-		}
-	}
-
-	// validate block
-	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
-	err = block.VerifyBlock(ctx, c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
-	if err != nil {
-		return fmt.Errorf("error validating block: %w", err)
-	}
-
-	return nil
-}
-
-func (c *MultitenantCompactor) validateMaximumBlockSize(logger log.Logger, files []block.File, userID string) error {
-	maxBlockSizeBytes := c.cfgProvider.CompactorBlockUploadMaxBlockSizeBytes(userID)
-	if maxBlockSizeBytes <= 0 {
-		return nil
-	}
-
-	blockSizeBytes := int64(0)
-	for _, f := range files {
-		if f.SizeBytes < 0 {
-			return errors.New("invalid negative file size in block metadata")
-		}
-		blockSizeBytes += f.SizeBytes
-		if blockSizeBytes < 0 {
-			// overflow
-			break
-		}
-	}
-
-	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
-		level.Error(logger).Log("msg", "rejecting block upload for exceeding maximum size", "limit", maxBlockSizeBytes, "size", blockSizeBytes)
-		return fmt.Errorf(maxBlockUploadSizeBytesFormat, maxBlockSizeBytes)
-	}
-	return nil
+	return blockvalidation.CheckBlockOnDisk(ctx, logger, blockDir, blockMetadata, blockvalidation.CheckBlockOnDiskOptions{
+		CheckChunks:       c.cfgProvider.CompactorBlockUploadVerifyChunks(userID),
+		MaxBlockSizeBytes: maxBlockSizeBytes,
+	})
 }
 
 type httpError struct {
