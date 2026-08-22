@@ -16,6 +16,7 @@ metadata:
 spec:
   type: ClusterIP
   internalTrafficPolicy: Cluster
+  trafficDistribution: PreferClose
   ports:
     - port: 8080
       protocol: TCP
