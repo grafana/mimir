@@ -63,6 +63,8 @@ spec:
 
 `vault.hashicorp.com/agent-inject-secret-<FILENAME>: '<PATH>'` tells Vault Agent where to find the secret, and the name of the file to write the secret to. For example: `vault.hashicorp.com/agent-inject-secret-client.crt: 'client/cert/path'` will look for the secret at the path `client/cert/path` within Vault, and mount this secret to the pod as `client.crt` in the `/vault/secrets/` directory.
 
+The injected Vault Agent sidecar authenticates to Vault with the Pod's Kubernetes service account token, so those Pods need that token mounted. Setting `global.automountServiceAccountToken` to `false` therefore does not apply to the components that Vault Agent injection covers. For more information, refer to [Configure service account token auto-mounting with Helm](../configure-service-account-token-automounting/).
+
 For more information about Vault and Vault Agent, see [Injecting Vault Secrets Into Kubernetes Pods via a Sidecar](https://www.hashicorp.com/blog/injecting-vault-secrets-into-kubernetes-pods-via-a-sidecar).
 
 To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/secure/securing-communications-with-tls/).

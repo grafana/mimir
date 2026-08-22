@@ -457,12 +457,14 @@ Examples:
 {{- end -}}
 
 {{/*
-Return the Vault Agent pod annotations if enabled and required by the component
-mimir.vaultAgent.annotations takes 2 arguments
+Return "true" when Vault Agent injection is enabled and applies to the component.
+The injected sidecar authenticates to Vault with the pod's Kubernetes service
+account token, so this also determines whether the pod needs that token mounted.
+mimir.vaultAgent.isComponentEnabled takes 2 arguments
   .ctx = the root context of the chart
   .component = the name of the component
 */}}
-{{- define "mimir.vaultAgent.annotations" -}}
+{{- define "mimir.vaultAgent.isComponentEnabled" -}}
 {{- $vaultEnabledComponents := dict
   "admin-api" true
   "alertmanager" true
@@ -477,7 +479,19 @@ mimir.vaultAgent.annotations takes 2 arguments
   "ruler" true
   "store-gateway" true
 -}}
-{{- if hasKey $vaultEnabledComponents .component }}
+{{- if and .ctx.Values.vaultAgent.enabled (hasKey $vaultEnabledComponents .component) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the Vault Agent pod annotations if enabled and required by the component
+mimir.vaultAgent.annotations takes 2 arguments
+  .ctx = the root context of the chart
+  .component = the name of the component
+*/}}
+{{- define "mimir.vaultAgent.annotations" -}}
+{{- if eq (include "mimir.vaultAgent.isComponentEnabled" .) "true" }}
 vault.hashicorp.com/agent-inject: 'true'
 vault.hashicorp.com/role: '{{ .ctx.Values.vaultAgent.roleName }}'
 vault.hashicorp.com/agent-inject-secret-client.crt: '{{ .ctx.Values.vaultAgent.clientCertPath }}'

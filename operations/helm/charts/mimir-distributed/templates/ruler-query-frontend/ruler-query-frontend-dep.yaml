@@ -32,6 +32,9 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "ruler-query-frontend")) }}
+      {{ . }}
+      {{- end }}
       {{- if .Values.ruler_query_frontend.priorityClassName }}
       priorityClassName: {{ .Values.ruler_query_frontend.priorityClassName }}
       {{- end }}

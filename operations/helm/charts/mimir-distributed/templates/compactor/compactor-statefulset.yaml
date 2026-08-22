@@ -56,6 +56,9 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "compactor")) }}
+      {{ . }}
+      {{- end }}
       {{- if .Values.compactor.priorityClassName }}
       priorityClassName: {{ .Values.compactor.priorityClassName }}
       {{- end }}
