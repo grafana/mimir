@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Mimirtool: `mimirtool rules lint` no longer collapses multi-line PromQL expressions into a single line. Expressions are now formatted with the PromQL prettifier, which keeps expressions longer than 100 characters on multiple lines, like the query formatter in the Prometheus UI. #16196
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [CHANGE] Removed the following deprecated config: `-querier.filter-queryables-enabled`, `-query-frontend.cache-samples-processed-stats`, `-ingest-storage.kafka.write-clients`, `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`, `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`. #16352
 * [CHANGE] The `bucket` label of the `thanos_objstore_bucket_*` metrics, previously always empty, is now set to the name of the bucket the metrics refer to. This lets a component that accesses more than one bucket report each of them separately. The `thanos_store_bucket_cache_*` and `cortex_bucket_index_load*` metrics gained a `bucket` label carrying the same bucket name, for the same reason. #16265
