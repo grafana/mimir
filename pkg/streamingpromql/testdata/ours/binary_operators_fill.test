@@ -444,22 +444,18 @@ eval_fail instant at 0 {__name__=~"dup_a|dup_b"} + fill_right(0) missing_metric
 # Prometheus fails: found duplicate series for the match group {g="b"} on the right hand-side.
 # MQE passes and returns {g="a"} 2.
 
-# ---------- BUG: time-disjoint series within an unmatched match group must not be rejected ----------
+# ---------- Regression: allow time-disjoint series within an unmatched match group ----------
 #
-# One-to-one matching is validated per step, not over the whole query range. Two left series that
-# share a match-group key are only a genuine one-to-one violation if they both have a sample at the
-# *same* timestep. If their samples never coexist at any step, each step sees at most one series
-# for that group, so the query is valid, and it should merge per timestep - the same way the
-# matched (non-fill) path already merges time-disjoint series that share a match group.
+# One-to-one matching validates each step independently.
+# Two left series violate matching only when both have a sample at the same step.
+# Time-disjoint series are valid because each step contains at most one series from the group.
+# The operator must merge them per step, as the matched path does.
 #
-# This fails against the current code: addUnmatchedLeftSeriesWithFilledRightSides's seenGroupKeys
-# check rejects the second series using only series metadata (i.e. that it exists anywhere in the
-# query's time range), before ever looking at which steps actually have samples. Real Prometheus
-# does not error here - verified directly against the vendored Prometheus engine.
+# This test prevents metadata-only validation from rejecting the second series before sample evaluation.
+# Prometheus also accepts this query.
 #
-# A label value moving from one series to another over a range query (e.g. pod/container churn
-# during a rollout, with another label held constant) is exactly this shape, so this is not a
-# contrived case.
+# A rollout can move a label value between series while another matching label stays constant.
+# This common case produces the tested shape.
 
 clear
 

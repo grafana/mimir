@@ -207,9 +207,30 @@ type fillRightGroupTracker struct {
 	// had a sample at that step, or -1 if no series has had a sample yet.
 	presence []int
 
+	// latestLeftSeriesIndex keeps each group's output series adjacent after sorting.
+	latestLeftSeriesIndex int
+
 	// seriesRemaining is the number of fill-right output series in this group that have not yet been
 	// evaluated. The last reader (seriesRemaining == 0 after decrement) frees presence.
 	seriesRemaining int
+}
+
+func (g *fillRightGroupTracker) ensurePresence(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if g.presence != nil {
+		return nil
+	}
+
+	presence, err := types.IntSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	g.presence = presence[:timeRange.StepCount]
+	for i := range g.presence {
+		g.presence[i] = -1
+	}
+
+	return nil
 }
 
 func (g *fillRightGroupTracker) seriesRead(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
@@ -253,7 +274,14 @@ func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
 	if s.fill != nil && s.fill.fillLeftCarrier {
 		return s.fill.groupLatestLeftSeriesIndex
 	}
+	if s.fill != nil && s.fill.fillRightGroupTracker != nil {
+		return s.fill.fillRightGroupTracker.latestLeftSeriesIndex
+	}
 
+	return s.latestOwnLeftSeries()
+}
+
+func (s oneToOneBinaryOperationOutputSeries) latestOwnLeftSeries() int {
 	if len(s.leftSeriesIndices) == 0 {
 		return -1
 	}
@@ -812,6 +840,9 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 			// For name-retaining operators (e.g. !=), the two left series produce different output
 			// labels and do not collide here; the seenGroupKeys path below handles them instead.
 			outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
+			if tracker := outputSeries.series.fill.fillRightGroupTracker; tracker != nil {
+				tracker.latestLeftSeriesIndex = max(tracker.latestLeftSeriesIndex, leftSeriesIndex)
+			}
 			seenGroupKeys[string(groupKey)] = outputSeries.series
 			continue
 		}
@@ -829,23 +860,17 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 			// A second (or later) fill-right output series for the same match group, producing a
 			// different output label set (name-retaining operator). Wire up the shared tracker.
 			if firstSeries.fill.fillRightGroupTracker == nil {
-				presence, err := types.IntSlicePool.Get(b.timeRange.StepCount, b.MemoryConsumptionTracker)
-				if err != nil {
-					return err
-				}
-				presence = presence[:b.timeRange.StepCount]
-
 				tracker := &fillRightGroupTracker{
-					presence:        presence,
-					seriesRemaining: 1, // for firstSeries; incremented below for each subsequent series
-				}
-				for i := range tracker.presence {
-					tracker.presence[i] = -1
+					latestLeftSeriesIndex: firstSeries.latestLeftSeries(),
+					seriesRemaining:       1, // for firstSeries; incremented below for each subsequent series
 				}
 				firstSeries.fill.fillRightGroupTracker = tracker
 			}
-			firstSeries.fill.fillRightGroupTracker.seriesRemaining++
-			newSeries.fill.fillRightGroupTracker = firstSeries.fill.fillRightGroupTracker
+
+			tracker := firstSeries.fill.fillRightGroupTracker
+			tracker.latestLeftSeriesIndex = max(tracker.latestLeftSeriesIndex, leftSeriesIndex)
+			tracker.seriesRemaining++
+			newSeries.fill.fillRightGroupTracker = tracker
 		}
 
 		seenGroupKeys[string(groupKey)] = newSeries
@@ -1147,6 +1172,9 @@ func (g favourLeftSideSorter) Less(i, j int) bool {
 	if iRight != jRight {
 		return iRight < jRight
 	}
+	if less, compared := compareFillRightGroupSeries(g.series[i], g.series[j]); compared {
+		return less
+	}
 
 	return fillLeftCarrierLast(g.series[i], g.series[j])
 }
@@ -1163,8 +1191,25 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 	if iLeft != jLeft {
 		return iLeft < jLeft
 	}
+	if less, compared := compareFillRightGroupSeries(g.series[i], g.series[j]); compared {
+		return less
+	}
 
 	return fillLeftCarrierLast(g.series[i], g.series[j])
+}
+
+func compareFillRightGroupSeries(i, j *oneToOneBinaryOperationOutputSeries) (bool, bool) {
+	if i.fill == nil || j.fill == nil || i.fill.fillRightGroupTracker == nil || i.fill.fillRightGroupTracker != j.fill.fillRightGroupTracker {
+		return false, false
+	}
+
+	iLeft := i.latestOwnLeftSeries()
+	jLeft := j.latestOwnLeftSeries()
+	if iLeft == jLeft {
+		return false, false
+	}
+
+	return iLeft < jLeft, true
 }
 
 // fillLeftCarrierLast is the final tie-break of both sorters. It orders the fill-left carrier of a
@@ -1219,6 +1264,9 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 			// This series has already been removed from remainingSeries, so release its share of the
 			// tracker even if reading or validating the series fails.
 			defer fillRightGroupTracker.seriesRead(b.MemoryConsumptionTracker)
+			if err := fillRightGroupTracker.ensurePresence(b.timeRange, b.MemoryConsumptionTracker); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
 		}
 	}
 

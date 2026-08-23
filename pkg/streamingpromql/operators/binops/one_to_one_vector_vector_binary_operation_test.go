@@ -1355,7 +1355,7 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_FilledLabelsCollisionIsAn
 }
 
 func TestOneToOneVectorVectorBinaryOperation_FillRight_GroupPresenceRespectsMemoryLimit(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fillZero := 0.0
 	start := timestamp.Time(0)
 	timeRange := types.NewRangeQueryTimeRange(start, start.Add(10_999*time.Second), time.Second)
@@ -1374,9 +1374,59 @@ func TestOneToOneVectorVectorBinaryOperation_FillRight_GroupPresenceRespectsMemo
 	require.NoError(t, err)
 	defer o.Close()
 
-	_, err = o.SeriesMetadata(ctx, nil)
+	metadata, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+
+	_, err = o.NextSeries(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "maximum allowed estimated amount of memory")
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillRight_ReusesGroupPresenceMemory(t *testing.T) {
+	ctx := t.Context()
+	fillZero := 0.0
+	start := timestamp.Time(0)
+	timeRange := types.NewRangeQueryTimeRange(start, start.Add(10_999*time.Second), time.Second)
+	rejectionCount := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_fill_right_group_presence_reuse_rejections_total"})
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 200*1024, rejectionCount, "fill-right group presence reuse test")
+
+	leftSeries := []labels.Labels{
+		labels.FromStrings(model.MetricNameLabel, "left_a", "group", "x"),
+		labels.FromStrings(model.MetricNameLabel, "left_c", "group", "y"),
+		labels.FromStrings(model.MetricNameLabel, "left_b", "group", "x"),
+		labels.FromStrings(model.MetricNameLabel, "left_d", "group", "y"),
+		labels.FromStrings(model.MetricNameLabel, "left_a", "group", "x"),
+	}
+	left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}}
+
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.NEQ, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	defer o.Close()
+
+	metadata, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []types.SeriesMetadata{
+		{Labels: leftSeries[1]},
+		{Labels: leftSeries[3]},
+	}, metadata[:2])
+	require.ElementsMatch(t, []types.SeriesMetadata{
+		{Labels: leftSeries[0]},
+		{Labels: leftSeries[2]},
+	}, metadata[2:])
+	outputSeriesCount := len(metadata)
+	types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+
+	for range outputSeriesCount {
+		data, err := o.NextSeries(ctx)
+		require.NoError(t, err)
+		types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	}
+
+	require.NoError(t, o.FinishedReading(ctx))
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestOneToOneVectorVectorBinaryOperation_FillRight_ReleasesGroupPresenceIfStoppedEarly(t *testing.T) {
