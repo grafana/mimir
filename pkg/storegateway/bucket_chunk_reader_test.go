@@ -513,3 +513,60 @@ type mockObjectStoreBucketReader struct {
 func (r mockObjectStoreBucketReader) GetRange(_ context.Context, _ string, off, length int64) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(r.b[off:min(off+length, int64(len(r.b)))])), nil
 }
+
+// drainTrackingBucketReader records how many bytes of the returned range readers are consumed, so
+// a test can assert the overfetched tail is drained, which is what makes the underlying HTTP
+// connection reusable.
+type drainTrackingBucketReader struct {
+	objstore.BucketReader
+	b        []byte
+	served   *int64
+	consumed *int64
+}
+
+func (r drainTrackingBucketReader) GetRange(_ context.Context, _ string, off, length int64) (io.ReadCloser, error) {
+	end := min(off+length, int64(len(r.b)))
+	*r.served += end - off
+	return io.NopCloser(&countingReader{r: bytes.NewReader(r.b[off:end]), consumed: r.consumed}), nil
+}
+
+type countingReader struct {
+	r        *bytes.Reader
+	consumed *int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	*c.consumed += int64(n)
+	return n, err
+}
+
+func TestBucketChunkReader_loadChunks_drainsOverfetchedTail(t *testing.T) {
+	// A single valid chunk followed by a tail which loadChunks fetches, because chunk lengths are
+	// estimated, but never reads.
+	chunkBytes := createChunkBytes(chunkenc.EncXOR, 100, 1)
+	// The tail must exceed the bufio buffer the chunk reader wraps the range in (sized
+	// EstimatedMaxChunkSize), otherwise read-ahead consumes it incidentally and this test
+	// would pass even without the drain.
+	b := append(chunkBytes, make([]byte, 4*tsdb.EstimatedMaxChunkSize)...)
+
+	var served, consumed int64
+	block := &bucketBlock{
+		bkt:          drainTrackingBucketReader{b: b, served: &served, consumed: &consumed},
+		partitioners: blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}},
+		chunkObjs:    []string{"test-chunk"},
+	}
+
+	reader := newBucketChunkReader(t.Context(), block)
+	// Deliberately over-estimate the chunk length so the fetched range includes the tail.
+	require.NoError(t, reader.addLoad(chunks.ChunkRef(0), 0, 0, uint32(len(b))))
+
+	loadedChunks := make([]seriesChunks, 1)
+	loadedChunks[0].chks = make([]storepb.AggrChunk, 1)
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, seriesChunksSlabSize)
+
+	require.NoError(t, reader.load(loadedChunks, chunksPool, newSafeQueryStats()))
+
+	require.Greater(t, served, int64(0))
+	require.Equal(t, served, consumed, "the whole fetched range should be consumed so the connection can be reused")
+}
