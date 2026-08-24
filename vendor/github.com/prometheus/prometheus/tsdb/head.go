@@ -446,6 +446,7 @@ func (h *Head) resetWLReplayResources() {
 
 type headMetrics struct {
 	activeAppenders           prometheus.Gauge
+	appendersCreated          prometheus.Counter
 	series                    prometheus.GaugeFunc
 	staleSeries               prometheus.GaugeFunc
 	nativeHistogramSeries     prometheus.GaugeFunc
@@ -490,6 +491,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		activeAppenders: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_active_appenders",
 			Help: "Number of currently active appender transactions",
+		}),
+		appendersCreated: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_appenders_created_total",
+			Help: "Total number of appender transactions created.",
 		}),
 		series: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_series",
@@ -645,6 +650,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.activeAppenders,
+			m.appendersCreated,
 			m.series,
 			m.staleSeries,
 			m.nativeHistogramSeries,
@@ -3008,7 +3014,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedOOO = i + 1
 		}
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks[:0], s.ooo.oooMmappedChunks[removedOOO:]...)
-		s.ooo.firstOOOChunkID += chunks.HeadChunkID(removedOOO)
+		s.ooo.firstOOOChunkID = (s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO)) & (oooChunkIDMask - 1)
 
 		if len(s.ooo.oooMmappedChunks) == 0 && s.ooo.oooHeadChunk == nil {
 			s.ooo = nil
