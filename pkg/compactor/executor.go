@@ -289,7 +289,7 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	// The ring is not created when ring-based cleanup is disabled, so fall back to the hostname.
+	// The ring may not be used, if so fall back to the hostname.
 	var baseWorkerID string
 	if c.ringLifecycler != nil {
 		baseWorkerID = c.ringLifecycler.GetInstanceID()
