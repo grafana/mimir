@@ -2799,7 +2799,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 			if _, valueExists := values[val]; !valueExists {
 				m.currentSizeBytes += len(val)
 				if m.currentSizeBytes > m.sizeLimitBytes {
-					return ErrResponseTooLarge
+					return fmt.Errorf("size of distinct label names and values %d bytes exceeds limit %d bytes: %w", m.currentSizeBytes, m.sizeLimitBytes, ErrResponseTooLarge)
 				}
 				values[val] = struct{}{}
 			}
