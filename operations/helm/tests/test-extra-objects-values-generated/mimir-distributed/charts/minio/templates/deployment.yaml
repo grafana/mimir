@@ -82,4 +82,5 @@ spec:
             claimName: test-extra-objects-values-minio
         - name: minio-user
           secret:
-            secretName: test-extra-objects-values-minio
+            secretName: test-extra-objects-values-minio        
+

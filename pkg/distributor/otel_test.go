@@ -27,6 +27,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
@@ -2379,7 +2380,9 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
@@ -2424,7 +2427,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -2453,7 +2458,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
@@ -2821,6 +2828,64 @@ func TestOTLPJSONEnumEncoding(t *testing.T) {
 	data, err := json.Marshal(st)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"code":13`, "code field must be encoded as integer (13), not string")
+}
+
+func TestInspectOTLPResourceMetrics(t *testing.T) {
+	tests := map[string]struct {
+		attrsPerResource []map[string]string
+		expected         bool
+	}{
+		"empty request": {
+			attrsPerResource: nil,
+			expected:         false,
+		},
+		"no matching attributes": {
+			attrsPerResource: []map[string]string{
+				{"service.name": "s1", "service.instance.id": "i1"},
+			},
+			expected: false,
+		},
+		"job resource attribute set": {
+			attrsPerResource: []map[string]string{
+				{"job": "s1"},
+			},
+			expected: true,
+		},
+		"instance resource attribute set": {
+			attrsPerResource: []map[string]string{
+				{"instance": "i1"},
+			},
+			expected: true,
+		},
+		"both job and instance set": {
+			attrsPerResource: []map[string]string{
+				{"job": "s1", "instance": "i1"},
+			},
+			expected: true,
+		},
+		"match on later resource": {
+			attrsPerResource: []map[string]string{
+				{"service.name": "s1"},
+				{"instance": "i2"},
+			},
+			expected: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			req := pmetricotlp.NewExportRequest()
+			metrics := req.Metrics()
+			for _, attrs := range tc.attrsPerResource {
+				rm := metrics.ResourceMetrics().AppendEmpty()
+				for k, v := range attrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+			}
+			pushMetrics := newPushMetrics(prometheus.NewRegistry())
+			require.Equal(t, tc.expected, inspectOTLPResourceMetrics(pushMetrics, req))
+		})
+	}
 }
 
 type fakeResourceAttributePromotionConfig struct {

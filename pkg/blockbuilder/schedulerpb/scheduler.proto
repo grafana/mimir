@@ -17,8 +17,26 @@ message JobKey {
 message JobSpec {
   string topic = 1;
   int32 partition = 2;
+
+  // Non-compartment mode: the single [start_offset, end_offset) range to
+  // consume. Used when compartments are disabled.
   int64 start_offset = 3;
   int64 end_offset = 4;
+
+  // Compartment mode: one [start_offset, end_offset) range per cluster, keyed by
+  // cluster ID. When compartments are enabled, these are consumed instead of
+  // start_offset/end_offset. Only clusters with new data to consume are
+  // included; clusters with nothing to consume are omitted.
+  // There should be at least one offset range set if compartments are enabled.
+  map<int32, OffsetRange> offset_ranges = 5 [(gogoproto.nullable) = false];
+}
+
+// OffsetRange is the range of offsets to consume from a single Kafka cluster's partition.
+message OffsetRange {
+  // start_offset is inclusive.
+  int64 start_offset = 1;
+  // end_offset is exclusive.
+  int64 end_offset = 2;
 }
 
 service BlockBuilderScheduler {

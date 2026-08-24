@@ -16,3 +16,7 @@ metadata:
   namespace: 'citestns'
 data: |
   string.yml: "test.extra-objects: true"
+
+
+
+

@@ -117,6 +117,61 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		assert.Equal(t, 2, receivedRequests[2].Metrics().MetricCount())
 	})
 
+	t.Run("write int histogram in single batch", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusOK
+
+		var gen generateHistogramFunc = func(t time.Time) prompb.Histogram {
+			ts := t.UnixMilli()
+			return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
+		}
+
+		series := generateHistogramSeriesInner("test_int_histogram", now, 10, gen)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_HISTOGRAM,
+			MetricFamilyName: "test_int_histogram",
+			Help:             "Test int histogram.",
+			Unit:             "u",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
+		require.NoError(t, err)
+		assert.Equal(t, 200, statusCode)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, len(series), receivedRequests[0].Metrics().MetricCount())
+		receivedMetric := receivedRequests[0].Metrics().ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
+		assert.Equal(t, "test_int_histogram", receivedMetric.Name())
+		assert.Equal(t, "Test int histogram.", receivedMetric.Description())
+		assert.Equal(t, "u", receivedMetric.Unit())
+	})
+
+	t.Run("write float histogram in single batch", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusOK
+
+		var gen generateHistogramFunc = func(t time.Time) prompb.Histogram {
+			ts := t.UnixMilli()
+			return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
+		}
+
+		series := generateHistogramSeriesInner("test_float_histogram", now, 10, gen)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_HISTOGRAM,
+			MetricFamilyName: "test_float_histogram",
+			Help:             "Test float histogram.",
+			Unit:             "u",
+		}}
+
+		// It doesn't make sense to attempt to write a float histogram in OTLP mode. We never
+		// convert a Prometheus histogram to OTEL histogram in production, only OTEL histogram
+		// into Prometheus histogram. We _can_ convert Prometheus integer histograms into OTEL
+		// histograms which we do to test in continuous-test. However, Prometheus float histograms
+		// can't be converted to OTEL histograms.
+		require.Panics(t, func() {
+			_, _ = c.WriteSeries(ctx, series, metadata)
+		})
+	})
+
 	t.Run("request failed with 4xx error", func(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusBadRequest
@@ -642,7 +697,7 @@ func (m *ClientMock) Metadata(ctx context.Context, metricName string) (v1.Metada
 	return args.Get(0).(v1.Metadata), args.Error(1)
 }
 
-func (m *ClientMock) Protocol() string {
+func (m *ClientMock) Protocol() WriteProtocol {
 	args := m.Called()
-	return args.String(0)
+	return args.Get(0).(WriteProtocol)
 }

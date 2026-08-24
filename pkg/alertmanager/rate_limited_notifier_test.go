@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -52,7 +52,7 @@ func runNotifications(t *testing.T, rateLimitedNotifier *rateLimitedNotifier, co
 	rateLimited := 0
 
 	for i := 0; i < count; i++ {
-		retry, err := rateLimitedNotifier.Notify(context.Background(), &types.Alert{})
+		retry, err := rateLimitedNotifier.Notify(context.Background(), &alert.Alert{})
 
 		if err == nil {
 			success++
@@ -71,7 +71,7 @@ func runNotifications(t *testing.T, rateLimitedNotifier *rateLimitedNotifier, co
 
 type mockNotifier struct{}
 
-func (m *mockNotifier) Notify(context.Context, ...*types.Alert) (bool, error) {
+func (m *mockNotifier) Notify(context.Context, ...*alert.Alert) (bool, error) {
 	return false, nil
 }
 

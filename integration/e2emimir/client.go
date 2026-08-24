@@ -22,8 +22,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/s2"
+	amalert "github.com/prometheus/alertmanager/alert"
 	alertConfig "github.com/prometheus/alertmanager/config"
-	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -319,25 +319,25 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 }
 
 // Query runs an instant query.
-func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, promv1.Warnings, promv1.Infos, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.Query(ctx, query, ts, opts...)
-	return value, err
+	value, warnings, infos, err := c.querierClient.Query(ctx, query, ts, opts...)
+	return value, warnings, infos, err
 }
 
 // QueryRange runs a range query.
-func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, promv1.Warnings, promv1.Infos, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
+	value, warnings, infos, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
 	}, opts...)
-	return value, err
+	return value, warnings, infos, err
 }
 
 // QueryRangeRaw runs a ranged query directly against the querier API.
@@ -500,7 +500,7 @@ func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.O
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
 	return result, err
 }
 
@@ -509,7 +509,7 @@ func (c *Client) LabelValues(label string, start, end time.Time, matches []strin
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
 	return result, err
 }
 
@@ -518,7 +518,7 @@ func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...prom
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
+	result, _, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1148,7 +1148,7 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert) error {
 	u := c.alertmanagerClient.URL("/alertmanager/api/v2/alerts", nil)
 
-	data, err := json.Marshal([]types.Alert{{Alert: *alert}})
+	data, err := json.Marshal([]amalert.Alert{{Alert: *alert}})
 	if err != nil {
 		return fmt.Errorf("error marshaling the alert: %v", err)
 	}
@@ -1234,7 +1234,7 @@ func (c *Client) GetAlertGroups(ctx context.Context) ([]AlertGroup, error) {
 }
 
 // CreateSilence creates a new silence and returns the unique identifier of the silence.
-func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (string, error) {
+func (c *Client) CreateSilence(ctx context.Context, silence Silence) (string, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	data, err := json.Marshal(silence)
@@ -1269,7 +1269,7 @@ func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (stri
 	return decoded.SilenceID, nil
 }
 
-func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
+func (c *Client) GetSilences(ctx context.Context) ([]Silence, error) {
 	u := c.alertmanagerClient.URL("alertmanager/api/v2/silences", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -1290,7 +1290,7 @@ func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
 		return nil, fmt.Errorf("getting silences failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := []types.Silence{}
+	decoded := []Silence{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
@@ -1298,30 +1298,30 @@ func (c *Client) GetSilences(ctx context.Context) ([]types.Silence, error) {
 	return decoded, nil
 }
 
-func (c *Client) GetSilence(ctx context.Context, id string) (types.Silence, error) {
+func (c *Client) GetSilence(ctx context.Context, id string) (Silence, error) {
 	u := c.alertmanagerClient.URL(fmt.Sprintf("alertmanager/api/v2/silence/%s", url.PathEscape(id)), nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return types.Silence{}, fmt.Errorf("error creating request: %v", err)
+		return Silence{}, fmt.Errorf("error creating request: %v", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
 	if err != nil {
-		return types.Silence{}, err
+		return Silence{}, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return types.Silence{}, ErrNotFound
+		return Silence{}, ErrNotFound
 	}
 
 	if resp.StatusCode/100 != 2 {
-		return types.Silence{}, fmt.Errorf("getting silence failed with status %d and error %v", resp.StatusCode, string(body))
+		return Silence{}, fmt.Errorf("getting silence failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := types.Silence{}
+	decoded := Silence{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return types.Silence{}, err
+		return Silence{}, err
 	}
 
 	return decoded, nil

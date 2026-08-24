@@ -31,7 +31,19 @@ func NewPromQLParserOptions() parser.Options {
 		// This enables the anchored and smoothed selector modifiers.
 		EnableExtendedRangeSelectors: true,
 
+		// Duration arithmetic in offset and range specifications. Upstream made this opt-in
+		// again via the `promql-duration-expr` feature in prometheus/prometheus#18684; Mimir
+		// keeps it on globally for parity with the prior always-on behaviour. See #11344.
+		ExperimentalDurationExpr: true,
+
 		// Disabled by default.
 		EnableBinopFillModifiers: false,
 	}
+}
+
+// RetainsMetricName returns true if a binary operation with the given operator and bool modifier
+// retains the metric name of its (left/vector) operand rather than dropping __name__. Comparison
+// operators used as filters (i.e. without the bool modifier) and the trim operators behave this way.
+func RetainsMetricName(op parser.ItemType, returnBool bool) bool {
+	return (op.IsComparisonOperator() && !returnBool) || op == parser.TRIM_UPPER || op == parser.TRIM_LOWER
 }

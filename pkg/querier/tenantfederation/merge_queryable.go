@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
@@ -20,12 +21,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// searcher is the cross-source Mimir search interface that mergeQuerier
+// defers to when a request targets the search endpoints. Declared locally
+// to avoid an import cycle on pkg/querier; MUST stay in lock-step with
+// pkg/querier.mimirSearcher.
+type searcher interface {
+	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+}
 
 // NewQueryable returns a queryable that iterates through all the tenant IDs
 // that are part of the request and aggregates the query results for tenant.
@@ -65,6 +78,9 @@ type MergeQuerierUpstream interface {
 	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
 	LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	SearchLabelNames(ctx context.Context, id string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, id string, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	FetchMetricMetadata(ctx context.Context, id string, names []string) (map[string]metadata.Metadata, error)
 	Close() error
 }
 
@@ -84,6 +100,37 @@ func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string,
 
 func (q *tenantQuerier) LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), hints, matchers...)
+}
+
+// SearchLabelNames type-asserts the upstream to the local search interface
+// and forwards the call with the per-tenant org ID injected.
+func (q *tenantQuerier) SearchLabelNames(ctx context.Context, id string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.upstream.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(errors.Errorf("upstream %T does not support search", q.upstream))
+	}
+	return s.SearchLabelNames(user.InjectOrgID(ctx, id), params, hints, matchers...)
+}
+
+// SearchLabelValues mirrors SearchLabelNames with the label name parameter.
+func (q *tenantQuerier) SearchLabelValues(ctx context.Context, id string, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.upstream.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(errors.Errorf("upstream %T does not support search", q.upstream))
+	}
+	return s.SearchLabelValues(user.InjectOrgID(ctx, id), name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata forwards the metadata fetch to the upstream with the
+// per-tenant org ID injected.
+func (q *tenantQuerier) FetchMetricMetadata(ctx context.Context, id string, names []string) (map[string]metadata.Metadata, error) {
+	f, ok := q.upstream.(querierapi.MetricMetadataFetcher)
+	if !ok {
+		return nil, errors.Errorf("upstream %T does not support metric metadata fetch", q.upstream)
+	}
+	// The tenant is already selected (its org ID is injected below), so no
+	// selector sets are forwarded — scoping happened in the caller.
+	return f.FetchMetricMetadata(user.InjectOrgID(ctx, id), names, nil)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -287,6 +334,194 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	labelNames[labelPos] = labelToAdd
 
 	return labelNames, warnings, nil
+}
+
+// SearchLabelNames fans out the search RPC across involved federation IDs,
+// merging each per-tenant SearchResultSet via storage.MergeSearchResultSets.
+//
+// Limitations: the result does NOT add the idLabelName synthetic label that
+// LabelNames adds. Search results carry only the underlying label names that
+// each per-tenant querier emits; the federation layer simply unions them.
+func (m *mergeQuerier) SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	m.tenantsQueried.Observe(float64(len(ids)))
+	if m.bypassWithSingleID && len(ids) == 1 {
+		return m.upstream.SearchLabelNames(ctx, ids[0], params, hints, matchers...)
+	}
+
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: no fan-out, no merge wrapper. The upstream
+	// call already honours hints (ordering, limit, filter) for its single
+	// source; MergeSearchResultSets with a one-element input would just
+	// pass them through with extra allocations.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelNames(ctx, jobs[0], params, hints, filteredMatchers...)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	// We don't use the context passed to the per-job closure: the opened
+	// SearchResultSets are iterated AFTER ForEachJob returns, and the per-job
+	// ctx is cancelled at that point. Bind to the outer ctx instead, matching
+	// the explicit hazard noted in defaultMultiTenantSelectFunc.
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelNames(ctx, jobs[idx], params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// SearchLabelValues mirrors SearchLabelNames with the label name parameter.
+//
+// Two cases are special-cased before the fan-out, mirroring LabelValues:
+//   - name == idLabelName: return the matched federation IDs themselves
+//     filtered by params and ordered/limited by hints. Per-tenant queriers
+//     don't carry this synthetic label, so without this case the result
+//     would be empty (inconsistent with LabelValues).
+//   - name == retainExistingPrefix+idLabelName: the caller wants the real
+//     label values stored on the per-tenant series, exposed under the
+//     prefixed name when the federation layer detected a collision. The
+//     name is rewritten back to idLabelName and forwarded.
+//
+// In single-tenant bypass mode (bypassWithSingleID && len(ids)==1) the
+// synthetic label is not injected; the call is forwarded as-is, mirroring
+// LabelValues' bypass semantics so the synthetic label only appears when
+// federation is actually doing work.
+func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	m.tenantsQueried.Observe(float64(len(ids)))
+	if m.bypassWithSingleID && len(ids) == 1 {
+		return m.upstream.SearchLabelValues(ctx, ids[0], name, params, hints, matchers...)
+	}
+
+	// The id-label and retain-prefix special cases need the set form of
+	// matchedIDs; the fast path used elsewhere returns nil for matchedIDs
+	// when no id-label matcher was supplied, so detect those names first
+	// and fall back to the full filter when they apply.
+	if name == m.idLabelName {
+		matchedIDs, _ := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
+		return searchSyntheticIDs(ids, matchedIDs, params, hints)
+	}
+
+	// ensure the name of a retained label gets handled under the original
+	// label name
+	if name == retainExistingPrefix+m.idLabelName {
+		name = m.idLabelName
+	}
+
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: same rationale as SearchLabelNames above.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelValues(ctx, jobs[0], name, params, hints, filteredMatchers...)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelValues(ctx, jobs[idx], name, params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// FetchMetricMetadata fetches metric metadata across the federation IDs the
+// request's selectors scope to and unions the per-tenant results by metric
+// name. When a name exists in several tenants, the first tenant wins, so the
+// union is deterministic: jobs is sorted below. Per-tenant fetch errors are
+// best-effort: they are logged and that tenant is skipped, since metadata
+// enrichment is optional.
+//
+// Only the tenant dimension of the selectors is honoured. metadataTenantJobs
+// unions the __tenant_id__ scope of each OR-ed selector set, so metadata is
+// fetched from exactly the tenants the search touched (e.g. a search scoped to
+// t2 OR t3 never enriches from an excluded tenant). A selector without a
+// tenant matcher matches every tenant, so it widens the fetch to all of them.
+//
+// Any other matcher (e.g. env="dev") cannot filter metadata: the ingester
+// stores it keyed by (tenant, metric name) with no series labels attached (see
+// userMetricsMetadata), so it has no way to tell the env="dev" gauge "foo" from
+// the env="prod" counter "foo" — both are just records under "foo". When a name
+// carries several such records the fetch is best-effort and returns an
+// arbitrary one. This is a property of the metadata store, not federation: the
+// same limitation applies to a single tenant.
+func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// metadataTenantJobs builds jobs from a map, so sort to keep the "first
+	// tenant by sorted ID wins" tie-break deterministic.
+	jobs := metadataTenantJobs(m.idLabelName, ids, matcherSets)
+	slices.Sort(jobs)
+	if len(jobs) == 1 {
+		return m.upstream.FetchMetricMetadata(ctx, jobs[0], names)
+	}
+
+	perTenant := make([]map[string]metadata.Metadata, len(jobs))
+	errs := make([]error, len(jobs))
+	run := func(_ context.Context, idx int) error {
+		perTenant[idx], errs[idx] = m.upstream.FetchMetricMetadata(ctx, jobs[idx], names)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]metadata.Metadata)
+	for i, id := range jobs {
+		if errs[i] != nil {
+			level.Warn(m.logger).Log("msg", "failed to fetch metric metadata for a tenant during federated search enrichment", "tenant", id, "err", errs[i])
+			continue
+		}
+		for name, md := range perTenant[i] {
+			if _, ok := out[name]; !ok {
+				out[name] = md
+			}
+		}
+	}
+	return out, nil
+}
+
+// searchSyntheticIDs builds a SearchResultSet whose values are the matched
+// federation IDs themselves, filtered/ordered/limited per params and hints.
+// ids preserves the resolver's original list (used only as the iteration
+// source); matchedIDs is the subset surviving tenant matchers. params is
+// authoritative for the filter; any hints.Filter the caller already set is
+// overwritten, matching the per-leaf semantics described on mimirSearcher
+// (params travel separately from the opaque hints.Filter).
+func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	values := make([]string, 0, len(matchedIDs))
+	for _, id := range ids {
+		if _, ok := matchedIDs[id]; ok {
+			values = append(values, id)
+		}
+	}
+	// ApplySearchHints relies on ascending input for its OrderByValueAsc
+	// fast path and its OrderByValueDesc reverse; the resolver does not
+	// guarantee that, so sort here.
+	sort.Strings(values)
+
+	var hintsCopy storage.SearchHints
+	if hints != nil {
+		hintsCopy = *hints
+	}
+	hintsCopy.Filter = filter
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
 }
 
 type stringSliceFunc func(context.Context, string) ([]string, annotations.Annotations, error)
@@ -507,4 +742,74 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 // Iterator returns a new, independent iterator of the data of the series.
 func (a *addLabelsSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
 	return a.upstream.Iterator(i)
+}
+
+// tenantJobsForSearch returns the per-tenant job list and the matchers that
+// must propagate to each per-tenant call.
+//
+// Fast path: when no matcher targets idLabelName (or its retain-prefix
+// alias), every tenant ID is in scope; the function returns the ids slice
+// verbatim as the job list and the matchers slice verbatim as the filtered
+// matchers. This avoids the map allocation FilterValuesByMatchers performs
+// to track the survivor set and the follow-on map-to-slice copy in the
+// caller — the dominant per-tenant allocation cost observed in the
+// federation fan-out benchmark.
+//
+// Slow path: when at least one matcher targets idLabelName, fall back to
+// FilterValuesByMatchers which prunes the survivor set per matcher and
+// returns the unrelated matchers under the original label name.
+func tenantJobsForSearch(idLabelName string, ids []string, matchers []*labels.Matcher) (jobs []string, filteredMatchers []*labels.Matcher) {
+	if !hasIDMatcher(idLabelName, matchers) {
+		return ids, matchers
+	}
+
+	matchedIDs, fm := FilterValuesByMatchers(idLabelName, ids, matchers...)
+	jobs = make([]string, 0, len(matchedIDs))
+	for id := range matchedIDs {
+		jobs = append(jobs, id)
+	}
+	return jobs, fm
+}
+
+// hasIDMatcher reports whether any matcher targets the federation id label
+// (or its retain-prefix alias), i.e. whether the selector scopes the tenant
+// set. A selector without one matches every tenant.
+func hasIDMatcher(idLabelName string, matchers []*labels.Matcher) bool {
+	retainedName := retainExistingPrefix + idLabelName
+	for _, m := range matchers {
+		if m.Name == idLabelName || m.Name == retainedName {
+			return true
+		}
+	}
+	return false
+}
+
+// metadataTenantJobs returns the tenants a federated metadata fetch must cover:
+// the union, across the OR-ed selector sets, of the tenants each set scopes to.
+// A set without an id-label matcher matches every tenant, so if any set is
+// unscoped — or there are no sets at all — the result is all ids. Otherwise it
+// is the deduped union of each set's id-label-selected tenants, so a search
+// scoped to (t2 OR t3) enriches from exactly t2 and t3, never an excluded
+// tenant. The result is unsorted; callers that rely on the first-tenant-wins
+// tie-break must sort it.
+func metadataTenantJobs(idLabelName string, ids []string, matcherSets [][]*labels.Matcher) []string {
+	if len(matcherSets) == 0 {
+		return ids
+	}
+	seen := make(map[string]struct{}, len(ids))
+	jobs := make([]string, 0, len(ids))
+	for _, set := range matcherSets {
+		if !hasIDMatcher(idLabelName, set) {
+			// This selector can match any tenant, so the union is every tenant.
+			return ids
+		}
+		matchedIDs, _ := FilterValuesByMatchers(idLabelName, ids, set...)
+		for id := range matchedIDs {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				jobs = append(jobs, id)
+			}
+		}
+	}
+	return jobs
 }

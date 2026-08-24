@@ -85,6 +85,7 @@
     (if std.length(envVarMap) > 0 then container.withEnvMap(std.prune(envVarMap)) else {}) +
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
 

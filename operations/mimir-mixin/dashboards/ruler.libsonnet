@@ -67,10 +67,6 @@ local filename = 'mimir-ruler.json';
                 +
                 # Ingest storage architecture.
                 (sum(
-                    # Old metric.
-                    rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])
-                    or
-                    # New metric.
                     rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
                 ) or vector(0))
               ||| % params
@@ -149,10 +145,10 @@ local filename = 'mimir-ruler.json';
       $._config.show_ingest_storage_panels,
       $.row('Writes (ingest storage)')
       .addPanel(
-        $.ingestStorageKafkaProducedRecordsRatePanel('ruler')
+        $.ingestStorageKafkaProducedRecordsRatePanel($.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
-        $.ingestStorageKafkaProducedRecordsLatencyPanel('ruler')
+        $.ingestStorageKafkaProducedRecordsLatencyPanel($.jobMatcher($._config.job_names.ruler))
       )
     )
     .addRow(

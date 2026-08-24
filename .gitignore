@@ -47,5 +47,8 @@ coverage.txt
 # Go Telemetry
 .config/go/telemetry/
 
-# AI agent configuration files
-AGENTS.md
+# Vendored AI agent configuration files
+vendor/**/AGENTS.md
+
+# Claude configuration and project memory files: https://code.claude.com/docs/en/memory
+CLAUDE.local.md

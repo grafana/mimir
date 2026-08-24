@@ -19,10 +19,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
@@ -33,10 +35,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -63,10 +65,11 @@ var errAlreadyClosed = errors.New("querier already closed")
 type BlocksStoreSet interface {
 	services.Service
 
-	// GetClientsFor returns the store gateway clients that should be used to
-	// query the set of blocks in input. The exclude parameter is the map of
-	// blocks -> store-gateway addresses that should be excluded.
-	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error)
+	// GetClientsFor returns the store-gateway clients that should be used to query the given set of blocks, and for
+	// each client the blocks it should be queried for. The blocks of a client are grouped into one or more partitions,
+	// each to be queried separately.
+	// The exclude parameter is the map of blocks -> store-gateway addresses that should be excluded.
+	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error)
 }
 
 // BlocksFinder is the interface used to find blocks for a given user and time range.
@@ -98,34 +101,46 @@ type BlocksStoreLimits interface {
 
 	MaxLabelsQueryLength(userID string) time.Duration
 	MaxChunksPerQuery(userID string) int
+	MaxBlocksPerStoreRequest(userID string) int
 	StoreGatewayTenantShardSize(userID string) int
 	StoreGatewayTenantShardSizePerZone(userID string) int
 }
 
 type blocksStoreQueryableMetrics struct {
-	storesHit prometheus.Histogram
-	refetches prometheus.Histogram
+	storesHit     prometheus.Histogram
+	storesQueried prometheus.Histogram
+	refetches     prometheus.Histogram
 
 	blocksFound                                       prometheus.Counter
 	blocksQueried                                     prometheus.Counter
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
+
+	// compartmentsHit counts the read compartments queried per query. It is nil (and unobserved) when
+	// compartments are disabled.
+	compartmentsHit prometheus.Histogram
 }
 
-func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
-	return &blocksStoreQueryableMetrics{
+func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg prometheus.Registerer) *blocksStoreQueryableMetrics {
+	m := &blocksStoreQueryableMetrics{
 		storesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_instances_hit_per_query",
 			Help:    "Number of store-gateway instances hit for a single query.",
 			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
+		}),
+		storesQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_querier_storegateway_queried_per_query",
+			Help:                            "Number of requests to store-gateway instances for a single query. Splitting queried blocks into partitions can produce more than one request per store-gateway instance per query.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_refetches_per_query",
 			Help:    "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
 			Buckets: []float64{0, 1, 2},
 		}),
-
 		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_found_total",
 			Help: "Number of blocks found based on query time range.",
@@ -143,6 +158,25 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
 	}
+
+	// Only register the per-query compartments-hit histogram when compartments are enabled.
+	if compartmentsCfg.Enabled {
+		m.compartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_querier_compartments_hit_per_query",
+			Help: "Number of read compartments queried for a single query.",
+			// The "storage" label denotes which query backend was queried, matching the convention of
+			// cortex_querier_queries_storage_type_total ("ingester" / "store-gateway").
+			ConstLabels: prometheus.Labels{"storage": "store-gateway"},
+			Buckets:     prometheus.LinearBuckets(1, 1, compartmentsCfg.Read.NumCompartments),
+		})
+	}
+
+	return m
+}
+
+type blocksStoreCompartment struct {
+	finder BlocksFinder
+	stores BlocksStoreSet
 }
 
 // BlocksStoreQueryable is a queryable which queries blocks storage via
@@ -150,8 +184,14 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 type BlocksStoreQueryable struct {
 	services.Service
 
-	stores                   BlocksStoreSet
-	finder                   BlocksFinder
+	// compartments holds one block-query pipeline per read compartment, indexed by read compartment ID.
+	// It always has at least one element (compartment 0 when compartments are disabled).
+	compartments []blocksStoreCompartment
+
+	// router narrows a query to the read compartments that can hold the selected metric names. It is nil
+	// when compartments are disabled, in which case all queries go to the single compartment.
+	router *compartments.Router
+
 	consistency              *BlocksConsistency
 	logger                   log.Logger
 	queryStoreAfter          time.Duration
@@ -160,15 +200,16 @@ type BlocksStoreQueryable struct {
 	streamingChunksBatchSize uint64
 
 	// Subservices manager.
-	subservices        *services.Manager
+	subservicesManager *services.Manager
 	subservicesWatcher *services.FailureWatcher
 	dynamicReplication storegateway.DynamicReplication
 }
 
 func NewBlocksStoreQueryable(
-	stores BlocksStoreSet,
+	stores []blocksStoreCompartment,
+	clientsPool *client.Pool,
+	compartmentsCfg compartments.Config,
 	dynamicReplication storegateway.DynamicReplication,
-	finder BlocksFinder,
 	consistency *BlocksConsistency,
 	limits BlocksStoreLimits,
 	queryStoreAfter time.Duration,
@@ -176,21 +217,47 @@ func NewBlocksStoreQueryable(
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlocksStoreQueryable, error) {
-	manager, err := services.NewManager(stores, finder)
+	if len(stores) == 0 {
+		return nil, errors.New("blocks storage queryable requires at least one compartment")
+	}
+	if clientsPool == nil {
+		return nil, errors.New("blocks storage queryable requires a store-gateway clients pool")
+	}
+
+	// The router narrows a query to the compartments owning the selected metric names; it is nil when
+	// compartments are disabled (queries then go to the single compartment). Its compartment IDs index the
+	// stores slice, so the counts must match to avoid an out-of-range access at query time.
+	var router *compartments.Router
+	if compartmentsCfg.Enabled {
+		router = compartments.NewRouter(compartmentsCfg.Read.NumCompartments)
+		if router.NumCompartments() != len(stores) {
+			return nil, errors.Errorf("blocks storage queryable has %d compartments but the router expects %d", len(stores), router.NumCompartments())
+		}
+	}
+
+	subservices := make([]services.Service, 0, len(stores)*2+1)
+	for _, c := range stores {
+		subservices = append(subservices, c.stores, c.finder)
+	}
+	// The store-gateway client pool is shared by all compartments, so it is started and stopped once here
+	// rather than per compartment.
+	subservices = append(subservices, clientsPool)
+
+	subservicesManager, err := services.NewManager(subservices...)
 	if err != nil {
 		return nil, errors.Wrap(err, "register blocks storage queryable subservices")
 	}
 
 	q := &BlocksStoreQueryable{
-		stores:                   stores,
+		compartments:             stores,
+		router:                   router,
 		dynamicReplication:       dynamicReplication,
-		finder:                   finder,
 		consistency:              consistency,
 		queryStoreAfter:          queryStoreAfter,
 		logger:                   logger,
-		subservices:              manager,
+		subservicesManager:       subservicesManager,
 		subservicesWatcher:       services.NewFailureWatcher(),
-		metrics:                  newBlocksStoreQueryableMetrics(reg),
+		metrics:                  newBlocksStoreQueryableMetrics(compartmentsCfg, reg),
 		limits:                   limits,
 		streamingChunksBatchSize: streamingChunksBatchSize,
 	}
@@ -200,55 +267,12 @@ func NewBlocksStoreQueryable(
 	return q, nil
 }
 
-func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
-	var (
-		stores       BlocksStoreSet
-		bucketClient objstore.Bucket
-	)
-
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", logger, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create bucket client")
-	}
-
-	querierReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
-	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
-		storageCfg.BucketStore.MetadataCache,
-		bucketClient,
-		logger,
-		querierReg,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create caching bucket")
-	}
-	bucketClient = cachingBucket
-
-	// Create the blocks finder.
-	finder := NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
-		IndexLoader: bucketindex.LoaderConfig{
-			CheckInterval:         time.Minute,
-			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
-			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
-			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
-		},
-		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
-	}, bucketClient, limits, logger, reg)
-
-	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
-	storesRingBackend, err := kv.NewClient(
-		storesRingCfg.KVStore,
-		ring.GetCodec(),
-		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
-		logger,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
-	}
-
-	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
+func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, compartmentsCfg compartments.Config, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
+	// The configured bucket name must carry the read-compartment placeholder so each compartment resolves
+	// to its own bucket; this is validated in the Mimir config for the components that query blocks.
+	numCompartments := 1
+	if compartmentsCfg.Enabled {
+		numCompartments = compartmentsCfg.Read.NumCompartments
 	}
 
 	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
@@ -261,11 +285,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		)
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create store set")
-	}
-
 	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
@@ -273,15 +292,137 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
+	// A single store-gateway ring KV backend is shared by all compartments; each compartment's ring reads
+	// its own key from it.
+	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	storesRingBackend, err := kv.NewClient(
+		storesRingCfg.KVStore,
+		ring.GetCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
+		logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
+	}
+
+	// Shared by every read compartment: their cache keys are already scoped by cacheBucketID below.
+	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
+	metadataCache, err := mimir_tsdb.NewMetadataCacheClient(storageCfg.BucketStore.MetadataCache.BackendConfig, logger, componentReg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create metadata cache client")
+	}
+
+	finders := make([]BlocksFinder, numCompartments)
+	storesRings := make([]*ring.Ring, numCompartments)
+	for idx := 0; idx < numCompartments; idx++ {
+		var (
+			bucketCfg = storageCfg.Bucket
+			ringName  = storegateway.RingNameForClient
+			ringKey   = storegateway.RingKey
+		)
+
+		// cacheBucketID prefixes every metadata cache key. It should be "blocks", but without compartments
+		// we keep it empty to not cause a massive cache invalidation when rolling out the Mimir version
+		// introducing the bucket ID; this is fine as far as every other caching bucket uses its own unique
+		// ID.
+		//
+		// With compartments each compartment reads a different bucket but the cache could be shared, so its
+		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
+		cacheBucketID := ""
+
+		if compartmentsCfg.Enabled {
+			// Each read compartment has its own bucket and store-gateway ring within this single process.
+			// The finder's metrics are scoped by bucket, so all compartments share one "component"; the ring
+			// name/key have no such scope and are suffixed instead.
+			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
+			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
+			ringName = compartments.WithReadCompartmentSuffix(ringName, idx)
+			ringKey = compartments.WithReadCompartmentSuffix(ringKey, idx)
+		}
+
+		finder, err := newBlocksStoreQueryableFinder(cacheBucketID, metadataCache, bucketCfg, storageCfg, limits, logger, reg)
+		if err != nil {
+			return nil, err
+		}
+
+		storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, ringName, ringKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create store-gateway ring client")
+		}
+
+		finders[idx] = finder
+		storesRings[idx] = storesRing
+	}
+
+	// One store-gateway client pool is shared by all compartments. It is a connection cache keyed by
+	// instance address, while per-compartment block ownership is resolved by each compartment's ring, so
+	// it doesn't need to be per-compartment. Registering it once keeps its metrics free of a
+	// per-compartment label that would otherwise collide with the same gRPC-client metrics registered by
+	// other components running in the same process. Its discovery is the union of all compartment rings,
+	// so its stale-client cleanup keeps clients for every compartment's store-gateways.
+	readRings := make([]ring.ReadRing, len(storesRings))
+	for i, r := range storesRings {
+		readRings[i] = r
+	}
+	clientsPool := newStoreGatewayClientPool(client.NewRingsServiceDiscovery(readRings), querierCfg.StoreGatewayClient, logger, reg)
+
+	stores := make([]blocksStoreCompartment, numCompartments)
+	for idx := range stores {
+		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create store set")
+		}
+
+		stores[idx] = blocksStoreCompartment{finder: finders[idx], stores: storeSet}
+	}
+
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+}
+
+// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its
+// metrics are scoped by bucket, so one finder per read compartment can share a registry.
+func newBlocksStoreQueryableFinder(cacheBucketID string, metadataCache cache.Cache, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create bucket client")
+	}
+
+	componentReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
+
+	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
+		cacheBucketID,
+		bucketCfg.BucketName(),
+		metadataCache,
+		storageCfg.BucketStore.MetadataCache,
+		bucketClient,
+		logger,
+		componentReg,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create caching bucket")
+	}
+
+	// The bucket index loader metrics have no bucket label of their own.
+	loaderReg := prometheus.WrapRegistererWith(prometheus.Labels{"bucket": bucketCfg.BucketName()}, componentReg)
+
+	return NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
+		IndexLoader: bucketindex.LoaderConfig{
+			CheckInterval:         time.Minute,
+			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
+			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
+			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
+		},
+		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
+	}, cachingBucket, limits, logger, loaderReg), nil
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
-	q.subservicesWatcher.WatchManager(q.subservices)
+	q.subservicesWatcher.WatchManager(q.subservicesManager)
 
-	if err := services.StartManagerAndAwaitHealthy(ctx, q.subservices); err != nil {
+	if err := services.StartManagerAndAwaitHealthy(ctx, q.subservicesManager); err != nil {
 		return errors.Wrap(err, "unable to start blocks storage queryable subservices")
 	}
 
@@ -300,7 +441,7 @@ func (q *BlocksStoreQueryable) running(ctx context.Context) error {
 }
 
 func (q *BlocksStoreQueryable) stopping(_ error) error {
-	return services.StopManagerAndAwaitStopped(context.Background(), q.subservices)
+	return services.StopManagerAndAwaitStopped(context.Background(), q.subservicesManager)
 }
 
 // Querier returns a new Querier on the storage.
@@ -312,8 +453,8 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 	return &blocksStoreQuerier{
 		minT:                     mint,
 		maxT:                     maxt,
-		finder:                   q.finder,
-		stores:                   q.stores,
+		compartments:             q.compartments,
+		router:                   q.router,
 		dynamicReplication:       q.dynamicReplication,
 		metrics:                  q.metrics,
 		limits:                   q.limits,
@@ -326,8 +467,8 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 
 type blocksStoreQuerier struct {
 	minT, maxT               int64
-	finder                   BlocksFinder
-	stores                   BlocksStoreSet
+	compartments             []blocksStoreCompartment
+	router                   *compartments.Router
 	dynamicReplication       storegateway.DynamicReplication
 	metrics                  *blocksStoreQueryableMetrics
 	consistency              *BlocksConsistency
@@ -376,24 +517,28 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 	}
 
 	var (
-		resNameSets       = [][]string{}
-		resWarnings       annotations.Annotations
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
+
+		resMtx      sync.Mutex
+		resNameSets = [][]string{}
+		resWarnings annotations.Annotations
 	)
 
-	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, tenantID, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
 
+		resMtx.Lock()
 		resNameSets = append(resNameSets, nameSets...)
 		resWarnings.Merge(warnings)
+		resMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryCompartmentsWithConsistencyCheck(ctx, q.targetCompartments(tenantID, matchers), spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -421,23 +566,26 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 	}
 
 	var (
+		resMtx       sync.Mutex
 		resValueSets = [][]string{}
 		resWarnings  annotations.Annotations
 	)
 
-	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, tenantID, hints, matchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
 
+		resMtx.Lock()
 		resValueSets = append(resValueSets, valueSets...)
 		resWarnings.Merge(warnings)
+		resMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryCompartmentsWithConsistencyCheck(ctx, q.targetCompartments(tenantID, matchers), spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -465,11 +613,13 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 
 	var (
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
-		resSeriesSets     = []storage.SeriesSet(nil)
-		resWarnings       annotations.Annotations
-		resStreamReaders  []*storeGatewayStreamReader
-		chunkEstimators   []func() int
 		queryLimiter      = limiter.QueryLimiterFromContextWithFallback(ctx)
+
+		resMtx             sync.Mutex
+		resSeriesSets      = []storage.SeriesSet(nil)
+		resWarnings        annotations.Annotations
+		resStreamReaders   []*storeGatewayStreamReader
+		resChunkEstimators []func() int
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -482,22 +632,29 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return storage.ErrSeriesSet(err)
 	}
 
-	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		seriesSets, queriedBlocks, warnings, streamReaders, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers, memoryTracker, indexMeta)
 		if err != nil {
 			return nil, err
 		}
 
+		resMtx.Lock()
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings.Merge(warnings)
 		resStreamReaders = append(resStreamReaders, streamReaders...)
-		chunkEstimators = append(chunkEstimators, chunkEstimator)
+		resChunkEstimators = append(resChunkEstimators, chunkEstimator)
+		resMtx.Unlock()
 
 		return queriedBlocks, nil
 	}
 
-	err = q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, shard, queryF)
+	err = q.queryCompartmentsWithConsistencyCheck(ctx, q.targetCompartments(tenantID, matchers), spanLog, minT, maxT, tenantID, shard, queryF)
 	if err != nil {
+		// Streams opened for already-queried compartments have not been handed to startBuffering yet, so
+		// close them here to avoid leaking store-gateway streams when a compartment fails.
+		for _, r := range resStreamReaders {
+			r.Close()
+		}
 		return storage.ErrSeriesSet(err)
 	}
 
@@ -512,7 +669,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		spanLog.DebugLog("msg", "streaming started, waiting for chunks estimates")
 
 		chunksEstimate := 0
-		for _, chunkEstimator := range chunkEstimators {
+		for _, chunkEstimator := range resChunkEstimators {
 			chunksEstimate += chunkEstimator()
 		}
 
@@ -551,31 +708,38 @@ func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamR
 	return nil
 }
 
-type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error)
+type queryFunc func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error)
+
+// storeGatewayQueryStats holds the per-query store-gateway metric values. queryWithConsistencyCheck
+// returns it (rather than updating the metrics itself) so the caller aggregates them once per query.
+type storeGatewayQueryStats struct {
+	storesHit     int  // number of distinct store-gateway instances queried
+	storesQueried int  // number of requests to store-gateway instances (one per block partition, so >= storesHit)
+	refetches     int  // number of retries due to missing blocks
+	queried       bool // whether the block store was actually queried (true only on the success path)
+}
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
-	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
-) (returnErr error) {
+	ctx context.Context, spanLog *spanlogger.SpanLogger, finder BlocksFinder, stores BlocksStoreSet, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
+) (stats storeGatewayQueryStats, returnErr error) {
 	now := time.Now()
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
-		q.metrics.storesHit.Observe(0)
 		spanLog.DebugLog("msg", "not querying block store; query time range begins after the query-store-after limit")
-		return nil
+		return storeGatewayQueryStats{}, nil
 	}
 
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, indexMeta, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	knownBlocks, indexMeta, err := finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
-		return err
+		return storeGatewayQueryStats{}, err
 	}
 
 	if len(knownBlocks) == 0 {
-		q.metrics.storesHit.Observe(0)
 		spanLog.DebugLog("msg", "no blocks found")
-		return nil
+		return storeGatewayQueryStats{}, nil
 	}
 
 	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
@@ -600,6 +764,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		remainingBlocks = knownBlocks
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
+		queriedStores   = 0
 	)
 
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
@@ -617,7 +782,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	for attempt := 1; attempt <= q.dynamicReplication.MaxReplicationFactor(); attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
-		clients, err := q.stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
+		clients, err := stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
 		if err != nil {
 			// If it's a retry and we get an error, it means there are no more store-gateways left
 			// from which running another attempt, so we're just stopping retrying.
@@ -626,24 +791,27 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 				break
 			}
 
-			return err
+			return storeGatewayQueryStats{}, err
 		}
 		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
-		queriedBlocks, err := queryF(clients, minT, maxT, indexMeta)
+		queriedBlocks, err := queryF(ctx, clients, minT, maxT, indexMeta)
 		if err != nil {
-			return err
+			return storeGatewayQueryStats{}, err
 		}
 		spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
 
 		// Update the map of blocks we attempted to query.
-		for client, blockIDs := range clients {
+		for client, partitions := range clients {
 			touchedStores[client.RemoteAddress()] = struct{}{}
+			queriedStores += len(partitions)
 
-			for _, blockID := range blockIDs {
-				attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+			for _, part := range partitions {
+				for _, blockID := range part {
+					attemptedBlocks[blockID] = append(attemptedBlocks[blockID], client.RemoteAddress())
+				}
 			}
 		}
 
@@ -651,10 +819,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// The next attempt should just query the missing blocks.
 		remainingBlocks = consistencyTracker.Check(queriedBlocks)
 		if len(remainingBlocks) == 0 {
-			q.metrics.storesHit.Observe(float64(len(touchedStores)))
-			q.metrics.refetches.Observe(float64(attempt - 1))
-
-			return nil
+			return storeGatewayQueryStats{storesHit: len(touchedStores), storesQueried: queriedStores, refetches: attempt - 1, queried: true}, nil
 		}
 
 		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))
@@ -663,7 +828,94 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	// We've not been able to query all expected blocks after all retries.
 	err = newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
 	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
-	return err
+	return storeGatewayQueryStats{}, err
+}
+
+// targetCompartments returns the read compartments to query for the given matchers. With compartments
+// disabled it returns the single compartment 0.
+func (q *blocksStoreQuerier) targetCompartments(tenantID string, matchers []*labels.Matcher) []int {
+	if q.router == nil {
+		return []int{0}
+	}
+
+	return q.router.CompartmentsForMatchers(tenantID, matchers)
+}
+
+// forEachCompartment runs fn for each targeted compartment. With a single target it runs inline (no
+// goroutine), so the compartments-disabled path is unchanged. With several, it runs them concurrently
+// and returns the first error, cancelling the in-flight siblings on error.
+func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []int, fn func(ctx context.Context, c blocksStoreCompartment) error) error {
+	if len(targets) == 1 {
+		return q.wrapCompartmentError(targets[0], fn(ctx, q.compartments[targets[0]]))
+	}
+
+	// fn may open store-gateway streams that are read lazily after this returns, so the context passed to
+	// fn must outlive this call and only be cancelled on error, never on normal completion (mirrors the
+	// contract in fetchSeriesFromStores; errgroup.WithContext would cancel it when Wait returns).
+	ctx, cancel := context.WithCancelCause(ctx) //nolint:govet
+	g := &errgroup.Group{}
+	for _, c := range targets {
+		g.Go(func() error {
+			if err := q.wrapCompartmentError(c, fn(ctx, q.compartments[c])); err != nil {
+				cancel(err)
+				return err
+			}
+			return nil
+		})
+	}
+	return g.Wait() //nolint:govet // OK to return without cancelling ctx on success, see comment above.
+}
+
+// wrapCompartmentError annotates err with the read compartment it came from, and returns it unchanged
+// when compartments are disabled.
+func (q *blocksStoreQuerier) wrapCompartmentError(compartmentID int, err error) error {
+	if err == nil || q.router == nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "read compartment %d", compartmentID)
+}
+
+// queryCompartmentsWithConsistencyCheck runs queryWithConsistencyCheck against each targeted compartment
+// (concurrently when there is more than one) and, on success, observes the per-query metrics once for the
+// whole query, summed across the compartments that were queried.
+func (q *blocksStoreQuerier) queryCompartmentsWithConsistencyCheck(ctx context.Context, targets []int, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc) error {
+	var (
+		statsMtx      sync.Mutex
+		storesHit     int
+		storesQueried int
+		refetches     int
+		anyQueried    bool
+	)
+
+	err := q.forEachCompartment(ctx, targets, func(ctx context.Context, c blocksStoreCompartment) error {
+		stats, err := q.queryWithConsistencyCheck(ctx, spanLog, c.finder, c.stores, minT, maxT, tenantID, shard, queryF)
+		if err != nil {
+			return err
+		}
+
+		statsMtx.Lock()
+		storesHit += stats.storesHit
+		storesQueried += stats.storesQueried
+		refetches += stats.refetches
+		anyQueried = anyQueried || stats.queried
+		statsMtx.Unlock()
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	q.metrics.storesHit.Observe(float64(storesHit))
+	q.metrics.storesQueried.Observe(float64(storesQueried))
+	if q.metrics.compartmentsHit != nil {
+		q.metrics.compartmentsHit.Observe(float64(len(targets)))
+	}
+	if anyQueried {
+		// refetches is only meaningful (and was historically only observed) when the block store was queried.
+		q.metrics.refetches.Observe(float64(refetches))
+	}
+	return nil
 }
 
 type storeConsistencyCheckFailedErr struct {
@@ -788,7 +1040,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	ctx context.Context,
 	sp *storage.SelectHints,
-	clients map[BlocksStoreClient][]ulid.ULID,
+	clients map[BlocksStoreClient][][]ulid.ULID,
 	minT int64,
 	maxT int64,
 	tenantID string,
@@ -816,162 +1068,165 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
 
-	// Concurrently fetch series from all clients.
-	for c, blockIDs := range clients {
-		g.Go(func() error {
-			clientSpanLog, clientCtx := spanlogger.New(reqCtx, spanLog, tracer, "blocksStoreQuerier.fetchSeriesFromStores")
-			defer clientSpanLog.Finish()
-			clientSpanLog.SetTag("store_gateway_address", c.RemoteAddress())
+	// Concurrently fetch series from all clients. A client may have multiple partitions; each
+	// partition is one independent RPC to the same store-gateway.
+	for c, partitions := range clients {
+		for _, blockIDs := range partitions {
+			g.Go(func() error {
+				clientSpanLog, clientCtx := spanlogger.New(reqCtx, spanLog, tracer, "blocksStoreQuerier.fetchSeriesFromStores")
+				defer clientSpanLog.Finish()
+				clientSpanLog.SetTag("store_gateway_address", c.RemoteAddress())
 
-			var skipChunks bool
-			if sp != nil {
-				// See: https://github.com/prometheus/prometheus/pull/8050
-				// TODO(goutham): we should ideally be passing the hints down to the storage layer
-				// and let the TSDB return us data with no chunks as in prometheus#8050.
-				// But this is an acceptable workaround for now.
-				skipChunks = sp.Func == "series"
-			}
-
-			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
-			if err != nil {
-				return errors.Wrapf(err, "failed to create series request")
-			}
-
-			stream, err := c.Series(clientCtx, req)
-			if err == nil {
-				mtx.Lock()
-				streams = append(streams, stream)
-				mtx.Unlock()
-				err = gCtx.Err()
-			}
-			if err != nil {
-				if shouldRetry(err) {
-					level.Warn(clientSpanLog).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
-					return nil
+				var skipChunks bool
+				if sp != nil {
+					// See: https://github.com/prometheus/prometheus/pull/8050
+					// TODO(goutham): we should ideally be passing the hints down to the storage layer
+					// and let the TSDB return us data with no chunks as in prometheus#8050.
+					// But this is an acceptable workaround for now.
+					skipChunks = sp.Func == "series"
 				}
 
-				return err
-			}
-
-			myStreamingSeriesLabels := []labels.Labels(nil)
-			var myWarnings annotations.Annotations
-			myQueriedBlocks := []ulid.ULID(nil)
-			indexBytesFetched := uint64(0)
-
-			deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
-			if err != nil {
-				return err
-			}
-
-			for {
-				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
-				// in another goroutine).
-				if gCtx.Err() != nil {
-					return gCtx.Err()
+				req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, sp, blockIDs, q.streamingChunksBatchSize)
+				if err != nil {
+					return errors.Wrapf(err, "failed to create series request")
 				}
 
-				var err error
-				var isEOS bool
-				var shouldRetry bool
+				stream, err := c.Series(clientCtx, req)
+				if err == nil {
+					mtx.Lock()
+					streams = append(streams, stream)
+					mtx.Unlock()
+					err = gCtx.Err()
+				}
+				if err != nil {
+					if shouldRetry(err) {
+						level.Warn(clientSpanLog).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
 
-				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, memoryTracker, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
-				)
-				if errors.Is(err, io.EOF) {
-					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
-					break
+					return err
 				}
-				if shouldRetry {
-					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
-					return nil
-				}
+
+				myStreamingSeriesLabels := []labels.Labels(nil)
+				var myWarnings annotations.Annotations
+				myQueriedBlocks := []ulid.ULID(nil)
+				indexBytesFetched := uint64(0)
+
+				deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
 				if err != nil {
 					return err
 				}
 
-				if isEOS {
-					// If we aren't expecting any series from this stream, close it now.
-					if len(myStreamingSeriesLabels) == 0 {
+				for {
+					// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
+					// in another goroutine).
+					if gCtx.Err() != nil {
+						return gCtx.Err()
+					}
+
+					var err error
+					var isEOS bool
+					var shouldRetry bool
+
+					myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
+						c, stream, queryLimiter, memoryTracker, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					)
+					if errors.Is(err, io.EOF) {
 						util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
+						break
+					}
+					if shouldRetry {
+						level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					if err != nil {
+						return err
 					}
 
-					// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
-					break
+					if isEOS {
+						// If we aren't expecting any series from this stream, close it now.
+						if len(myStreamingSeriesLabels) == 0 {
+							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
+						}
+
+						// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
+						break
+					}
 				}
-			}
 
-			// debug
-			var chunkInfo *chunkinfologger.ChunkInfoLogger
-			if debugQuery {
-				traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
-				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
-				chunkInfo.LogSelect("store-gateway", minT, maxT)
-			}
+				// debug
+				var chunkInfo *chunkinfologger.ChunkInfoLogger
+				if debugQuery {
+					traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
+					chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+					chunkInfo.LogSelect("store-gateway", minT, maxT)
+				}
 
-			reqStats.AddFetchedIndexBytes(indexBytesFetched)
-			var streamReader *storeGatewayStreamReader
-			if len(myStreamingSeriesLabels) > 0 {
-				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
-				reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
+				reqStats.AddFetchedIndexBytes(indexBytesFetched)
+				var streamReader *storeGatewayStreamReader
+				if len(myStreamingSeriesLabels) > 0 {
+					// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
+					reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
 
-				if req.SkipChunks {
-					// If we aren't creating a stream reader for reading chunks, we need to close the stream
-					// ourselves. It's safe to close the stream multiple times so we don't worry about closing
-					// all streams below when there's an error.
-					if err := util.CloseAndExhaust[*storepb.SeriesResponse](stream); err != nil {
-						level.Warn(clientSpanLog).Log("msg", "closing store-gateway client stream failed", "err", err)
+					if req.SkipChunks {
+						// If we aren't creating a stream reader for reading chunks, we need to close the stream
+						// ourselves. It's safe to close the stream multiple times so we don't worry about closing
+						// all streams below when there's an error.
+						if err := util.CloseAndExhaust[*storepb.SeriesResponse](stream); err != nil {
+							level.Warn(clientSpanLog).Log("msg", "closing store-gateway client stream failed", "err", err)
+						}
+					} else {
+						streamReader = newStoreGatewayStreamReader(clientCtx, stream, len(myStreamingSeriesLabels), queryLimiter, memoryTracker, reqStats, q.metrics, q.logger)
 					}
+
+					clientSpanLog.DebugLog(
+						"msg", "received streaming series from store-gateway",
+						"instance", c.RemoteAddress(),
+						"fetched series", len(myStreamingSeriesLabels),
+						"fetched index bytes", indexBytesFetched,
+						"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+						"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
+					)
 				} else {
-					streamReader = newStoreGatewayStreamReader(clientCtx, stream, len(myStreamingSeriesLabels), queryLimiter, memoryTracker, reqStats, q.metrics, q.logger)
+					clientSpanLog.DebugLog(
+						"msg", "received no series from store-gateway",
+						"instance", c.RemoteAddress(),
+						"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+						"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
+					)
 				}
 
-				clientSpanLog.DebugLog(
-					"msg", "received streaming series from store-gateway",
-					"instance", c.RemoteAddress(),
-					"fetched series", len(myStreamingSeriesLabels),
-					"fetched index bytes", indexBytesFetched,
-					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-				)
-			} else {
-				clientSpanLog.DebugLog(
-					"msg", "received no series from store-gateway",
-					"instance", c.RemoteAddress(),
-					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-				)
-			}
-
-			// Store the result.
-			mtx.Lock()
-			if len(myStreamingSeriesLabels) > 0 {
-				if chunkInfo != nil {
-					chunkInfo.SetMsg("store-gateway streaming")
-				}
-
-				if req.SkipChunks {
-					noChunkSeries := make([]storage.Series, 0, len(myStreamingSeriesLabels))
-					for _, lbls := range myStreamingSeriesLabels {
-						noChunkSeries = append(noChunkSeries, series.NewConcreteSeries(lbls, nil, nil))
+				// Store the result.
+				mtx.Lock()
+				if len(myStreamingSeriesLabels) > 0 {
+					if chunkInfo != nil {
+						chunkInfo.SetMsg("store-gateway streaming")
 					}
 
-					seriesSets = append(seriesSets, series.NewConcreteSeriesSetFromSortedSeries(noChunkSeries))
-				} else {
-					seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
-						series:        myStreamingSeriesLabels,
-						streamReader:  streamReader,
-						chunkInfo:     chunkInfo,
-						remoteAddress: c.RemoteAddress(),
-					})
-					streamReaders = append(streamReaders, streamReader)
-				}
-			}
-			warnings.Merge(myWarnings)
-			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
-			mtx.Unlock()
+					if req.SkipChunks {
+						noChunkSeries := make([]storage.Series, 0, len(myStreamingSeriesLabels))
+						for _, lbls := range myStreamingSeriesLabels {
+							noChunkSeries = append(noChunkSeries, series.NewConcreteSeries(lbls, nil, nil))
+						}
 
-			return nil
-		})
+						seriesSets = append(seriesSets, series.NewConcreteSeriesSetFromSortedSeries(noChunkSeries))
+					} else {
+						seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
+							series:        myStreamingSeriesLabels,
+							streamReader:  streamReader,
+							chunkInfo:     chunkInfo,
+							remoteAddress: c.RemoteAddress(),
+						})
+						streamReaders = append(streamReaders, streamReader)
+					}
+				}
+				warnings.Merge(myWarnings)
+				queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
+				mtx.Unlock()
+
+				return nil
+			})
+		}
 	}
 
 	// Wait until all client requests complete.
@@ -1091,7 +1346,7 @@ func shouldRetry(err error) bool {
 
 func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	ctx context.Context,
-	clients map[BlocksStoreClient][]ulid.ULID,
+	clients map[BlocksStoreClient][][]ulid.ULID,
 	minT int64,
 	maxT int64,
 	tenantID string,
@@ -1110,64 +1365,67 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 	)
 
-	// Concurrently fetch series from all clients.
-	for c, blockIDs := range clients {
-		g.Go(func() error {
-			req, err := createLabelNamesRequest(minT, maxT, blockIDs, hints, matchers)
-			if err != nil {
-				return errors.Wrapf(err, "failed to create label names request")
-			}
-
-			namesResp, err := c.LabelNames(gCtx, req)
-			if err != nil {
-				if shouldRetry(err) {
-					level.Warn(spanLog).Log("msg", "failed to fetch label names; error is retriable", "remote", c.RemoteAddress(), "err", err)
-					return nil
-				}
-				return fmt.Errorf("non-retriable error while fetching label names from store: %w", err)
-			}
-
-			myQueriedBlocks := []ulid.ULID(nil)
-			if namesResp.ResponseHints != nil {
-				ids, err := convertBlockHintsToULIDs(namesResp.ResponseHints.QueriedBlocks)
+	// Concurrently fetch series from all clients. A client may have multiple partitions; each
+	// partition is one independent RPC to the same store-gateway.
+	for c, partitions := range clients {
+		for _, blockIDs := range partitions {
+			g.Go(func() error {
+				req, err := createLabelNamesRequest(minT, maxT, blockIDs, hints, matchers)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					return errors.Wrapf(err, "failed to create label names request")
 				}
 
-				myQueriedBlocks = ids
-			} else if namesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				// Note that we use a different but equivalent hints type for the opaque field.
-				resHints := hintspb.LabelNamesResponseHints{}
-				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
-					return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
-				}
-
-				ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
+				namesResp, err := c.LabelNames(gCtx, req)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					if shouldRetry(err) {
+						level.Warn(spanLog).Log("msg", "failed to fetch label names; error is retriable", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					return fmt.Errorf("non-retriable error while fetching label names from store: %w", err)
 				}
 
-				myQueriedBlocks = ids
-			}
+				myQueriedBlocks := []ulid.ULID(nil)
+				if namesResp.ResponseHints != nil {
+					ids, err := convertBlockHintsToULIDs(namesResp.ResponseHints.QueriedBlocks)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					}
 
-			spanLog.DebugLog("msg", "received label names from store-gateway",
-				"instance", c,
-				"num labels", len(namesResp.Names),
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+					myQueriedBlocks = ids
+				} else if namesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+					// Note that we use a different but equivalent hints type for the opaque field.
+					resHints := hintspb.LabelNamesResponseHints{}
+					//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+					if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
+						return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
+					}
 
-			// Store the result.
-			mtx.Lock()
-			nameSets = append(nameSets, namesResp.Names)
-			for _, w := range namesResp.Warnings {
-				warnings.Add(errors.New(w))
-			}
-			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
-			mtx.Unlock()
+					ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					}
 
-			return nil
-		})
+					myQueriedBlocks = ids
+				}
+
+				spanLog.DebugLog("msg", "received label names from store-gateway",
+					"instance", c,
+					"num labels", len(namesResp.Names),
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+
+				// Store the result.
+				mtx.Lock()
+				nameSets = append(nameSets, namesResp.Names)
+				for _, w := range namesResp.Warnings {
+					warnings.Add(errors.New(w))
+				}
+				queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
+				mtx.Unlock()
+
+				return nil
+			})
+		}
 	}
 
 	// Wait until all client requests complete.
@@ -1181,7 +1439,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	ctx context.Context,
 	name string,
-	clients map[BlocksStoreClient][]ulid.ULID,
+	clients map[BlocksStoreClient][][]ulid.ULID,
 	minT int64,
 	maxT int64,
 	tenantID string,
@@ -1200,67 +1458,70 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 	)
 
-	// Concurrently fetch series from all clients.
-	for c, blockIDs := range clients {
-		g.Go(func() error {
-			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, hints, matchers...)
-			if err != nil {
-				return errors.Wrapf(err, "failed to create label values request")
-			}
-
-			valuesResp, err := c.LabelValues(gCtx, req)
-			if err != nil {
-				if shouldRetry(err) {
-					level.Warn(spanLog).Log("msg", "failed to fetch label values; error is retriable", "remote", c.RemoteAddress(), "err", err)
-					return nil
-				}
-				return fmt.Errorf("non-retriable error while fetching label values from store: %w", err)
-			}
-
-			myQueriedBlocks := []ulid.ULID(nil)
-			if valuesResp.ResponseHints != nil {
-				ids, err := convertBlockHintsToULIDs(valuesResp.ResponseHints.QueriedBlocks)
+	// Concurrently fetch series from all clients. A client may have multiple partitions; each
+	// partition is one independent RPC to the same store-gateway.
+	for c, partitions := range clients {
+		for _, blockIDs := range partitions {
+			g.Go(func() error {
+				req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, hints, matchers...)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					return errors.Wrapf(err, "failed to create label values request")
 				}
 
-				myQueriedBlocks = ids
-			} else if valuesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				// Note that we use a different but equivalent hints type for the opaque field.
-				resHints := hintspb.LabelValuesResponseHints{}
-				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
-					return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
-				}
-
-				ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
+				valuesResp, err := c.LabelValues(gCtx, req)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					if shouldRetry(err) {
+						level.Warn(spanLog).Log("msg", "failed to fetch label values; error is retriable", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					return fmt.Errorf("non-retriable error while fetching label values from store: %w", err)
 				}
 
-				myQueriedBlocks = ids
-			}
+				myQueriedBlocks := []ulid.ULID(nil)
+				if valuesResp.ResponseHints != nil {
+					ids, err := convertBlockHintsToULIDs(valuesResp.ResponseHints.QueriedBlocks)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					}
 
-			spanLog.DebugLog("msg", "received label values from store-gateway",
-				"instance", c.RemoteAddress(),
-				"num values", len(valuesResp.Values),
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+					myQueriedBlocks = ids
+				} else if valuesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+					// Note that we use a different but equivalent hints type for the opaque field.
+					resHints := hintspb.LabelValuesResponseHints{}
+					//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+					if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
+						return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
+					}
 
-			// Values returned need not be sorted, but we need them to be sorted so we can merge.
-			slices.Sort(valuesResp.Values)
+					ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					}
 
-			// Store the result.
-			mtx.Lock()
-			valueSets = append(valueSets, valuesResp.Values)
-			for _, w := range valuesResp.Warnings {
-				warnings.Add(errors.New(w))
-			}
-			queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
-			mtx.Unlock()
+					myQueriedBlocks = ids
+				}
 
-			return nil
-		})
+				spanLog.DebugLog("msg", "received label values from store-gateway",
+					"instance", c.RemoteAddress(),
+					"num values", len(valuesResp.Values),
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+
+				// Values returned need not be sorted, but we need them to be sorted so we can merge.
+				slices.Sort(valuesResp.Values)
+
+				// Store the result.
+				mtx.Lock()
+				valueSets = append(valueSets, valuesResp.Values)
+				for _, w := range valuesResp.Warnings {
+					warnings.Add(errors.New(w))
+				}
+				queriedBlocks = append(queriedBlocks, myQueriedBlocks...)
+				mtx.Unlock()
+
+				return nil
+			})
+		}
 	}
 
 	// Wait until all client requests complete.
@@ -1281,7 +1542,12 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 	)
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, hints *storage.SelectHints, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
+	}
+
 	// Selectively query only specific blocks.
 	requestHints := &storepb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1328,6 +1594,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
 		StreamingChunksBatchSize: streamingBatchSize,
+		Limit:                    limit,
 	}, nil
 }
 

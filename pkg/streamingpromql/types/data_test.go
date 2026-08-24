@@ -264,38 +264,40 @@ func TestHasDuplicateSeries(t *testing.T) {
 
 func TestQueryTimeRange(t *testing.T) {
 	type testCase struct {
-		start         time.Time
-		end           time.Time
-		interval      time.Duration
-		expectedStart int64
-		expectedEnd   int64
-		expectedIntMs int64
-		expectedSteps int
-		testTimes     []time.Time
-		expectedIdxs  []int64
+		timeRange QueryTimeRange
+
+		expectedIsInstant            bool
+		expectedStartT               int64
+		expectedEndT                 int64
+		expectedIntervalMilliseconds int64
+		expectedStepCount            int
+		expectedString               string
+
+		testTimes       []time.Time
+		expectedIndices []int64
 	}
 
-	startTime := time.Now()
+	startTime := time.Date(2020, 1, 2, 3, 4, 5, 678000000, time.UTC)
 	testCases := map[string]testCase{
-		"Instant query": {
-			start:         startTime,
-			end:           startTime,
-			interval:      0,
-			expectedStart: timestamp.FromTime(startTime),
-			expectedEnd:   timestamp.FromTime(startTime),
-			expectedIntMs: 1,
-			expectedSteps: 1,
-			testTimes:     []time.Time{startTime},
-			expectedIdxs:  []int64{0},
+		"instant query": {
+			timeRange:                    NewInstantQueryTimeRange(startTime),
+			expectedIsInstant:            true,
+			expectedStartT:               timestamp.FromTime(startTime),
+			expectedEndT:                 timestamp.FromTime(startTime),
+			expectedIntervalMilliseconds: 1,
+			expectedStepCount:            1,
+			expectedString:               "instant query at 1577934245678 (2020-01-02T03:04:05.678Z)",
+			testTimes:                    []time.Time{startTime},
+			expectedIndices:              []int64{0},
 		},
-		"Range query with 15-minute interval": {
-			start:         startTime,
-			end:           startTime.Add(time.Hour),
-			interval:      time.Minute * 15,
-			expectedStart: timestamp.FromTime(startTime),
-			expectedEnd:   timestamp.FromTime(startTime.Add(time.Hour)),
-			expectedIntMs: (time.Minute * 15).Milliseconds(),
-			expectedSteps: 5,
+		"range query with 15-minute interval": {
+			timeRange:                    NewRangeQueryTimeRange(startTime, startTime.Add(time.Hour), time.Minute*15),
+			expectedIsInstant:            false,
+			expectedStartT:               timestamp.FromTime(startTime),
+			expectedEndT:                 timestamp.FromTime(startTime.Add(time.Hour)),
+			expectedIntervalMilliseconds: (time.Minute * 15).Milliseconds(),
+			expectedStepCount:            5,
+			expectedString:               "range query from 1577934245678 (2020-01-02T03:04:05.678Z) to 1577937845678 (2020-01-02T04:04:05.678Z), 15m0s step (5 steps)",
 			testTimes: []time.Time{
 				startTime,
 				startTime.Add(time.Minute * 15),
@@ -303,31 +305,22 @@ func TestQueryTimeRange(t *testing.T) {
 				startTime.Add(time.Minute * 45),
 				startTime.Add(time.Hour),
 			},
-			expectedIdxs: []int64{0, 1, 2, 3, 4},
+			expectedIndices: []int64{0, 1, 2, 3, 4},
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var qtr QueryTimeRange
-
-			if tc.interval == 0 {
-				qtr = NewInstantQueryTimeRange(tc.start)
-				require.True(t, qtr.IsInstant)
-			} else {
-				qtr = NewRangeQueryTimeRange(tc.start, tc.end, tc.interval)
-				require.False(t, qtr.IsInstant)
-			}
-
-			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")
-			require.Equal(t, tc.expectedEnd, qtr.EndT, "EndT matches")
-			require.Equal(t, tc.expectedIntMs, qtr.IntervalMilliseconds, "IntervalMs matches")
-			require.Equal(t, tc.expectedSteps, qtr.StepCount, "StepCount matches")
+			require.Equal(t, tc.expectedStartT, tc.timeRange.StartT, "StartT matches")
+			require.Equal(t, tc.expectedEndT, tc.timeRange.EndT, "EndT matches")
+			require.Equal(t, tc.expectedIntervalMilliseconds, tc.timeRange.IntervalMilliseconds, "IntervalMs matches")
+			require.Equal(t, tc.expectedStepCount, tc.timeRange.StepCount, "StepCount matches")
+			require.Equal(t, tc.expectedString, tc.timeRange.String(), "String matches")
 
 			for i, tt := range tc.testTimes {
 				ts := timestamp.FromTime(tt)
-				pointIdx := qtr.PointIndex(ts)
-				expectedIdx := tc.expectedIdxs[i]
+				pointIdx := tc.timeRange.PointIndex(ts)
+				expectedIdx := tc.expectedIndices[i]
 				require.Equal(t, expectedIdx, pointIdx, "PointIdx matches for time %v", tt)
 			}
 		})

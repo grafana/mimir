@@ -7,7 +7,7 @@ package alertmanager
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // md5 is used to derive a non-cryptographic metric value from the alertmanager config.
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -23,13 +23,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	amalert "github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
+	"github.com/prometheus/alertmanager/eventrecorder"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
+	"github.com/prometheus/alertmanager/marker"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
 	discord "github.com/prometheus/alertmanager/notify/discord"
@@ -50,8 +53,6 @@ import (
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/timeinterval"
-	"github.com/prometheus/alertmanager/types"
-	"github.com/prometheus/alertmanager/ui"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
@@ -112,7 +113,7 @@ type Alertmanager struct {
 	persister       *statePersister
 	nflog           *nflog.Log
 	silences        *silence.Silences
-	marker          *types.MemMarker
+	marker          marker.GroupMarker
 	alerts          *mem.Alerts
 	dispatcher      *dispatch.Dispatcher
 	inhibitor       *inhibit.Inhibitor
@@ -135,21 +136,14 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
-}
 
-var (
-	webReload = make(chan chan error)
-)
-
-func init() {
-	go func() {
-		// Since this is not a "normal" Alertmanager which reads its config
-		// from disk, we just accept and ignore web-based reload signals. Config
-		// updates are only applied externally via ApplyConfig().
-		// nolint:revive // We want to drain the channel, we don't need to do anything inside the loop body.
-		for range webReload {
-		}
-	}()
+	// stopMu serializes ApplyConfig's "decide whether to launch the inhibitor + launch +
+	// wait for it to register its cancel func" with Stop's "set stopped". Without this,
+	// a Stop that races past ApplyConfig's load-barrier select can call inhibitor.Stop()
+	// before ApplyConfig has launched the inhibitor goroutine, then ApplyConfig launches
+	// it with no live cancel hook, and the goroutine leaks.
+	stopMu  sync.Mutex
+	stopped bool
 }
 
 // State helps with replication and synchronization of notifications and silences across several alertmanager replicas.
@@ -224,7 +218,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	c := am.state.AddState(nflogStateKeyPrefix+cfg.UserID, am.nflog, am.registry)
 	am.nflog.SetBroadcast(c.Broadcast)
 
-	am.marker = types.NewMarker(am.registry)
+	am.marker = marker.NewGroupMarker()
 
 	silencesFile := filepath.Join(cfg.TenantDataDir, silencesSnapshot)
 	am.silences, err = silence.New(silence.Options{
@@ -253,7 +247,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
-	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
+	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features, eventrecorder.Recorder{})
 
 	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
@@ -267,17 +261,16 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		callback = newAlertsLimiter(am.cfg.UserID, am.cfg.Limits, reg)
 	}
 
-	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, 0, callback, utillog.SlogFromGoKit(am.logger), reg, cfg.Features)
+	am.alerts, err = mem.NewAlerts(context.Background(), 30*time.Minute, 0, callback, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{}, reg, cfg.Features)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
 
 	am.api, err = api.New(api.Options{
-		Alerts:          am.alerts,
-		Silences:        am.silences,
-		AlertStatusFunc: am.marker.Status,
-		GroupMutedFunc:  am.marker.Muted,
-		Concurrency:     cfg.MaxConcurrentGetRequestsPerTenant,
+		Alerts:         am.alerts,
+		Silences:       am.silences,
+		GroupMutedFunc: am.marker.Muted,
+		Concurrency:    cfg.MaxConcurrentGetRequestsPerTenant,
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
@@ -290,7 +283,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Help:    "Histogram of request durations for the Alertmanager API.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"handler"}),
-		GroupFunc: func(ctx context.Context, f1 func(*dispatch.Route) bool, f2 func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string, error) {
+		GroupFunc: func(ctx context.Context, f1 func(*dispatch.Route) bool, f2 func(*amalert.Alert, time.Time) bool) (dispatch.AlertGroups, map[model.Fingerprint][]string, error) {
 			return am.dispatcher.Groups(ctx, f1, f2)
 		},
 	})
@@ -300,11 +293,13 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	router := route.New().WithPrefix(am.cfg.ExternalURL.Path)
 
-	ui.Register(router, webReload, utillog.SlogFromGoKit(log.With(am.logger, "component", "ui")))
 	am.mux = am.api.Register(router, am.cfg.ExternalURL.Path)
 
 	// Override some extra paths registered in the router (eg. /metrics which by default exposes prometheus.DefaultRegisterer).
 	// Entire router is registered in Mux to "/" path, so there is no conflict with overwriting specific paths.
+	// /-/reload is no longer registered by upstream's UI in v0.32.0, but we override it to 404
+	// defensively so the path can never be exposed under the alertmanager prefix if a future
+	// upstream version or a sibling component starts registering it.
 	for _, p := range []string{"/metrics", "/-/reload", "/debug/"} {
 		a := path.Join(am.cfg.ExternalURL.Path, p)
 		// Preserve end slash, as for Mux it means entire subtree.
@@ -314,7 +309,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
+	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry, cfg.Features)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
@@ -342,7 +337,14 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		return err
 	}
 
-	am.api.Update(conf, func(_ context.Context, _ model.LabelSet) {})
+	// Hold stopMu across the field mutations so that Stop, which reads these
+	// same fields under stopMu, can't race with us. If Stop has already run,
+	// bail out here without disturbing the existing inhibitor/dispatcher.
+	am.stopMu.Lock()
+	if am.stopped {
+		am.stopMu.Unlock()
+		return nil
+	}
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -354,7 +356,24 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")), eventrecorder.Recorder{})
+	silencer := silence.NewSilencer(am.silences, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{})
+
+	// Wire the API's alert-status callback to this config's inhibitor and silencer as part of the
+	// config swap. From the alertmanager v0.33 bump the API computes silenced/inhibited status on
+	// demand by invoking this callback with a per-request marker in the context (see api/v2
+	// predictAlertStatus / alertFilter); the inhibitor and silencer write status to that marker.
+	// We register it here, with the new config, rather than after the inhibitor finishes loading,
+	// so the API immediately reflects the new config and never routes status through the
+	// just-stopped previous inhibitor, and so an apply aborted at a later barrier still leaves the
+	// API consistent with the dispatcher. Mutes is safe to call before the inhibitor has loaded: it
+	// reports no inhibition until the per-rule state cache is populated, then becomes accurate. We
+	// close over a local (not am.inhibitor) so a concurrent API request can't race the field write.
+	apiInhibitor := am.inhibitor
+	am.api.Update(conf, func(ctx context.Context, labels model.LabelSet) {
+		apiInhibitor.Mutes(ctx, labels)
+		silencer.Mutes(ctx, labels)
+	})
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -380,7 +399,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
-		silence.NewSilencer(am.silences, am.marker, utillog.SlogFromGoKit(am.logger)),
+		silencer,
 		intervener,
 		am.marker,
 		am.nflog,
@@ -396,24 +415,72 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		maintenancePeriod,
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
 		utillog.SlogFromGoKit(log.With(am.logger, "component", "dispatcher", "insight", "true")),
+		eventrecorder.Recorder{},
 		am.dispatcherMetrics,
 	)
 
-	go am.dispatcher.Run(time.Now())
-	go am.inhibitor.Run()
-
+	// Update the config-hash metric before the load barrier below so the metric
+	// reflects the new config even if we bail out on a concurrent shutdown.
 	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
+
+	dispatcher := am.dispatcher
+	go dispatcher.Run(time.Now())
+	// Release stopMu before the load barrier below: Stop's dispatcher.Stop is
+	// what closes d.loaded (or sets state to Stopped), so blocking the barrier
+	// while Stop is waiting for stopMu would deadlock.
+	am.stopMu.Unlock()
+
+	// Wait for the dispatcher to finish initial loading before returning. Without
+	// this barrier, a concurrent Stop() can race with Run() in two ways: Stop's
+	// WaitGroup.Wait may return before Run has called finished.Add(1), and Stop's
+	// d.cancel() can race with Run's writes to fields like routeGroupsSlice. The
+	// d.loaded channel is closed after both happen, so waiting on it provides the
+	// necessary happens-before relationship. We also unblock on maintenanceStop in
+	// case Stop() runs concurrently and flips the dispatcher state to Stopped before
+	// Run's CAS, in which case Run returns early without closing d.loaded.
+	select {
+	case <-dispatcher.LoadingDone():
+	case <-am.maintenanceStop:
+		return nil
+	}
+
+	// Re-take stopMu to launch the inhibitor. A concurrent Stop that arrives
+	// here will either set stopped=true before us (we bail out without launching)
+	// or wait for our WaitForLoading below — by which time the inhibitor's Run
+	// has set ih.cancel, so a subsequent inhibitor.Stop can actually cancel it.
+	// Without this serialization, the select above can fire LoadingDone even when
+	// Stop also raced past it, and we'd start an inhibitor goroutine with no
+	// live cancel hook — it would leak.
+	am.stopMu.Lock()
+	defer am.stopMu.Unlock()
+	if am.stopped {
+		return nil
+	}
+	inhibitor := am.inhibitor
+	go inhibitor.Run()
+	inhibitor.WaitForLoading()
+
 	return nil
 }
 
 // Stop stops the Alertmanager.
 func (am *Alertmanager) Stop() {
-	if am.inhibitor != nil {
-		am.inhibitor.Stop()
+	// Mark stopped and capture the inhibitor/dispatcher under stopMu so we don't
+	// race with ApplyConfig's writes to those fields. A concurrent ApplyConfig
+	// that has passed the dispatcher load-barrier will see stopped=true and bail
+	// out instead of starting an inhibitor whose cancel hook would leak.
+	am.stopMu.Lock()
+	am.stopped = true
+	inhibitor := am.inhibitor
+	dispatcher := am.dispatcher
+	am.stopMu.Unlock()
+
+	if inhibitor != nil {
+		inhibitor.Stop()
 	}
 
-	if am.dispatcher != nil {
-		am.dispatcher.Stop()
+	if dispatcher != nil {
+		dispatcher.Stop()
 	}
 
 	am.persister.StopAsync()
@@ -488,13 +555,13 @@ func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*aler
 func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
 
 	var (
-		errs         types.MultiError
+		errs         []error
 		integrations []notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l *slog.Logger) (notify.Notifier, error)) {
 			integrationLogger := utillog.SlogFromGoKit(log.With(logger, "integration", name))
 			n, err := f(integrationLogger)
 			if err != nil {
-				errs.Add(err)
+				errs = append(errs, err)
 				return
 			}
 			n = wrapper(name, n)
@@ -578,8 +645,8 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		})
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
-	if errs.Len() > 0 {
-		return nil, &errs
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return integrations, nil
 }
@@ -694,7 +761,7 @@ func newAlertsLimiter(tenant string, limits Limits, reg prometheus.Registerer) *
 	return limiter
 }
 
-func (a *alertsLimiter) PreStore(alert *types.Alert, existing bool) error {
+func (a *alertsLimiter) PreStore(alert *amalert.Alert, existing bool) error {
 	if alert == nil {
 		return nil
 	}
@@ -726,7 +793,7 @@ func (a *alertsLimiter) PreStore(alert *types.Alert, existing bool) error {
 	return nil
 }
 
-func (a *alertsLimiter) PostStore(alert *types.Alert, existing bool) {
+func (a *alertsLimiter) PostStore(alert *amalert.Alert, existing bool) {
 	if alert == nil {
 		return
 	}
@@ -746,7 +813,7 @@ func (a *alertsLimiter) PostStore(alert *types.Alert, existing bool) {
 	a.totalSize += newSize
 }
 
-func (a *alertsLimiter) PostDelete(alert *types.Alert) {
+func (a *alertsLimiter) PostDelete(alert *amalert.Alert) {
 	if alert == nil {
 		return
 	}
@@ -760,6 +827,12 @@ func (a *alertsLimiter) PostDelete(alert *types.Alert) {
 	delete(a.sizes, fp)
 	a.count--
 }
+
+// PostGC is a no-op: upstream's mem.Alerts.GC() already calls PostDelete for every
+// garbage-collected alert before invoking PostGC, and PostDelete handles all the
+// limiter bookkeeping (count, totalSize, sizes). Keeping PostGC empty avoids
+// double-decrementing.
+func (a *alertsLimiter) PostGC(_ model.Fingerprints) {}
 
 func (a *alertsLimiter) currentStats() (count, totalSize int) {
 	a.mx.Lock()

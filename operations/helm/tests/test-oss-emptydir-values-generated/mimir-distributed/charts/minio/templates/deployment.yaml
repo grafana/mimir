@@ -82,4 +82,5 @@ spec:
             claimName: test-oss-emptydir-values-minio
         - name: minio-user
           secret:
-            secretName: test-oss-emptydir-values-minio
+            secretName: test-oss-emptydir-values-minio        
+

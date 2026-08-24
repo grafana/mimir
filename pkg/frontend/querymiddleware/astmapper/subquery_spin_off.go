@@ -8,8 +8,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -25,19 +23,30 @@ const (
 )
 
 type subquerySpinOffMapper struct {
+	wrapper         SubquerySpinOffWrapper
 	defaultStepFunc func(rangeMillis int64) int64
+
+	spinOffSimpleSubqueries bool
 
 	logger log.Logger
 	stats  *SubquerySpinOffMapperStats
 }
 
 // NewSubquerySpinOffMapper creates a new instant query mapper.
-func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
+//
+// wrapper controls how the spun-off subqueries and downstream queries are represented in the mapped
+// query.
+//
+// opts enables optional, more aggressive spin-off behaviours; the zero value keeps the conservative
+// default behaviour.
+func NewSubquerySpinOffMapper(wrapper SubquerySpinOffWrapper, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats, spinOffSimpleSubqueries bool) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
-			defaultStepFunc: defaultStepFunc,
-			logger:          logger,
-			stats:           stats,
+			wrapper:                 wrapper,
+			defaultStepFunc:         defaultStepFunc,
+			spinOffSimpleSubqueries: spinOffSimpleSubqueries,
+			logger:                  logger,
+			stats:                   stats,
 		},
 	)
 
@@ -48,11 +57,12 @@ func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, log
 
 // MapExpr implements the ASTMapper interface.
 // The strategy here is to look for aggregated subqueries (all subqueries should be aggregated) and spin them off into separate queries.
-// The frontend does not have internal control of the engine,
-// so MapExpr has to remap subqueries into "fake metrics" that can be queried by a Queryable that we can inject into the engine.
-// This "fake metric selector" is the "__subquery_spinoff__" metric.
-// For everything else, we have to pass it through to the downstream execution path (other instant middlewares),
-// so we remap them into a "__downstream_query__" selector.
+// Subqueries that are worth spinning off are handed to the wrapper's WrapSubquery; everything else is passed through to
+// the downstream execution path via the wrapper's WrapDownstreamQuery.
+// How those spun-off subqueries and downstream queries are represented in the mapped query is up to the wrapper.
+// For example, the query-frontend middleware uses the selectorSubquerySpinOffWrapper, which remaps them into the
+// "fake metric" selectors "__subquery_spinoff__" and "__downstream_query__" that are resolved by a Queryable injected
+// into the engine, because the frontend does not have internal control of the engine.
 //
 // See sharding.go and embedded.go for another example of mapping into a fake metric selector.
 func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
@@ -64,17 +74,15 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 
 	downstreamQuery := func(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 		if countSelectors(expr) == 0 {
-			return expr, false, nil
-		}
-		selector := &parser.VectorSelector{
-			Name: DownstreamQueryMetricName,
-			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DownstreamQueryMetricName),
-				labels.MustNewMatcher(labels.MatchEqual, DownstreamQueryLabelName, expr.String()),
-			},
+			return expr, true, nil
 		}
 		m.stats.AddDownstreamQuery()
-		return selector, false, nil
+		wrapped, err := m.wrapper.WrapDownstreamQuery(expr)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return wrapped, true, nil
 	}
 
 	switch e := expr.(type) {
@@ -86,9 +94,9 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		// The last argument will typically contain the subquery in an aggregation function
 		// Examples: last_over_time(<subquery>[5m:]) or quantile_over_time(0.5, <subquery>[5m:])
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
-			canBeSpunOff, isConstant := subqueryCanBeSpunOff(*sq)
+			canBeSpunOff, isConstant := m.subqueryCanBeSpunOff(*sq)
 			if isConstant {
-				return expr, false, nil
+				return expr, true, nil
 			}
 			if !canBeSpunOff {
 				return downstreamQuery(expr)
@@ -108,25 +116,11 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 				return downstreamQuery(expr)
 			}
 
-			selector := &parser.VectorSelector{
-				Name: SubqueryMetricName,
-				LabelMatchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, SubqueryMetricName),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryQueryLabelName, sq.Expr.String()),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryRangeLabelName, sq.Range.String()),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryStepLabelName, step.String()),
-				},
+			e.Args[lastArgIdx], err = m.wrapper.WrapSubquery(sq, step)
+			if err != nil {
+				return nil, false, err
 			}
 
-			if sq.OriginalOffset != 0 {
-				selector.LabelMatchers = append(selector.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, SubqueryOffsetLabelName, sq.OriginalOffset.String()))
-				selector.OriginalOffset = sq.OriginalOffset
-			}
-
-			e.Args[lastArgIdx] = &parser.MatrixSelector{
-				VectorSelector: selector,
-				Range:          sq.Range,
-			}
 			m.stats.AddSpunOffSubquery()
 			return e, true, nil
 		}
@@ -139,7 +133,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 			return downstreamQuery(expr)
 		}
 		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
-		if !hasSubqueryInChildren(expr) {
+		if !m.hasSubqueryInChildren(expr) {
 			return downstreamQuery(expr)
 		}
 		return expr, false, nil
@@ -169,14 +163,14 @@ func isComplexExpr(expr parser.Node) bool {
 	}
 }
 
-func hasSubqueryInChildren(expr parser.Node) bool {
+func (m *subquerySpinOffMapper) hasSubqueryInChildren(expr parser.Node) bool {
 	switch e := expr.(type) {
 	case *parser.SubqueryExpr:
-		canBeSpunOff, _ := subqueryCanBeSpunOff(*e)
+		canBeSpunOff, _ := m.subqueryCanBeSpunOff(*e)
 		return canBeSpunOff
 	default:
 		for _, child := range parser.Children(e) {
-			if hasSubqueryInChildren(child) {
+			if m.hasSubqueryInChildren(child) {
 				return true
 			}
 		}
@@ -184,7 +178,7 @@ func hasSubqueryInChildren(expr parser.Node) bool {
 	}
 }
 
-func subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
+func (m *subquerySpinOffMapper) subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
 	// @ is not supported
 	if sq.StartOrEnd != 0 || sq.Timestamp != nil {
 		return false, false
@@ -202,8 +196,9 @@ func subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
 		return false, true
 	}
 
-	// Filter out subqueries that are just selectors, they are fast enough that they aren't worth spinning off.
-	if selectorsCt == 1 && !isComplexExpr(sq.Expr) {
+	// Filter out subqueries that are just selectors, they are fast enough that they aren't worth spinning
+	// off, unless spinOffSimpleSubqueries is enabled.
+	if selectorsCt == 1 && !isComplexExpr(sq.Expr) && !m.spinOffSimpleSubqueries {
 		return false, false
 	}
 

@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -115,7 +116,7 @@ func TestConfig_Validate(t *testing.T) {
 
 			testData.initLimits(&limits)
 
-			assert.Equal(t, testData.expected, cfg.Validate(limits))
+			assert.Equal(t, testData.expected, cfg.Validate(limits, compartments.Config{}))
 		})
 	}
 }
@@ -2445,7 +2446,9 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
-				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "team"}}
+				limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+				}
 				limits.MaxCostAttributionCardinality = 100
 			},
 		},
@@ -2531,7 +2534,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 							}
 
 							// Start the distributor.
-							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
+							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, true, nil, nil, nil, log.NewNopLogger())
 							require.NoError(b, err)
 							require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6151,6 +6154,13 @@ type prepConfig struct {
 	numDistributors           int
 	disableDistributorService bool
 
+	// searchLabelNamesHook returns the batches each mock ingester will stream for
+	// SearchLabelNames calls. ingesterIdx is the per-zone mockIngester.id; tests
+	// without zones can use it as a global index.
+	searchLabelNamesHook func(ingesterIdx int, req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
+	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
+	searchLabelValuesHook func(ingesterIdx int, req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
+
 	replicationFactor                  int
 	enableTracker                      bool
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
@@ -6164,6 +6174,12 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
+
+	// Compartments specific configuration. When numCompartments > 0, the partition rings
+	// component is built with that many read compartment rings, each seeded with the active partitions
+	// listed in compartmentActivePartitions[compartmentID].
+	numCompartments             int
+	compartmentActivePartitions map[int][]int32
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -6310,6 +6326,20 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
 		}
+		if cfg.searchLabelNamesHook != nil {
+			ingesterIdx := i
+			hook := cfg.searchLabelNamesHook
+			ingester.searchLabelNamesHook = func(req *client.SearchLabelNamesRequest) []*client.SearchResultBatch {
+				return hook(ingesterIdx, req)
+			}
+		}
+		if cfg.searchLabelValuesHook != nil {
+			ingesterIdx := i
+			hook := cfg.searchLabelValuesHook
+			ingester.searchLabelValuesHook = func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch {
+				return hook(ingesterIdx, req)
+			}
+		}
 
 		// Init the partition reader if the ingester should consume from Kafka.
 		// This is required to let each mocked ingester to consume their own partition.
@@ -6323,7 +6353,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -6365,6 +6395,29 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 		ingesters[i].tokens = tokens
 	}
 	return &ring.Desc{Ingesters: ingesterDescs}
+}
+
+// prepareCompartmentPartitionRing builds a partition ring desc with the given partitions set ACTIVE,
+// used to seed a single read compartment's partition ring in tests.
+func prepareCompartmentPartitionRing(activePartitions []int32, ingesters []*mockIngester) *ring.PartitionRingDesc {
+	desc := ring.NewPartitionRingDesc()
+	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
+
+	active := make(map[int32]struct{}, len(activePartitions))
+	for _, partitionID := range activePartitions {
+		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+		active[partitionID] = struct{}{}
+	}
+
+	// Add the ingesters owning this compartment's active partitions as owners, so the query path can
+	// resolve partition owners. An ingester owns the partition matching its instance ID.
+	for _, ingester := range ingesters {
+		if _, ok := active[ingester.partitionID()]; ok {
+			desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		}
+	}
+
+	return desc
 }
 
 func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
@@ -6462,22 +6515,41 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	})
 
 	// Initialize the ingest storage's partitions ring.
-	var partitionsRing *ring.PartitionInstanceRing
+	var (
+		partitionInstanceRings *ring.PartitionInstanceRings
+		partitionRings         *ring.PartitionRingWatchers
+	)
 	if cfg.ingestStorageEnabled {
-		// Init the partitions ring.
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
-		require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
-			return preparePartitionsRing(cfg, ingesters), true, nil
-		}))
 
-		// Init the watcher.
-		watcher := ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, prometheus.NewPedanticRegistry())
-		require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+		compartmentsEnabled := cfg.numCompartments > 0
+		if compartmentsEnabled {
+			// Seed each read compartment's own partition ring.
+			for c := 0; c < cfg.numCompartments; c++ {
+				key := compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, c)
+				activePartitions := cfg.compartmentActivePartitions[c]
+				require.NoError(t, partitionsStore.CAS(ctx, key, func(_ interface{}) (interface{}, bool, error) {
+					return prepareCompartmentPartitionRing(activePartitions, ingesters), true, nil
+				}))
+			}
+		} else {
+			// Single partition ring under the legacy key.
+			require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
+				return preparePartitionsRing(cfg, ingesters), true, nil
+			}))
+		}
+
+		// Init the partition rings component used by the write path (1 ring when compartments are
+		// disabled, N when enabled).
+		var err error
+		partitionRings, err = ingest.NewPartitionRingWatchers(compartmentsEnabled, cfg.numCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, nil)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, partitionRings))
 		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, partitionRings))
 		})
 
-		partitionsRing = ring.NewPartitionInstanceRing(watcher, ingestersRing, ingestersHeartbeatTimeout)
+		partitionInstanceRings = ring.NewPartitionInstanceRings(partitionRings, ingestersRing, ingestersHeartbeatTimeout)
 	}
 
 	if cfg.limits == nil {
@@ -6546,7 +6618,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionInstanceRings, partitionRings, true, true, nil, nil, reg, logger)
 		require.NoError(t, err)
 		if !cfg.disableDistributorService {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, d))
@@ -6931,11 +7003,17 @@ type mockIngester struct {
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
-	partitionReader *ingest.PartitionReader
+	partitionReader ingest.PartitionReader
 
 	// Hooks.
 	hooksMx        sync.Mutex
 	beforePushHook func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)
+
+	// searchLabelNamesHook, when non-nil, drives the SearchLabelNames stream
+	// response for this ingester. The returned batches are emitted in order.
+	searchLabelNamesHook func(req *client.SearchLabelNamesRequest) []*client.SearchResultBatch
+	// searchLabelValuesHook is the analogous hook for SearchLabelValues.
+	searchLabelValuesHook func(req *client.SearchLabelValuesRequest) []*client.SearchResultBatch
 }
 
 func (i *mockIngester) registerBeforePushHook(fn func(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool)) {
@@ -7604,6 +7682,70 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	result := s.results[s.i]
 	s.i++
 	return result, nil
+}
+
+func (i *mockIngester) SearchLabelNames(ctx context.Context, req *client.SearchLabelNamesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelNamesClient, error) {
+	i.trackCall("SearchLabelNames", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	var batches []*client.SearchResultBatch
+	if i.searchLabelNamesHook != nil {
+		batches = i.searchLabelNamesHook(req)
+	}
+	return &mockSearchStream{batches: batches}, nil
+}
+
+func (i *mockIngester) SearchLabelValues(ctx context.Context, req *client.SearchLabelValuesRequest, _ ...grpc.CallOption) (client.Ingester_SearchLabelValuesClient, error) {
+	i.trackCall("SearchLabelValues", ctx, req)
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	var batches []*client.SearchResultBatch
+	if i.searchLabelValuesHook != nil {
+		batches = i.searchLabelValuesHook(req)
+	}
+	return &mockSearchStream{batches: batches}, nil
+}
+
+// mockSearchStream satisfies both Ingester_SearchLabelNamesClient and
+// Ingester_SearchLabelValuesClient — both share the same Recv signature
+// and embed grpc.ClientStream.
+type mockSearchStream struct {
+	grpc.ClientStream
+	batches []*client.SearchResultBatch
+	i       int
+}
+
+func (*mockSearchStream) CloseSend() error {
+	return nil
+}
+
+func (s *mockSearchStream) Recv() (*client.SearchResultBatch, error) {
+	if s.i >= len(s.batches) {
+		return nil, io.EOF
+	}
+	batch := s.batches[s.i]
+	s.i++
+	return batch, nil
 }
 
 func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {

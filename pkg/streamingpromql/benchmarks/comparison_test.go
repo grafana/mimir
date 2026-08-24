@@ -9,6 +9,8 @@ import (
 	"context"
 	"math"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,9 +94,69 @@ func BenchmarkQuery(b *testing.B) {
 	}
 }
 
-func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
-	t.Skip("range queries with range selectors that overlap the query step are a pathological case for the CSE pass which causes this test to consume an excessive amount of memory")
+func BenchmarkRangeVectorQueryCase(b *testing.B) {
+	metricSizes := []int{10, 100}
 
+	q := createBenchmarkQueryable(b, metricSizes)
+	cases := []BenchCase{
+		{
+			Expr: `
+				histogram_count(
+					sum(
+					  rate(nh_X{
+						route!="madeupfortest4"
+					  }[20m])
+					)
+				) 
+				/
+				histogram_fraction(0, +Inf,
+					sum(
+					  increase(nh_X{
+						route!="madeupfortest4"
+					  }[20m])
+					)
+				)
+			`,
+			Steps: 50,
+		},
+	}
+	var tmp []BenchCase
+	for _, c := range cases {
+		if !strings.Contains(c.Expr, "X") {
+			tmp = append(tmp, c)
+		} else {
+			for _, count := range metricSizes {
+				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps, InstantQueryOnly: c.InstantQueryOnly, IgnoreAnnotationDifferences: c.IgnoreAnnotationDifferences})
+			}
+		}
+	}
+	cases = tmp
+	opts := streamingpromql.NewTestEngineOpts()
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(b, err)
+	mimirEngine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(b, err)
+
+	ctx := user.InjectOrgID(context.Background(), UserID)
+
+	for _, c := range cases {
+		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
+		end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
+
+		b.Run(c.Name(), func(b *testing.B) {
+			for b.Loop() {
+				res, cleanup := c.Run(ctx, b, start, end, interval, mimirEngine, q)
+				if res != nil {
+					cleanup()
+				}
+			}
+
+		})
+	}
+}
+
+func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
@@ -247,7 +309,7 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 
 	overrides := validation.NewOverrides(limits, nil)
 
-	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, false, nil, nil, nil, logger)
+	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, nil, false, false, nil, nil, nil, logger)
 	require.NoError(t, err)
 
 	queryMetrics := stats.NewQueryMetrics(nil)

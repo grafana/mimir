@@ -17,3 +17,4 @@ spec:
       app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
       app.kubernetes.io/component: query-frontend
   maxUnavailable: 1
+

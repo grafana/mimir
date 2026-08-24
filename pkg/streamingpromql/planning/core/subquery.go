@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,9 +19,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type Subquery struct {
 	*SubqueryDetails
-	Inner planning.Node `json:"-"`
+	Inner planning.Node `json:"-" node:"child"`
 }
 
 func (s *Subquery) Describe() string {
@@ -49,6 +51,13 @@ func (s *Subquery) Describe() string {
 }
 
 func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return SubqueryChildrenTimeRange(timeRange, s.Range, s.Step, s.Offset, s.Timestamp)
+}
+
+// SubqueryChildrenTimeRange computes the time range used by the children of a subquery with the given
+// range, step, offset and @ timestamp (ts, nil if the subquery does not use the @ modifier), when the
+// subquery is evaluated over parentTimeRange.
+func SubqueryChildrenTimeRange(parentTimeRange types.QueryTimeRange, subqueryRange, step, offset time.Duration, ts *time.Time) types.QueryTimeRange {
 	// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
 	// They are not evaluated as queries aligned to the individual step timestamps.
 	// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
@@ -63,24 +72,37 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
 	// could be smarter about this if it turns out to be a big problem.
 
-	start := timeRange.StartT
-	end := timeRange.EndT
-	stepMilliseconds := s.Step.Milliseconds()
+	start := parentTimeRange.StartT
+	end := parentTimeRange.EndT
+	stepMilliseconds := step.Milliseconds()
 
-	if s.Timestamp != nil {
-		start = timestamp.FromTime(*s.Timestamp)
+	if ts != nil {
+		start = timestamp.FromTime(*ts)
 		end = start
+	} else if !parentTimeRange.IsInstant {
+		// Align the parent end timestamp down to the parent's step grid before applying the
+		// subquery offset.
+		// This ensures the subquery does not evaluate past the parent's last actual step if the
+		// parent's end time isn't aligned to its step.
+		// For example, if the step is 1h, and the parent time range is 09:00 to 11:30, then the last
+		// parent step is 11:00, and the subquery should not evaluate past that.
+		end = start + ((end-start)/parentTimeRange.IntervalMilliseconds)*parentTimeRange.IntervalMilliseconds
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
 	// +1 because the query time range is inclusive of the start timestamp, but the subquery range is exclusive of the start.
-	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds() + 1) / stepMilliseconds)
-	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds()+1 {
+	alignedStart := stepMilliseconds * ((start - offset.Milliseconds() - subqueryRange.Milliseconds() + 1) / stepMilliseconds)
+	if alignedStart < start-offset.Milliseconds()-subqueryRange.Milliseconds()+1 {
 		alignedStart += stepMilliseconds
 	}
 
-	end = end - s.Offset.Milliseconds()
-	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), s.Step)
+	// Note that this timestamp may not be aligned to the subquery's step grid, but this isn't an issue:
+	// the subquery will be evaluated up to the last step within the range, just like the behaviour for top-level queries.
+	// For example, if the start of the range is 09:00 and the subquery step is 1h, it doesn't matter if
+	// the end is 11:00, 11:01 or 11:59, the last evaluated step will be 11:00, as expected.
+	end = end - offset.Milliseconds()
+
+	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), step)
 }
 
 func (s *Subquery) Details() proto.Message {
@@ -91,59 +113,14 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *Subquery) ChildCount() int {
-	return 1
-}
-
-func (s *Subquery) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Subquery expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
-func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Subquery supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = node
-	return nil
-}
-
-func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherSubquery, ok := other.(*Subquery)
-
-	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
-		s.Offset == otherSubquery.Offset &&
-		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step
-}
-
 func (s *Subquery) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
 }
 
-func (s *Subquery) ChildrenLabels() []string {
-	return []string{""}
-}
-
-func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	innerTimeRange := s.ChildrenTimeRange(timeRange)
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(s.Inner, innerTimeRange)
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, s.Inner, innerTimeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}

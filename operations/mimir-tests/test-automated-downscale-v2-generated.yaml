@@ -823,6 +823,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -837,7 +838,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -858,6 +859,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -916,7 +918,8 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -memberlist.rejoin-interval=60s
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
@@ -935,7 +938,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -956,6 +959,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -996,16 +1000,21 @@ spec:
     spec:
       containers:
       - args:
+        - -querier.max-query-parallelism=240
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1013,7 +1022,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1029,10 +1038,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1079,13 +1089,13 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1104,6 +1114,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1142,7 +1153,7 @@ spec:
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         - -zpdb.pod-ready-annotation-patch-timeout=5s
-        image: grafana/rollout-operator:v0.37.0
+        image: grafana/rollout-operator:v0.39.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1206,6 +1217,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
@@ -1229,7 +1241,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1295,6 +1307,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1307,7 +1320,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1400,13 +1413,14 @@ spec:
         - -compactor.symbols-flushers-concurrency=4
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1427,6 +1441,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -1527,6 +1542,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1537,7 +1553,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1558,6 +1574,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -1659,6 +1676,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1669,7 +1687,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1690,6 +1708,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -1791,6 +1810,7 @@ spec:
         - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1801,7 +1821,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1822,6 +1842,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -1880,7 +1901,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1895,7 +1916,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1940,7 +1961,7 @@ spec:
         - -I 25m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1955,7 +1976,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2000,7 +2021,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2015,7 +2036,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2060,7 +2081,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2075,7 +2096,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2160,6 +2181,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2183,7 +2205,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2204,6 +2226,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -2303,6 +2326,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2326,7 +2350,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2347,6 +2371,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -2446,6 +2471,7 @@ spec:
         - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=60s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -2469,7 +2495,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.2.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2490,6 +2516,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data

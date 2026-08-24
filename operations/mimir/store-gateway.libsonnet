@@ -41,6 +41,19 @@
     (if !$._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': false,
      } else {}) +
+    (
+      if !$._config.store_gateway_force_attempt_http2 then {}
+      else if $._config.storage_backend == 'azure' then {
+        'blocks-storage.azure.http.force-attempt-http2': true,
+      }
+      else if $._config.storage_backend == 'gcs' then {
+        'blocks-storage.gcs.http.force-attempt-http2': true,
+      }
+      else if $._config.storage_backend == 's3' then {
+        'blocks-storage.s3.http.force-attempt-http2': true,
+      }
+      else {}
+    ) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
@@ -72,6 +85,7 @@
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
 

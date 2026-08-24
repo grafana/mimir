@@ -1,3 +1,4 @@
+local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-compactor.json';
 
 // This applies to the "longest time since successful run queries"
@@ -104,7 +105,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addShowNativeLatencyVariable($.latencyVariableDefault())
-    .addRow(
+    .addRowIf(
+      $._config.compactor_standalone_enabled,
       $.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary')
       .addPanel(
         $.startedCompletedFailedPanel(
@@ -254,7 +256,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
-      ($.row('Summary (scheduler mode)') + { collapse: true })
+      $.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary')
       .addPanel(
         $.timeseriesPanel('Pending jobs') +
         $.queryPanel(
@@ -384,7 +386,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRow(
       $.row('Compaction')
-      .addPanel(
+      .addPanelIf(
+        $._config.compactor_standalone_enabled,
         $.timeseriesPanel('Estimated Compaction Jobs') +
         $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
                      [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
@@ -451,7 +454,49 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ) +
         $.showAllTooltip,
       )
-      .splitIntoLines([4, 2])
+      .addPanel(
+        local selector = $.jobMatcher($._config.job_names.compactor);
+        local byLevel = utils.ncHistogramQuantile('0.90', 'cortex_compactor_block_compaction_delay_seconds', 'level=~"[0-4]", %s' % selector, sum_by=['level']);
+        local highLevels = utils.ncHistogramQuantile('0.90', 'cortex_compactor_block_compaction_delay_seconds', 'level!~"[0-4]", %s' % selector);
+        $.timeseriesPanel('p90 compaction delay by level') +
+        $.queryPanel(
+          [
+            utils.showClassicHistogramQuery(byLevel),
+            utils.showNativeHistogramQuery(byLevel),
+            utils.showClassicHistogramQuery(highLevels),
+            utils.showNativeHistogramQuery(highLevels),
+          ],
+          ['{{level}}', '{{level}}', '5+', '5+'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 's', custom+: { showPoints: 'auto' } } } } +
+        $.panelDescription(
+          'p90 compaction delay by level',
+          |||
+            p90 delay between a block being uploaded and compacted, by compaction level.
+            A rising delay suggests the compactor is falling behind ingestion.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Store-gateway blocks queried by level') +
+        $.panelDescription(
+          'Store-gateway blocks queried by level',
+          |||
+            Rate of blocks queried by store-gateways, by compaction level.
+            A rising share of low levels suggests the compactor is falling behind ingestion, though read traffic patterns also influence this.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          ],
+          ['{{level}}', '5+'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.stack,
+      )
+      .splitIntoLines(if $._config.compactor_standalone_enabled then [4, 4] else [3, 4])
     )
     .addRow(
       $.row('Garbage collector')

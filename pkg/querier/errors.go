@@ -25,7 +25,29 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) valida
 		validation.MaxPartialQueryLengthFlag))
 }
 
-func NewMaxLimitError(limit, maxLimit int, flag string) validation.LimitError {
-	return validation.NewLimitError(
-		fmt.Sprintf("results may be truncated due to %s (requested limit: %d, enforced: %d)", flag, limit, maxLimit))
+// MaxLimitError is the typed clamp warning surfaced when a request limit
+// is reduced by a per-tenant ceiling. Callers that need to react to the
+// clamp specifically — e.g. the streaming search handler deciding
+// has_more — type-assert via errors.As so they can read Flag without
+// re-parsing the message. The embedded validation.LimitError keeps
+// validation.IsLimitError working through errors.As.
+type MaxLimitError struct {
+	Flag       string
+	Limit      int
+	Enforced   int
+	underlying validation.LimitError
+}
+
+func (e *MaxLimitError) Error() string { return e.underlying.Error() }
+func (e *MaxLimitError) Unwrap() error { return e.underlying }
+
+func NewMaxLimitError(limit, maxLimit int, flag string) error {
+	return &MaxLimitError{
+		Flag:     flag,
+		Limit:    limit,
+		Enforced: maxLimit,
+		underlying: validation.NewLimitError(
+			fmt.Sprintf("results may be truncated due to %s (requested limit: %d, enforced: %d)", flag, limit, maxLimit),
+		),
+	}
 }

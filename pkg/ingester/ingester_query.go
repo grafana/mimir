@@ -497,7 +497,9 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		idx,
 		postingsForMatchersFn,
 		labelValuesCardinalityTargetSizeBytes,
-		i.cfg.LabelValuesCountRequestMaxConcurrency,
+		i.computeWorkerPool,
+		userID,
+		i.cfg.LabelValuesCount.ChunkSize,
 		srv,
 	)
 }
@@ -924,11 +926,19 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	if level == api.ReadConsistencyStrong {
 		// Check if request already contains the minimum offset we have to guarantee being queried
 		// for our partition.
-		if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-			if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-				spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
-				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+		//
+		// WaitReadConsistencyUntilOffsets validates that the offsets cover exactly the Kafka clusters the
+		// reader consumes from, returning an error on mismatch: that is an invariant violation (e.g. a
+		// query-frontend and ingester disagreeing on the number of write compartments) we want surfaced.
+		if encoded, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+			if offsets, ok := encoded.Lookup(i.cfg.ReadCompartmentID, i.ingestPartitionID); ok {
+				spanLog.DebugLog("msg", "enforcing strong read consistency", "offsets", offsets)
+				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, offsets), "wait for read consistency")
 			}
+
+			// Header present but no offset for our read compartment and partition: unexpected (the
+			// query-frontend encodes one per ring partition), so log it before the safe fallback below.
+			spanLog.DebugLog("msg", "read consistency offsets header present but missing this read compartment and partition, falling back to last produced offset", "read_compartment", i.cfg.ReadCompartmentID, "partition", i.ingestPartitionID)
 		}
 
 		spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", "last produced")

@@ -5,7 +5,6 @@ package costattribution
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,12 +27,14 @@ type observation struct {
 	totalDiscarded     atomic.Float64
 }
 
-type SampleTracker struct {
+type sampleTracker struct {
 	userID                     string
+	name                       string
 	receivedSamplesAttribution *descriptor
 	discardedSampleAttribution *descriptor
 	logger                     log.Logger
 
+	internal       bool
 	labels         costattributionmodel.Labels
 	overflowLabels []string
 
@@ -47,7 +48,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
+func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -57,9 +58,11 @@ func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, 
 	overflowLabels[len(trackedLabels)] = userID
 	overflowLabels[len(trackedLabels)+1] = overflowValue
 
-	tracker := &SampleTracker{
+	tracker := &sampleTracker{
 		userID:           userID,
+		name:             trackerName,
 		labels:           trackedLabels,
+		internal:         internal,
 		maxCardinality:   limit,
 		observed:         make(map[string]*observation),
 		cooldownDuration: cooldown,
@@ -75,7 +78,7 @@ func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, 
 	return tracker, nil
 }
 
-func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
+func (st *sampleTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
 		variableLabels = append(variableLabels, label.OutputLabel())
@@ -86,21 +89,24 @@ func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattribut
 	if st.receivedSamplesAttribution, err = newDescriptor("cortex_distributor_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
 		variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.name}); err != nil {
 		return err
 	}
 
 	if st.discardedSampleAttribution, err = newDescriptor("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: st.name}); err != nil {
 		return err
 	}
 	return nil
 }
+func (st *sampleTracker) trackerName() string {
+	return st.name
+}
 
-func (st *SampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
-	return slices.Equal(st.labels, labels)
+func (st *sampleTracker) config() (labels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration) {
+	return st.labels, st.internal, st.maxCardinality, st.cooldownDuration
 }
 
 var bufferPool = sync.Pool{
@@ -109,7 +115,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
+func (st *sampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()
@@ -140,7 +146,7 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	}
 }
 
-func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
+func (st *sampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
 	if st == nil {
 		return
 	}
@@ -151,33 +157,41 @@ func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, 
 	st.updateObservations(buf.String(), now, 0, value, &reason)
 }
 
-func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
+func (st *sampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
 	if st == nil {
 		return
 	}
 
 	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters.
 	// This is based on the assumption that usually a single WriteRequest will have samples that belong to the same or few cost attribution groups.
-	dict := make(map[string]int)
+	// The map value is a pointer so that the hot path can look the key up without
+	// allocating a string for it (the `m[string(buf.Bytes())]` lookup is special-cased
+	// by the compiler to not allocate) and accumulate through the pointer. A string is
+	// only allocated when a new group is inserted, i.e. once per distinct group.
+	dict := make(map[string]*int)
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
 		st.fillKeyFromLabelAdapters(ts.Labels, buf)
-		dict[string(buf.Bytes())] += len(ts.Samples) + len(ts.Histograms)
+		count := len(ts.Samples) + len(ts.Histograms)
+		if c := dict[string(buf.Bytes())]; c != nil {
+			*c += count
+		} else {
+			newCount := count
+			dict[string(buf.Bytes())] = &newCount
+		}
 	}
 
 	// Update the observations for each label set and update the state per request,
 	// this would be less precised than per sample but it's more efficient
-	var total float64
 	for k, v := range dict {
-		count := float64(v)
+		count := float64(*v)
 		st.updateObservations(k, now, count, 0, nil)
-		total += count
 	}
 }
 
-func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
+func (st *sampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
 	buf.Reset()
 	var exists bool
 	for idx, cal := range st.labels {
@@ -199,7 +213,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (st *sampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	// if not overflow, we need to check if the key exists in the observed map,
 	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
 	st.observedMtx.RLock()
@@ -297,48 +311,43 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 	}
 }
 
-func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
+func (st *sampleTracker) purge(now, deadline time.Time) int {
+	// First we check the inactive observations and collect them for cleanup, if applies.
+	var expired []string
 	st.observedMtx.RLock()
-	if !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline) {
-		if len(st.observed) < st.maxCardinality {
-			st.observedMtx.RUnlock()
-			return true
-		}
-		st.observedMtx.RUnlock()
-
-		// Increase the cooldown duration if the number of observations is still above the max cardinality
-		st.observedMtx.Lock()
-		if len(st.observed) < st.maxCardinality {
-			st.observedMtx.Unlock()
-			return true
-		}
-		st.overflowSince = deadline
-		st.observedMtx.Unlock()
-	} else {
-		st.observedMtx.RUnlock()
-	}
-	return false
-}
-
-func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
-	// otherwise, we need to check all observations and clean up the ones that are inactive
-	var invalidKeys []string
-	st.observedMtx.RLock()
-	for labkey, ob := range st.observed {
+	for key, ob := range st.observed {
 		if ob != nil && ob.lastUpdate.Load() <= deadline.Unix() {
-			invalidKeys = append(invalidKeys, labkey)
+			expired = append(expired, key)
 		}
 	}
+	tryRecoverFromOverflow := !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline)
+	cardinality := len(st.observed) - len(expired)
 	st.observedMtx.RUnlock()
 
-	st.observedMtx.Lock()
-	for _, key := range invalidKeys {
-		delete(st.observed, key)
+	if len(expired) > 0 || tryRecoverFromOverflow {
+		st.observedMtx.Lock()
+		for _, key := range expired {
+			delete(st.observed, key)
+		}
+		if tryRecoverFromOverflow {
+			if len(st.observed) < st.maxCardinality {
+				// Recovered from overflow, reset.
+				st.observed = make(map[string]*observation)
+				st.overflowSince = time.Time{}
+				st.overflowCounter = observation{}
+				cardinality = 0
+			} else {
+				// Extend the overflow period since we are still above the max cardinality after cleanup.
+				st.overflowSince = now
+			}
+		}
+		st.observedMtx.Unlock()
 	}
-	st.observedMtx.Unlock()
+
+	return cardinality
 }
 
-func (st *SampleTracker) cardinality() (cardinality int, overflown bool) {
+func (st *sampleTracker) cardinality() (cardinality int, overflown bool) {
 	st.observedMtx.RLock()
 	defer st.observedMtx.RUnlock()
 	return len(st.observed), !st.overflowSince.IsZero()

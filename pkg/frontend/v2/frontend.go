@@ -166,6 +166,11 @@ type frontendRequest struct {
 
 	enqueue chan enqueueResult
 
+	// enqueuedAt is set once the scheduler has accepted this request into its queue.
+	// Used to approximate queue time if the request is cancelled before a querier
+	// processes it and reports the real queue time.
+	enqueuedAt time.Time
+
 	// If this is a httpgrpc request, then these fields will be populated:
 	httpRequest  *httpgrpc.HTTPRequest
 	httpResponse chan queryResultWithBody
@@ -316,11 +321,15 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	f.inflightRequestCount.Inc()
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
-	cleanup := func() {
+	// This runs when the caller closes the response body, which reaches the query-frontend
+	// middleware chain as an http.Response.Body. Closing one of those more than once is
+	// routine in Go, so the cleanup has to be idempotent: a second Dec() would take the
+	// in-flight gauge below the real value and it would never recover.
+	cleanup := sync.OnceFunc(func() {
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
 		f.inflightRequestCount.Dec()
-	}
+	})
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -332,6 +341,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	if err != nil {
 		return nil, nil, err
 	}
+	freq.enqueuedAt = time.Now()
 
 	freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -345,6 +355,22 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		default:
 			// failed to cancel, ignore.
 			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+		}
+
+		select {
+		case resp := <-freq.httpResponse:
+			// The response arrived at (almost) the same time as the cancellation. Prefer its real
+			// queue time over our wall-clock approximation, since select would otherwise pick
+			// between this case and <-ctx.Done() at random and could discard it.
+			if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
+				stats.FromContext(ctx).Merge(resp.queryResult.Stats) // Safe if stats is nil.
+			}
+			// We're discarding this response (the caller only gets the cancellation error). If the
+			// querier sent it via QueryResultStream, receiveResultForHTTPRequest closes its body
+			// pipe once the deferred cleanup cancels the request context, so the handler blocked
+			// writing to the pipe isn't leaked.
+		default:
+			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
 		}
 
 		return nil, nil, context.Cause(ctx)
@@ -428,6 +454,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			freq.protobufResponseStream.writeEnqueueError(err)
 			return
 		}
+		freq.enqueuedAt = time.Now()
 
 		freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -467,6 +494,13 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 			default:
 				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
+
+				// Cancelled while still queued: no querier will report a real queue time, so record a
+				// wall-clock approximation. This write runs in this background goroutine and is not
+				// synchronized with Next(), so it's best-effort: a consumer reading stats the instant
+				// Next() returns may still see 0. The query-frontend logs queue time only after the
+				// request has fully unwound, well after this runs.
+				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
 
 				select {
 				case cancelCh <- freq.queryID:
@@ -869,6 +903,18 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 			level.Warn(f.log).Log("msg", "failed to close query result body writer", "err", err)
 		}
 	}(writer)
+
+	// Normally the client reads the body stream completely, hits EOF, and closes the body via
+	// cleanupReadCloser.Close. This function returns once the querier's stream ends, before that
+	// close happens. On this successful path the caller closes the reader, so defer stop() disarms
+	// the callback below.
+	// In the unsuccessful case the client never reads the body (timeout or cancellation). req.ctx is
+	// cancelled, the callback closes the reader, and writer.Write unblocks so this goroutine finishes
+	// instead of leaking. Close the read side so writer.Write returns the cancel cause, not io.ErrClosedPipe.
+	stop := context.AfterFunc(req.ctx, func() {
+		_ = reader.CloseWithError(context.Cause(req.ctx))
+	})
+	defer stop()
 
 	res := queryResultWithBody{
 		queryResult: &frontendv2pb.QueryResultRequest{

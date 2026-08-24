@@ -26,3 +26,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-global-values
     app.kubernetes.io/part-of: memberlist
+

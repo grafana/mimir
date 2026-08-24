@@ -6,7 +6,7 @@
 package util
 
 import (
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // md5 is used for non-cryptographic sharding hashing only.
 	"encoding/binary"
 	"math"
 	"unsafe"

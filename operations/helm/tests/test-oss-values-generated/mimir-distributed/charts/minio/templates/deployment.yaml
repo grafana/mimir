@@ -82,4 +82,5 @@ spec:
             claimName: test-oss-values-minio
         - name: minio-user
           secret:
-            secretName: test-oss-values-minio
+            secretName: test-oss-values-minio        
+

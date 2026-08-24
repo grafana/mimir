@@ -21,7 +21,9 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	promcfg "github.com/prometheus/prometheus/config"
 
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -69,7 +71,25 @@ const (
 	alertmanagerMaxDispatcherAggregationGroups = "alertmanager_max_dispatcher_aggregation_groups"
 	alertmanagerMaxAlertsCount                 = "alertmanager_max_alerts_count"
 	alertmanagerMaxAlertsSizeBytes             = "alertmanager_max_alerts_size_bytes"
+	floatChunkEncoding                         = "float_chunk_encoding"
 )
+
+// stringLimitMetricGetters maps limits that are stored as strings (and therefore
+// cannot be exported via reflection) to a getter returning a stable numeric value.
+// These metrics are still gated by the -overrides-exporter.enabled-metrics flag.
+var stringLimitMetricGetters = map[string]func(*validation.Limits) float64{
+	floatChunkEncoding: floatChunkEncodingMetricValue,
+}
+
+// floatChunkEncodingMetricValue maps the per-tenant float_chunk_encoding limit to a
+// stable numeric value. The values match the storage chunk encoding constants, which
+// are hardcoded for backward compatibility, making them a safe metric contract.
+func floatChunkEncodingMetricValue(limits *validation.Limits) float64 {
+	if limits.FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+		return float64(chunk.PrometheusXor2Chunk)
+	}
+	return float64(chunk.PrometheusXorChunk)
+}
 
 // Config holds the configuration for an overrides-exporter
 type Config struct {
@@ -85,6 +105,13 @@ type Config struct {
 type ExportedMetric struct {
 	Name string
 	Get  func(limits *validation.Limits) float64
+}
+
+// tenantRuleID groups blocked/limited query rules for expiry export: rules sharing the same tenant and id
+// (including an empty id) are collapsed into a single series, keyed on the earliest expires_at among them.
+type tenantRuleID struct {
+	tenant string
+	id     string
 }
 
 // RegisterFlags configs this instance to the given FlagSet
@@ -114,12 +141,14 @@ func (c *Config) Validate() error {
 type OverridesExporter struct {
 	services.Service
 
-	defaultLimits       *validation.Limits
-	tenantLimits        validation.TenantLimits
-	exportedMetrics     []ExportedMetric
-	overrideDescription *prometheus.Desc
-	defaultsDescription *prometheus.Desc
-	logger              log.Logger
+	defaultLimits             *validation.Limits
+	tenantLimits              validation.TenantLimits
+	exportedMetrics           []ExportedMetric
+	overrideDescription       *prometheus.Desc
+	defaultsDescription       *prometheus.Desc
+	blockedQueryRuleExpiresAt *prometheus.Desc
+	limitedQueryRuleExpiresAt *prometheus.Desc
+	logger                    log.Logger
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
@@ -150,6 +179,18 @@ func NewOverridesExporter(
 			"cortex_limits_defaults",
 			"Resource limit defaults for tenants without overrides",
 			[]string{"limit_name"},
+			nil,
+		),
+		blockedQueryRuleExpiresAt: prometheus.NewDesc(
+			"cortex_blocked_query_rule_expires_at",
+			"Unix timestamp of the earliest expires_at among a tenant's blocked-query rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
+			[]string{"user", "id"},
+			nil,
+		),
+		limitedQueryRuleExpiresAt: prometheus.NewDesc(
+			"cortex_limited_query_rule_expires_at",
+			"Unix timestamp of the earliest expires_at among a tenant's limited-query (rate-limit) rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
+			[]string{"user", "id"},
 			nil,
 		),
 		exportedMetrics: setupExportedMetrics(enabledMetrics, config.ExtraMetrics),
@@ -248,6 +289,11 @@ func (r *LimitsFieldRegistry) ValidateMetricName(metricName string) error {
 		return fmt.Errorf("enabled-metrics: unknown metric name '%s' - must match a yaml tag in the Limits struct", metricName)
 	}
 
+	// String limits are exported through a dedicated getter, so they don't need to be float64-convertible.
+	if _, ok := stringLimitMetricGetters[metricName]; ok {
+		return nil
+	}
+
 	// Attempt to convert the field type to float64 to ensure it's supported
 	fieldValue := r.defaultLimitsValue.FieldByName(field.Name)
 	if _, err := convertToFloat64(fieldValue); err != nil {
@@ -271,6 +317,12 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 	// Get all possible metric names from global registry and check if each is enabled
 	for _, metricName := range fieldRegistry.GetAllowedMetricNames() {
 		if enabledMetrics.IsAllowed(metricName) {
+			// String limits can't be reflected into a float64, so they use a dedicated getter.
+			if get, ok := stringLimitMetricGetters[metricName]; ok {
+				exportedMetrics = append(exportedMetrics, ExportedMetric{Name: metricName, Get: get})
+				continue
+			}
+
 			field, found := fieldRegistry.GetField(metricName)
 			if !found {
 				panic(fmt.Sprintf("couldn't find fields that the fields registry returned, this shouldn't happen (metric name: %s)", metricName))
@@ -306,6 +358,8 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- oe.defaultsDescription
 	ch <- oe.overrideDescription
+	ch <- oe.blockedQueryRuleExpiresAt
+	ch <- oe.limitedQueryRuleExpiresAt
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
@@ -335,6 +389,38 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 			}
 			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.Get(limits), em.Name, tenant)
 		}
+	}
+
+	// Rules never expire and always keep being enforced: expires_at is purely informational. Rules sharing the
+	// same id (including no id at all) are grouped under one series per tenant, keyed on the earliest expiry, so
+	// that duplicate ids can't produce two series with identical labels, which client_golang would reject.
+	blockedExpiry := map[tenantRuleID]time.Time{}
+	limitedExpiry := map[tenantRuleID]time.Time{}
+	for tenant, limits := range allLimits {
+		for _, rule := range limits.BlockedQueries {
+			if rule.ExpiresAt.IsZero() {
+				continue
+			}
+			key := tenantRuleID{tenant: tenant, id: rule.ID}
+			if existing, ok := blockedExpiry[key]; !ok || rule.ExpiresAt.Before(existing) {
+				blockedExpiry[key] = rule.ExpiresAt
+			}
+		}
+		for _, rule := range limits.LimitedQueries {
+			if rule.ExpiresAt.IsZero() {
+				continue
+			}
+			key := tenantRuleID{tenant: tenant, id: rule.ID}
+			if existing, ok := limitedExpiry[key]; !ok || rule.ExpiresAt.Before(existing) {
+				limitedExpiry[key] = rule.ExpiresAt
+			}
+		}
+	}
+	for key, expiresAt := range blockedExpiry {
+		ch <- prometheus.MustNewConstMetric(oe.blockedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
+	}
+	for key, expiresAt := range limitedExpiry {
+		ch <- prometheus.MustNewConstMetric(oe.limitedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
 	}
 }
 

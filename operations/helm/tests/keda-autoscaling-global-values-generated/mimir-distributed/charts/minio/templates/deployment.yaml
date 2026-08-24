@@ -82,4 +82,5 @@ spec:
             claimName: keda-autoscaling-global-values-minio
         - name: minio-user
           secret:
-            secretName: keda-autoscaling-global-values-minio
+            secretName: keda-autoscaling-global-values-minio        
+

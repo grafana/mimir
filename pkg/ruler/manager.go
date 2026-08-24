@@ -46,6 +46,7 @@ type DefaultMultiTenantManager struct {
 
 	// Struct for holding per-user Prometheus rules Managers.
 	userManagerMtx sync.RWMutex
+	userManagerWg  sync.WaitGroup
 	userManagers   map[string]RulesManager
 
 	// Prometheus rules managers metrics.
@@ -155,7 +156,7 @@ func (r *DefaultMultiTenantManager) Start() {
 	}
 
 	for _, mngr := range r.userManagers {
-		go mngr.Run()
+		r.userManagerWg.Go(mngr.Run)
 	}
 	// set rulerIsRunning to true once user managers are started.
 	r.rulerIsRunning.Store(true)
@@ -258,7 +259,7 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(user string) (RulesManage
 	// Hence run it as another goroutine.
 	// We only start the rule manager if the ruler is in running state.
 	if r.rulerIsRunning.Load() {
-		go manager.Run()
+		r.userManagerWg.Go(manager.Run)
 	}
 
 	r.userManagers[user] = manager
@@ -388,13 +389,16 @@ func (r *DefaultMultiTenantManager) Stop() {
 		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", userID)
 		wg.Add(1)
 		go func(manager RulesManager, user string) {
+			defer wg.Done()
 			manager.Stop()
-			wg.Done()
 			level.Debug(r.logger).Log("msg", "user manager shut down", "user", user)
 		}(manager, userID)
 		delete(r.userManagers, userID)
 	}
+	// Wait on calling .Stop() on each manager.
 	wg.Wait()
+	// Wait for the .Run() on each manager to complete.
+	r.userManagerWg.Wait()
 	r.userManagerMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
 

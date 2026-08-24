@@ -99,6 +99,53 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 	return PrometheusXorChunk
 }
 
+// Wrapper around a Prometheus XOR2 chunk.
+type prometheusXor2Chunk struct {
+	prometheusChunk
+}
+
+func newPrometheusXor2Chunk() *prometheusXor2Chunk {
+	return &prometheusXor2Chunk{}
+}
+
+// Add adds another sample to the chunk. While Add works, it is only implemented
+// to make tests work, and should not be used in production.
+func (p *prometheusXor2Chunk) Add(m model.SamplePair) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewXOR2Chunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	app.Append(0, int64(m.Timestamp), float64(m.Value))
+	return nil, nil
+}
+
+func (p *prometheusXor2Chunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram to sample chunk")
+}
+
+func (p *prometheusXor2Chunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to sample chunk")
+}
+
+func (p *prometheusXor2Chunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncXOR2, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus XOR2 chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusXor2Chunk) Encoding() Encoding {
+	return PrometheusXor2Chunk
+}
+
 // Wrapper around a Prometheus histogram chunk.
 type prometheusHistogramChunk struct {
 	prometheusChunk

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/alertmanager/config"
+	amcommoncfg "github.com/prometheus/alertmanager/config/common"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -15,13 +16,13 @@ import (
 // such as secrets being replaced with <secret>. We use this struct to double quote
 // all matchers in a configuration file.
 type shadowCfg struct {
-	Global            yaml.Node            `yaml:"global,omitempty" json:"global,omitempty"`
-	Route             *config.Route        `yaml:"route,omitempty" json:"route,omitempty"`
-	InhibitRules      []config.InhibitRule `yaml:"inhibit_rules,omitempty" json:"inhibit_rules,omitempty"`
-	Receivers         []yaml.Node          `yaml:"receivers,omitempty" json:"receivers,omitempty"`
-	Templates         []string             `yaml:"templates" json:"templates"`
-	MuteTimeIntervals []yaml.Node          `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty"`
-	TimeIntervals     []yaml.Node          `yaml:"time_intervals,omitempty" json:"time_intervals,omitempty"`
+	Global            yaml.Node                 `yaml:"global,omitempty" json:"global,omitempty"`
+	Route             *config.Route             `yaml:"route,omitempty" json:"route,omitempty"`
+	InhibitRules      []amcommoncfg.InhibitRule `yaml:"inhibit_rules,omitempty" json:"inhibit_rules,omitempty"`
+	Receivers         []yaml.Node               `yaml:"receivers,omitempty" json:"receivers,omitempty"`
+	Templates         []string                  `yaml:"templates" json:"templates"`
+	MuteTimeIntervals []yaml.Node               `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty"`
+	TimeIntervals     []yaml.Node               `yaml:"time_intervals,omitempty" json:"time_intervals,omitempty"`
 }
 
 // migrateCfg double quotes all matchers in a configuration file. It uses the fact that MarshalYAML

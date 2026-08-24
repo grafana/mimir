@@ -370,8 +370,11 @@ func (b *failingBucket) Attributes(_ context.Context, _ string) (objstore.Object
 
 func (b *failingBucket) IsObjNotFoundErr(_ error) bool  { return false }
 func (b *failingBucket) IsAccessDeniedErr(_ error) bool { return false }
-func (b *failingBucket) Name() string                   { return "failing" }
-func (b *failingBucket) Close() error                   { return nil }
+func (b *failingBucket) IsConditionNotMetErr(_ error) bool {
+	return false
+}
+func (b *failingBucket) Name() string { return "failing" }
+func (b *failingBucket) Close() error { return nil }
 
 func (b *failingBucket) ReaderWithExpectedErrs(_ objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
 	return b

@@ -114,10 +114,13 @@ type CachingBucket struct {
 
 // NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
 // changed after creating caching bucket.
-func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
+func NewCachingBucket(bucketID, bucketName string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
 	if bucketClient == nil {
 		return nil, errors.New("bucket is nil")
 	}
+
+	// Tells apart the metrics of several caching buckets registered by the same component.
+	bucketLabel := prometheus.Labels{"bucket": bucketName}
 
 	cb := &CachingBucket{
 		Bucket:       bucketClient,
@@ -127,25 +130,30 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 		logger:       logger,
 
 		requestedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
-			Help: "Total number of bytes requested via GetRange.",
+			Name:        "thanos_store_bucket_cache_getrange_requested_bytes_total",
+			Help:        "Total number of bytes requested via GetRange.",
+			ConstLabels: bucketLabel,
 		}, []string{"config"}),
 		fetchedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_fetched_bytes_total",
-			Help: "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
+			Name:        "thanos_store_bucket_cache_getrange_fetched_bytes_total",
+			Help:        "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
+			ConstLabels: bucketLabel,
 		}, []string{"origin", "config"}),
 		refetchedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_refetched_bytes_total",
-			Help: "Total number of bytes re-fetched from storage because of GetRange operation, despite being in cache already.",
+			Name:        "thanos_store_bucket_cache_getrange_refetched_bytes_total",
+			Help:        "Total number of bytes re-fetched from storage because of GetRange operation, despite being in cache already.",
+			ConstLabels: bucketLabel,
 		}, []string{"origin", "config"}),
 
 		operationRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_operation_requests_total",
-			Help: "Number of requested operations matching given config which triggered a cache lookup.",
+			Name:        "thanos_store_bucket_cache_operation_requests_total",
+			Help:        "Number of requested operations matching given config which triggered a cache lookup.",
+			ConstLabels: bucketLabel,
 		}, []string{"operation", "config"}),
 		operationHits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_operation_hits_total",
-			Help: "Number of operations served from cache for given config.",
+			Name:        "thanos_store_bucket_cache_operation_hits_total",
+			Help:        "Number of operations served from cache for given config.",
+			ConstLabels: bucketLabel,
 		}, []string{"operation", "config"}),
 	}
 
@@ -250,7 +258,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.SetMultiAsync(map[string][]byte{key: data}, remainingTTL)
+			cfg.cache.SetAsync(key, data, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
@@ -303,7 +311,7 @@ func storeExistsCacheEntry(ctx context.Context, cachingKey, lockKey string, exis
 
 	if ttl > 0 {
 		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-			cache.SetMultiAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+			cache.SetAsync(cachingKey, []byte(strconv.FormatBool(exists)), ttl)
 		}
 	}
 }
@@ -445,7 +453,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyG
 		// content when we were able to insert the lock key meaning this object isn't being updated
 		// by another request.
 		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-			cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+			cache.SetAsync(key, raw, ttl)
 		}
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
@@ -611,7 +619,7 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 
 				if storeToCache {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.SetMultiAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
+					cfg.cache.SetAsync(key, subrangeData, cfg.subrangeTTL)
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
@@ -992,7 +1000,7 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 			// content when we were able to insert the lock key meaning this object isn't being updated
 			// by another request.
 			if addErr := g.c.Add(context.Background(), g.lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-				g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+				g.c.SetAsync(g.cacheKey, g.buf.Bytes(), remainingTTL)
 			}
 		}
 		// Clear reference, to avoid doing another Store on next read.

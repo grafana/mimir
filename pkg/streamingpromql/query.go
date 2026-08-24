@@ -41,8 +41,9 @@ type Query struct {
 	vector         promql.Vector
 	string         *promql.String
 	scalar         *promql.Scalar
-	annotations    *annotations.Annotations
-	stats          *types.QueryStats
+	annotations    annotations.Annotations
+	stats          *types.OperatorEvaluationStats
+	finalizedStats *promstats.QuerySamples
 
 	topLevelValueType parser.ValueType
 	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
@@ -65,10 +66,8 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	// so we can safely return it now.
 	types.SeriesMetadataSlicePool.Put(&q.seriesMetadata, q.memoryConsumptionTracker)
 
-	result := &promql.Result{}
-
-	if q.annotations != nil {
-		result.Warnings = *q.annotations
+	result := &promql.Result{
+		Warnings: q.annotations,
 	}
 
 	switch {
@@ -94,6 +93,12 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	default:
 		// The result is an empty matrix.
 		result.Value = types.GetMatrix(0)
+	}
+
+	for _, pp := range q.engine.queryPostProcessors {
+		if err := pp.PostProcess(ctx, q.evaluator.originalExpression); err != nil {
+			return &promql.Result{Err: fmt.Errorf("post-processing query failed: %w", err)}
+		}
 	}
 
 	q.succeeded = true
@@ -244,15 +249,31 @@ func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
-	q.annotations = annotations
-	q.stats = stats
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error {
+	if len(nodeInfo) != 1 {
+		return fmt.Errorf("expected exactly one node completion info entry, but got %d", len(nodeInfo))
+	}
+
+	nodeCompletionInfo := nodeInfo[q.evaluator.nodeRequests[0].Node]
+	q.stats = nodeCompletionInfo.Stats
+	q.annotations = nodeCompletionInfo.Annotations
+
+	var err error
+	q.finalizedStats, err = q.stats.FinalizeAndComputePrometheusStats()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (q *Query) Close() {
 	q.evaluator.Close()
 	q.returnResultToPool()
+
+	if q.stats != nil {
+		q.stats.Close()
+	}
 
 	if q.engine.pedantic && q.succeeded {
 		// Only bother checking memory consumption if the query succeeded: it's not expected that all memory
@@ -303,13 +324,8 @@ func (q *Query) Statement() parser.Statement {
 
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
-		Timers: promstats.NewQueryTimers(),
-		Samples: &promstats.QuerySamples{
-			TotalSamples:       q.stats.TotalSamples,
-			EnablePerStepStats: false,
-			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
-		},
+		Timers:  promstats.NewQueryTimers(),
+		Samples: q.finalizedStats,
 	}
 }
 
@@ -319,4 +335,14 @@ func (q *Query) Cancel() {
 
 func (q *Query) String() string {
 	return q.originalExpression
+}
+
+// QueryPostProcessor is invoked after a query has executed successfully.
+//
+// It can be used to observe the outcome of a query, for example to populate a cache from the query
+// stats. Post-processors are not invoked if the query fails, and must not modify the query result.
+type QueryPostProcessor interface {
+	// PostProcess is called once, after the query has executed successfully. Implementations should
+	// read whatever they need (for example the query stats) from ctx.
+	PostProcess(ctx context.Context, originalExpression string) error
 }

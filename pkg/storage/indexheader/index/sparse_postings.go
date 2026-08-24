@@ -6,6 +6,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"hash/crc32"
 	"sort"
@@ -91,6 +92,7 @@ func (e *SparseTableOffsetsForLabel) labelValuePrefixOffsets(prefix string) (sta
 }
 
 func SparseValuesFromPostingsOffsetsTable(
+	ctx context.Context,
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
 	postingsListEnd uint64,
@@ -99,9 +101,9 @@ func SparseValuesFromPostingsOffsetsTable(
 ) (sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel, err error) {
 	var decbuf streamencoding.Decbuf
 	if doChecksum {
-		decbuf = decbufFactory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+		decbuf = decbufFactory.NewDecbufAtChecked(ctx, tableOffset, castagnoliTable)
 	} else {
-		decbuf = decbufFactory.NewDecbufAtUnchecked(tableOffset)
+		decbuf = decbufFactory.NewDecbufAtUnchecked(ctx, tableOffset)
 	}
 
 	defer runutil.CloseWithErrCapture(&err, &decbuf, "decode postings offsets table")

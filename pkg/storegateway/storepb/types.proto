@@ -23,6 +23,7 @@ message Chunk {
     Chunk_XOR = 0;
     Chunk_Histogram = 1;
     Chunk_FloatHistogram = 2;
+    Chunk_XOR2 = 3;
   }
   Encoding type = 1;
   bytes data = 2 [

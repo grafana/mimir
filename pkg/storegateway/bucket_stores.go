@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -92,8 +93,8 @@ type BucketStores struct {
 	blocksLoadedSizeBytes *prometheus.Desc
 }
 
-// NewBucketStores makes a new BucketStores. After starting the returned BucketStores
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+// NewBucketStores makes a new BucketStores.
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	var err error
 
 	// Init index cache.
@@ -119,7 +120,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
 	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
-	cachingBucket, err := tsdb.NewStoreCachingBucket(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
+	cachingBucket, err := tsdb.NewStoreCachingBucket(cacheBucketID, cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
@@ -422,6 +423,48 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelNames(req, spanSearchLabelNamesServer{
+		StoreGateway_SearchLabelNamesServer: srv,
+		ctx:                                 ctx,
+	})
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelValues")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelValues(req, spanSearchLabelValuesServer{
+		StoreGateway_SearchLabelValuesServer: srv,
+		ctx:                                  ctx,
+	})
+}
+
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
@@ -537,7 +580,12 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
-	userBkt := bucket.NewUserBucketClient(userID, u.bucket, u.limits)
+	var userBkt objstore.InstrumentedBucketReader
+	if u.cfg.BucketStore.IndexHeader.BucketReader.Enabled {
+		userBkt = objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, u.bucket, u.limits), tracer)
+	} else {
+		userBkt = bucket.NewUserBucketClient(userID, u.bucket, u.limits)
+	}
 
 	fetcherReg := prometheus.NewRegistry()
 	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
@@ -692,5 +740,25 @@ type spanSeriesServer struct {
 }
 
 func (s spanSeriesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelNamesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelNamesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelNamesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelValuesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelValuesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelValuesServer) Context() context.Context {
 	return s.ctx
 }

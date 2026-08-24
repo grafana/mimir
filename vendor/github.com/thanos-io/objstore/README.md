@@ -59,7 +59,10 @@ type Bucket interface {
 
 	// Upload the contents of the reader as an object into the bucket.
 	// Upload should be idempotent.
-	Upload(ctx context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error
+	Upload(ctx context.Context, name string, r io.Reader, options ...ObjectUploadOption) error
+
+	// SupportedObjectUploadOptions returns a list of ObjectUploadOptions supported by the underlying provider.
+	SupportedObjectUploadOptions() []ObjectUploadOptionType
 
 	// Delete removes the object with the given name.
 	// If object does not exist in the moment of deletion, Delete should throw error.
@@ -154,6 +157,19 @@ Current object storage client implementations:
 
 NOTE: Currently Thanos requires strong consistency (write-read) for object store implementation for singleton Compaction purposes.
 
+#### Support for Conditional Writes
+
+Most, not all, object stores provide an API for write conditions. The `objstore` module partially supports this using `ObjectUploadOption` parameters in `Upload` of the `Bucket` interface.
+
+Version or etag metadata can be retrieved for use as write conditions from the `Attributes` method of `BucketReader`. Client should call `SupportedObjectUploadOptions` to validate which object upload options (`IfNotExists`, `IfMatch`, `IfNotMatch`) are supported by the provider.
+
+Providers with conditional write support include:
+
+- Google Cloud Storage ([cloud provider documentation](https://cloud.google.com/storage/docs/request-preconditions)))
+- Azure Storage Buckets ([cloud provider documentation](https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations))
+- S3 ([cloud provider documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)). `IfNotMatch` is currently not supported by AWS.
+- Local Filesystem (for testing and demos). Only supported by filesystems with extended attribute (`xattr`) support.
+
 ##### S3
 
 Thanos uses the [minio client](https://github.com/minio/minio-go) library to upload Prometheus data into AWS S3.
@@ -191,6 +207,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   trace:
     enable: false
@@ -389,6 +406,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   chunk_size_bytes: 0
   max_retries: 0
@@ -495,6 +513,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
   msi_resource: ""
 prefix: ""
@@ -558,6 +577,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```
@@ -593,6 +613,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```
@@ -759,6 +780,7 @@ config:
       key_file: ""
       server_name: ""
       insecure_skip_verify: false
+    force_attempt_http2: false
     disable_compression: false
 prefix: ""
 ```

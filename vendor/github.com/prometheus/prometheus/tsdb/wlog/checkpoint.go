@@ -95,8 +95,15 @@ func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep, samples/tombstones/exemplars below mint and
-// metadata that are not the latest are dropped.
+// All series not satisfying keep, samples/exemplars below mint, tombstones not
+// satisfying keep or with all intervals below mint, and metadata that are not the
+// latest are dropped.
+//
+// keep is evaluated per record as segments are read, so its result for a given ref
+// must not change while Checkpoint runs. Otherwise records for the same ref could be
+// treated inconsistently, e.g. a series record kept but its tombstone dropped. The
+// Head satisfies this by serializing checkpointing with every series-deleting path
+// (GC and series truncation) via chunkSnapshotMtx.
 //
 // The checkpoint is stored in a directory named checkpoint.N in the same
 // segmented format as the original WAL itself.
@@ -218,7 +225,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.HistogramSamplesV2:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode histogram samples: %w", err)
@@ -231,7 +238,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.HistogramSamples(repl, buf)
+				var leftover []record.RefHistogramSample
+				buf, leftover = enc.HistogramSamples(repl, buf)
+				if len(leftover) > 0 {
+					// Flush the exponential-histogram record before
+					// appending the custom-bucket record so they are
+					// written as two separate WAL records.
+					if expEnd := len(buf); expEnd > start {
+						recs = append(recs, buf[start:expEnd])
+						start = expEnd
+					}
+					buf = enc.CustomBucketsHistogramSamples(leftover, buf)
+				}
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
@@ -252,7 +270,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.FloatHistogramSamplesV2:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode float histogram samples: %w", err)
@@ -265,7 +283,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.FloatHistogramSamples(repl, buf)
+				var floatLeftover []record.RefFloatHistogramSample
+				buf, floatLeftover = enc.FloatHistogramSamples(repl, buf)
+				if len(floatLeftover) > 0 {
+					// Flush the exponential-float-histogram record before
+					// appending the custom-bucket record so they are
+					// written as two separate WAL records.
+					if expEnd := len(buf); expEnd > start {
+						recs = append(recs, buf[start:expEnd])
+						start = expEnd
+					}
+					buf = enc.CustomBucketsFloatHistogramSamples(floatLeftover, buf)
+				}
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
@@ -291,9 +320,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if err != nil {
 				return nil, fmt.Errorf("decode deletes: %w", err)
 			}
-			// Drop irrelevant tombstones in place.
+			// Drop irrelevant tombstones in place. A tombstone is dropped together with
+			// its series record, or once all its intervals age out of the WAL.
 			repl := tstones[:0]
 			for _, s := range tstones {
+				if !keep(chunks.HeadSeriesRef(s.Ref)) {
+					continue
+				}
 				for _, iv := range s.Intervals {
 					if iv.Maxt >= mint {
 						repl = append(repl, s)
@@ -325,7 +358,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalExemplars += len(exemplars)
 			stats.DroppedExemplars += len(exemplars) - len(repl)
 		case record.Metadata:
-			metadata, err := dec.Metadata(rec, metadata)
+			metadata, err = dec.Metadata(rec, metadata)
 			if err != nil {
 				return nil, fmt.Errorf("decode metadata: %w", err)
 			}

@@ -31,6 +31,9 @@ spec:
     whenDeleted: {{ .Values.alertmanager.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.alertmanager.persistentVolume.whenScaled }}
   {{- end }}
+  {{- with .Values.alertmanager.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}
@@ -57,19 +60,7 @@ spec:
           {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
-        {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
-        {{- if $storageClass }}
-        {{- if (eq "-" $storageClass) }}
-        storageClassName: ""
-        {{- else }}
-        storageClassName: {{ $storageClass }}
-        {{- end }}
-        {{- end }}
-        accessModes:
-          {{- toYaml .accessModes | nindent 10 }}
-        resources:
-          requests:
-            storage: "{{ .size }}"
+{{ include "mimir.persistentVolumeClaimSpec" (dict "ctx" $ "component" "alertmanager" "persistentVolume" . "rolloutZone" $rolloutZone) | trimPrefix "\n" | indent 8 }}
   {{- end }}
   {{- end }}
   template:
@@ -127,7 +118,7 @@ spec:
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.alertmanager.persistentVolume.enabled }}
-        - name: storage
+        - name: {{ .Values.alertmanager.persistentVolume.name }}
           emptyDir: {}
         {{- end }}
         - name: tmp
@@ -181,7 +172,7 @@ spec:
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
-            - name: storage
+            - name: {{ .Values.alertmanager.persistentVolume.name }}
               mountPath: "/data"
               {{- if .Values.alertmanager.persistentVolume.subPath }}
               subPath: {{ .Values.alertmanager.persistentVolume.subPath }}

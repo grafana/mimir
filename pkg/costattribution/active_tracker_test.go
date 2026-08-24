@@ -49,7 +49,7 @@ func TestNewActiveTracker(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			ast, astErr := NewActiveSeriesTracker("tenant-1", testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			ast, astErr := newActiveSeriesTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, false, 10, 1*time.Minute, log.NewNopLogger())
 			if testCase.expectedErr == nil {
 				require.NoError(t, astErr)
 				require.NotNil(t, ast)
@@ -64,43 +64,45 @@ func TestNewActiveTracker(t *testing.T) {
 
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
-	ast := manager.ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
+	manager.ActiveSeriesTracker("user1")
+	ast := manager.activeSeriesTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
+	assertHasLabels(t, ast, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	manager, _, _ := newTestManager()
-	ast := manager.ActiveSeriesTracker("user3")
+	cat := manager.ActiveSeriesTracker("user3")
+	ast := manager.activeSeriesTrackers.trackerByName("user3", costattributionmodel.DefaultTrackerName)
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 	lbls4 := labels.FromStrings("department", "baz", "service", "foo4")
 	lbls5 := labels.FromStrings("department", "baz5", "service", "foo")
 
-	ast.Increment(lbls1, time.Unix(1, 0), -1)
+	cat.Increment(lbls1, time.Unix(1, 0), -1)
 	assert.True(t, ast.overflowSince.IsZero(), "First observation, should not overflow")
 	assert.Equal(t, 1, len(ast.observed))
 
-	ast.Decrement(lbls1, -1)
+	cat.Decrement(lbls1, -1)
 	assert.True(t, ast.overflowSince.IsZero(), "First observation decremented, should not overflow")
 	assert.Equal(t, 0, len(ast.observed), "First observation decremented, should be removed since it reached 0")
 
-	ast.Increment(lbls1, time.Unix(2, 0), -1)
-	ast.Increment(lbls2, time.Unix(2, 0), -1)
+	cat.Increment(lbls1, time.Unix(2, 0), -1)
+	cat.Increment(lbls2, time.Unix(2, 0), -1)
 	assert.True(t, ast.overflowSince.IsZero(), "Second observation, should not overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
-	ast.Increment(lbls3, time.Unix(3, 0), -1)
+	cat.Increment(lbls3, time.Unix(3, 0), -1)
 	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Third observation, should overflow but still tracked in observed.")
 	assert.Equal(t, 3, len(ast.observed))
 	assert.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero because we tracked in observed.")
 
-	ast.Increment(lbls4, time.Unix(4, 0), -1)
+	cat.Increment(lbls4, time.Unix(4, 0), -1)
 	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fourth observation, should stay overflow and still tracked in observed.")
 	assert.Equal(t, 4, len(ast.observed))
 	assert.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero because we tracked in observed.")
 
-	ast.Increment(lbls5, time.Unix(4, 0), -1)
+	cat.Increment(lbls5, time.Unix(4, 0), -1)
 	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fifth observation, should not be tracked in observed anymore, should go into overflow counter.")
 	assert.Equal(t, 4, len(ast.observed))
 	assert.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should track the fifth series.")
@@ -108,7 +110,8 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 
 func TestActiveTracker_Concurrency(t *testing.T) {
 	m, _, costAttributionReg := newTestManager()
-	ast := m.ActiveSeriesTracker("user1")
+	cat := m.ActiveSeriesTracker("user1")
+	ast := m.activeSeriesTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
 	var wg sync.WaitGroup
 	var i int64
@@ -117,12 +120,11 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 		go func(i int64) {
 			defer wg.Done()
 			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			ast.Increment(lbls, time.Unix(i, 0), 2)
+			cat.Increment(lbls, time.Unix(i, 0), 2)
 		}(i)
 	}
 	wg.Wait()
 
-	// Verify no data races or inconsistencies
 	assert.True(t, len(ast.observed) > 0, "Observed set should not be empty after concurrent updates")
 	assert.LessOrEqual(t, len(ast.observed), trackedSeriesFactor*ast.maxCardinality, "Observed count should not exceed max cardinality multiplied by trackedSeriesFactor")
 	assert.False(t, ast.overflowSince.IsZero(), "Expected state to be Overflow")
@@ -150,7 +152,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 		go func(i int64) {
 			defer wg.Done()
 			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			ast.Decrement(lbls, -1)
+			cat.Decrement(lbls, -1)
 		}(i)
 	}
 	wg.Wait()

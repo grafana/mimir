@@ -9,9 +9,8 @@ package alertmanagerpb;
 
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
-import "gogoproto/gogo.proto";
 
-option go_package = "alertmanagerpb";
+option go_package = "github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb;alertmanagerpb";
 
 // Alertmanager interface exposed to the Alertmanager Distributor and other Alertmanagers
 service Alertmanager {
@@ -40,9 +39,6 @@ enum ReadStateStatus {
 }
 
 message ReadStateResponse {
-  // Alertmanager (clusterpb) types do not have Equal methods.
-  option (gogoproto.equal) = false;
-
   ReadStateStatus status = 1;
   string error = 2;
   clusterpb.FullState state = 3;

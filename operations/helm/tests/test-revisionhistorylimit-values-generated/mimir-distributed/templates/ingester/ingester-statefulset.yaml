@@ -23,6 +23,7 @@ metadata:
 spec:
   podManagementPolicy: Parallel
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -163,6 +164,7 @@ metadata:
 spec:
   podManagementPolicy: Parallel
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
@@ -303,6 +305,7 @@ metadata:
 spec:
   podManagementPolicy: Parallel
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir

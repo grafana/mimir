@@ -42,3 +42,4 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: metamonitoring-values
+

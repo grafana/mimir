@@ -19,6 +19,13 @@ The compactor is the component responsible for:
 
 The compactor is stateless.
 
+The compactor plans and distributes compaction jobs in one of two modes:
+
+- **Standalone mode** (the default): each compactor plans its own compaction jobs, and compactors shard the work among themselves using a hash ring. Refer to [Compactor sharding](#compactor-sharding).
+- **Scheduler mode** (experimental): compactors lease jobs from a [compactor-scheduler](../compactor-scheduler/), which coordinates planning and distributes jobs centrally.
+
+Unless otherwise noted, the rest of this document applies to both modes.
+
 ## How compaction works
 
 Compaction occurs on a per-tenant basis.
@@ -38,9 +45,9 @@ The compactor runs at regular, configurable intervals.
 Compaction can be tuned for clusters with large tenants. Configuration specifies both vertical and horizontal scaling of how the compactor runs as it compacts on a per-tenant basis.
 
 - **Vertical scaling**<br />
-  The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core.
+  The setting `-compactor.compaction-concurrency` configures the max number of concurrent compactions running in a single compactor instance. Each compaction uses one CPU core. In scheduler mode, this setting doesn't control how many jobs a compactor runs concurrently: each worker executes one job at a time, and the number of workers leasing compaction jobs is configured through `-compactor.scheduler-client.lanes`.
 - **Horizontal scaling**<br />
-  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding](../../../../configure/configure-shuffle-sharding/) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant.
+  By default, tenant blocks can be compacted by any Grafana Mimir compactor. When you enable compactor [shuffle sharding](../../../../configure/configure-shuffle-sharding/) by setting `-compactor.compactor-tenant-shard-size` (or its respective YAML configuration option) to a value higher than `0` and lower than the number of available compactors, only the specified number of compactors are eligible to compact blocks for a given tenant. In scheduler mode, shuffle sharding currently only affects blocks cleanup, which is still sharded through the hash ring: any compactor can execute compaction jobs for any tenant.
 
 ## Compaction algorithm
 
@@ -61,7 +68,13 @@ The compactor merges the split blocks for each shard. This compacts all _N_ spli
 
 The merge then runs on other configured compaction time ranges, for example 12h and 24h. It compacts blocks belonging to the same shard.
 
-This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We recommend 1 shard per every 8 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 12 shards. Use an even number for the count.
+This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We recommend 1 shard per every 8 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 16 shards. Use values that are a power of two for shard count.
+
+For extremely large tenants approaching 1 billion active series, the shard count does not scale linearly. Increasing _M_ beyond roughly 96 shards introduces additional trade-offs:
+
+- The total number of blocks for a tenant is _M_ per compacted time range. Under typical retention, a high shard count produces thousands of blocks per tenant. Each block requires its own [index-header](../store-gateway/#blocks-index-header) on every store-gateway that serves it, increasing disk usage and memory consumption on store-gateways.
+- Each time range requires one merge job per shard. More shards mean more jobs to schedule and more compactor disk space.
+- Without query sharding, every query must touch _M_ blocks per time range instead of one. With query sharding enabled, the querier can skip incompatible compactor shards, but only when the query shard count evenly divides (or is evenly divisible by) _M_. Note that shard sizes that are a power of two always satisfies such relationship.
 
 The number of split groups, _N_, can also be adjusted per tenant using the `-compactor.split-groups` option. Increasing this value produces more compaction jobs with fewer blocks during the split stage. This allows multiple compactors to work on these jobs, and finish the splitting stage faster. However, increasing this value also generates more intermediate blocks during the split stage, which will only be reduced later in the merge stage.
 
@@ -71,7 +84,7 @@ Splitting and merging can be horizontally scaled. Non-conflicting and non-overla
 
 ## Compactor sharding
 
-The compactor shards compaction jobs, either from a single tenant or multiple tenants. The compaction of a single tenant can be split and processed by multiple compactor instances.
+In standalone mode, the compactor shards compaction jobs, either from a single tenant or multiple tenants. The compaction of a single tenant can be split and processed by multiple compactor instances.
 
 Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded across the available compactor instances without any manual intervention.
 
@@ -79,9 +92,11 @@ Compactor sharding uses a [hash ring](../../hash-ring/). At startup, a compactor
 
 To configure the compactors' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).
 
+In scheduler mode, compaction jobs are distributed by the [compactor-scheduler](../compactor-scheduler/) instead, and `-compactor.compaction-interval` has no effect. The planning cadence is controlled by `-compactor-scheduler.planning-interval`. The compactor still registers in the hash ring, which is used to shard blocks cleanup, including bucket index updates, block deletion, and retention enforcement.
+
 ### Waiting for a stable hash ring at startup
 
-A cluster cold start or an increase of two or more compactor instances at the same time may result in each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
+In standalone mode, a cluster cold start or an increase of two or more compactor instances at the same time may result in each new compactor instance starting at a slightly different time. Then, each compactor runs its first compaction based on a different state of the hash ring. This is not an error condition, but it may be inefficient, because multiple compactor instances may start compacting the same tenant at nearly the same time.
 
 To mitigate the issue, compactors can be configured to wait for a stable hash ring at startup. A ring is considered stable if no instance is added to or removed from the hash ring for at least `-compactor.ring.wait-stability-min-duration`. The maximum time the compactor will wait is controlled by the flag `-compactor.ring.wait-stability-max-duration` (or the respective YAML configuration option). Once the compactor has finished waiting, either because the ring stabilized or because the maximum wait time was reached, it will start up normally.
 
@@ -89,7 +104,7 @@ The default value of zero for `-compactor.ring.wait-stability-min-duration` disa
 
 ## Compaction jobs order
 
-The compactor allows configuring of the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). The configured ordering defines which compaction jobs should be executed first. The following values of `-compactor.compaction-jobs-order` are supported:
+The compactor allows configuring of the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). In standalone mode, the configured ordering defines which compaction jobs each compactor executes first. In scheduler mode, it defines the order in which planned compaction jobs are enqueued and distributed by the compactor-scheduler. The following values of `-compactor.compaction-jobs-order` are supported:
 
 - `smallest-range-oldest-blocks-first` (default)
 
@@ -146,7 +161,9 @@ Large tenants may require a lot of disk space. Assuming `max_compaction_range_bl
 compactor.compaction-concurrency * max_compaction_range_blocks_size * 2
 ```
 
-Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1`, we would recommend having a disk with at least 450GB available.
+Alternatively, assuming the largest `-compactor.block-ranges` is `24h` (the default), you could estimate needing 150GB of disk space for every 10M active series owned by the largest tenant. For example, if your largest tenant has 30M active series and `-compactor.compaction-concurrency=1` (standalone mode), we would recommend having a disk with at least 450GB available.
+
+In scheduler mode, the compaction concurrency is determined by the number of workers leasing jobs from lanes with compaction work, which is one with the default `-compactor.scheduler-client.lanes`.
 
 ## Compactor configuration
 

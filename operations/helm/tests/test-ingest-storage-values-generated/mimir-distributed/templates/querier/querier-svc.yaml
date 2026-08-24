@@ -29,3 +29,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-ingest-storage-values
     app.kubernetes.io/component: querier
+

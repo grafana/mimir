@@ -24,12 +24,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -822,6 +824,15 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 type mockDistributor struct {
 	mock.Mock
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	// Function-pointer hooks for the streaming search RPCs. These are used by
+	// tests that need to observe the arguments the distributorQuerier forwards
+	// (e.g. assert minT was clamped). If nil, the corresponding method returns
+	// storage.EmptySearchResultSet.
+	searchLabelNamesFn     func(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	searchLabelValuesFn    func(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	searchLabelNamesCalls  atomic.Int32
+	searchLabelValuesCalls atomic.Int32
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -876,6 +887,22 @@ func (m *mockDistributor) ActiveSeries(ctx context.Context, matchers []*labels.M
 func (m *mockDistributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
 	args := m.Called(ctx, matchers)
 	return args.Get(0).(*cardinality.ActiveNativeHistogramMetricsResponse), args.Error(1)
+}
+
+func (m *mockDistributor) SearchLabelNames(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet {
+	m.searchLabelNamesCalls.Add(1)
+	if m.searchLabelNamesFn != nil {
+		return m.searchLabelNamesFn(ctx, from, to, params, hints, matchers)
+	}
+	return storage.EmptySearchResultSet()
+}
+
+func (m *mockDistributor) SearchLabelValues(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet {
+	m.searchLabelValuesCalls.Add(1)
+	if m.searchLabelValuesFn != nil {
+		return m.searchLabelValuesFn(ctx, from, to, name, params, hints, matchers)
+	}
+	return storage.EmptySearchResultSet()
 }
 
 type mockConfigProvider struct {

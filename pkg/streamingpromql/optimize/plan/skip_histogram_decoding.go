@@ -56,10 +56,17 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		switch f.Function {
 		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
 			skipHistogramBuckets = true
-		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
+		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE, functions.FUNCTION_HISTOGRAM_QUANTILES:
 			skipHistogramBuckets = false
 		default:
 			// Nothing to do.
+		}
+	}
+
+	// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
+	if b, ok := node.(*core.BinaryExpression); ok {
+		if b.Op == core.BINARY_TRIM_UPPER || b.Op == core.BINARY_TRIM_LOWER {
+			skipHistogramBuckets = false
 		}
 	}
 

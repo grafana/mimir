@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -1768,86 +1769,88 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 		namespace     = "test"
 	)
 
-	var (
-		ctx          = context.Background()
-		logger       = log.NewNopLogger()
-		rulerAddrMap = map[string]*Ruler{}
-	)
+	synctest.Test(t, func(t *testing.T) {
+		var (
+			ctx          = context.Background()
+			logger       = log.NewNopLogger()
+			rulerAddrMap = map[string]*Ruler{}
+		)
 
-	// Create a filesystem backed storage.
-	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
-	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
-	require.NoError(t, err)
-
-	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
-
-	// Create an in-memory ring backend.
-	kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
-	t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
-
-	// Create rulers. The rulers are configured with a very long polling interval
-	// so that they will not trigger after the initial sync. Once the ruler has started,
-	// the initial sync already occurred.
-	rulers := make([]*Ruler, numRulers)
-	regs := make([]*prometheus.Registry, numRulers)
-
-	for i := 0; i < len(rulers); i++ {
-		rulerAddr := fmt.Sprintf("ruler-%d", i)
-
-		rulerCfg := defaultRulerConfig(t)
-		rulerCfg.PollInterval = time.Hour
-		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
-		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
-		rulerCfg.Ring.NumTokens = 128
-		rulerCfg.Ring.Common.InstanceID = rulerAddr
-		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
-		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
-
-		limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-			defaults.RulerSyncRulesOnChangesEnabled = false
-		})
-
-		regs[i] = prometheus.NewPedanticRegistry()
-		rulers[i] = prepareRuler(t, rulerCfg, store, withLimits(limits), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
-	}
-
-	// Pre-condition check: each ruler should have synced the rules once (at startup).
-	for _, reg := range regs {
-		verifySyncRulesMetrics(t, reg, 1, 0)
-	}
-
-	// Pre-condition check: each ruler should have an updated view over the ring.
-	for _, reg := range regs {
-		verifyRingMembersMetric(t, reg, 2)
-	}
-
-	// Create some rule groups in the storage.
-	for i := 0; i < numRuleGroups; i++ {
-		groupID := fmt.Sprintf("group-%d", i)
-		record := fmt.Sprintf("count:metric_%d", i)
-		expr := fmt.Sprintf("count(metric_%d)", i)
-
-		require.NoError(t, store.SetRuleGroup(ctx, userID, namespace, createRuleGroup(groupID, userID, createRecordingRule(record, expr))))
-	}
-
-	// Call NotifySyncRulesAsync() on 1 ruler.
-	rulers[0].NotifySyncRulesAsync("user-1")
-
-	// Give rulers enough time to eventually re-sync based on config change, if it was enabled (but it's not).
-	// Unfortunately there's no better to way than waiting some time, since we're waiting for a condition to NOT happen.
-	time.Sleep(time.Second)
-
-	// Ensure no rules syncing has been triggered in any ruler.
-	for _, reg := range regs {
-		verifySyncRulesMetrics(t, reg, 1, 0)
-	}
-
-	// GetRules() should return no configured rule groups, because no re-sync happened.
-	for _, ruler := range rulers {
-		list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+		// Create a filesystem backed storage.
+		bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
+		bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
 		require.NoError(t, err)
-		require.Empty(t, list.Groups)
-	}
+
+		store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
+
+		// Create an in-memory ring backend.
+		kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+		t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+		// Create rulers. The rulers are configured with a very long polling interval
+		// so that they will not trigger after the initial sync. Once the ruler has started,
+		// the initial sync already occurred.
+		rulers := make([]*Ruler, numRulers)
+		regs := make([]*prometheus.Registry, numRulers)
+
+		for i := 0; i < len(rulers); i++ {
+			rulerAddr := fmt.Sprintf("ruler-%d", i)
+
+			rulerCfg := defaultRulerConfig(t)
+			rulerCfg.PollInterval = time.Hour
+			rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+			rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+			rulerCfg.Ring.NumTokens = 128
+			rulerCfg.Ring.Common.InstanceID = rulerAddr
+			rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+			rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+
+			limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				defaults.RulerSyncRulesOnChangesEnabled = false
+			})
+
+			regs[i] = prometheus.NewPedanticRegistry()
+			rulers[i] = prepareRuler(t, rulerCfg, store, withLimits(limits), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
+		}
+
+		// Pre-condition check: each ruler should have synced the rules once (at startup).
+		for _, reg := range regs {
+			verifySyncRulesMetrics(t, reg, 1, 0)
+		}
+
+		// Pre-condition check: each ruler should have an updated view over the ring.
+		for _, reg := range regs {
+			verifyRingMembersMetric(t, reg, 2)
+		}
+
+		// Create some rule groups in the storage.
+		for i := 0; i < numRuleGroups; i++ {
+			groupID := fmt.Sprintf("group-%d", i)
+			record := fmt.Sprintf("count:metric_%d", i)
+			expr := fmt.Sprintf("count(metric_%d)", i)
+
+			require.NoError(t, store.SetRuleGroup(ctx, userID, namespace, createRuleGroup(groupID, userID, createRecordingRule(record, expr))))
+		}
+
+		// Call NotifySyncRulesAsync() on 1 ruler.
+		rulers[0].NotifySyncRulesAsync("user-1")
+
+		// Give rulers enough time to eventually re-sync based on config change, if it was enabled (but it's not).
+		// Unfortunately there's no better to way than waiting some time, since we're waiting for a condition to NOT happen.
+		time.Sleep(time.Second)
+
+		// Ensure no rules syncing has been triggered in any ruler.
+		for _, reg := range regs {
+			verifySyncRulesMetrics(t, reg, 1, 0)
+		}
+
+		// GetRules() should return no configured rule groups, because no re-sync happened.
+		for _, ruler := range rulers {
+			list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			require.NoError(t, err)
+			require.Empty(t, list.Groups)
+		}
+	})
 }
 
 // User shuffle shard token.
@@ -2871,6 +2874,25 @@ func TestConfig_Validate(t *testing.T) {
 
 		err := cfg.Validate(*limits)
 		require.Error(t, err)
+	})
+
+	t.Run("invalid distributor config when rule evaluation writes enabled", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RuleEvaluationWriteEnabled = true
+		cfg.Distributor.Address = "http://distributor:9095"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.EqualError(t, err, `invalid ruler distributor config: ruler's distributor client address must be a gRPC address, got HTTP(S) address: "http://distributor:9095"`)
+	})
+
+	t.Run("invalid distributor config ignored when rule evaluation writes disabled", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RuleEvaluationWriteEnabled = false
+		cfg.Distributor.Address = "http://distributor:9095"
+		limits := validation.MockDefaultLimits()
+
+		require.NoError(t, cfg.Validate(*limits))
 	})
 
 	t.Run("invalid concurrency evaluation percentage", func(t *testing.T) {

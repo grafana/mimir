@@ -23,6 +23,23 @@
     autoscaling_store_gateway_min_replicas_per_zone: error 'you must set autoscaling_store_gateway_min_replicas_per_zone in the _config',
     autoscaling_store_gateway_max_replicas_per_zone: error 'you must set autoscaling_store_gateway_max_replicas_per_zone in the _config',
 
+    // Per-compartment, per-zone autoscaling bounds.
+    autoscaling_store_gateway_min_replicas_per_compartment_zone: 3,
+    autoscaling_store_gateway_max_replicas_per_compartment_zone: 10,
+
+    // Read compartment indexes whose KEDA autoscaling is disabled: the compartment's zone-a leader
+    // ScaledObject is not rendered, none of its zones get the autoscaling annotations, and its
+    // primary-zone StatefulSets run the static replica count configured below (backup zones keep
+    // their base 0 replicas). Only subtractive within an enabled component — it cannot re-enable
+    // single compartments when autoscaling_store_gateway_enabled is false.
+    autoscaling_store_gateway_disabled_compartments: [],
+
+    // Explicit replica count (per primary zone) per disabled compartment, e.g. { compartment_0: 3 }.
+    // Required for every compartment listed above (the render fails otherwise). When first
+    // disabling a compartment, pick a count >= its current live replicas to avoid an immediate
+    // uncoordinated downscale; shrink deliberately afterwards.
+    store_gateway_compartment_static_replicas: {},
+
     // Give more time if lazy-loading is disabled.
     store_gateway_automated_downscale_min_time_between_zones: if $._config.store_gateway_lazy_loading_enabled then '15m' else '60m',
   },
@@ -94,13 +111,42 @@
       'grafana.com/prepare-downscale-http-port': '80',
     }),
 
-  store_gateway_zone_a_scaled_object: if !$._config.autoscaling_store_gateway_enabled || !$._config.multi_zone_store_gateway_enabled || !$._config.store_gateway_automated_downscale_zone_a_enabled then null else
-    $.newLeaderStoreGatewayScaledObject(
+  // Downscale-leader annotations telling the rollout-operator which zone each follower tracks.
+  // compartmentIdx is null for the non-compartment store-gateways and the read compartment index
+  // for the per-compartment ones.
+  local storeGatewayDownscaleLeaderMixin(zone, compartmentIdx=null) =
+    local suffix = if compartmentIdx == null then '' else '-rc-%d' % compartmentIdx;
+    // - zone-b follows zone-a
+    // - zone-c follows zone-b
+    // - backup zones follow their primary zone (a-backup→a, b-backup→b), since they
+    //   run on spot nodes and must follow the standard-node leader (so none follows a
+    //   potentially-missing spot zone)
+    // - zone-a is the leader and gets no annotation
+    local leader =
+      if zone == 'b' || zone == 'a-backup' then 'store-gateway-zone-a' + suffix
+      else if zone == 'c' || zone == 'b-backup' then 'store-gateway-zone-b' + suffix
+      else null;
+    if leader == null then {} else statefulSet.mixin.metadata.withAnnotationsMixin({
+      'grafana.com/rollout-downscale-leader': leader,
+      'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
+    }),
+
+  store_gateway_zone_a_scaled_object:
+    if $._config.compartments_store_gateway_enabled && !$._config.no_compartments_store_gateway_enabled
+    // When the per-compartment store-gateways own the read path and the non-compartment ones are removed,
+    // there's no non-compartment zone-a to autoscale.
+    then null
+    else if !$._config.autoscaling_store_gateway_enabled || !$._config.multi_zone_store_gateway_enabled || !$._config.store_gateway_automated_downscale_zone_a_enabled
+    then null
+    else $.newLeaderStoreGatewayScaledObject(
       'store-gateway-zone-a',
       $._config.autoscaling_store_gateway_min_replicas_per_zone,
       $._config.autoscaling_store_gateway_max_replicas_per_zone,
       $._config.autoscaling_store_gateway_disk_usage_threshold,
       null,
+      // In mixed mode the per-compartment store-gateways share the "store-gateway-.*" PVC prefix, so exclude
+      // their "-rc-<idx>-" PVCs to size the non-compartment autoscaler off the non-compartment disks only.
+      extra_matchers=if $._config.compartments_store_gateway_enabled then 'persistentvolumeclaim!~"store-gateway-data-store-gateway-zone-.*-rc-.*"' else '',
     ),
 
   // Store-gateway prepare-downscale configuration
@@ -115,10 +161,7 @@
     if !$._config.store_gateway_automated_downscale_zone_b_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
-      statefulSet.mixin.metadata.withAnnotationsMixin({
-        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
-        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
-      }),
+      storeGatewayDownscaleLeaderMixin('b'),
   ),
 
   store_gateway_zone_c_statefulset: overrideSuperIfExists(
@@ -126,10 +169,7 @@
     if !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
-      statefulSet.mixin.metadata.withAnnotationsMixin({
-        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-b',
-        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
-      }),
+      storeGatewayDownscaleLeaderMixin('c'),
   ),
 
   store_gateway_zone_a_backup_statefulset: overrideSuperIfExists(
@@ -137,12 +177,7 @@
     if !$._config.store_gateway_automated_downscale_zone_a_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
-      statefulSet.mixin.metadata.withAnnotationsMixin({
-        // store-gateway-zone-a-backup is expected to run on spot nodes. Since spot nodes can be unavailable from time to time,
-        // we follow zone-a that is running on standard nodes and we ensure none follows zone-a-backup.
-        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
-        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
-      })
+      storeGatewayDownscaleLeaderMixin('a-backup')
   ),
 
   store_gateway_zone_b_backup_statefulset: overrideSuperIfExists(
@@ -150,12 +185,7 @@
     if !$._config.store_gateway_automated_downscale_zone_b_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
-      statefulSet.mixin.metadata.withAnnotationsMixin({
-        // store-gateway-zone-b-backup is expected to run on spot nodes. Since spot nodes can be unavailable from time to time,
-        // we follow zone-b that is running on standard nodes and we ensure none follows zone-b-backup.
-        'grafana.com/rollout-downscale-leader': 'store-gateway-zone-b',
-        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
-      }),
+      storeGatewayDownscaleLeaderMixin('b-backup'),
   ),
 
   // When prepare-downscale webhook is in use, we don't need the auto-forget feature to ensure
@@ -179,4 +209,70 @@
   store_gateway_zone_b_backup_args+:: if !$._config.store_gateway_automated_downscale_zone_b_backup_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
+
+  //
+  // Per-compartment store-gateway autoscaling. Mirrors the non-compartment autoscaling above, layered on top of
+  // the per-compartment StatefulSet maps built in compartments-store-gateway.libsonnet. Gated on
+  // autoscaling_store_gateway_enabled; when disabled the per-compartment store-gateways run fixed replicas.
+  //
+
+  local compartmentsStoreGatewayAutoscalingEnabled = $._config.compartments_store_gateway_enabled && $._config.autoscaling_store_gateway_enabled,
+  local isCompartmentAutoscalingDisabled(compartment) = std.member($._config.autoscaling_store_gateway_disabled_compartments, compartment),
+  local compartmentStaticReplicas(compartment) = $._config.store_gateway_compartment_static_replicas['compartment_%d' % compartment],
+
+  // Applied to every per-compartment StatefulSet: the autoscaler owns the replicas and the rollout-operator
+  // drives safe downscales via the prepare-shutdown endpoint (zones follow their leader per compartment).
+  local storeGatewayCompartmentAutoscaleMixin(zone) = function(compartmentIdx)
+    if isCompartmentAutoscalingDisabled(compartmentIdx) then
+      // Autoscaling is disabled for this compartment: mirror the component-level disable — no
+      // replica strip and no rollout-operator annotations. Primary zones run an explicit static
+      // replica count; backup zones keep their base 0 replicas (they exist to follow an autoscaled
+      // leader on spot nodes, which this compartment no longer has).
+      (if zone == 'a-backup' || zone == 'b-backup' then {} else statefulSet.mixin.spec.withReplicas(compartmentStaticReplicas(compartmentIdx)))
+    else
+      $.removeReplicasFromSpec +
+      prepareDownscaleLabelsAnnotations +
+      storeGatewayDownscaleLeaderMixin(zone, compartmentIdx),
+
+  // Per-compartment store-gateways always use prepare-downscale when autoscaled (the shutdown endpoint removes
+  // them from the ring), so disable auto-forget. Compartments with autoscaling disabled keep the default
+  // auto-forget behavior, exactly like the component-level disable.
+  local storeGatewayCompartmentAutoForgetArgs = function(compartmentIdx)
+    if !compartmentsStoreGatewayAutoscalingEnabled || isCompartmentAutoscalingDisabled(compartmentIdx) then {} else {
+      'store-gateway.sharding-ring.auto-forget-enabled': false,
+    },
+
+  store_gateway_zone_a_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_a_compartments_args, storeGatewayCompartmentAutoForgetArgs),
+  store_gateway_zone_b_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_b_compartments_args, storeGatewayCompartmentAutoForgetArgs),
+  store_gateway_zone_c_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_c_compartments_args, storeGatewayCompartmentAutoForgetArgs),
+  store_gateway_zone_a_backup_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_a_backup_compartments_args, storeGatewayCompartmentAutoForgetArgs),
+  store_gateway_zone_b_backup_compartments_args+:: $.mimirCompartmentsOverrides(super.store_gateway_zone_b_backup_compartments_args, storeGatewayCompartmentAutoForgetArgs),
+
+  store_gateway_zone_a_statefulsets+: if !compartmentsStoreGatewayAutoscalingEnabled then {} else $.mimirCompartmentsOverrides(super.store_gateway_zone_a_statefulsets, storeGatewayCompartmentAutoscaleMixin('a')),
+  store_gateway_zone_b_statefulsets+: if !compartmentsStoreGatewayAutoscalingEnabled then {} else $.mimirCompartmentsOverrides(super.store_gateway_zone_b_statefulsets, storeGatewayCompartmentAutoscaleMixin('b')),
+  store_gateway_zone_c_statefulsets+: if !compartmentsStoreGatewayAutoscalingEnabled then {} else $.mimirCompartmentsOverrides(super.store_gateway_zone_c_statefulsets, storeGatewayCompartmentAutoscaleMixin('c')),
+  store_gateway_zone_a_backup_statefulsets+: if !compartmentsStoreGatewayAutoscalingEnabled then {} else $.mimirCompartmentsOverrides(super.store_gateway_zone_a_backup_statefulsets, storeGatewayCompartmentAutoscaleMixin('a-backup')),
+  store_gateway_zone_b_backup_statefulsets+: if !compartmentsStoreGatewayAutoscalingEnabled then {} else $.mimirCompartmentsOverrides(super.store_gateway_zone_b_backup_statefulsets, storeGatewayCompartmentAutoscaleMixin('b-backup')),
+
+  // Zone-a leader ScaledObject per compartment; the other zones follow it via the downscale-leader annotations.
+  store_gateway_zone_a_scaled_objects: $.mimirCompartmentsCreateIf(compartmentsStoreGatewayAutoscalingEnabled, $._config.compartments_read_count, function(c)
+    $.newLeaderStoreGatewayScaledObject(
+      'store-gateway-zone-a-rc-%d' % c,
+      $._config.autoscaling_store_gateway_min_replicas_per_compartment_zone,
+      $._config.autoscaling_store_gateway_max_replicas_per_compartment_zone,
+      $._config.autoscaling_store_gateway_disk_usage_threshold,
+      'store-gateway-data-store-gateway-zone-.*-rc-%d-.*' % c,
+    ), $._config.autoscaling_store_gateway_disabled_compartments),
+
+  // Config validation.
+  local storeGatewayDisabledKnobsError = if !$._config.compartments_store_gateway_enabled then null else $.validateMimirCompartmentsAutoscalingDisabledKnobs(
+    'autoscaling_store_gateway_disabled_compartments',
+    $._config.autoscaling_store_gateway_disabled_compartments,
+    'store_gateway_compartment_static_replicas',
+    $._config.store_gateway_compartment_static_replicas,
+    $._config.compartments_read_count,
+    'autoscaling_store_gateway_enabled',
+    $._config.autoscaling_store_gateway_enabled,
+  ),
+  assert storeGatewayDisabledKnobsError == null : storeGatewayDisabledKnobsError,
 }

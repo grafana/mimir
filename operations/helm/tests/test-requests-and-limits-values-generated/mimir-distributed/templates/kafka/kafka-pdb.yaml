@@ -17,3 +17,4 @@ spec:
       app.kubernetes.io/instance: test-requests-and-limits-values
       app.kubernetes.io/component: kafka
   maxUnavailable: 1
+

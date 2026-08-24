@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func (m *LabelMatcher) Equal(other *LabelMatcher) bool {
+func (m *LabelMatcher) Equal(other LabelMatcher) bool {
 	return m.Type == other.Type && m.Name == other.Name && m.Value == other.Value
 }
 
@@ -24,7 +24,7 @@ func CompareMatchers(firstName, secondName string, firstType, secondType labels.
 	return strings.Compare(firstValue, secondValue)
 }
 
-func FormatMatchers(builder *strings.Builder, matchers []*LabelMatcher) {
+func FormatMatchers(builder *strings.Builder, matchers []LabelMatcher) {
 	builder.WriteRune('{')
 
 	for i, m := range matchers {

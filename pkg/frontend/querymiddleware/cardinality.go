@@ -150,7 +150,7 @@ func (c *cardinalityEstimation) storeCardinalityForKey(key string, count uint64,
 	}
 	// The store is executed asynchronously, potential errors are logged and not
 	// propagated back up the stack.
-	c.cache.SetMultiAsync(map[string][]byte{key: marshaled}, cardinalityEstimateTTL)
+	c.cache.SetAsync(key, marshaled, cardinalityEstimateTTL)
 }
 
 func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {

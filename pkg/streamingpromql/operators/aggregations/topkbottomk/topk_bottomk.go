@@ -11,7 +11,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -25,7 +24,6 @@ func New(
 	without bool,
 	isTopK bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	if without {
@@ -60,7 +58,6 @@ func New(
 			IsTopK:                   isTopK,
 
 			expressionPosition: expressionPosition,
-			annotations:        annotations,
 			heap:               h,
 		}
 	}
@@ -83,7 +80,6 @@ func New(
 		IsTopK:                   isTopK,
 
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		heap:               h,
 	}
 }

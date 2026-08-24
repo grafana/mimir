@@ -44,10 +44,11 @@ type OptimizationPass struct {
 
 	subsetSelectorEliminationEnabled        bool
 	rangeQueryRangeVectorEliminationEnabled bool
+	scalarEliminationEnabled                bool
 	logger                                  log.Logger
 }
 
-func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	selectorsEliminated := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total",
 		Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
@@ -67,6 +68,7 @@ func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeV
 
 		subsetSelectorEliminationEnabled:        subsetSelectorEliminationEnabled,
 		rangeQueryRangeVectorEliminationEnabled: rangeQueryRangeVectorEliminationEnabled,
+		scalarEliminationEnabled:                scalarEliminationEnabled,
 		logger:                                  logger,
 	}
 }
@@ -86,7 +88,8 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	rangeQueryRangeVectorEliminationEnabled := e.rangeQueryRangeVectorEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV11
-	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled)
+	scalarEliminationEnabled := e.scalarEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV19
+	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +175,11 @@ func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) boo
 	return false
 }
 
-func (e *OptimizationPass) applyDeduplicationToGroups(groups []SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool) (deduplicationStats, error) {
+func (e *OptimizationPass) applyDeduplicationToGroups(groups []SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool) (deduplicationStats, error) {
 	totalStats := deduplicationStats{}
 
 	for _, group := range groups {
-		groupStats, err := e.applyDeduplication(group, offset, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled)
+		groupStats, err := e.applyDeduplication(group, offset, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled)
 		if err != nil {
 			return deduplicationStats{}, err
 		}
@@ -199,10 +202,10 @@ func (s *deduplicationStats) add(other deduplicationStats) {
 
 type SharedSelectorGroup struct {
 	Paths   []path
-	Filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
+	Filters [][]core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
 }
 
-func (g *SharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatcher) {
+func (g *SharedSelectorGroup) add(p path, additionalMatchers []core.LabelMatcher) {
 	if len(g.Paths) == 0 {
 		// First duplicate or subset selector we've seen, create the list of paths.
 		g.Paths = make([]path, 0, 2)
@@ -212,7 +215,7 @@ func (g *SharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatche
 
 	if g.Filters == nil && len(additionalMatchers) > 0 {
 		// First subset selector we've seen, create a slice of filters for all the other existing nodes.
-		g.Filters = make([][]*core.LabelMatcher, len(g.Paths)-1, len(g.Paths))
+		g.Filters = make([][]core.LabelMatcher, len(g.Paths)-1, len(g.Paths))
 	}
 
 	if g.Filters != nil {
@@ -229,7 +232,7 @@ func (g *SharedSelectorGroup) hasSubsetSelectors() bool {
 	return g.Filters != nil
 }
 
-func (g *SharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
+func (g *SharedSelectorGroup) getFilterForPath(pathIdx int) []core.LabelMatcher {
 	if g.Filters == nil {
 		return nil
 	}
@@ -363,7 +366,7 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 }
 
 // countRegexMatchers counts the number of matchers that match a regular expression rather than a specific value
-func countRegexMatches(matchers []*core.LabelMatcher) int {
+func countRegexMatches(matchers []core.LabelMatcher) int {
 	count := 0
 
 	for _, m := range matchers {
@@ -431,7 +434,7 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool) (deduplicationStats, error) {
+func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool) (deduplicationStats, error) {
 	duplicatePathLength, err := e.findCommonSubexpressionLength(group, offset+1, delayedNameRemovalEnabled)
 	if err != nil {
 		return deduplicationStats{}, err
@@ -446,22 +449,36 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	}
 
 	skipLongerExpressions := false
-	skippedBecauseRangeVectorSelectorInRangeQuery := false
+	skippedBecauseResultTypeUnsupported := false
 	stats := group.computeStats()
 
-	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && (rangeQueryRangeVectorEliminationEnabled || timeRange.IsInstant)) {
+	switch resultType {
+	case parser.ValueTypeVector:
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
-	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
-		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
-		// query, and range query range vector CSE is not enabled.
-		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
-		// subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
-	} else {
-		// Duplicated range vector selector in a range query with range query range vector CSE disabled, and the function that encloses
-		// each instance isn't the same (or isn't the same on all paths).
-		skippedBecauseRangeVectorSelectorInRangeQuery = true
-		stats = deduplicationStats{}
+	case parser.ValueTypeScalar:
+		if scalarEliminationEnabled {
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		} else {
+			skippedBecauseResultTypeUnsupported = true
+			stats = deduplicationStats{}
+		}
+	case parser.ValueTypeMatrix:
+		if rangeQueryRangeVectorEliminationEnabled || timeRange.IsInstant {
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
+			// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
+			// query, and range query range vector CSE is not enabled.
+			// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
+			// subquery.
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+		} else {
+			// Duplicated range vector selector in a range query with range query range vector CSE disabled, and the function that encloses
+			// each instance isn't the same (or isn't the same on all paths).
+			skippedBecauseResultTypeUnsupported = true
+			stats = deduplicationStats{}
+		}
+	default:
+		return deduplicationStats{}, fmt.Errorf("unexpected result type in common subexpression elimination: %v", resultType)
 	}
 
 	if err != nil {
@@ -484,10 +501,10 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
 	subsequentGroups := e.groupPathsForSubsequentIteration(group.Paths, duplicatePathLength)
-	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled); err != nil {
+	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled); err != nil {
 		return deduplicationStats{}, err
-	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
-		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector
+	} else if skippedBecauseResultTypeUnsupported {
+		// If we didn't eliminate any paths at this level (for example, because the duplicate expression was a range vector selector
 		// in a range query with range query range vector CSE disabled), return the number returned by the next level.
 		stats = nextLevelStats
 	}
@@ -521,7 +538,12 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 		var newChild planning.Node = duplicate
 
 		if filters := group.getFilterForPath(pathIdx); len(filters) > 0 {
-			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, filters)
+			selector, _, err := path.Selector()
+			if err != nil {
+				return false, err
+			}
+
+			subsetIndex, err := e.findOrAddSubsetToSelector(leaf, selector.GetMatchers(), filters)
 			if err != nil {
 				return false, err
 			}
@@ -535,7 +557,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 			}
 		}
 
-		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
+		err = parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
 		if err != nil {
 			return false, err
 		}
@@ -549,26 +571,24 @@ func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, dup
 	return false, nil
 }
 
-func (e *OptimizationPass) findOrAddSubsetToSelector(selector planning.Node, subset []*core.LabelMatcher) (int, error) {
-	switch selector := selector.(type) {
+func (e *OptimizationPass) findOrAddSubsetToSelector(targetSelector planning.Node, allMatchers []core.LabelMatcher, subset []core.LabelMatcher) (int, error) {
+	switch targetSelector := targetSelector.(type) {
 	case *core.VectorSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	case *core.MatrixSelector:
 		var subsetIndex int
-		selector.Subsets, subsetIndex = e.findOrAddSubsetToList(selector.Subsets, subset)
+		targetSelector.Subsets, subsetIndex = e.findOrAddSubsetToList(targetSelector.Subsets, allMatchers, subset)
 		return subsetIndex, nil
 	default:
-		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", selector)
+		return -1, fmt.Errorf("expected a selector type to add subsets to, but got %T", targetSelector)
 	}
 }
 
-func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, subset []*core.LabelMatcher) ([]core.SubsetMatchers, int) {
+func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, allMatchers []core.LabelMatcher, subset []core.LabelMatcher) ([]core.SubsetMatchers, int) {
 	idx := slices.IndexFunc(subsets, func(e core.SubsetMatchers) bool {
-		return slices.EqualFunc(e.Matchers, subset, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-			return a.Equal(b)
-		})
+		return labelMatcherSlicesEqual(e.Filter, subset) && labelMatcherSlicesEqual(e.AllMatchers, allMatchers)
 	})
 
 	if idx != -1 {
@@ -576,7 +596,13 @@ func (e *OptimizationPass) findOrAddSubsetToList(subsets []core.SubsetMatchers, 
 	}
 
 	idx = len(subsets)
-	return append(subsets, core.SubsetMatchers{Matchers: subset}), idx
+	return append(subsets, core.SubsetMatchers{Filter: subset, AllMatchers: allMatchers}), idx
+}
+
+func labelMatcherSlicesEqual(first, second []core.LabelMatcher) bool {
+	return slices.EqualFunc(first, second, func(a core.LabelMatcher, b core.LabelMatcher) bool {
+		return a.Equal(b)
+	})
 }
 
 // findCommonSubexpressionLength returns the length of the common expression present at the end of each path
@@ -592,11 +618,7 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 		firstSelector, _ := firstPath.NodeAtOffsetFromLeaf(0)
 
 		if group.hasSubsetSelectors() {
-			// The call below is safe to do without a bounds check: we explicitly exclude the root node above,
-			// so we'll always be able to get the parent of the current node.
-			parent, _ := firstPath.NodeAtOffsetFromLeaf(length + 1)
-
-			if safe, err := IsSafeToApplyFilteringAfter(firstNode, parent, group, delayedNameRemovalEnabled); err != nil {
+			if safe, err := IsSafeToApplyFilteringAfter(firstNode, group, delayedNameRemovalEnabled); err != nil {
 				return -1, err
 			} else if !safe {
 				return length, nil
@@ -632,19 +654,19 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 	return length, nil
 }
 
-func IsSafeToApplyFilteringAfter(node planning.Node, parent planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) (bool, error) {
+func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) (bool, error) {
 	switch node := node.(type) {
 	case *core.Subquery:
 		// Subqueries return the inner series' labels as-is, so it's always safe to apply filtering afterwards.
 		return true, nil
 
 	case *core.FunctionCall:
-		if _, ok := parent.(*rangevectorsplitting.SplitFunctionCall); ok {
-			// SplitFunctionCall must have the FunctionCall node as its child, so filtering must occur beneath the function call.
-			return false, nil
-		}
-
 		return IsSafeToApplyFilteringAfterFunction(node, group, delayedNameRemovalEnabled)
+
+	case *rangevectorsplitting.SplitFunctionCall:
+		// SplitFunctionCall produces the same series as its inner FunctionCall, so filtering after it is safe
+		// when filtering after that FunctionCall is.
+		return IsSafeToApplyFilteringAfterFunction(node.Inner, group, delayedNameRemovalEnabled)
 
 	case *core.UnaryExpression:
 		if delayedNameRemovalEnabled {
@@ -772,6 +794,7 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
 		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_SHARDING_AVG,
 		functions.FUNCTION_SHARDING_CONCAT,
 		functions.FUNCTION_SORT,
 		functions.FUNCTION_SORT_BY_LABEL,
@@ -820,7 +843,37 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 
 		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
 
-	case functions.FUNCTION_PI, functions.FUNCTION_VECTOR, functions.FUNCTION_TIME:
+	case functions.FUNCTION_HISTOGRAM_QUANTILES:
+		// Like histogram_quantile, this drops the 'le' label on native histograms, so we can never apply filtering
+		// after the function if the filter is on that label.
+		if group.haveAnyFiltersForLabel(model.BucketLabel) {
+			return false, nil
+		}
+
+		// histogram_quantiles also adds the configured quantile label (its second argument), so it's not safe to
+		// push filtering on that label through the function call.
+		quantileLabelName, err := extractDestinationLabel(functionCall)
+		if err != nil {
+			return false, err
+		}
+
+		if group.haveAnyFiltersForLabel(quantileLabelName) {
+			return false, nil
+		}
+
+		// It drops the __name__ label if delayed name removal is not enabled, so it's only safe to apply filtering
+		// after the function if delayed name removal is enabled, or there is no filtering by __name__.
+		if delayedNameRemovalEnabled {
+			return true, nil
+		}
+
+		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
+
+	case functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_VECTOR,
+		functions.FUNCTION_TIME:
 		// These functions should never directly contain a selector, so this method should never be called for
 		// these functions, but return false to be safe.
 		return false, nil
@@ -980,7 +1033,7 @@ const (
 // SelectorsAreDuplicateOrSubset does not check if first is a subset of second.
 //
 // The matchers in first and second must be sorted in the order produced by core.CompareMatchers.
-func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
+func SelectorsAreDuplicateOrSubset(first, second []core.LabelMatcher) (SelectorRelationship, []core.LabelMatcher) {
 	// Take the fast path out of here if the first selector is longer than the second as they can't be subsets
 	if len(first) > len(second) {
 		return NotDuplicateOrSubset, nil
@@ -988,7 +1041,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 	// If they're equal lengths we check if they're exactly identical
 	if len(first) == len(second) {
-		same := slices.EqualFunc(first, second, func(a, b *core.LabelMatcher) bool {
+		same := slices.EqualFunc(first, second, func(a, b core.LabelMatcher) bool {
 			return a.Equal(b)
 		})
 
@@ -1000,10 +1053,10 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	}
 
 	nextSecondIdx := 0
-	var subsetMatchers []*core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
+	var subsetMatchers []core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
 	var checkAndAllocateSubsetMatchers = func() {
 		if subsetMatchers == nil {
-			subsetMatchers = make([]*core.LabelMatcher, 0, max(1, len(second)-len(first)))
+			subsetMatchers = make([]core.LabelMatcher, 0, max(1, len(second)-len(first)))
 		}
 	}
 
@@ -1058,7 +1111,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 // secondMatcherIsSubsetOfFirstMatcher returns true if all label values matching second also match first.
 // Handles the cases where outer is MatchRegexp or MatchNotRegexp and inner is MatchEqual.
-func secondMatcherIsSubsetOfFirstMatcher(first, second *core.LabelMatcher) bool {
+func secondMatcherIsSubsetOfFirstMatcher(first, second core.LabelMatcher) bool {
 	if second.Type != labels.MatchEqual {
 		return false
 	}
@@ -1085,5 +1138,5 @@ func secondMatcherIsSubsetOfFirstMatcher(first, second *core.LabelMatcher) bool 
 type selector interface {
 	planning.Node
 	EquivalentToIgnoringMatchersAndHints(other planning.Node) bool
-	GetMatchers() []*core.LabelMatcher
+	GetMatchers() []core.LabelMatcher
 }

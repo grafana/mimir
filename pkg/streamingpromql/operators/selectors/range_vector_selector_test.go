@@ -102,7 +102,7 @@ func TestStepRange(t *testing.T) {
 				MemoryConsumptionTracker: mc,
 			}
 
-			rv := NewRangeVectorSelector(selector, mc, types.NewQueryStats())
+			rv := NewRangeVectorSelector(selector, mc)
 
 			require.NoError(t, rv.Prepare(ctx, &types.PrepareParams{}))
 			metadata, err := rv.SeriesMetadata(ctx, nil)
@@ -285,7 +285,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 				MemoryConsumptionTracker: mc,
 			}
 
-			rv := NewRangeVectorSelector(selector, mc, types.NewQueryStats())
+			rv := NewRangeVectorSelector(selector, mc)
 
 			require.NoError(t, rv.Prepare(ctx, &types.PrepareParams{}))
 			_, err := rv.SeriesMetadata(ctx, nil)

@@ -12,7 +12,7 @@ import (
 
 type ASTOptimizationPass interface {
 	Name() string
-	Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error)
+	Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error)
 }
 
 type QueryPlanOptimizationPass interface {

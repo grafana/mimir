@@ -63,3 +63,4 @@ spec:
     type: prometheus
     authenticationRef:
         name: "keda-triggger-auth"
+

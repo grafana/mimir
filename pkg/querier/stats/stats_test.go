@@ -201,6 +201,77 @@ func TestStats_PhysicalSamplesRead(t *testing.T) {
 	})
 }
 
+func TestStats_AddRetries(t *testing.T) {
+	t.Run("add and load retries", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddRetries(2)
+		stats.AddRetries(3)
+
+		assert.Equal(t, uint32(5), stats.LoadRetries())
+	})
+
+	t.Run("add and load retries nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddRetries(2)
+
+		assert.Equal(t, uint32(0), stats.LoadRetries())
+	})
+}
+
+func TestStats_SelectorCardinalities(t *testing.T) {
+	t.Run("add and load selector cardinalities", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+
+		sc1 := SelectorCardinality{
+			Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "foo"}},
+			MinT:        100,
+			MaxT:        200,
+			SeriesCount: 10,
+		}
+		sc2 := SelectorCardinality{
+			Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "bar"}},
+			MinT:        300,
+			MaxT:        400,
+			SeriesCount: 20,
+		}
+
+		stats.AddSeenSelectorCardinality(sc1)
+		stats.AddSeenSelectorCardinality(sc2)
+
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats.LoadSeenSelectorCardinalities())
+
+		// Estimated cardinalities are tracked independently of seen cardinalities.
+		stats.AddEstimatedSelectorCardinality(sc2)
+		stats.AddEstimatedSelectorCardinality(sc1)
+
+		assert.Equal(t, []SelectorCardinality{sc2, sc1}, stats.LoadEstimatedSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats.LoadSeenSelectorCardinalities(), "adding estimated cardinalities must not affect seen cardinalities")
+	})
+
+	t.Run("load returns a copy that does not alias the underlying slice", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: 2})
+
+		seen := stats.LoadSeenSelectorCardinalities()
+		seen[0].SeriesCount = 999
+		estimated := stats.LoadEstimatedSelectorCardinalities()
+		estimated[0].SeriesCount = 999
+
+		assert.Equal(t, uint64(1), stats.LoadSeenSelectorCardinalities()[0].SeriesCount)
+		assert.Equal(t, uint64(2), stats.LoadEstimatedSelectorCardinalities()[0].SeriesCount)
+	})
+
+	t.Run("add and load selector cardinalities nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+		stats.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: 1})
+
+		assert.Nil(t, stats.LoadSeenSelectorCardinalities())
+		assert.Nil(t, stats.LoadEstimatedSelectorCardinalities())
+	})
+}
+
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &SafeStats{}
@@ -215,6 +286,11 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddRemoteExecutionRequests(12)
 		stats1.AddEquivalentSamplesRead(13)
 		stats1.AddPhysicalSamplesRead(14)
+		stats1.AddRetries(2)
+		sc1 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "foo"}}, MinT: 1, MaxT: 2, SeriesCount: 10}
+		stats1.AddSeenSelectorCardinality(sc1)
+		esc1 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "foo"}}, MinT: 1, MaxT: 2, SeriesCount: 100}
+		stats1.AddEstimatedSelectorCardinality(esc1)
 
 		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
@@ -228,6 +304,11 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddRemoteExecutionRequests(14)
 		stats2.AddEquivalentSamplesRead(15)
 		stats2.AddPhysicalSamplesRead(16)
+		stats2.AddRetries(3)
+		sc2 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "bar"}}, MinT: 3, MaxT: 4, SeriesCount: 20}
+		stats2.AddSeenSelectorCardinality(sc2)
+		esc2 := SelectorCardinality{Matchers: []LabelMatcher{{Name: "__name__", Value: "bar"}}, MinT: 3, MaxT: 4, SeriesCount: 200}
+		stats2.AddEstimatedSelectorCardinality(esc2)
 
 		stats1.Merge(stats2)
 
@@ -242,6 +323,9 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(26), stats1.LoadRemoteExecutionRequestCount())
 		assert.Equal(t, uint64(28), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(30), stats1.LoadPhysicalSamplesRead())
+		assert.Equal(t, uint32(5), stats1.LoadRetries())
+		assert.Equal(t, []SelectorCardinality{sc1, sc2}, stats1.LoadSeenSelectorCardinalities())
+		assert.Equal(t, []SelectorCardinality{esc1, esc2}, stats1.LoadEstimatedSelectorCardinalities())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -261,10 +345,14 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(0), stats1.LoadRemoteExecutionRequestCount())
 		assert.Equal(t, uint64(0), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(0), stats1.LoadPhysicalSamplesRead())
+		assert.Equal(t, uint32(0), stats1.LoadRetries())
+		assert.Nil(t, stats1.LoadSeenSelectorCardinalities())
+		assert.Nil(t, stats1.LoadEstimatedSelectorCardinalities())
 	})
 }
 
 func TestStats_Copy(t *testing.T) {
+	//exhaustruct:enforce
 	s1 := &SafeStats{
 		Stats: Stats{
 			WallTime:                    1,
@@ -276,11 +364,33 @@ func TestStats_Copy(t *testing.T) {
 			FetchedIndexBytes:           7,
 			EstimatedSeriesCount:        8,
 			QueueTime:                   9,
-			SamplesProcessed:            10,
-			RemoteExecutionRequestCount: 12,
-			EquivalentSamplesRead:       13,
-			PhysicalSamplesRead:         14,
+			EncodeTime:                  10,
+			SamplesProcessed:            11,
+			SpunOffSubqueries:           12,
+			RemoteExecutionRequestCount: 13,
+			SplitRangeVectors:           14,
+			EquivalentSamplesRead:       15,
+			PhysicalSamplesRead:         16,
+			Retries:                     17,
+			SeenSelectorCardinalities: []SelectorCardinality{
+				{
+					Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "foo"}},
+					MinT:        100,
+					MaxT:        200,
+					SeriesCount: 18,
+				},
+			},
+			EstimatedSelectorCardinalities: []SelectorCardinality{
+				{
+					Matchers:    []LabelMatcher{{Type: 0, Name: "__name__", Value: "foo"}},
+					MinT:        100,
+					MaxT:        200,
+					SeriesCount: 19,
+				},
+			},
 		},
+
+		selectorCardinalitiesMtx: sync.Mutex{},
 	}
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)
@@ -316,6 +426,9 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 		child.AddRemoteExecutionRequests(12)
 		child.AddEquivalentSamplesRead(13)
 		child.AddPhysicalSamplesRead(14)
+		child.AddRetries(2)
+		child.AddSeenSelectorCardinality(SelectorCardinality{SeriesCount: uint64(i)})
+		child.AddEstimatedSelectorCardinality(SelectorCardinality{SeriesCount: uint64(i)})
 
 		childStats[i] = child
 	}
@@ -356,6 +469,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	expectedRemoteExecutionRequestCount := uint32(numChildren * 12)
 	expectedEquivalentSamplesRead := uint64(numChildren * 13)
 	expectedPhysicalSamplesRead := uint64(numChildren * 14)
+	expectedRetries := uint32(numChildren * 2)
 
 	// Verify all values match expected totals
 	assert.Equal(t, expectedWallTime, parentStats.LoadWallTime(), "WallTime should be sum of all children")
@@ -369,4 +483,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	assert.Equal(t, expectedRemoteExecutionRequestCount, parentStats.LoadRemoteExecutionRequestCount(), "RemoteExecutionRequestCount should be sum of all children")
 	assert.Equal(t, expectedEquivalentSamplesRead, parentStats.LoadEquivalentSamplesRead(), "EquivalentSamplesRead should be sum of all children")
 	assert.Equal(t, expectedPhysicalSamplesRead, parentStats.LoadPhysicalSamplesRead(), "PhysicalSamplesRead should be sum of all children")
+	assert.Equal(t, expectedRetries, parentStats.LoadRetries(), "Retries should be sum of all children")
+	assert.Len(t, parentStats.LoadSeenSelectorCardinalities(), numChildren, "SeenSelectorCardinalities should contain one entry per child")
+	assert.Len(t, parentStats.LoadEstimatedSelectorCardinalities(), numChildren, "EstimatedSelectorCardinalities should contain one entry per child")
 }

@@ -30,6 +30,14 @@ func TestQueryMiddleware_Errors(t *testing.T) {
 			err:              newQueryBlockedError("because the query appears to be misconfigured"),
 			expectedErrorMsg: "the request has been blocked by the cluster administrator because the query appears to be misconfigured (err-mimir-query-blocked)",
 		},
+		"err-mimir-query-limited has a correct message": {
+			err:              newQueryLimitedError(time.Minute, "tenant-a", ""),
+			expectedErrorMsg: "the query has been limited by the cluster administrator, and is being run more frequently than the allowed frequency 1m0s against tenant tenant-a (err-mimir-query-limited)",
+		},
+		"err-mimir-query-limited has a correct message with reason": {
+			err:              newQueryLimitedError(time.Minute, "tenant-a", "the query is expensive and should not run more than once a minute"),
+			expectedErrorMsg: "the query has been limited by the cluster administrator, and is being run more frequently than the allowed frequency 1m0s against tenant tenant-a the query is expensive and should not run more than once a minute (err-mimir-query-limited)",
+		},
 	}
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {

@@ -400,3 +400,7 @@ data:
     # Try connecting to MinIO instance
     scheme=http
     connectToMinio $scheme
+    
+    
+    
+

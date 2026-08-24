@@ -66,8 +66,8 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 	}
 
 	if b.nextIndexToRead > b.lastSeriesIndexUsed {
-		// If we're not going to read any more series, finalize the inner operator.
-		if err := b.source.Finalize(ctx); err != nil {
+		// If we're not going to read any more series, call FinishedReading on the inner operator.
+		if err := b.source.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -105,10 +105,10 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 	return d, nil
 }
 
-// Finalize releases buffered series data and pool resources.
-// It is safe to call Finalize multiple times.
-// It is the responsibility of the caller to call Finalize on the inner operator.
-func (b *InstantVectorOperatorBuffer) Finalize() {
+// FinishedReading releases buffered series data and pool resources.
+// It is safe to call FinishedReading multiple times.
+// It is the responsibility of the caller to call FinishedReading on the inner operator.
+func (b *InstantVectorOperatorBuffer) FinishedReading() {
 	for _, d := range b.buffer {
 		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
 	}

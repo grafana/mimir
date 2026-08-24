@@ -5,23 +5,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
     if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
   local groupDeploymentByRolloutGroup(metricName, ignore) =
-    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "%s", "deployment", "%s"))' % [
       metricName,
       excludeWorkloads('deployment', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroup(metricName, ignore) =
-    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "%s", "statefulset", "%s"))' % [
       $._config.alert_aggregation_labels,
       metricName,
       excludeWorkloads('statefulset', ignore),
+      $._config.workload_group_replacement,
+      $._config.workload_group_regex,
     ],
 
   local request_metric = 'cortex_request_duration_seconds',
@@ -94,6 +100,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
                  + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
   },
 
+  local requestLatencyAlert(histogram_type) = {
+    local excluded_routes = std.join('|', [
+      'metrics',
+      '/frontend.Frontend/Process',
+      'ready',
+      '/schedulerpb.SchedulerForFrontend/FrontendLoop',
+      '/schedulerpb.SchedulerForQuerier/QuerierLoop',
+    ] + $._config.alert_excluded_routes),
+    local query = {
+      classic: '%(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}' % ($._config { excluded_routes: excluded_routes }),
+      native: 'histogram_quantile(0.99, %(group_prefix_jobs)s_route:cortex_request_duration_seconds:sum_rate{route!~"%(excluded_routes)s"})' % ($._config { excluded_routes: excluded_routes }),
+    },
+    alert: $.alertName('RequestLatency'),
+    expr: |||
+      %(query)s
+        >
+      %(cortex_p99_latency_threshold_seconds)s
+    ||| % ($._config { query: query[histogram_type] }),
+    'for': '15m',
+    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
+    annotations: {
+                   message: |||
+                     {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
+                   ||| % $._config,
+                 }
+                 // Alternative dashboards for investigation:
+                 //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
+                 //   - Mimir / Reads (mimir-reads.json) - for read path latency
+                 //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
+                 //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
+                 //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
+                 + $.dashboardURLAnnotation('mimir-writes.json'),
+  },
+
   local kvStoreFailure(histogram_type) = {
     alert: $.alertName('KVStoreFailure'),
     local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label, 'status_code', 'kv_name'],
@@ -140,38 +180,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         requestErrorsAlert('classic'),
         requestErrorsAlert('native'),
-        {
-          alert: $.alertName('RequestLatency'),
-          expr: |||
-            %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
-              >
-            %(cortex_p99_latency_threshold_seconds)s
-          ||| % $._config {
-            excluded_routes: std.join('|', [
-              'metrics',
-              '/frontend.Frontend/Process',
-              'ready',
-              '/schedulerpb.SchedulerForFrontend/FrontendLoop',
-              '/schedulerpb.SchedulerForQuerier/QuerierLoop',
-            ] + $._config.alert_excluded_routes),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-                         message: |||
-                           {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
-                         ||| % $._config,
-                       }
-                       // Alternative dashboards for investigation:
-                       //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
-                       //   - Mimir / Reads (mimir-reads.json) - for read path latency
-                       //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
-                       //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
-                       //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
-                       + $.dashboardURLAnnotation('mimir-writes.json'),
-        },
+        requestLatencyAlert('classic'),
+        requestLatencyAlert('native'),
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
@@ -218,6 +228,46 @@ local utils = import 'mixin-utils/utils.libsonnet';
               {{ $labels.%(per_job_label)s }} failed to reload runtime config.
             ||| % $._config,
           },
+        },
+        {
+          alert: $.alertName('BlockedQueryRuleExpired'),
+          expr: |||
+            # min() picks the earliest expiry among the tenant's blocked_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_blocked_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              At least one blocked_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              blocked_queries configuration and remove or renew any rule that's no longer needed.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
+        },
+        {
+          alert: $.alertName('LimitedQueryRuleExpired'),
+          expr: |||
+            # min() picks the earliest expiry among the tenant's limited_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (%(alert_aggregation_labels)s, user) (cortex_limited_query_rule_expires_at) < time()
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              At least one limited_queries rule for tenant {{ $labels.user }} in cluster %(alert_aggregation_variables)s
+              has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+              still being enforced: expiry is informational only and does not disable them. Check the tenant's
+              limited_queries configuration and remove or renew any rule that's no longer needed.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-queries.json'),
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
@@ -354,8 +404,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               or
               ( # Ingest storage timeseries
                 sum by(%(alert_aggregation_labels)s) (
-                  max by(ingester_id, %(alert_aggregation_labels)s) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, %(alert_aggregation_labels)s) (
+                    label_replace(%(memory_series)s,
                       "ingester_id", "$1",
                       "%(per_instance_label)s", ".*-([0-9]+)$"
                     )
@@ -363,7 +413,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 )
               )
             ) > 100000
-          ||| % $._config,
+          ||| % $._config {
+            memory_series: $.withReadCompartmentLabel('cortex_ingester_memory_series'),
+          },
           labels: {
             severity: 'warning',
           },
@@ -381,11 +433,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
             # but only if other ruler instances of the same cell do have rule groups assigned
             and on (%(alert_aggregation_labels)s)
             (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
-            # and there are more than two instances overall
+            # and there are more than two instances in any zone (or overall)
             and on (%(alert_aggregation_labels)s)
-            (count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2)
+            (max by (%(alert_aggregation_labels)s) (count by (%(per_job_labels)s) (cortex_ruler_managers_total) > 2))
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_job_labels: $._config.group_by_job,
             per_instance_label: $._config.per_instance_label,
             rulerInstanceName: $._config.instance_names.ruler,
           },
@@ -1198,5 +1251,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

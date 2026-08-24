@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
@@ -44,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
@@ -75,7 +77,7 @@ func TestNewBucketStores_PartitionerConfig(t *testing.T) {
 		bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 		require.NoError(t, err)
 
-		stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, nil, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+		stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, nil, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		require.IsType(t, &gapBasedPartitioner{}, stores.partitioners.chunks)
@@ -108,7 +110,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -192,7 +194,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
@@ -255,7 +257,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
@@ -356,7 +358,7 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, "", testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
@@ -420,7 +422,7 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 
 			var allowedTenants *util.AllowList
 			reg := prometheus.NewPedanticRegistry()
-			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
+			stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), stores))
 			t.Cleanup(func() {
@@ -477,7 +479,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	createBucketIndex(t, bucket, userID)
@@ -586,7 +588,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
 	t.Cleanup(func() {
@@ -662,8 +664,8 @@ func promLabels(m *storeTestSeries) labels.Labels {
 	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
-func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
-	tmpDir := t.TempDir()
+func prepareStorageConfig(tb testing.TB) mimir_tsdb.BlocksStorageConfig {
+	tmpDir := tb.TempDir()
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
@@ -753,7 +755,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, "", &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.
@@ -878,6 +880,19 @@ func (f *failFirstGetBucket) Get(ctx context.Context, name string) (io.ReadClose
 	return f.Bucket.Get(ctx, name)
 }
 
+func indexHeaderCachingBucket(
+	tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer,
+) (objstore.Bucket, error) {
+
+	// With a non-nil index-header cache, the default cache config will enable index-header caching.
+	indexHeaderCache := cache.NewMockCache()
+	blocksStorageCfg := prepareStorageConfig(tb)
+
+	return mimir_tsdb.NewStoreCachingBucket(
+		"", blocksStorageCfg, nil, indexHeaderCache, nil, bkt, logger, reg,
+	)
+}
+
 func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -893,136 +908,173 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
-	prepareCfg := defaultPrepareStoreConfig(tb)
-	prepareCfg.tempDir = dir
-	prepareCfg.series = series
-	prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
-
-	s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
-	mint, maxt := s.store.TimeRange()
-	assert.Equal(tb, s.minTime, mint)
-	assert.Equal(tb, s.maxTime, maxt)
-
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
-		MaxItemSizeBytes:  1e5,
-		MaxCacheSizeBytes: 2e5,
-	}, nil, s.logger)
-	assert.NoError(tb, err)
-
-	benchmarks := func(tb *testing.B) {
-		tb.Run("10-series-matched-with-10-label-values", func(tb *testing.B) {
-			ms, err := storepb.PromMatchersToMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
-				labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"),
-			)
-			require.NoError(tb, err)
-
-			req := &storepb.LabelValuesRequest{
-				Label:    "label_1",
-				Start:    timestamp.FromTime(minTime),
-				End:      timestamp.FromTime(maxTime),
-				Matchers: ms,
-			}
-			// warmup cache if any
-			resp, err := s.store.LabelValues(ctx, req)
-			require.NoError(tb, err)
-			assert.Equal(tb, 10, len(resp.Values))
-
-			tb.ResetTimer()
-			for i := 0; i < tb.N; i++ {
-				resp, err := s.store.LabelValues(ctx, req)
-				require.NoError(tb, err)
-				assert.Equal(tb, 10, len(resp.Values))
-			}
-		})
-
-		tb.Run("1000-series-matched-with-1000-label-values", func(tb *testing.B) {
-			ms, err := storepb.PromMatchersToMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"),
-				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
-			)
-			require.NoError(tb, err)
-
-			req := &storepb.LabelValuesRequest{
-				Label:    "label_3",
-				Start:    timestamp.FromTime(minTime),
-				End:      timestamp.FromTime(maxTime),
-				Matchers: ms,
-			}
-
-			// warmup cache if any
-			resp, err := s.store.LabelValues(ctx, req)
-			require.NoError(tb, err)
-			assert.Equal(tb, 1000, len(resp.Values))
-
-			tb.ResetTimer()
-			for i := 0; i < tb.N; i++ {
-				resp, err := s.store.LabelValues(ctx, req)
-				require.NoError(tb, err)
-				assert.Equal(tb, 1000, len(resp.Values))
-			}
-		})
-
-		tb.Run("1_000_000-series-matched-with-10-label-values", func(tb *testing.B) {
-			ms, err := storepb.PromMatchersToMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "label_0", "0"), // matches all series
-			)
-			require.NoError(tb, err)
-
-			req := &storepb.LabelValuesRequest{
-				Label:    "label_1",
-				Start:    timestamp.FromTime(minTime),
-				End:      timestamp.FromTime(maxTime),
-				Matchers: ms,
-			}
-			// warmup cache if any
-			resp, err := s.store.LabelValues(ctx, req)
-			require.NoError(tb, err)
-			assert.Equal(tb, 10, len(resp.Values))
-
-			tb.ResetTimer()
-			for i := 0; i < tb.N; i++ {
-				resp, err := s.store.LabelValues(ctx, req)
-				require.NoError(tb, err)
-				assert.Equal(tb, 10, len(resp.Values))
-			}
-		})
-
-		tb.Run("1_000_000-series-matched-with-1-label-values", func(tb *testing.B) {
-			ms, err := storepb.PromMatchersToMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "high_cardinality_label_1", "0"),   // matches a single series
-				labels.MustNewMatcher(labels.MatchNotEqual, "high_cardinality_label_0", ""), // matches 1M series
-			)
-			require.NoError(tb, err)
-
-			req := &storepb.LabelValuesRequest{
-				Label:    "high_cardinality_label_0", // there is only 1 value for this label
-				Start:    timestamp.FromTime(minTime),
-				End:      timestamp.FromTime(maxTime),
-				Matchers: ms,
-			}
-			// warmup cache if any
-			resp, err := s.store.LabelValues(ctx, req)
-			require.NoError(tb, err)
-			assert.Equal(tb, 1, len(resp.Values))
-
-			tb.ResetTimer()
-			for i := 0; i < tb.N; i++ {
-				resp, err := s.store.LabelValues(ctx, req)
-				require.NoError(tb, err)
-				assert.Equal(tb, 1, len(resp.Values))
-			}
-		})
+	bucketPostingsOffsets := indexheader.BucketReaderConfig{
+		Enabled:             true,
+		BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
 	}
 
-	tb.Run("no cache", func(tb *testing.B) {
-		s.cache.SwapIndexCacheWith(noopCache{})
-		benchmarks(tb)
+	storeConfigs := []struct {
+		name            string
+		bucketReaderCfg indexheader.BucketReaderConfig
+		wrapBucket      func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
+	}{
+		{
+			name:            "Reader=disk",
+			bucketReaderCfg: indexheader.BucketReaderConfig{},
+		},
+		{
+			name:            "Reader=bucket/BucketCache=off",
+			bucketReaderCfg: bucketPostingsOffsets,
+		},
+		{
+			name:            "Reader=bucket/BucketCache=index-header",
+			bucketReaderCfg: bucketPostingsOffsets,
+			wrapBucket:      indexHeaderCachingBucket,
+		},
+	}
+
+	for _, storeCfg := range storeConfigs {
+		tb.Run(storeCfg.name, func(tb *testing.B) {
+			dir := tb.TempDir()
+
+			bkt, err := filesystemstore.NewBucket(filepath.Join(dir, "bkt"))
+			assert.NoError(tb, err)
+			defer func() { assert.NoError(tb, bkt.Close()) }()
+
+			prepareCfg := defaultPrepareStoreConfig(tb)
+			prepareCfg.tempDir = dir
+			prepareCfg.series = series
+			prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+			prepareCfg.bucketStoreConfig.IndexHeader.BucketReader = storeCfg.bucketReaderCfg
+			prepareCfg.wrapBucket = storeCfg.wrapBucket
+
+			s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
+			mint, maxt := s.store.TimeRange()
+			assert.Equal(tb, s.minTime, mint)
+			assert.Equal(tb, s.maxTime, maxt)
+
+			indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+				MaxItemSizeBytes:  1e5,
+				MaxCacheSizeBytes: 2e5,
+			}, nil, s.logger)
+			assert.NoError(tb, err)
+
+			tb.Run("no cache", func(tb *testing.B) {
+				s.cache.SwapIndexCacheWith(noopCache{})
+				benchmarkBucketStoreLabelValues(ctx, tb, s.store)
+			})
+
+			tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
+				s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
+				benchmarkBucketStoreLabelValues(ctx, tb, s.store)
+			})
+		})
+	}
+}
+
+func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *BucketStore) {
+	tb.Run("10-series-matched-with-10-label-values", func(tb *testing.B) {
+		ms, err := storepb.PromMatchersToMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+			labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"),
+		)
+		require.NoError(tb, err)
+
+		req := &storepb.LabelValuesRequest{
+			Label:    "label_1",
+			Start:    timestamp.FromTime(minTime),
+			End:      timestamp.FromTime(maxTime),
+			Matchers: ms,
+		}
+		// warmup cache if any
+		resp, err := store.LabelValues(ctx, req)
+		require.NoError(tb, err)
+		assert.Equal(tb, 10, len(resp.Values))
+
+		tb.ResetTimer()
+		for i := 0; i < tb.N; i++ {
+			resp, err := store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 10, len(resp.Values))
+		}
 	})
 
-	tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
-		s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
-		benchmarks(tb)
+	tb.Run("1000-series-matched-with-1000-label-values", func(tb *testing.B) {
+		ms, err := storepb.PromMatchersToMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"),
+			labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+		)
+		require.NoError(tb, err)
+
+		req := &storepb.LabelValuesRequest{
+			Label:    "label_3",
+			Start:    timestamp.FromTime(minTime),
+			End:      timestamp.FromTime(maxTime),
+			Matchers: ms,
+		}
+
+		// warmup cache if any
+		resp, err := store.LabelValues(ctx, req)
+		require.NoError(tb, err)
+		assert.Equal(tb, 1000, len(resp.Values))
+
+		tb.ResetTimer()
+		for i := 0; i < tb.N; i++ {
+			resp, err := store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 1000, len(resp.Values))
+		}
+	})
+
+	tb.Run("1_000_000-series-matched-with-10-label-values", func(tb *testing.B) {
+		ms, err := storepb.PromMatchersToMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "label_0", "0"), // matches all series
+		)
+		require.NoError(tb, err)
+
+		req := &storepb.LabelValuesRequest{
+			Label:    "label_1",
+			Start:    timestamp.FromTime(minTime),
+			End:      timestamp.FromTime(maxTime),
+			Matchers: ms,
+		}
+		// warmup cache if any
+		resp, err := store.LabelValues(ctx, req)
+		require.NoError(tb, err)
+		assert.Equal(tb, 10, len(resp.Values))
+
+		tb.ResetTimer()
+		for i := 0; i < tb.N; i++ {
+			resp, err := store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 10, len(resp.Values))
+		}
+	})
+
+	tb.Run("1_000_000-series-matched-with-1-label-values", func(tb *testing.B) {
+		ms, err := storepb.PromMatchersToMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "high_cardinality_label_1", "0"),   // matches a single series
+			labels.MustNewMatcher(labels.MatchNotEqual, "high_cardinality_label_0", ""), // matches 1M series
+		)
+		require.NoError(tb, err)
+
+		req := &storepb.LabelValuesRequest{
+			Label:    "high_cardinality_label_0", // there is only 1 value for this label
+			Start:    timestamp.FromTime(minTime),
+			End:      timestamp.FromTime(maxTime),
+			Matchers: ms,
+		}
+		// warmup cache if any
+		resp, err := store.LabelValues(ctx, req)
+		require.NoError(tb, err)
+		assert.Equal(tb, 1, len(resp.Values))
+
+		tb.ResetTimer()
+		for i := 0; i < tb.N; i++ {
+			resp, err := store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 1, len(resp.Values))
+		}
 	})
 }
 

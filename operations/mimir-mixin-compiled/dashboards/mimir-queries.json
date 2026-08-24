@@ -589,13 +589,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum (rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))\n/\n(\n  (sum (rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.\n  +\n  (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.\n)\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "splitting rate",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum (histogram_count(rate(cortex_frontend_query_range_duration_seconds{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))\n/\n(\n  (sum (histogram_count(rate(cortex_frontend_query_range_duration_seconds{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))) or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.\n  +\n  (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.\n)\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "splitting rate",
                         "legendLink": null
@@ -907,6 +907,10 @@
                            "fillOpacity": 1,
                            "lineWidth": 1,
                            "pointSize": 5,
+                           "scaleDistribution": {
+                              "log": 2,
+                              "type": "log"
+                           },
                            "showPoints": "never",
                            "spanNulls": false,
                            "stacking": {
@@ -936,6 +940,12 @@
                   },
                   "span": 6,
                   "targets": [
+                     {
+                        "expr": "histogram_quantile(1.00, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "100th Percentile",
+                        "legendLink": null
+                     },
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
                         "format": "time_series",
@@ -1451,6 +1461,461 @@
             "titleSize": "h6"
          },
          {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Blocked and limited queries by tenant\nRate of queries rejected per tenant because they matched a blocked_queries or limited_queries rule.\n\n",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "rate"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 3
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "reqps"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "reason"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "reason"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 22,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 3,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total{$read_path_matcher, reason=~\"blocked|limited\"}[$__rate_interval]))",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "",
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Blocked and limited queries by tenant",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Expired blocked-query rules by tenant\nNumber of blocked_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "expired rules"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 23,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 2,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "count by (user) (max by (user, id) (cortex_blocked_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "",
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Expired blocked-query rules by tenant",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Expired limited-query rules by tenant\nNumber of limited_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "expired rules"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 24,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 2,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "count by (user) (max by (user, id) (cortex_limited_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "",
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Expired limited-query rules by tenant",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Query blocking and rate limiting",
+            "titleSize": "h6"
+         },
+         {
             "collapse": false,
             "height": "250px",
             "panels": [
@@ -1479,7 +1944,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 25,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1558,7 +2023,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 26,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1637,7 +2102,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 27,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1760,7 +2225,7 @@
                         }
                      ]
                   },
-                  "id": 25,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1847,7 +2312,7 @@
                         }
                      ]
                   },
-                  "id": 26,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1861,25 +2326,25 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
@@ -1914,7 +2379,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2024,7 +2489,7 @@
                         }
                      ]
                   },
-                  "id": 28,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2079,7 +2544,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2146,7 +2611,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2224,7 +2689,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 31,
+                  "id": 34,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2321,7 +2786,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 35,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2436,7 +2901,7 @@
                         }
                      ]
                   },
-                  "id": 33,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2498,7 +2963,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2530,7 +2995,7 @@
                {
                   "datasource": "$datasource",
                   "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                  "id": 35,
+                  "id": 38,
                   "options": {
                      "calculate": true,
                      "calculation": {
@@ -2596,7 +3061,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2656,7 +3121,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2747,7 +3212,7 @@
                         }
                      ]
                   },
-                  "id": 38,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2801,7 +3266,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 42,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2911,7 +3376,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 43,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2965,7 +3430,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 44,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3013,7 +3478,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 45,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3073,7 +3538,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 43,
+                  "id": 46,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3127,7 +3592,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 44,
+                  "id": 47,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3183,7 +3648,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 45,
+                  "id": 48,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3250,7 +3715,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 46,
+                  "id": 49,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3329,7 +3794,7 @@
                         }
                      ]
                   },
-                  "id": 47,
+                  "id": 50,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3414,7 +3879,7 @@
                         }
                      ]
                   },
-                  "id": 48,
+                  "id": 51,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3480,7 +3945,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 49,
+                  "id": 52,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3528,7 +3993,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 50,
+                  "id": 53,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3626,7 +4091,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 51,
+                  "id": 54,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3736,7 +4201,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 52,
+                  "id": 55,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3785,7 +4250,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 53,
+                  "id": 56,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3834,7 +4299,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 54,
+                  "id": 57,
                   "links": [ ],
                   "options": {
                      "legend": {

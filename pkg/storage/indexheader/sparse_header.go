@@ -260,6 +260,7 @@ func unzipSparseHeader(gZippedSparseData []byte, l log.Logger) ([]byte, error) {
 // This can be used to generate sparse headers in components with a full block index on disk:
 // classic ingesters, block-builders, and compactors.
 func BuildAndWriteSparseHeaderFromTSDBIndex(
+	ctx context.Context,
 	blockID ulid.ULID,
 	dir string,
 	sparseSampleFactor int,
@@ -280,10 +281,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	}
 
 	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := buildInMemorySparseHeaderFromIndexHeader(
-		indexTOC,
-		filePoolDecbufFactory,
-		sparseSampleFactor,
-		false, l,
+		ctx, indexTOC, filePoolDecbufFactory, sparseSampleFactor, false, l,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
@@ -302,6 +300,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 }
 
 func buildInMemorySparseHeaderFromIndexHeader(
+	ctx context.Context,
 	toc *TOCCompat,
 	decbufFactory streamencoding.DecbufFactory,
 	sparseSampleFactor int,
@@ -322,13 +321,13 @@ func buildInMemorySparseHeaderFromIndexHeader(
 	level.Info(l).Log("msg", "creating sparse index-header from full index-header")
 
 	allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromSymbolsTable(
-		decbufFactory, int(toc.Symbols), doChecksum,
+		ctx, decbufFactory, int(toc.Symbols), doChecksum,
 	)
 	if err != nil {
 		return -1, nil, nil, err
 	}
 
-	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(decbufFactory, int(toc.PostingsOffsetTable), toc.PostingsListEnd, sparseSampleFactor, doChecksum)
+	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(ctx, decbufFactory, int(toc.PostingsOffsetTable), toc.PostingsListEnd, sparseSampleFactor, doChecksum)
 	if err != nil {
 		return -1, nil, nil, err
 	}

@@ -27,12 +27,13 @@ import (
 // batchCachingMetaFetcher fetches block metadata from a cache with GetMulti
 // before possibly falling back to object storage.
 type batchCachingMetaFetcher struct {
-	userBkt     objstore.BucketReader
-	cache       cache.Cache
-	logger      log.Logger
-	tenant      string
-	concurrency int
-	contentTTL  time.Duration
+	userBkt       objstore.BucketReader
+	cache         cache.Cache
+	logger        log.Logger
+	tenant        string
+	concurrency   int
+	contentTTL    time.Duration
+	cacheBucketID string
 }
 
 func newBatchCachingMetaFetcher(
@@ -42,20 +43,21 @@ func newBatchCachingMetaFetcher(
 	tenant string,
 	concurrency int,
 	contentTTL time.Duration,
+	cacheBucketID string,
 ) *batchCachingMetaFetcher {
 	return &batchCachingMetaFetcher{
-		userBkt:     userBkt,
-		cache:       cache,
-		logger:      logger,
-		tenant:      tenant,
-		concurrency: concurrency,
-		contentTTL:  contentTTL,
+		userBkt:       userBkt,
+		cache:         cache,
+		logger:        logger,
+		tenant:        tenant,
+		concurrency:   concurrency,
+		contentTTL:    contentTTL,
+		cacheBucketID: cacheBucketID,
 	}
 }
 
 func (f *batchCachingMetaFetcher) metaCacheKey(blockID ulid.ULID) string {
-	// hardcoded "" bucketID to match caching bucket
-	return bucketcache.ContentKey("", path.Join(f.tenant, blockID.String(), block.MetaFilename))
+	return bucketcache.ContentKey(f.cacheBucketID, path.Join(f.tenant, blockID.String(), block.MetaFilename))
 }
 
 // fetchCompactableMetasFromListing discovers blockIDs through an object storage listing,

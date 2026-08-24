@@ -82,4 +82,5 @@ spec:
             claimName: test-oss-multizone-values-minio
         - name: minio-user
           secret:
-            secretName: test-oss-multizone-values-minio
+            secretName: test-oss-multizone-values-minio        
+

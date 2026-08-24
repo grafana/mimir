@@ -46,7 +46,7 @@ message SampleStream {
     (gogoproto.jsontag) = "metric",
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
-  repeated cortexpb.Sample samples = 2 [
+  repeated cortexpb.FloatSample samples = 2 [
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "values,omitempty"
   ];
@@ -84,14 +84,6 @@ message Extent {
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
   int64 query_timestamp_ms = 6;
   reserved 7; // Formerly: samples_processed_per_step.
-}
-
-message Options {
-  bool CacheDisabled = 1;
-  bool ShardingDisabled = 2;
-  int32 TotalShards = 3;
-
-  reserved 4, 5; // Fields previously used by instant query splitting.
 }
 
 message QueryStatistics {

@@ -29,3 +29,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: classic-architecture-values
     app.kubernetes.io/component: compactor
+

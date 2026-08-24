@@ -107,6 +107,10 @@ type ExemplarStorage interface {
 // Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
+	//
+	// mint and maxt are inclusive time bounds in milliseconds. The returned
+	// Querier is scoped to this range and its methods only consider series
+	// data within [mint, maxt].
 	Querier(mint, maxt int64) (Querier, error)
 }
 
@@ -354,6 +358,10 @@ type SearchResult struct {
 	// Score represents relevance, with 1.0 being a perfect match.
 	// Score range is [0.0, 1.0].
 	Score float64
+
+	// Optional metric metadata. This has been added specifically
+	// for use in Mimir.
+	Metadata *metadata.Metadata
 }
 
 // Searcher provides search capabilities with relevance scoring.

@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -29,6 +30,19 @@ type Config struct {
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
+	Compartments  compartments.Config      `yaml:"-"`
+}
+
+// kafkaClientConfigs returns the Kafka client config for each write compartment the
+// block-builder reads from, indexed by write compartment ID. When compartments are
+// disabled it returns the single base config. When enabled it returns one config per
+// write compartment, each targeting that compartment's Kafka cluster with the per-client
+// resource budgets divided across compartments.
+func (cfg *Config) kafkaClientConfigs() []ingest.KafkaConfig {
+	if !cfg.Compartments.Enabled {
+		return []ingest.KafkaConfig{cfg.Kafka}
+	}
+	return ingest.WriteCompartmentConfigs(cfg.Kafka, cfg.Compartments.Write.NumCompartments, cfg.Kafka.Topic)
 }
 
 type SchedulerConfig struct {

@@ -153,6 +153,14 @@ type userTSDB struct {
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
+	pendingNonOwnedRefsMtx sync.Mutex
+	// pendingNonOwnedRefs maps each ref that the last computeOwnedSeries call(s) found to be
+	// non-owned to the timestamp at which it was first observed as non-owned. The compaction
+	// loop consumes this map via takePendingNonOwnedRefs, returning only refs whose per-ref
+	// timestamp has aged past the cutoff so that fresh refs queued during ring churn don't
+	// keep older refs pinned in the head.
+	pendingNonOwnedRefs map[storage.SeriesRef]time.Time
+
 	postingsCache *tsdb.PostingsForMatchersCache
 
 	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
@@ -685,26 +693,117 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-func (u *userTSDB) computeOwnedSeries() int {
-	// This can happen if ingester doesn't own this tenant anymore.
-	if len(u.ownedTokenRanges) == 0 {
-		u.activeSeries.Clear()
-		return 0
+// addPendingNonOwnedRefs reconciles the per-tenant pending-eviction set with the
+// caller's authoritative snapshot of currently non-owned refs.
+//
+// Refs in the snapshot but missing from the set are added with the current timestamp.
+// Refs in the set but absent from the snapshot are removed, since they have either
+// become owned again or their series has been garbage-collected from the head and
+// therefore must not be evicted.
+//
+// The compaction loop consumes pending refs via takePendingNonOwnedRefs.
+func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
+	u.pendingNonOwnedRefsMtx.Lock()
+	defer u.pendingNonOwnedRefsMtx.Unlock()
+
+	// Free pendingNonOwnedRefs if the snapshot contains no refs.
+	if len(refs) == 0 {
+		u.pendingNonOwnedRefs = nil
+		return
 	}
 
-	count := 0
+	// Drop refs that are no longer non-owned.
+	for r := range u.pendingNonOwnedRefs {
+		if _, stillNonOwned := refs[r]; !stillNonOwned {
+			delete(u.pendingNonOwnedRefs, r)
+		}
+	}
+
+	if u.pendingNonOwnedRefs == nil {
+		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]time.Time, len(refs))
+	}
+	now := time.Now()
+	for r := range refs {
+		if _, ok := u.pendingNonOwnedRefs[r]; !ok {
+			u.pendingNonOwnedRefs[r] = now
+		}
+	}
+}
+
+// takePendingNonOwnedRefs atomically removes and returns the subset of
+// pendingNonOwnedRefs whose per-ref add timestamp is at or before notAfter
+// (the grace-period cutoff). Refs added after notAfter are retained.
+func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesRef {
+	u.pendingNonOwnedRefsMtx.Lock()
+	defer u.pendingNonOwnedRefsMtx.Unlock()
+
+	var refs []storage.SeriesRef
+	for r, ts := range u.pendingNonOwnedRefs {
+		if ts.After(notAfter) {
+			continue
+		}
+		if refs == nil {
+			refs = make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
+		}
+		refs = append(refs, r)
+		delete(u.pendingNonOwnedRefs, r)
+	}
+	// Free pendingNonOwnedRefs if we returned them all.
+	if len(u.pendingNonOwnedRefs) == 0 {
+		u.pendingNonOwnedRefs = nil
+	}
+	return refs
+}
+
+func (u *userTSDB) computeOwnedSeries() int {
+	// If no token ranges are assigned, all head series are non-owned.
+	// activeSeries.Clear handles the active-series state; the loop below collects
+	// refs for targeted eviction.
+	allNonOwned := len(u.ownedTokenRanges) == 0
+	if allNonOwned {
+		u.activeSeries.Clear()
+	}
+
 	idx := u.Head().MustIndex()
 	defer idx.Close()
 
+	count := 0
+	// Build the non-owned snapshot as a map directly so the reconciliation in
+	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
+	var nonOwnedRefs map[storage.SeriesRef]struct{}
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
+	if trackNonOwned {
+		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
+	}
+
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		// Fast path: when no token range is owned every series in this batch is non-owned.
+		// activeSeries.Clear() above already handled the active-series side.
+		if allNonOwned {
+			if trackNonOwned {
+				for _, ref := range refs {
+					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
+				}
+			}
+			return
+		}
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
-			} else {
-				u.activeSeries.Delete(refs[i], idx)
+				continue
+			}
+			u.activeSeries.Delete(refs[i], idx)
+			if trackNonOwned {
+				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
 			}
 		}
 	})
+
+	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
+	if trackNonOwned {
+		u.addPendingNonOwnedRefs(nonOwnedRefs)
+	}
+
 	return count
 }
 

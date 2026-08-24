@@ -234,11 +234,22 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
-func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+// inspectOTLPResourceMetrics observes ResourceMetrics/ScopeMetrics/Metrics
+// array lengths and reports whether any ResourceMetrics carries "job" or
+// "instance" as a resource attribute key.
+func inspectOTLPResourceMetrics(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) (hasJobOrInstanceResourceAttr bool) {
 	resourceMetricsSlice := req.Metrics().ResourceMetrics()
 	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
+		if !hasJobOrInstanceResourceAttr {
+			attrs := resourceMetrics.Resource().Attributes()
+			if _, ok := attrs.Get("job"); ok {
+				hasJobOrInstanceResourceAttr = true
+			} else if _, ok := attrs.Get("instance"); ok {
+				hasJobOrInstanceResourceAttr = true
+			}
+		}
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
@@ -247,6 +258,7 @@ func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequ
 			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
 		}
 	}
+	return hasJobOrInstanceResourceAttr
 }
 
 func newOTLPParser(
@@ -420,7 +432,9 @@ func newOTLPParser(
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
 		pushMetrics.IncOTLPContentType(contentType)
-		observeOTLPFieldsCount(pushMetrics, otlpReq)
+		if inspectOTLPResourceMetrics(pushMetrics, otlpReq) {
+			pushMetrics.IncOTLPRequestWithJobOrInstanceResourceAttribute(tenantID)
+		}
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
@@ -434,8 +448,10 @@ func newOTLPParser(
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
+		convSpan, convCtx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.convert")
+		defer convSpan.Finish()
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
-			ctx,
+			convCtx,
 			otlpConverter,
 			otlpReq.Metrics(),
 			convOpts,
@@ -445,6 +461,7 @@ func newOTLPParser(
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
+			convSpan.SetTag("metrics_dropped", metricsDropped)
 			return 0, err
 		}
 
@@ -458,6 +475,12 @@ func newOTLPParser(
 			histogramCount += len(m.Histograms)
 			exemplarCount += len(m.Exemplars)
 		}
+
+		convSpan.SetTag("metric_count", metricCount)
+		convSpan.SetTag("sample_count", sampleCount)
+		convSpan.SetTag("histogram_count", histogramCount)
+		convSpan.SetTag("exemplar_count", exemplarCount)
+		convSpan.SetTag("metrics_dropped", metricsDropped)
 
 		level.Debug(spanLogger).Log(
 			"msg", "OTLP to Prometheus conversion complete",
@@ -756,9 +779,11 @@ func (c *otlpMimirConverter) Err() error {
 	return nil
 }
 
-// TimeseriesToOTLPRequest is used in tests.
-// If you provide exemplars they will be placed on the first float or
-// histogram sample.
+// TimeseriesToOTLPRequest is used in tests to convert Prometheus types to OTEL types.
+//
+// If you provide exemplars they will be placed on the first float histogram sample.
+//
+// NOTE: This should not be called from production code besides continuoustest.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -821,6 +846,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {
+				if _, isFloatCount := histogram.Count.(*prompb.Histogram_CountFloat); isFloatCount {
+					panic(fmt.Sprintf("prometheus histograms with float counts cannot be converted to OTEL exponential histograms, this is a bug. histogram: %+v", histogram))
+				}
+
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)

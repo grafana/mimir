@@ -332,6 +332,26 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 									- MatrixSelector: {__name__="some_other_metric"}[1m0s]
 			`,
 		},
+		"vector selector not eligible for skipping decoding due to trim_lower operator": {
+			expr: `histogram_count(some_metric >/ 5)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- BinaryExpression: LHS >/ RHS
+							- LHS: VectorSelector: {__name__="some_metric"}
+							- RHS: NumberLiteral: 5
+			`,
+		},
+		"vector selector not eligible for skipping decoding due to trim_upper operator": {
+			expr: `histogram_sum(some_metric </ 10)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS </ RHS
+							- LHS: VectorSelector: {__name__="some_metric"}
+							- RHS: NumberLiteral: 10
+			`,
+		},
 	}
 
 	ctx := context.Background()

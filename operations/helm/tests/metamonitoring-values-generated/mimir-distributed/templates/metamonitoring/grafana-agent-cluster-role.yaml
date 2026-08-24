@@ -37,3 +37,4 @@ rules:
       - /metrics/cadvisor
     verbs:
       - get
+

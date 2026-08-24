@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -135,6 +136,9 @@ type Options struct {
 	// TODO: Move this option to OM1 parser and use only on OM1 flow.
 	ParseST bool
 
+	// SynthesizeST enables the synthesis of start timestamp for cumulative metrics.
+	SynthesizeST bool
+
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
 
@@ -211,7 +215,7 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 		select {
 		case ts, ok := <-tsets:
 			if !ok {
-				break
+				return nil
 			}
 			m.updateTsets(ts)
 
@@ -320,9 +324,19 @@ func (m *Manager) Stop() {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
+	// Stop pools in parallel as each stop() blocks until all its scrape
+	// loops have exited, which can take a long time if there'a a lot of
+	// pools with high number of targets.
+	// Limit the number of pools stopping at once to avoid unbounded goroutines.
+	g := new(errgroup.Group)
+	g.SetLimit(runtime.GOMAXPROCS(0))
 	for _, sp := range m.scrapePools {
-		sp.stop()
+		g.Go(func() error {
+			sp.stop()
+			return nil
+		})
 	}
+	_ = g.Wait()
 	close(m.graceShut)
 }
 

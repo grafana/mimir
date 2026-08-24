@@ -84,6 +84,7 @@
     container.withArgsMixin($.util.mapToFlags($.ingester_args)) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
 

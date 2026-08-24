@@ -501,6 +501,33 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 1,
 		},
 		{
+			// Native histogram trim operators behave like comparison operators for sharding:
+			// they filter/transform each series independently, so they can be pushed into each shard.
+			in:                       `foo </ 2.5`,
+			out:                      concatShards(t, shardCount, `foo{__query_shard__="x_of_y"} </ 2.5`),
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `foo >/ 2.5`,
+			out:                      concatShards(t, shardCount, `foo{__query_shard__="x_of_y"} >/ 2.5`),
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `histogram_count(foo </ 2.5)`,
+			out:                      `histogram_count(` + concatShards(t, shardCount, `foo{__query_shard__="x_of_y"} </ 2.5`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `sum(foo </ 2.5)`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"} </ 2.5)`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `sum(foo) </ 2.5`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `) </ 2.5`,
+			expectedShardableQueries: 1,
+		},
+		{
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
 			in:                       `foo > sum(bar)`,

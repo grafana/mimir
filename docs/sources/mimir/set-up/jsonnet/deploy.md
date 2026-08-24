@@ -24,7 +24,6 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
    ```
 
 1. Set up a Jsonnet project, based on the example that follows:
-
    - Initialize Tanka
    - Install Grafana Mimir and Kubernetes Jsonnet libraries
    - Set up an environment
@@ -74,7 +73,6 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
    To learn about how to use Tanka and to configure the `spec.json` file, see [Using Jsonnet: Creating a new project](https://tanka.dev/tutorial/jsonnet).
 
 1. Deploy the manifests to a Kubernetes cluster, in one of two ways:
-
    - **Use the `tk apply` command**.
 
      Tanka supports commands to show the `diff` and `apply` changes to a Kubernetes cluster:

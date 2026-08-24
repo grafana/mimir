@@ -30,3 +30,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-extra-args-values
     app.kubernetes.io/component: store-gateway
+

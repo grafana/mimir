@@ -759,3 +759,23 @@ eval range from 0 to 42m step 6m quantile(scalar(param), series)
   expect no_info
   expect warn
   {} 1 0.6000000000000001 9.799999999999999 20 _ 1 _ _
+
+clear
+
+# Regression test for a double-free of HPoint slices in sum() and avg(): when a float sample
+# coexists at the same output step with histograms that cannot be added together (exponential +
+# custom bucket schemas), histogramPointCount was decremented twice, so an undersized slice was
+# requested from the pool and grown with append, returning untracked memory to the pool.
+
+load 1m
+  some_metric{pod="p1"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10
+  some_metric{pod="p2"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 0]}}
+  some_metric{pod="p3"} 0
+
+eval range from 0 to 10m step 1m sum(some_metric)
+  expect warn
+  {} _ _ _ _ _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval range from 0 to 10m step 1m avg(some_metric)
+  expect warn
+  {} _ _ _ _ _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}

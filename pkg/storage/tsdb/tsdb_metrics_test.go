@@ -170,6 +170,11 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunks_total counter
 			cortex_ingester_tsdb_mmap_chunks_total 2973930
 
+			# HELP cortex_ingester_tsdb_head_chunks_max_mmapped Experimental. Maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass.
+			# TYPE cortex_ingester_tsdb_head_chunks_max_mmapped gauge
+			# max of (31*12345, 31*85787, 31*999) = 31*85787 = 2659397
+			cortex_ingester_tsdb_head_chunks_max_mmapped 2659397
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 15
@@ -393,6 +398,11 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_mmap_chunks_total Total number of chunks that were memory-mapped.
 			# TYPE cortex_ingester_tsdb_mmap_chunks_total counter
 			cortex_ingester_tsdb_mmap_chunks_total 2973930
+
+			# HELP cortex_ingester_tsdb_head_chunks_max_mmapped Experimental. Maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass.
+			# TYPE cortex_ingester_tsdb_head_chunks_max_mmapped gauge
+			# user3 removed; max of (31*12345, 31*85787) = 31*85787 = 2659397
+			cortex_ingester_tsdb_head_chunks_max_mmapped 2659397
 
 			# HELP cortex_ingester_tsdb_wal_truncate_duration_seconds Duration of TSDB WAL truncation.
 			# TYPE cortex_ingester_tsdb_wal_truncate_duration_seconds summary
@@ -743,6 +753,12 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of chunks that were memory-mapped.",
 	})
 	chunksMmappedTotal.Add(30 * base)
+
+	headChunksMaxMmapped := promauto.With(r).NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_chunks_max_mmapped",
+		Help: "Maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass.",
+	})
+	headChunksMaxMmapped.Set(31 * base)
 
 	tsdbWalReplayUnknownRefsTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_replay_unknown_refs_total",

@@ -45,7 +45,7 @@ local filename = 'mimir-compactor-resources.json';
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('Compactor-scheduler resources') + { collapse: true })
+      $.row('Compactor-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('compactor_scheduler'),
       )
@@ -61,7 +61,7 @@ local filename = 'mimir-compactor-resources.json';
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('Network (compactor-scheduler)') + { collapse: true })
+      $.row('Network (compactor-scheduler)')
       .addPanel(
         $.containerNetworkReceiveBytesPanelByComponent('compactor_scheduler'),
       )
@@ -71,7 +71,7 @@ local filename = 'mimir-compactor-resources.json';
     )
     .addRowIf(
       compactor_scheduler_enabled,
-      ($.row('Disk (compactor-scheduler)') + { collapse: true })
+      $.row('Disk (compactor-scheduler)')
       .addPanel(
         $.containerDiskWritesPanelByComponent('compactor_scheduler'),
       )

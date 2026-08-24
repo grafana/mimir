@@ -15,7 +15,7 @@ package v1
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -151,7 +151,12 @@ type RulesRetriever interface {
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-// DefaultStatsRenderer is the default stats renderer for the API.
+// DefaultStatsRenderer is the default stats renderer for the API: any
+// non-empty `stats` value includes statistics in the response. The API
+// handlers attach a deprecation warning to the response for values outside
+// the supported enum ("true", "all"); those values will be rejected in the
+// next major release. Custom StatsRenderer implementations are exempt and
+// may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -240,6 +245,9 @@ type API struct {
 	db                  TSDBAdminStats
 	dbDir               string
 	enableAdmin         bool
+	enableSearch        bool
+	maxSearchLimit      int
+	metaCache           *searchMetadataCache
 	logger              *slog.Logger
 	CORSOrigin          *regexp.Regexp
 	buildInfo           *PrometheusVersion
@@ -247,6 +255,7 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
+	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
@@ -280,6 +289,8 @@ func NewAPI(
 	db TSDBAdminStats,
 	dbDir string,
 	enableAdmin bool,
+	enableSearch bool,
+	maxSearchLimit int,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -323,6 +334,9 @@ func NewAPI(
 		db:                  db,
 		dbDir:               dbDir,
 		enableAdmin:         enableAdmin,
+		enableSearch:        enableSearch,
+		maxSearchLimit:      maxSearchLimit,
+		metaCache:           &searchMetadataCache{},
 		rulesRetriever:      rr,
 		logger:              logger,
 		CORSOrigin:          corsOrigin,
@@ -349,6 +363,7 @@ func NewAPI(
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
+		a.customStatsRenderer = true
 	}
 
 	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
@@ -468,6 +483,14 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/write", api.ready(api.remoteWrite))
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
+	// Search endpoints.
+	r.Get("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Post("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Get("/search/label_names", api.ready(api.searchLabelNames))
+	r.Post("/search/label_names", api.ready(api.searchLabelNames))
+	r.Get("/search/label_values", api.ready(api.searchLabelValues))
+	r.Post("/search/label_values", api.ready(api.searchLabelValues))
+
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
 
@@ -555,6 +578,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
+	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
@@ -598,7 +624,37 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration), nil
+}
+
+// Accepted values of the `stats` query parameter on /query and /query_range
+// when the default stats renderer is in use: statsTrue includes basic query
+// statistics in the response, statsAll additionally includes per-step
+// statistics (with --enable-feature=promql-per-step-stats). Empty disables
+// statistics.
+const (
+	statsTrue = "true"
+	statsAll  = "all"
+)
+
+// statsParamWarning returns a deprecation warning for unsupported values of
+// the `stats` query parameter, to be attached to the response's warnings.
+// Historically any non-empty value silently enabled basic statistics; that
+// behaviour is kept for compatibility within the current major release, but
+// values outside the supported enum ("true", "all") are deprecated and will
+// be rejected in the next major release. Embedders that install a custom
+// StatsRenderer define their own vocabulary for the parameter, so no warning
+// is attached then.
+func (api *API) statsParamWarning(s string) error {
+	if api.customStatsRenderer {
+		return nil
+	}
+	switch s {
+	case "", statsTrue, statsAll:
+		return nil
+	default:
+		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -678,6 +734,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -1778,7 +1837,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 }
 
 func getRuleGroupNextToken(file, group string) string {
-	h := sha1.New()
+	h := sha256.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
 }

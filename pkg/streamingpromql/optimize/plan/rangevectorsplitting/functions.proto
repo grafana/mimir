@@ -22,6 +22,7 @@ message SumOverTimeIntermediate {
   bool hasFloat = 2;
   double sumC = 3;
   cortexpb.Histogram sumH = 4;
+  bool forceEmptyResult = 5;
 }
 
 message SumOverTimeIntermediateList {
@@ -52,8 +53,8 @@ message RateIntermediate {
   bool is_histogram = 2;
 
   // For floats
-  cortexpb.Sample first_sample = 3;
-  cortexpb.Sample last_sample = 4;
+  cortexpb.FloatSample first_sample = 3;
+  cortexpb.FloatSample last_sample = 4;
   double delta = 5;
 
   // For histograms
@@ -100,4 +101,12 @@ message AvgOverTimeIntermediate {
 
 message AvgOverTimeIntermediateList {
   repeated AvgOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message PresentOverTimeIntermediate {
+  bool present = 1;
+}
+
+message PresentOverTimeIntermediateList {
+  repeated PresentOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
 }

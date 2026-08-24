@@ -4,16 +4,21 @@ package querier
 
 import (
 	"cmp"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/munnerz/goautoneg"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -21,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -85,7 +91,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 	})
 }
 
-func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
+func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
@@ -119,6 +125,13 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 			return
 		}
 
+		if activeSeriesRequestAcceptsFramed(r) {
+			if err := writeActiveSeriesFramedResponse(w, res); err != nil {
+				level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "failed to write framed active series response", "err", err)
+			}
+			return
+		}
+
 		var json = jsoniter.ConfigCompatibleWithStandardLibrary
 		bytes, err := json.Marshal(api.ActiveSeriesResponse{Data: res})
 		if err != nil {
@@ -132,6 +145,52 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 		// Nothing we can do about this error, so ignore it.
 		_, _ = w.Write(bytes)
 	})
+}
+
+func activeSeriesRequestAcceptsFramed(r *http.Request) bool {
+	// Require an explicit match rather than honouring wildcards, so a client sending */* keeps
+	// getting JSON: the framed format is an internal opt-in, not the public default.
+	for _, clause := range goautoneg.ParseAccept(strings.Join(r.Header.Values("Accept"), ",")) {
+		if clause.Q > 0 && clause.Type+"/"+clause.SubType == api.ContentTypeActiveSeriesFramed {
+			return true
+		}
+	}
+	return false
+}
+
+// writeActiveSeriesFramedResponse writes series in the length-delimited format described by api.ContentTypeActiveSeriesFramed.
+func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labels) error {
+	w.Header().Set("Content-Type", api.ContentTypeActiveSeriesFramed)
+	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+
+	var lenBuf [binary.MaxVarintLen64]byte
+	wroteFrame := false
+	for i := range series {
+		obj, err := series[i].MarshalJSON()
+		if err != nil {
+			// A clean error status can only be sent before the first frame has been written.
+			if !wroteFrame {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return fmt.Errorf("marshaling active series to JSON: %w", err)
+		}
+		if len(obj) > api.MaxActiveSeriesFrameSize {
+			err := fmt.Errorf("active series frame size %d exceeds maximum %d", len(obj), api.MaxActiveSeriesFrameSize)
+			if !wroteFrame {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return err
+		}
+		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
+		if _, err := w.Write(lenBuf[:n]); err != nil {
+			return fmt.Errorf("writing active series frame length: %w", err)
+		}
+		if _, err := w.Write(obj); err != nil {
+			return fmt.Errorf("writing active series frame: %w", err)
+		}
+		wroteFrame = true
+	}
+	return nil
 }
 
 func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {

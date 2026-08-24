@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -255,6 +257,46 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
+}
+
+// The response body from RoundTripGRPC reaches the query-frontend middleware chain as an
+// http.Response.Body, and that chain closes it more than once:
+// httpQueryRequestRoundTripperHandler.Do closes it, and so does readResponseBody in the
+// codec it hands the response to. Every extra close used to decrement the in-flight gauge
+// again, so it walked below zero and stayed there until the process restarted.
+func TestFrontend_HTTPGRPC_ClosingResponseBodyMoreThanOnceDoesNotSkewInflightRequests(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+
+	require.NoError(t, respBody.Close())
+	require.NoError(t, respBody.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_frontend_queries_in_progress Number of queries in progress handled by this frontend.
+		# TYPE cortex_query_frontend_queries_in_progress gauge
+		cortex_query_frontend_queries_in_progress 0
+	`), "cortex_query_frontend_queries_in_progress"))
 }
 
 func TestFrontend_Protobuf_HappyPath(t *testing.T) {
@@ -942,6 +984,7 @@ func TestFrontendCancellation(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
 			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+			reqStats, ctx := stats.ContextWithEmptyStats(ctx)
 			defer cancel()
 
 			makeRequest(ctx, t, f)
@@ -960,6 +1003,8 @@ func TestFrontendCancellation(t *testing.T) {
 				require.Equal(t, schedulerpb.CANCEL, ms.msgs[1].Type)
 				require.Equal(t, ms.msgs[0].QueryID, ms.msgs[1].QueryID)
 			})
+
+			require.Greater(t, reqStats.LoadQueueTime(), time.Duration(0))
 		})
 	}
 
@@ -1590,6 +1635,109 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			require.NoError(t, resp.Body.Close())
 		})
 	}
+}
+
+// TestFrontendStreamingResponseAfterCancellationDoesNotLeak reproduces the race where the querier's
+// streaming response claims the request just after RoundTripGRPC's cancellation branch found the
+// httpResponse channel still empty and returned: nothing will ever read the response or its body pipe,
+// so the handler must not stay blocked writing body chunks once the request context is done.
+func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
+
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
+
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      117,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
+
+		// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
+
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
+
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
+
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			res := <-freq.httpResponse
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a response nobody will read")
+		}
+	})
+}
+
+// TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak reproduces the case where
+// RoundTripGRPC's cancellation branch drains the streaming response from the httpResponse channel
+// but discards it without ever reading its body: cancelling the request context alone (which the
+// deferred cleanup does) must be enough to unblock the handler writing body chunks to the pipe.
+func TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
+
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
+
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      118,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
+
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
+
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
+
+		// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
+		// body, and then its deferred cleanup cancels the request context.
+		res := <-freq.httpResponse
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
+
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a discarded response")
+		}
+	})
 }
 
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {

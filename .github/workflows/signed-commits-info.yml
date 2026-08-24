@@ -1,0 +1,22 @@
+# imported from http://github.com/grafana/shared-workflows/blob/main/.github/workflows/global-signed-commits-info.yml
+
+name: Display info box when PR contains unsigned commits
+
+on:
+  pull_request:
+
+  # zizmor: ignore[dangerous-triggers] The underlying action does not interact in any way with the source code of the fork. It requires the scope of the original repository in order to post a comment to the pull request itself.
+  pull_request_target:
+
+jobs:
+  signed-commits:
+    permissions:
+      contents: read
+      pull-requests: write
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: grafana/shared-workflows/actions/signed-commits-info@f7e20b4de846c5951fba99c43c0340e8d2147468 # signed-commits-info/v0.1.0
+        continue-on-error: true

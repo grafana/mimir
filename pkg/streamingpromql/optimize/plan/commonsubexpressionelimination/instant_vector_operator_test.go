@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -107,17 +108,17 @@ func TestInstantVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	require.Equal(t, 0, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Check that the inner operator hasn't been closed or finalized yet.
-	require.False(t, inner.Finalized)
+	// Check that the inner operator hasn't been closed or had FinishedReading called yet.
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.False(t, inner.Finalized)
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
-	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
-	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	// Call FinishedReading on each consumer, and check that the inner operator had FinishedReading called only after the last consumer had FinishedReading called.
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.False(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer1.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
+	require.NoError(t, consumer2.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
 
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
@@ -193,17 +194,17 @@ func TestInstantVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T
 	consumer1.Close()
 	require.Equal(t, 0, buffer.buffer.Size())
 
-	// Check that the inner operator hasn't been closed or finalized yet.
-	require.False(t, inner.Finalized)
+	// Check that the inner operator hasn't been closed or had FinishedReading called yet.
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.False(t, inner.Finalized)
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
-	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
-	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	// Call FinishedReading on each consumer, and check that the inner operator had FinishedReading called only after the last consumer had FinishedReading called.
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.False(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer1.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
+	require.NoError(t, consumer2.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
 
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
@@ -273,17 +274,17 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	consumer1.Close()
 	require.Equal(t, 0, buffer.buffer.Size())
 
-	// Check that the inner operator hasn't been closed or finalized yet.
-	require.False(t, inner.Finalized)
+	// Check that the inner operator hasn't been closed or had FinishedReading called yet.
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.False(t, inner.Finalized)
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
-	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
-	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	// Call FinishedReading on each consumer, and check that the inner operator had FinishedReading called only after the last consumer had FinishedReading called.
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.False(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer1.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
+	require.NoError(t, consumer2.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
 
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
@@ -296,7 +297,7 @@ func TestInstantVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesM
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedConsumer(t *testing.T) {
+func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForConsumerFinishedReading(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 6, memoryConsumptionTracker)
@@ -322,13 +323,13 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedCons
 	require.Equal(t, 2, buffer.buffer.Size(), "the first and second series should be buffered for the first consumer")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// The data being buffered for the first consumer should be released when it's finalized.
-	require.NoError(t, consumer1.Finalize(ctx))
+	// The data being buffered for the first consumer should be released when FinishedReading is called.
+	require.NoError(t, consumer1.FinishedReading(ctx))
 	require.Equal(t, 0, buffer.buffer.Size())
 	consumer1.Close()
 
-	// Check that the inner operator hasn't been closed or finalized yet.
-	require.False(t, inner.Finalized)
+	// Check that the inner operator hasn't been closed or had FinishedReading called yet.
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
 	// Keep reading data for the second consumer, confirm that no further data is buffered for the first consumer.
@@ -344,11 +345,11 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferForFinalizedCons
 	require.Equal(t, 0, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
-	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
-	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	// Call FinishedReading on each consumer, and check that the inner operator had FinishedReading called only after the last consumer had FinishedReading called.
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
+	require.NoError(t, consumer1.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
+	require.NoError(t, consumer2.FinishedReading(ctx), "it should be safe to call FinishedReading on either consumer a second time")
 
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
@@ -395,18 +396,18 @@ func TestInstantVectorOperator_Buffering_Filtering_DoesNotBufferUnnecessarilyFor
 	require.Equal(t, 1, buffer.buffer.Size(), "only the first series should be buffered for the first consumer")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// The data being buffered for the first consumer should be released when it's finalized.
-	require.NoError(t, consumer1.Finalize(ctx))
+	// The data being buffered for the first consumer should be released when FinishedReading is called.
+	require.NoError(t, consumer1.FinishedReading(ctx))
 	require.Equal(t, 0, buffer.buffer.Size())
 	consumer1.Close()
 
-	// Check that the inner operator hasn't been closed or finalized yet.
-	require.False(t, inner.Finalized)
+	// Check that the inner operator hasn't been closed or had FinishedReading called yet.
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
 	// And the same for the second consumer.
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
 	consumer2.Close()
 	require.True(t, inner.Closed)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
@@ -463,9 +464,9 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	require.Equal(t, 3, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	require.NoError(t, consumer1.Finalize(ctx))
+	require.NoError(t, consumer1.FinishedReading(ctx))
 	consumer1.Close()
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
 	// Read all the data from consumer 3.
@@ -481,9 +482,9 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	require.Equal(t, 1, buffer.buffer.Size(), "should only be buffering series required by consumer 2")
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	require.NoError(t, consumer3.Finalize(ctx))
+	require.NoError(t, consumer3.FinishedReading(ctx))
 	consumer3.Close()
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 
 	// Read all the data from consumer 2
@@ -494,10 +495,10 @@ func TestInstantVectorOperator_Buffering_NonContiguousSeries(t *testing.T) {
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
 	// Make sure everything is cleaned up properly.
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
 	consumer2.Close()
 	require.True(t, inner.Closed)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
@@ -530,7 +531,7 @@ func TestInstantVectorOperator_Filtering_SingleConsumer(t *testing.T) {
 	}
 }
 
-func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.T) {
+func TestInstantVectorOperator_FinishedReadingCalledWithBufferedData_NoFiltering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
@@ -567,8 +568,8 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.
 	require.Equal(t, 3, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Finalize the first consumer, and check the data remains buffered for the second consumer.
-	require.NoError(t, consumer1.Finalize(ctx))
+	// Call FinishedReading on the first consumer, and check the data remains buffered for the second consumer.
+	require.NoError(t, consumer1.FinishedReading(ctx))
 	require.Equal(t, 3, buffer.buffer.Size())
 
 	// Read some of the buffered data.
@@ -578,18 +579,18 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_NoFiltering(t *testing.
 	require.Equal(t, 2, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	// Finalize the second consumer, and check that the inner operator was finalized and all buffered data was released.
-	require.NoError(t, consumer2.Finalize(ctx))
-	require.True(t, inner.Finalized)
+	// Call FinishedReading on the second consumer, and check that the inner operator had FinishedReading called and all buffered data was released.
+	require.NoError(t, consumer2.FinishedReading(ctx))
+	require.True(t, inner.FinishedReadingCalled)
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 
-	// Make sure it's safe to finalize either consumer a second time.
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.NoError(t, consumer2.Finalize(ctx))
+	// Make sure it's safe to call FinishedReading on either consumer a second time.
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.NoError(t, consumer2.FinishedReading(ctx))
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T) {
+func TestInstantVectorOperator_FinishedReadingCalledWithBufferedData_Filtering(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	inner, expectedData := createTestInstantVectorOperator(t, 3, memoryConsumptionTracker)
@@ -624,7 +625,7 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T)
 	}
 
 	require.Equal(t, 3, buffer.buffer.Size(), "buffer should contain all three series for the remaining two consumers")
-	require.NoError(t, consumer2.Finalize(ctx))
+	require.NoError(t, consumer2.FinishedReading(ctx))
 	require.Equal(t, 1, buffer.buffer.Size(), "buffer should only contain remaining series required by remaining consumer")
 
 	d, err := consumer3.NextSeries(ctx)
@@ -633,8 +634,8 @@ func TestInstantVectorOperator_FinalizedWithBufferedData_Filtering(t *testing.T)
 	require.Equal(t, 0, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.NoError(t, consumer3.Finalize(ctx))
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.NoError(t, consumer3.FinishedReading(ctx))
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
@@ -818,11 +819,11 @@ func (o *failingInstantVectorOperator) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (o *failingInstantVectorOperator) Finalize(_ context.Context) error {
+func (o *failingInstantVectorOperator) FinishedReading(_ context.Context) error {
 	return nil
 }
 
-func (o *failingInstantVectorOperator) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (o *failingInstantVectorOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	panic("not implemented")
 }
 
@@ -830,7 +831,7 @@ func (o *failingInstantVectorOperator) Close() {
 	// Nothing to do.
 }
 
-func TestInstantVectorOperator_Stats(t *testing.T) {
+func TestInstantVectorOperator_Finalize(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -846,7 +847,6 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "env", "test"),
 	}
 
-	stats := types.NewQueryStats()
 	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
 	selector := selectors.NewInstantVectorSelector(
 		&selectors.Selector{
@@ -858,7 +858,6 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 			Subsets:                  []selectors.Subset{{Filter: subset}},
 		},
 		memoryConsumptionTracker,
-		stats,
 		false,
 		false,
 	)
@@ -902,9 +901,9 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 	require.Equal(t, types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 3}}}, data)
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
-	// Finalize both operators, and check that the statistics are calculated correctly.
-	require.NoError(t, consumer1.Finalize(ctx))
-	require.NoError(t, consumer2.Finalize(ctx))
+	// Call FinishedReading on both operators, and check that the statistics are calculated correctly.
+	require.NoError(t, consumer1.FinishedReading(ctx))
+	require.NoError(t, consumer2.FinishedReading(ctx))
 
 	requireStats(t, consumer1, ctx, 3, 3)
 	requireStats(t, consumer2, ctx, 1, 1)
@@ -915,7 +914,7 @@ func TestInstantVectorOperator_Stats(t *testing.T) {
 }
 
 func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedProcessed int64, expectedRead int64) {
-	operatorStats, err := o.Stats(ctx)
+	operatorStats, _, err := o.Finalize(ctx)
 	require.NoError(t, err)
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")

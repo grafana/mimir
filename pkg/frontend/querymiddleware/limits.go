@@ -25,6 +25,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -69,6 +70,11 @@ type Limits interface {
 	// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
+
+	// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
+	// be run for a cardinality (active series and active native histogram metrics) request.
+	// 0 to fall back to QueryShardingMaxShardedQueries.
+	CardinalityShardingMaxShardedQueries(userID string) int
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
@@ -396,7 +402,8 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	}
 
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
-	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
+	ctx = ContextWithRequestHints(ctx, r.GetHints())
+	ctx = requestoptions.ContextWithOptions(ctx, r.GetOptions())
 	opts, err := r.GetQueryOpts()
 	if err != nil {
 		return nil, err
@@ -504,14 +511,11 @@ type requestContextKeyType int
 
 const (
 	requestHintsKey requestContextKeyType = iota
-	requestOptionsKey
 	parallelismLimiterKey
 )
 
-func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
-	ctx = context.WithValue(ctx, requestHintsKey, hints)
-	ctx = context.WithValue(ctx, requestOptionsKey, options)
-	return ctx
+func ContextWithRequestHints(ctx context.Context, hints *Hints) context.Context {
+	return context.WithValue(ctx, requestHintsKey, hints)
 }
 
 func RequestHintsFromContext(ctx context.Context) *Hints {
@@ -520,14 +524,6 @@ func RequestHintsFromContext(ctx context.Context) *Hints {
 	}
 
 	return nil
-}
-
-func RequestOptionsFromContext(ctx context.Context) Options {
-	if v := ctx.Value(requestOptionsKey); v != nil {
-		return v.(Options)
-	}
-
-	return Options{}
 }
 
 func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {

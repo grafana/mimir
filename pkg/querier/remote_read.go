@@ -17,7 +17,9 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -26,6 +28,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -95,6 +99,8 @@ func remoteReadSamples(
 		}
 	}()
 
+	queryStats := stats.FromContext(ctx)
+
 	run := func(_ context.Context, idx int) error {
 		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(req.Queries[idx])
 		if err != nil {
@@ -111,8 +117,18 @@ func remoteReadSamples(
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
-		resp.Results[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
-		return err
+		var physical, equivalent uint64
+		resp.Results[idx], physical, equivalent, err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+
+		// Report stats incrementally so that already-processed queries are counted
+		// even if a later query errors or the client disconnects.
+		// The underlying stats methods are atomic, so concurrent calls are safe.
+		queryStats.AddPhysicalSamplesRead(physical)
+		queryStats.AddEquivalentSamplesRead(equivalent)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
@@ -124,6 +140,7 @@ func remoteReadSamples(
 		http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
+
 	w.Header().Add("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
 
@@ -150,8 +167,9 @@ func remoteReadStreamedXORChunks(
 
 	// Process all queries concurrently and collect their ChunkSeriesSet results
 	type queryResult struct {
-		series  storage.ChunkSeriesSet
-		querier io.Closer
+		series     storage.ChunkSeriesSet
+		querier    io.Closer
+		minT, maxT int64
 	}
 
 	results := make([]queryResult, len(req.Queries))
@@ -167,7 +185,7 @@ func remoteReadStreamedXORChunks(
 
 	run := func(_ context.Context, idx int) error {
 		qr := req.Queries[idx]
-		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
+		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
 		if err != nil {
 			return err
 		}
@@ -181,7 +199,7 @@ func remoteReadStreamedXORChunks(
 		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
 		// but we need the SeriesSet to remain valid for streaming later.
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
-		results[idx] = queryResult{series: seriesSet, querier: querier}
+		results[idx] = queryResult{series: seriesSet, querier: querier, minT: int64(minT), maxT: int64(maxT)}
 		return nil
 	}
 
@@ -200,13 +218,21 @@ func remoteReadStreamedXORChunks(
 	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
 	// In case of an error, we will break the stream below.
 
+	queryStats := stats.FromContext(ctx)
 	for i, result := range results {
-		if err := streamChunkedReadResponses(
+		physicalCount, equivalentCount, err := streamChunkedReadResponses(
 			prom_remote.NewChunkedWriter(w, f),
 			result.series,
 			i,
 			maxBytesInFrame,
-		); err != nil {
+			result.minT,
+			result.maxT,
+		)
+		// Report stats incrementally so that already-streamed queries are counted
+		// even if a later query errors or the client disconnects.
+		queryStats.AddPhysicalSamplesRead(physicalCount)
+		queryStats.AddEquivalentSamplesRead(equivalentCount)
+		if err != nil {
 			code := remoteReadErrorStatusCode(err)
 			if code/100 != 4 {
 				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
@@ -235,8 +261,11 @@ func remoteReadErrorStatusCode(err error) int {
 	}
 }
 
-func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {
+// seriesSetToQueryResult converts a SeriesSet to a QueryResult, filtering samples to [filterStartMs, filterEndMs].
+// Returns physical and equivalent float sample counts (both histogram-weighted, matching MQE behaviour).
+func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, uint64, error) {
 	result := &prompb.QueryResult{}
+	var physicalSampleCount, equivalentSampleCount uint64
 
 	var it chunkenc.Iterator
 	for s.Next() {
@@ -257,19 +286,33 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 					Timestamp: t,
 					Value:     v,
 				})
+				if !value.IsStaleNaN(v) {
+					physicalSampleCount++
+					equivalentSampleCount++
+				}
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromIntHistogram(t, h))
+				if !value.IsStaleNaN(h.Sum) {
+					eqCount := uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+					physicalSampleCount += eqCount
+					equivalentSampleCount += eqCount
+				}
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
+				if !value.IsStaleNaN(h.Sum) {
+					eqCount := uint64(types.EquivalentFloatSampleCount(h))
+					physicalSampleCount += eqCount
+					equivalentSampleCount += eqCount
+				}
 			default:
-				return nil, fmt.Errorf("unsupported value type: %v", valType)
+				return nil, physicalSampleCount, equivalentSampleCount, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
 
 		if err := it.Err(); err != nil {
-			return nil, err
+			return nil, physicalSampleCount, equivalentSampleCount, err
 		}
 
 		ts := &prompb.TimeSeries{
@@ -281,7 +324,7 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 		result.Timeseries = append(result.Timeseries, ts)
 	}
 
-	return result, s.Err()
+	return result, physicalSampleCount, equivalentSampleCount, s.Err()
 }
 
 func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
@@ -302,10 +345,12 @@ func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) error {
+func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int, minTMs, maxTMs int64) (uint64, uint64, error) {
 	var (
-		chks []prompb.Chunk
-		lbls []prompb.Label
+		chks                  []prompb.Chunk
+		lbls                  []prompb.Label
+		physicalSampleCount   uint64
+		equivalentSampleCount uint64
 	)
 
 	var iter chunks.Iterator
@@ -321,8 +366,20 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			chk := iter.At()
 
 			if chk.Chunk == nil {
-				return errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+				return physicalSampleCount, equivalentSampleCount, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
+
+			// Count only samples within the queried range, excluding stale markers, to match the
+			// samples response path. The whole chunk is still streamed to the
+			// client (chunks are atomic in the streaming protocol), so a streamed-chunks client can
+			// receive slightly more raw samples than are metered. This is intentional: metering
+			// reflects the logical query range, not the bytes delivered.
+			physicalCount, eqCount, err := sampleCountsForChunk(chk.Chunk, minTMs, maxTMs)
+			if err != nil {
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "compute sample counts")
+			}
+			physicalSampleCount += physicalCount
+			equivalentSampleCount += eqCount
 
 			// Cut the chunk.
 			chks = append(chks, prompb.Chunk{
@@ -349,20 +406,69 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				QueryIndex: int64(queryIndex),
 			})
 			if err != nil {
-				return errors.Wrap(err, "marshal client.StreamReadResponse")
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "marshal client.StreamReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return errors.Wrap(err, "write to stream")
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
 			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
-			return err
+			return physicalSampleCount, equivalentSampleCount, err
 		}
 	}
-	return ss.Err()
+	return physicalSampleCount, equivalentSampleCount, ss.Err()
+}
+
+// sampleCountsForChunk returns the physical and equivalent float sample counts (both histogram-weighted,
+// matching MQE behaviour) for the samples in
+// chk that fall within [minTMs, maxTMs], excluding stale markers. It mirrors the per-sample counting
+// on the samples response path so that the same data is metered identically regardless of the negotiated response type.
+//
+// All samples in a histogram chunk share a single bucket layout, so their equivalent weight is
+// identical; we compute it once from the first non-stale histogram sample and reuse it.
+func sampleCountsForChunk(chk chunkenc.Chunk, minTMs, maxTMs int64) (physical, equivalent uint64, err error) {
+	it := chk.Iterator(nil)
+	var (
+		fh                  histogram.FloatHistogram
+		histogramWeight     uint64
+		haveHistogramWeight bool
+	)
+	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+		// We can over-read chunks that only partially overlap the queried range, so skip samples
+		// outside it; we must not meter samples that weren't queried for.
+		if t := it.AtT(); t < minTMs || t > maxTMs {
+			continue
+		}
+
+		switch valType {
+		case chunkenc.ValFloat:
+			if _, v := it.At(); !value.IsStaleNaN(v) {
+				physical++
+				equivalent++
+			}
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			_, h := it.AtFloatHistogram(&fh)
+			// Skip stale markers: their bucket layout is empty, so they carry no equivalent weight.
+			if value.IsStaleNaN(h.Sum) {
+				continue
+			}
+			if !haveHistogramWeight {
+				histogramWeight = uint64(types.EquivalentFloatSampleCount(h))
+				haveHistogramWeight = true
+			}
+			physical += histogramWeight
+			equivalent += histogramWeight
+		default:
+			return physical, equivalent, fmt.Errorf("unsupported value type: %v", valType)
+		}
+	}
+	if err := it.Err(); err != nil {
+		return physical, equivalent, err
+	}
+	return physical, equivalent, nil
 }
 
 func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) int {

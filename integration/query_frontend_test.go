@@ -42,6 +42,11 @@ type queryFrontendTestConfig struct {
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	remoteExecutionEnabled      bool
+
+	// useMQEForSplittingAndCaching runs time-splitting, results caching and subquery spin-off inside the
+	// Mimir query engine (MQE) instead of in the query-frontend middleware. It requires remote execution
+	// and sharding inside MQE, both of which are enabled automatically when this is set.
+	useMQEForSplittingAndCaching bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
@@ -219,15 +224,12 @@ func TestQueryFrontendWithRemoteExecution(t *testing.T) {
 	}
 }
 
-func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
+func TestQueryFrontendWithMQEForSplittingAndCaching(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(
 				CommonStorageBackendFlags(),
 				BlocksStorageFlags(),
-				map[string]string{
-					"-query-frontend.enable-multiple-node-remote-execution-requests": "true",
-				},
 			)
 
 			minio := e2edb.NewMinio(9000, mimirBucketName)
@@ -235,9 +237,10 @@ func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
 
 			return "", flags
 		},
-		withHistograms:         true,
-		remoteExecutionEnabled: true,
-		queryStatsEnabled:      true,
+		withHistograms:               true,
+		remoteExecutionEnabled:       true,
+		useMQEForSplittingAndCaching: true,
+		queryStatsEnabled:            true,
 	})
 }
 
@@ -288,14 +291,22 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.max-partial-query-length":                 "30d",
-		"-query-frontend.cache-results":                     "true",
-		"-query-frontend.results-cache.backend":             "memcached",
-		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
-		"-query-frontend.subquery-spin-off-enabled":         "true",
-		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
+		"-querier.max-partial-query-length":                   "30d",
+		"-query-frontend.cache-results":                       "true",
+		"-query-frontend.results-cache.backend":               "memcached",
+		"-query-frontend.results-cache.memcached.addresses":   "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                 strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.parallelize-shardable-queries":       "false",
+		"-query-frontend.subquery-spin-off-enabled":           "true",
+		"-query-frontend.enable-remote-execution":             strconv.FormatBool(cfg.remoteExecutionEnabled),
+		"-query-frontend.use-mimir-query-engine-for-sharding": strconv.FormatBool(cfg.remoteExecutionEnabled), // If remote execution isn't enabled, we can't run sharding inside MQE either.
 	})
+
+	if cfg.useMQEForSplittingAndCaching {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "true",
+		})
+	}
 
 	// Start the query-scheduler.
 	var queryScheduler *e2emimir.MimirService
@@ -336,11 +347,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-	// Wait until the query-frontend has updated the querier ring.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
@@ -390,7 +396,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
 			end := now
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
-			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
+			_, _, _, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
 
 			// Depending on what time it is and how that aligns with midnight UTC, the query may be broken into 31 or 32 parts.
@@ -402,7 +408,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			start := time.Unix(1595846748, 806*1e6)
 			end := time.Unix(1595846750, 806*1e6)
 
-			result, err := c.QueryRange("time()", start, end, time.Second)
+			result, _, _, err := c.QueryRange("time()", start, end, time.Second)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
 
@@ -432,7 +438,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 		// Test that evaluating a query with a scalar result works as expected.
 		if userID == 0 {
-			result, err := c.Query("scalar(series_1)", now)
+			result, _, _, err := c.Query("scalar(series_1)", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValScalar, result.Type())
 			scalar := result.(*model.Scalar)
@@ -442,7 +448,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 		// Same thing, but with a range vector result.
 		if userID == 0 {
-			result, err := c.Query("series_1[5m]", now)
+			result, _, _, err := c.Query("series_1[5m]", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
 			matrix := result.(model.Matrix)
@@ -456,7 +462,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		// Test subquery spin-off.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
-			result, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
+			result, _, _, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
 			require.NoError(t, err)
 			require.Len(t, result, 1)
 			require.Equal(t, result.(model.Vector)[0].Metric, model.Metric{})
@@ -468,7 +474,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			go func() {
 				defer wg.Done()
 
-				result, err := c.Query("series_1", now)
+				result, _, _, err := c.Query("series_1", now)
 				require.NoError(t, err)
 				require.Equal(t, model.ValVector, result.Type())
 				assert.Equal(t, expectedVectors[userID], result.(model.Vector))
@@ -506,7 +512,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	expectedMaximumQuerierQueryCount := expectedMinimumQuerierQueryCount + 2 // Depending on what time of day it is, the long-range query and spun-off subquery can both be split into another interval.
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"))
+	require.NoErrorf(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"), "expected %v queries to query-frontend", expectedQueryFrontendQueryCount)
 
 	routeNames := []string{"prometheus_api_v1_series", "prometheus_api_v1_query", "prometheus_api_v1_query_range", "querierpb.EvaluateQueryRequest"}
 	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchRegexp, "route", strings.Join(routeNames, "|")))
@@ -563,8 +569,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 // This spins up a minimal query-frontend setup and compares if errors returned
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {
-	t.Run("default config", func(t *testing.T) {
-		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{})
+	t.Run("with remote execution disabled", func(t *testing.T) {
+		testQueryFrontendErrorMessageParityScenario(t, false, map[string]string{
+			"-query-frontend.enable-remote-execution":             "false",
+			"-query-frontend.use-mimir-query-engine-for-sharding": "false",
+		})
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
@@ -905,8 +914,9 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 		queryFrontendTestConfig{
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// The query result payload is 202 bytes, so it will be too large for the configured limit.
-					"-querier.frontend-client.grpc-max-send-msg-size": "100",
+					// The first query result payload is 136 bytes, so it will be too large for the configured limit.
+					// We can't set this to less than 112 bytes because otherwise it's even too small for the subsequent attempt to send the "message too small" error message.
+					"-querier.frontend-client.grpc-max-send-msg-size": "120",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -1025,7 +1035,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
+	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-really-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
@@ -1064,8 +1074,10 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 	}{
 		"Prometheus' engine": {
 			flags: map[string]string{
-				"-querier.query-engine":        "prometheus",
-				"-query-frontend.query-engine": "prometheus",
+				"-querier.query-engine":                               "prometheus",
+				"-query-frontend.query-engine":                        "prometheus",
+				"-query-frontend.enable-remote-execution":             "false",
+				"-query-frontend.use-mimir-query-engine-for-sharding": "false",
 			},
 		},
 		"MQE with remote execution and sharding disabled": {
@@ -1153,7 +1165,7 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 }
 
 func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName string, ts time.Time, expectResult bool, expectedValue float64, opts ...promv1.Option) {
-	res, err := client.Query(seriesName, ts, opts...)
+	res, _, _, err := client.Query(seriesName, ts, opts...)
 	require.NoError(t, err)
 
 	v, ok := res.(model.Vector)
@@ -1170,7 +1182,7 @@ func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName st
 	}
 
 	step := 100 * time.Minute
-	res, err = client.QueryRange(seriesName, ts.Add(-step), ts.Add(step), step, opts...)
+	res, _, _, err = client.QueryRange(seriesName, ts.Add(-step), ts.Add(step), step, opts...)
 	require.NoError(t, err)
 
 	m, ok := res.(model.Matrix)
@@ -1189,4 +1201,97 @@ func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName st
 	} else {
 		require.Empty(t, m)
 	}
+}
+
+func TestQueryFrontendCardinalityEstimation(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio, consul, memcached))
+
+	const targetSeriesPerShard = 10
+	const defaultShardCount = 8
+
+	flags := map[string]string{
+		"-query-frontend.results-cache.backend":                                    "memcached",
+		"-query-frontend.results-cache.memcached.addresses":                        "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.parallelize-shardable-queries":                            "true",
+		"-query-frontend.enable-remote-execution":                                  "true",
+		"-query-frontend.use-mimir-query-engine-for-sharding":                      "true",
+		"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "true",
+		"-query-frontend.query-sharding-target-series-per-shard":                   strconv.Itoa(targetSeriesPerShard),
+		"-query-frontend.query-sharding-total-shards":                              strconv.Itoa(defaultShardCount),
+	}
+
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.Start(queryFrontend))
+
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until both the distributor, querier and query-frontend have updated the ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"), "distributor should have seen distributor and ingester ring")
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"), "querier should have seen ingester ring")
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"), "query-frontend should have seen querier ring")
+
+	nowTruncatedToLastSecond := time.Now().Truncate(time.Second)
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	sampleT := nowTruncatedToLastSecond.Add(-20 * time.Minute)
+	metricName := "test_metric"
+	const seriesCount = 15
+	expectedSum := 0.0
+
+	for idx := range seriesCount {
+		series, _, _ := generateFloatSeries(metricName, sampleT, prompb.Label{Name: "idx", Value: strconv.Itoa(idx)})
+		seriesValue := series[0].Samples[0].Value
+		expectedSum += seriesValue
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	}
+
+	makeRequest := func() {
+		res, _, _, err := client.Query(fmt.Sprintf("sum(%v)", metricName), sampleT)
+		require.NoError(t, err)
+
+		v, ok := res.(model.Vector)
+		require.Truef(t, ok, "expected instant query result to be a vector, got %T", res)
+
+		require.Len(t, v, 1)
+		sample := v[0]
+		require.InDelta(t, expectedSum, float64(sample.Value), 0.00001)
+		require.Equal(t, sampleT, sample.Timestamp.Time())
+		require.Equal(t, "{}", sample.Metric.String())
+	}
+
+	expectedQuerierRequestsSoFar := 0
+	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "querierpb.EvaluateQueryRequest"))
+
+	// Make the request. The cardinality cache should be empty, so the request should run with the default number of shards.
+	makeRequest()
+	expectedQuerierRequestsSoFar += defaultShardCount
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedQuerierRequestsSoFar)), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "querier should have received one request per shard")
+
+	// Make the request again. The cardinality should be loaded from the cache and used to set the shard size based on the cardinality seen in the last request.
+	makeRequest()
+	expectedQuerierRequestsSoFar += 2
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(float64(expectedQuerierRequestsSoFar)), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount, withQueryRoutes), "querier should have received one request per shard for the original and subsequent requests")
 }

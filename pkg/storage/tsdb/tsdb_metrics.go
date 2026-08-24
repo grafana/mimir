@@ -37,6 +37,7 @@ type TSDBMetrics struct {
 	tsdbMmapChunkCorruptionTotal      *prometheus.Desc
 	tsdbMmapChunkQueueOperationsTotal *prometheus.Desc
 	tsdbMmapChunksTotal               *prometheus.Desc
+	tsdbHeadChunksMaxMmapped          *prometheus.Desc // TODO(krajorama): experimental, remove once we have measurements.
 	tsdbOOOHistogram                  *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
@@ -158,6 +159,11 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 		tsdbMmapChunksTotal: prometheus.NewDesc(
 			"tsdb_mmap_chunks_total",
 			"Total number of chunks that were memory-mapped.",
+			nil, nil),
+		// TODO(krajorama): experimental, remove once we have measurements.
+		tsdbHeadChunksMaxMmapped: prometheus.NewDesc(
+			"tsdb_head_chunks_max_mmapped",
+			"Experimental. Maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass.",
 			nil, nil),
 		tsdbOOOHistogram: prometheus.NewDesc(
 			"tsdb_sample_out_of_order_delta_seconds",
@@ -297,6 +303,7 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbMmapChunkCorruptionTotal
 	out <- sm.tsdbMmapChunkQueueOperationsTotal
 	out <- sm.tsdbMmapChunksTotal
+	out <- sm.tsdbHeadChunksMaxMmapped
 	out <- sm.tsdbOOOHistogram
 	out <- sm.tsdbLoadedBlocks
 	out <- sm.tsdbSymbolTableSize
@@ -352,6 +359,7 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
 	data.SendSumOfCountersWithLabels(out, sm.tsdbMmapChunkQueueOperationsTotal, "prometheus_tsdb_chunk_write_queue_operations_total", "operation")
 	data.SendSumOfCounters(out, sm.tsdbMmapChunksTotal, "prometheus_tsdb_mmap_chunks_total")
+	data.SendMaxOfGauges(out, sm.tsdbHeadChunksMaxMmapped, "prometheus_tsdb_head_chunks_max_mmapped")
 	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
