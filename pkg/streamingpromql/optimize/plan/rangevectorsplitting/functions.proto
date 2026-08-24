@@ -95,6 +95,8 @@ message AvgOverTimeIntermediate {
   double compF = 5;
 
   cortexpb.Histogram avgH = 6;
+  // compH carries the Kahan compensation for avgH, kept separate for the same reason as compF.
+  cortexpb.Histogram compH = 9;
   int64 countH = 7;
   bool forceEmptyResult = 8;
 }

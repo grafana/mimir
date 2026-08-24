@@ -56,7 +56,7 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 	}
 
 	if haveHistograms {
-		h, err := functions.AvgHistograms(hHead, hTail, emitAnnotation)
+		h, comp, err := functions.KahanAvgHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
 			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			// In case of schema incompatibility, the error was converted to annotation and empty result should be returned
@@ -72,6 +72,11 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 			result.AvgH = &protoH
 			result.CountH = int64(len(hHead)) + int64(len(hTail))
+
+			if comp != nil {
+				compProto := mimirpb.FromFloatHistogramToHistogramProto(0, comp)
+				result.CompH = &compProto
+			}
 		}
 	}
 
@@ -136,17 +141,20 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 			if incrementalAvgH == nil {
 				incrementalAvgH = h.Copy()
 				countH = float64(p.CountH)
+
+				if p.CompH != nil {
+					compensationH = mimirpb.FromFloatHistogramProtoToFloatHistogram(p.CompH).Copy()
+				}
 			} else {
 				pieceCnt := float64(p.CountH)
 				totalCnt := countH + pieceCnt
 
+				// avg = avg·(countH/totalCnt) + (piece + pieceComp)·q, where q = pieceCnt/totalCnt.
+				// Scaling the accumulator down before adding the piece keeps intermediate values from overflowing.
 				q := pieceCnt / totalCnt
 				pieceAvgPart := h.Copy().Mul(q)
-				prevAvgPart := incrementalAvgH.Copy().Mul(-q)
-				// Mul(-q) sets CounterResetHint to GaugeType due to negative factor,
-				// which would override incrementalAvgH's hint via adjustCounterReset inside KahanAdd.
-				// Restore the original hint.
-				prevAvgPart.CounterResetHint = incrementalAvgH.CounterResetHint
+
+				incrementalAvgH.Mul(countH / totalCnt)
 
 				if compensationH != nil {
 					compensationH.Mul(countH / totalCnt)
@@ -161,11 +169,16 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 					nhcbBoundsReconciledSeen = true
 				}
 
-				if compensationH, _, nhcbBoundsReconciled, err = incrementalAvgH.KahanAdd(prevAvgPart, compensationH); err != nil {
-					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
-					return 0, false, nil, err
-				} else if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
+				// CompH is nil for pieces written before compensations were stored, and for single-sample pieces.
+				if p.CompH != nil {
+					pieceCompPart := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.CompH).Copy().Mul(q)
+
+					if compensationH, _, nhcbBoundsReconciled, err = incrementalAvgH.KahanAdd(pieceCompPart, compensationH); err != nil {
+						err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+						return 0, false, nil, err
+					} else if nhcbBoundsReconciled {
+						nhcbBoundsReconciledSeen = true
+					}
 				}
 
 				countH = totalCnt

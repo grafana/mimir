@@ -549,6 +549,30 @@ eval instant at 6h avg_over_time(avg_hist[5h])
 
 clear
 
+# Histogram averages where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_avg_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+clear
+
+# Histogram averages where counts near MaxFloat64 overflow.
+load 1h
+  overflow_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:2}} {{schema:0 count:1e-6 sum:0}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+clear
+
 # Floats in one split, histograms in another
 load 1h
   mixed_avg{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
