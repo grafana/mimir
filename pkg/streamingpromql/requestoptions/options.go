@@ -14,6 +14,13 @@ type Options struct {
 	CacheDisabled    bool
 	ShardingDisabled bool
 	TotalShards      int32
+
+	// PropagatedHeaders carries an allow-listed subset of the request's HTTP headers so that
+	// optimization passes can read per-request toggles at planning time. This is a generic carrier:
+	// the OSS planner does not interpret these headers, but extension passes can read their own
+	// headers from it. The set of headers captured here is configured via the query-frontend's
+	// extra-propagated-headers allow-list.
+	PropagatedHeaders http.Header
 }
 
 const (
@@ -42,7 +49,17 @@ func OptionsFromContext(ctx context.Context) Options {
 	return Options{}
 }
 
-func DecodeOptions(r *http.Request) Options {
+// OptionDecoder decodes per-request Options from a request's HTTP headers. It holds the allow-list of
+// header names captured into Options.PropagatedHeaders, so callers that decode options hold an
+// OptionDecoder and don't need to know about header propagation at each decode site.
+type OptionDecoder struct {
+	// PropagatedHeaders is the allow-list of header names whose values are captured into
+	// Options.PropagatedHeaders for use by optimization passes; headers not in the list are ignored.
+	PropagatedHeaders []string
+}
+
+// DecodeOptions decodes per-request options from the request's HTTP headers.
+func (d OptionDecoder) DecodeOptions(r *http.Request) Options {
 	opts := Options{
 		CacheDisabled: DecodeCacheDisabledOption(r),
 	}
@@ -57,6 +74,16 @@ func DecodeOptions(r *http.Request) Options {
 			opts.ShardingDisabled = true
 		}
 	}
+
+	for _, name := range d.PropagatedHeaders {
+		if values := r.Header.Values(name); len(values) > 0 {
+			if opts.PropagatedHeaders == nil {
+				opts.PropagatedHeaders = make(http.Header)
+			}
+			opts.PropagatedHeaders[http.CanonicalHeaderKey(name)] = values
+		}
+	}
+
 	return opts
 }
 

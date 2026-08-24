@@ -108,6 +108,21 @@ Create the name of the alertmanager service account
 {{- end -}}
 
 {{/*
+Create the name of the Grafana Agent service account
+*/}}
+{{- define "mimir.metaMonitoring.grafanaAgent.serviceAccountName" -}}
+{{- $sa := (((.Values.metaMonitoring).grafanaAgent).serviceAccount) | default dict -}}
+{{- if and $sa.create (eq ($sa.name | default "") "") -}}
+{{- $base := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-grafana-agent" $base }}
+{{- else if $sa.create -}}
+{{- $sa.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Create the app name for clients. Defaults to the same logic as "mimir.fullname", and default client expects "prometheus".
 */}}
 {{- define "client.name" -}}
@@ -498,6 +513,28 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 */}}
 {{- define "mimir.rbac.useSecurityContextConstraints" -}}
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
+{{- end -}}
+
+{{/*
+Rules granting use of the PodSecurityPolicy or SecurityContextConstraints created by the chart.
+*/}}
+{{- define "mimir.rbac.podSecurityRules" -}}
+{{- if eq (include "mimir.rbac.usePodSecurityPolicy" .) "true" }}
+- apiGroups:      ['extensions']
+  resources:      ['podsecuritypolicies']
+  verbs:          ['use']
+  resourceNames:  [{{ include "mimir.resourceName" (dict "ctx" .) }}]
+{{- end }}
+{{- if eq (include "mimir.rbac.useSecurityContextConstraints" .) "true" }}
+- apiGroups:
+    - security.openshift.io
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+  resourceNames:
+    - {{ include "mimir.resourceName" (dict "ctx" .) }}
+{{- end }}
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}

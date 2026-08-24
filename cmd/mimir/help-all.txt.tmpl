@@ -15,6 +15,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -alertmanager-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.azure.http.insecure-skip-verify
@@ -51,6 +53,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -alertmanager-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.gcs.http.insecure-skip-verify
@@ -91,6 +95,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -alertmanager-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -alertmanager-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -alertmanager-storage.s3.http.insecure-skip-verify
@@ -395,6 +401,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.azure.http.insecure-skip-verify
@@ -695,6 +703,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -blocks-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.gcs.http.insecure-skip-verify
@@ -733,6 +743,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -blocks-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -blocks-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -blocks-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -blocks-storage.s3.http.insecure-skip-verify
@@ -835,8 +847,6 @@ Usage of ./cmd/mimir/mimir:
     	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
     	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
-  -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
     	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
@@ -869,8 +879,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
     	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
-  -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
-    	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
@@ -935,6 +943,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -common.storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.azure.http.insecure-skip-verify
@@ -971,6 +981,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -common.storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.gcs.http.insecure-skip-verify
@@ -1009,6 +1021,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -common.storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -common.storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -common.storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -common.storage.s3.http.insecure-skip-verify
@@ -1133,6 +1147,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -compactor-scheduler.tenant-discovery-interval duration
     	[experimental] The duration of time between bucket listings to discover new tenants. (default 10m0s)
+  -compactor.block-health-validation-concurrency int
+    	[experimental] Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
@@ -1861,8 +1877,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream. (default 3)
   -ingest-storage.kafka.warpstream-hedge-min-delay duration
     	[experimental] Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream. (default 500ms)
-  -ingest-storage.kafka.write-clients int
-    	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.kafka.write-timeout-overhead duration
@@ -2475,8 +2489,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.experimental-search-api-enabled
     	[experimental] If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.
-  -querier.filter-queryables-enabled
-    	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration
@@ -2537,6 +2549,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
+  -querier.max-blocks-per-store-request int
+    	[experimental] Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 8)
   -querier.max-concurrent-remote-read-queries int
@@ -2565,6 +2579,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.mimir-query-engine.cardinality-estimation.bucket-size duration
+    	[experimental] The duration of each bucket used to store cardinality estimates per selector. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 4h0m0s)
+  -querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold float
+    	[experimental] The minimum difference from the original estimate to trigger storing a new cardinality estimate in the cache. Values are a proportion of the original value (e.g. a value of 0.1 means a new estimate is only written if the new value is 10% higher than the original estimate). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 0.1)
+  -querier.mimir-query-engine.cardinality-estimation.max-buckets-read-per-selector int
+    	[experimental] The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168)
+  -querier.mimir-query-engine.cardinality-estimation.ttl duration
+    	[experimental] The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168h0m0s)
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
@@ -2837,8 +2859,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
-  -query-frontend.cache-samples-processed-stats
-    	[deprecated] Cache statistics of processed samples on results cache. Deprecated: has no effect.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.cardinality-sharding-max-sharded-queries int
@@ -3031,6 +3051,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
     	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
+  -query-frontend.wait-for-querier-ring-on-startup
+    	[experimental] If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries. (default true)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
@@ -3173,6 +3195,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -ruler-storage.azure.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.azure.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.azure.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.azure.http.insecure-skip-verify
@@ -3251,6 +3275,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -ruler-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.gcs.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.gcs.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.gcs.http.insecure-skip-verify
@@ -3291,6 +3317,8 @@ Usage of ./cmd/mimir/mimir:
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -ruler-storage.s3.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
+  -ruler-storage.s3.http.force-attempt-http2
+    	[experimental] If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.
   -ruler-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection remains idle before closing. (default 1m30s)
   -ruler-storage.s3.http.insecure-skip-verify

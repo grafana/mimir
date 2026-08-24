@@ -192,14 +192,15 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 		return
 	}
 
-	routed, err := c.routeRecord(record, perRecordDone(record, func(r *kgo.Record, err error) {
-		// The buffered path counts a post-dispatch failure on any non-nil error;
-		// the pre-dispatch rejections are counted by produceRecordsRejectedTotal.
-		if err != nil {
+	routed, err := c.routeRecord(record, func(res ProduceResult) {
+		// Post-dispatch failure counts on any non-nil error; the pre-dispatch
+		// rejections are counted by produceRecordsRejectedTotal.
+		resErr := recordErrFromResult(res, record.Topic, record.Partition)
+		if resErr != nil {
 			c.metrics.produceRecordsFailedTotal.Inc()
 		}
-		promise(r, err)
-	}))
+		promise(record, resErr)
+	})
 	if err != nil {
 		c.metrics.produceRecordsRejectedTotal.WithLabelValues(produceRejectedNoAgentAssigned).Inc()
 		promise(record, err)
@@ -459,47 +460,30 @@ func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResu
 // per-partition outcome for one (topic, partition).
 func perPartitionDone(topic string, partition int32, user func(error)) func(ProduceResult) {
 	return func(res ProduceResult) {
-		// The merged response is authoritative when present: it carries
-		// one terminal entry per partition (resolved or synthesized), so
-		// a partition that actually succeeded must report success even
-		// when res.err says some peer partition failed.
-		if res.resp == nil {
-			user(res.err)
-			return
-		}
-		err := partitionErrorFromResp(res.resp, topic, partition)
-		// A retriable kerr surfaced here means the Hedger exhausted its
-		// retry budget; wrap with kgo.ErrRecordTimeout to match franz-go's
-		// retry-exhausted contract while keeping the specific kerr in
-		// the chain. Direct type assertion — partitionErrorFromResp only ever
-		// returns nil or *kerr.Error.
-		if ke, _ := err.(*kerr.Error); ke != nil && ke.Retriable {
-			err = fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, err)
-		}
-		user(err)
+		user(recordErrFromResult(res, topic, partition))
 	}
 }
 
-// perRecordDone returns a done callback that resolves the
-// outcome for a single (record, promise) pair. Same semantics as
-// perPartitionDone but avoids the extra closure that wraps promise.
-func perRecordDone(record *kgo.Record, promise func(*kgo.Record, error)) func(ProduceResult) {
-	return func(res ProduceResult) {
-		if res.resp == nil {
-			promise(record, res.err)
-			return
-		}
-
-		// partitionErrorFromResp only ever returns nil or *kerr.Error
-		// (from kerr.ErrorForCode), so a direct type assertion avoids
-		// the errors.As reflection.
-		err := partitionErrorFromResp(res.resp, record.Topic, record.Partition)
-		if ke, _ := err.(*kerr.Error); ke != nil && ke.Retriable {
-			err = fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, err)
-		}
-
-		promise(record, err)
+// recordErrFromResult resolves a produce result to the error to surface for one
+// (topic, partition).
+func recordErrFromResult(res ProduceResult, topic string, partition int32) error {
+	// The merged response is authoritative when present: it carries
+	// one terminal entry per partition (resolved or synthesized), so
+	// a partition that actually succeeded must report success even
+	// when res.err says some peer partition failed.
+	if res.resp == nil {
+		return res.err
 	}
+	err := partitionErrorFromResp(res.resp, topic, partition)
+	// A retriable kerr surfaced here means the Hedger exhausted its
+	// retry budget; wrap with kgo.ErrRecordTimeout to match franz-go's
+	// retry-exhausted contract while keeping the specific kerr in
+	// the chain. Direct type assertion — partitionErrorFromResp only ever
+	// returns nil or *kerr.Error.
+	if ke, _ := err.(*kerr.Error); ke != nil && ke.Retriable {
+		err = fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, err)
+	}
+	return err
 }
 
 // newKgoClient constructs the kgo.Client used by the WarpstreamClient for

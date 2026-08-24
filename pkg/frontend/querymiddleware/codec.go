@@ -231,6 +231,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	optionDecoder                                   requestoptions.OptionDecoder
 	injector                                        propagation.Injector
 	logger                                          log.Logger
 }
@@ -261,12 +262,14 @@ func NewCodec(
 	injector propagation.Injector,
 	logger log.Logger,
 ) Codec {
+	propagateHeadersMetrics := append(codecPropagateHeadersMetrics, propagateHeaders...)
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
-		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersMetrics:            propagateHeadersMetrics,
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		optionDecoder:                      requestoptions.OptionDecoder{PropagatedHeaders: propagateHeadersMetrics},
 		injector:                           injector,
 		logger:                             logger,
 	}
@@ -388,7 +391,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -420,7 +423,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := requestoptions.DecodeOptions(r)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -1347,7 +1350,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 // return a sub slice whose first element's is the smallest timestamp that is strictly
 // bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
 // timestamps in samples
-func sliceFloatSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+func sliceFloatSamples(samples []mimirpb.FloatSample, minTs int64) []mimirpb.FloatSample {
 	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
 		return samples
 	}

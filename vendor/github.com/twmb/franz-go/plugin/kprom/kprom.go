@@ -148,12 +148,30 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		constLabels["client_id"] = client.OptValue(kgo.ClientID).(string)
 	}
 
-	// returns Hist buckets if set, otherwise defBucket
-	getHistogramBuckets := func(h Histogram) []float64 {
-		if buckets, ok := m.cfg.histograms[h]; ok && len(buckets) != 0 {
-			return buckets
+	// newHistogramOpts builds HistogramOpts for histogram h: classic buckets
+	// (custom if configured, else default) plus the shared native-histogram
+	// parameters. By default both classic and native histograms are emitted;
+	// NativeBucketsOnly drops the classic buckets and a native bucket factor of
+	// 1 or less disables native histograms (see NativeBucketFactor).
+	newHistogramOpts := func(h Histogram, name, help string) prometheus.HistogramOpts {
+		var buckets []float64
+		if !m.cfg.nativeBucketsOnly {
+			buckets = m.cfg.defBuckets
+			if b, ok := m.cfg.histograms[h]; ok && len(b) != 0 {
+				buckets = b
+			}
 		}
-		return m.cfg.defBuckets
+		return prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Subsystem:                       subsystem,
+			ConstLabels:                     constLabels,
+			Name:                            name,
+			Help:                            help,
+			Buckets:                         buckets,
+			NativeHistogramBucketFactor:     m.cfg.nativeBucketFactor,
+			NativeHistogramMaxBucketNumber:  m.cfg.nativeMaxBuckets,
+			NativeHistogramMinResetDuration: m.cfg.nativeBucketMinReset,
+		}
 	}
 
 	// Connection
@@ -200,23 +218,13 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Help:        "Total number of write errors",
 	}, m.cfg.brokerLabels)
 
-	m.writeWaitSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "write_wait_seconds",
-		Help:        "Time spent waiting to write to Kafka",
-		Buckets:     getHistogramBuckets(WriteWait),
-	}, m.cfg.brokerLabels)
+	m.writeWaitSeconds = factory.NewHistogramVec(
+		newHistogramOpts(WriteWait, "write_wait_seconds", "Time spent waiting to write to Kafka"),
+		m.cfg.brokerLabels)
 
-	m.writeTimeSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "write_time_seconds",
-		Help:        "Time spent writing to Kafka",
-		Buckets:     getHistogramBuckets(WriteTime),
-	}, m.cfg.brokerLabels)
+	m.writeTimeSeconds = factory.NewHistogramVec(
+		newHistogramOpts(WriteTime, "write_time_seconds", "Time spent writing to Kafka"),
+		m.cfg.brokerLabels)
 
 	// Read
 
@@ -236,43 +244,23 @@ func (m *Metrics) OnNewClient(client *kgo.Client) {
 		Help:        "Total number of read errors",
 	}, m.cfg.brokerLabels)
 
-	m.readWaitSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "read_wait_seconds",
-		Help:        "Time spent waiting to read from Kafka",
-		Buckets:     getHistogramBuckets(ReadWait),
-	}, m.cfg.brokerLabels)
+	m.readWaitSeconds = factory.NewHistogramVec(
+		newHistogramOpts(ReadWait, "read_wait_seconds", "Time spent waiting to read from Kafka"),
+		m.cfg.brokerLabels)
 
-	m.readTimeSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "read_time_seconds",
-		Help:        "Time spent reading from Kafka",
-		Buckets:     getHistogramBuckets(ReadTime),
-	}, m.cfg.brokerLabels)
+	m.readTimeSeconds = factory.NewHistogramVec(
+		newHistogramOpts(ReadTime, "read_time_seconds", "Time spent reading from Kafka"),
+		m.cfg.brokerLabels)
 
 	// Request E2E duration & Throttle
 
-	m.requestDurationE2ESeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "request_duration_e2e_seconds",
-		Help:        "Time from the start of when a request is written to the end of when the response for that request was fully read",
-		Buckets:     getHistogramBuckets(RequestDurationE2E),
-	}, m.cfg.brokerLabels)
+	m.requestDurationE2ESeconds = factory.NewHistogramVec(
+		newHistogramOpts(RequestDurationE2E, "request_duration_e2e_seconds", "Time from the start of when a request is written to the end of when the response for that request was fully read"),
+		m.cfg.brokerLabels)
 
-	m.requestThrottledSeconds = factory.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		ConstLabels: constLabels,
-		Name:        "request_throttled_seconds",
-		Help:        "Time the request was throttled",
-		Buckets:     getHistogramBuckets(RequestThrottled),
-	}, m.cfg.brokerLabels)
+	m.requestThrottledSeconds = factory.NewHistogramVec(
+		newHistogramOpts(RequestThrottled, "request_throttled_seconds", "Time the request was throttled"),
+		m.cfg.brokerLabels)
 
 	// Produce
 

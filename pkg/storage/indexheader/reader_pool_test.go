@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -83,45 +84,47 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
-	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
-	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), Config{
-		LazyLoadingEnabled:     true,
-		LazyLoadingIdleTimeout: idleTimeout,
-	}, gate.NewNoop(), metrics)
+	synctest.Test(t, func(t *testing.T) {
+		// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
+		// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
+		pool := newReaderPool(log.NewNopLogger(), Config{
+			LazyLoadingEnabled:     true,
+			LazyLoadingIdleTimeout: idleTimeout,
+		}, gate.NewNoop(), metrics)
 
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
-	require.NoError(t, err)
+		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+		require.NoError(t, err)
 
-	// Ensure it can read data.
-	labelNames, err := r.LabelNames(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+		// Ensure it can read data.
+		labelNames, err := r.LabelNames(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	// Wait enough time before checking it.
-	time.Sleep(idleTimeout * 2)
-	require.NoError(t, pool.unloadIdleReaders(context.Background()), "closing idle readers shouldn't ever fail because it will abort periodically checking for idle readers")
+		// Wait enough time before checking it.
+		time.Sleep(idleTimeout * 2)
+		require.NoError(t, pool.unloadIdleReaders(context.Background()), "closing idle readers shouldn't ever fail because it will abort periodically checking for idle readers")
 
-	// We expect the reader has been closed, but not released from the pool.
-	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+		// We expect the reader has been closed, but not released from the pool.
+		require.True(t, pool.isTracking(r.(*LazyBinaryReader)))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	// Ensure it can still read data (will be re-opened).
-	labelNames, err = r.LabelNames(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))
-	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+		// Ensure it can still read data (will be re-opened).
+		labelNames, err = r.LabelNames(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.True(t, pool.isTracking(r.(*LazyBinaryReader)))
+		require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
-	// We expect an explicit call to Close() to close the reader and release it from the pool too.
-	require.NoError(t, r.Close())
-	require.True(t, !pool.isTracking(r.(*LazyBinaryReader)))
-	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-	require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+		// We expect an explicit call to Close() to close the reader and release it from the pool too.
+		require.NoError(t, r.Close())
+		require.True(t, !pool.isTracking(r.(*LazyBinaryReader)))
+		require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+		require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+	})
 }
 
 func TestReaderPool_LoadedBlocks(t *testing.T) {

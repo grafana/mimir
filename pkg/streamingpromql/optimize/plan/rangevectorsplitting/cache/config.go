@@ -29,6 +29,8 @@ var (
 type Config struct {
 	cache.BackendConfig `yaml:",inline"`
 	Compression         cache.CompressionConfig `yaml:",inline"`
+
+	CacheClient cache.Cache `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

@@ -1090,6 +1090,42 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
 
+### MimirBlockedQueryRuleExpired
+
+This alert fires if at least one of a tenant's `blocked_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+blocking matching queries until it's explicitly removed from the tenant's configuration. This alert exists so that
+rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `blocked_queries` rules, and this alert fires as long as any one of them is expired.
+
+How to **investigate**:
+
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `blocked_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
+### MimirLimitedQueryRuleExpired
+
+This alert fires if at least one of a tenant's `limited_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+rate-limiting matching queries until it's explicitly removed from the tenant's configuration. This alert exists so
+that rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `limited_queries` rules, and this alert fires as long as any one of them is expired.
+
+How to **investigate**:
+
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `limited_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
 ### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.
@@ -1710,6 +1746,14 @@ See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/
 
 See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
 
+### MimirKubernetesAPIClientRateLimited
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientratelimited)
+
+### MimirKubernetesAPIClientApproachingRateLimit
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#rollout-operatorkubernetesapiclientapproachingratelimit)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
@@ -1785,6 +1829,17 @@ How to **fix** it:
   - Resize the volume
   - Delete the compactor StatefulSet and its PersistentVolumeClaims, then re-create the compactor StatefulSet with a bigger volume size request
 - Check if the compactor is configured with `-compactor.compaction-concurrency` greater than 1 and there are multiple concurrent compactions running in the affected compactor. If so, you can consider lowering the concurrency.
+
+#### Compactor-scheduler
+
+How it **works**:
+
+- The compactor-scheduler uses the volume to persist its per-tenant job queues, in bbolt databases stored under `-compactor-scheduler.bbolt.dir`. Disk utilization is a function of the number of tenants and pending jobs, and is typically small.
+
+How to **fix** it:
+
+- Increase the compactor-scheduler volume size.
+- As a last resort, the persistent state can be wiped and rebuilt. Follow the recovery steps described in [MimirCompactorSchedulerUnreachable](#MimirCompactorSchedulerUnreachable).
 
 #### Store-gateway
 
@@ -3405,6 +3460,8 @@ When the compactor is **halted**:
 
 - No new blocks will be compacted
 - No blocks will be deleted (soft and hard deletion)
+
+Even when compactors run in scheduler mode, halting the compactors is sufficient: the compactor-scheduler doesn't compact or delete blocks itself.
 
 ### Recover source blocks from ingesters
 

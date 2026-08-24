@@ -327,8 +327,8 @@ load 1m
 # info is for nhcb reconciliation of different custom values
 # warning is for mixed exponential and custom buckets
 eval range from 0 to 3m step 1m left + right
-  expect info msg: PromQL info: mismatched custom buckets were reconciled during addition
-  expect warn msg: PromQL warning: incompatible bucket layout encountered for binary operator +
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during addition (1:1)
+  expect warn msg: PromQL warning: incompatible bucket layout encountered for binary operator + (1:1)
   {}     {{schema:0 sum:4 count:5 buckets:[5]}}  _                                                                {{schema:-53 count:6 sum:2 buckets:[6]}}                         {{schema:-53 sum:3 count:9 custom_values:[2 3] buckets:[6 4]}}
 
 clear
@@ -1510,6 +1510,41 @@ eval range from 0 to 18m step 6m one_side - on(group) group_right(env, pod) many
 eval range from 0 to 18m step 6m one_side - on(group) group_right(pod, env) many_side
   {group="a", env="test", pod="1", idx="x"} 9 18 27
   {group="b", env="prod", pod="2", idx="y"} 96 105 114
+
+clear
+
+# Many-to-one regression test for an issue where the include labels weren't present
+# in the ignoring() clause and thus weren't used as part of key for the many side.
+
+load 1m
+  many_side{cluster="c1", pod="1", disk="a"} 2 2 2
+  many_side{cluster="c1", pod="2", disk="a"} 3 3 3
+  many_side{cluster="c2", pod="1", disk="a"} 4 4 4
+  one_side{cluster="c1", pod="1"} 1 1 1
+  one_side{cluster="c1", pod="2"} 1 1 1
+  one_side{cluster="c2", pod="1"} 1 1 1
+
+eval instant at 2m one_side * ignoring(disk) group_right(cluster, pod) many_side
+  {cluster="c1", pod="1", disk="a"} 2
+  {cluster="c1", pod="2", disk="a"} 3
+  {cluster="c2", pod="1", disk="a"} 4
+
+clear
+
+# Another test for the regression above but we make sure that __name__ is never used
+# as part of the key for the many side even when present as an include label.
+
+load 1m
+  one_side{cluster="c1"} 2 2 2
+  many_side_1{cluster="c1", disk="a"} 1 1 1
+  many_side_2{cluster="c1", disk="a"} 1 1 1
+  many_side_3{cluster="c1", disk="a"} 1 1 1
+
+eval_fail instant at 2m one_side == ignoring(disk) group_right(__name__) {__name__=~"many_side_.+"}
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 2m one_side * ignoring(disk) group_right(__name__) {__name__=~"many_side_.+"}
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
 
 clear
 

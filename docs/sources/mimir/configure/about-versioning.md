@@ -66,6 +66,8 @@ The following features are currently experimental:
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
+  - Limit how many block indexes are validated for health concurrently during a compaction job.
+    - `-compactor.block-health-validation-concurrency`
 - Compactor scheduler
   - Coordinate compactors through a shared job queue and expose additional metrics about pending and active compaction work.
     - `-compactor-scheduler.*`
@@ -120,6 +122,7 @@ The following features are currently experimental:
     - `-distributor.otel-translation-strategy`
   - Allow controlling OTLP translation via request headers
     - `-api.otlp-translation-headers-enabled`
+  - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
   - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
@@ -229,6 +232,7 @@ The following features are currently experimental:
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
+  - Maximum number of blocks per store-gateway request (`-querier.max-blocks-per-store-request`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
@@ -250,6 +254,7 @@ The following features are currently experimental:
   - Separate query sharding limit for cardinality API requests (active series and active native histogram metrics): `-query-frontend.cardinality-sharding-max-sharded-queries`
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
+  - Waiting for the querier ring to be populated during startup before reporting the query-frontend as ready: `-query-frontend.wait-for-querier-ring-on-startup` (enabled by default, and only used when remote execution is enabled)
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
@@ -259,6 +264,7 @@ The following features are currently experimental:
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
+  - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`

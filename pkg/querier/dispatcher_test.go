@@ -167,7 +167,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0.123},
 							{TimestampMs: 10_000, Value: 1.123},
 							{TimestampMs: 20_000, Value: 2.123},
@@ -177,7 +177,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1.123},
 							{TimestampMs: 10_000, Value: 3.123},
 							{TimestampMs: 20_000, Value: 5.123},
@@ -193,6 +193,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -222,21 +225,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -252,6 +255,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -281,21 +287,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -311,6 +317,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -340,14 +349,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
@@ -357,7 +366,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -373,6 +382,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -412,7 +424,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 					},
 				}),
@@ -422,7 +434,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 						{TimestampMs: 10_000, Value: 1},
 					},
@@ -433,7 +445,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 1},
 						{TimestampMs: 20_000, Value: 2},
 					},
@@ -444,7 +456,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 					},
 				}),
@@ -454,7 +466,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 						{TimestampMs: 10_000, Value: 3},
 					},
@@ -465,7 +477,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 3},
 						{TimestampMs: 20_000, Value: 5},
 					},
@@ -479,6 +491,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -501,9 +516,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(
 					2,
-					mimirpb.Sample{TimestampMs: 0, Value: 0.123},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 10.123},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 20.123},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 0.123},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 10.123},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 20.123},
 				),
 				newEvaluationCompletedMessage(
 					stats.Stats{
@@ -565,7 +580,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					6,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: math.Inf(1)},
 						},
 					},
@@ -579,6 +594,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						6: {
@@ -608,7 +627,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					6,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: math.Inf(1)},
 						},
 					},
@@ -622,6 +641,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						6: {
@@ -683,7 +706,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					0,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0},
 							{TimestampMs: 10_000, Value: 1},
 							{TimestampMs: 20_000, Value: 2},
@@ -693,7 +716,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 2},
 							{TimestampMs: 10_000, Value: 5},
 							{TimestampMs: 20_000, Value: 8},
@@ -703,7 +726,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					0,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1},
 							{TimestampMs: 10_000, Value: 3},
 							{TimestampMs: 20_000, Value: 5},
@@ -719,6 +742,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -771,14 +798,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					2,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3},
 							{TimestampMs: 10_000, Value: 7},
 							{TimestampMs: 20_000, Value: 11},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4},
 							{TimestampMs: 10_000, Value: 9},
 							{TimestampMs: 20_000, Value: 14},
@@ -788,14 +815,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3},
 							{TimestampMs: 10_000, Value: 7},
 							{TimestampMs: 20_000, Value: 11},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4},
 							{TimestampMs: 10_000, Value: 9},
 							{TimestampMs: 20_000, Value: 14},
@@ -805,7 +832,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					2,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5},
 							{TimestampMs: 10_000, Value: 11},
 							{TimestampMs: 20_000, Value: 17},
@@ -815,7 +842,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5},
 							{TimestampMs: 10_000, Value: 11},
 							{TimestampMs: 20_000, Value: 17},
@@ -831,6 +858,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}, {Type: labels.MatchRegexp, Name: "idx", Value: "(0|1|2)"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -883,7 +914,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 					},
 				}),
@@ -893,7 +924,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 						{TimestampMs: 10_000, Value: 1},
 					},
@@ -904,7 +935,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 1},
 						{TimestampMs: 20_000, Value: 2},
 					},
@@ -915,7 +946,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 					},
 				}),
@@ -925,7 +956,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 						{TimestampMs: 10_000, Value: 5},
 					},
@@ -936,7 +967,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 5},
 						{TimestampMs: 20_000, Value: 8},
 					},
@@ -947,7 +978,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 					},
 				}),
@@ -957,7 +988,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 						{TimestampMs: 10_000, Value: 3},
 					},
@@ -968,7 +999,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 3},
 						{TimestampMs: 20_000, Value: 5},
 					},
@@ -982,6 +1013,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -1020,14 +1055,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
-					mimirpb.Sample{TimestampMs: 0, Value: 10},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 10},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 10},
 				),
 				newScalarMessage(1,
-					mimirpb.Sample{TimestampMs: 0, Value: 20},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 20},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 20},
 				),
 				newEvaluationCompletedMessage(
 					stats.Stats{
@@ -1074,9 +1109,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
-					mimirpb.Sample{TimestampMs: 0, Value: 12},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 12},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 12},
 				),
 				newSeriesMetadataMessage(
 					1,
@@ -1090,7 +1125,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0},
 							{TimestampMs: 10_000, Value: 1},
 							{TimestampMs: 20_000, Value: 2},
@@ -1103,7 +1138,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 					},
 				}),
@@ -1113,7 +1148,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 						{TimestampMs: 10_000, Value: 5},
 					},
@@ -1124,7 +1159,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 5},
 						{TimestampMs: 20_000, Value: 8},
 					},
@@ -1132,7 +1167,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1},
 							{TimestampMs: 10_000, Value: 3},
 							{TimestampMs: 20_000, Value: 5},
@@ -1148,6 +1183,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1193,21 +1232,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -1223,6 +1262,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1252,21 +1294,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -1282,6 +1324,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1314,21 +1359,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -1344,6 +1389,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1379,21 +1427,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
@@ -1409,6 +1457,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount:  123,
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1438,6 +1489,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1467,6 +1521,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -1496,6 +1553,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1525,6 +1585,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedSeriesCount: 123,
 						FetchedChunksCount: 456,
 						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						0: {
@@ -1799,7 +1862,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 9_000, Value: 1},
 						},
 					},
@@ -1809,6 +1872,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						SamplesProcessed:    5,
 						PhysicalSamplesRead: 5,
 						WallTime:            expectedQueryWallTime,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						1: {
@@ -1841,7 +1907,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 9_000, Value: 1},
 						},
 					},
@@ -1851,6 +1917,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						SamplesProcessed:    5,
 						PhysicalSamplesRead: 5,
 						WallTime:            expectedQueryWallTime,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
 						3: {
@@ -2165,7 +2234,7 @@ func newStringMessage(nodeIndex int64, s string) *frontendv2pb.QueryResultStream
 	}
 }
 
-func newScalarMessage(nodeIndex int64, values ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
+func newScalarMessage(nodeIndex int64, values ...mimirpb.FloatSample) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{

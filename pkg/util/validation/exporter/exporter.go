@@ -107,6 +107,13 @@ type ExportedMetric struct {
 	Get  func(limits *validation.Limits) float64
 }
 
+// tenantRuleID groups blocked/limited query rules for expiry export: rules sharing the same tenant and id
+// (including an empty id) are collapsed into a single series, keyed on the earliest expires_at among them.
+type tenantRuleID struct {
+	tenant string
+	id     string
+}
+
 // RegisterFlags configs this instance to the given FlagSet
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ring.RegisterFlags(f, logger)
@@ -134,12 +141,14 @@ func (c *Config) Validate() error {
 type OverridesExporter struct {
 	services.Service
 
-	defaultLimits       *validation.Limits
-	tenantLimits        validation.TenantLimits
-	exportedMetrics     []ExportedMetric
-	overrideDescription *prometheus.Desc
-	defaultsDescription *prometheus.Desc
-	logger              log.Logger
+	defaultLimits             *validation.Limits
+	tenantLimits              validation.TenantLimits
+	exportedMetrics           []ExportedMetric
+	overrideDescription       *prometheus.Desc
+	defaultsDescription       *prometheus.Desc
+	blockedQueryRuleExpiresAt *prometheus.Desc
+	limitedQueryRuleExpiresAt *prometheus.Desc
+	logger                    log.Logger
 
 	// OverridesExporter can optionally use a ring to uniquely shard tenants to
 	// instances and avoid export of duplicate metrics.
@@ -170,6 +179,18 @@ func NewOverridesExporter(
 			"cortex_limits_defaults",
 			"Resource limit defaults for tenants without overrides",
 			[]string{"limit_name"},
+			nil,
+		),
+		blockedQueryRuleExpiresAt: prometheus.NewDesc(
+			"cortex_blocked_query_rule_expires_at",
+			"Unix timestamp of the earliest expires_at among a tenant's blocked-query rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
+			[]string{"user", "id"},
+			nil,
+		),
+		limitedQueryRuleExpiresAt: prometheus.NewDesc(
+			"cortex_limited_query_rule_expires_at",
+			"Unix timestamp of the earliest expires_at among a tenant's limited-query (rate-limit) rules sharing the same id (rules without an id are grouped under an empty id). Informational only — does not affect enforcement.",
+			[]string{"user", "id"},
 			nil,
 		),
 		exportedMetrics: setupExportedMetrics(enabledMetrics, config.ExtraMetrics),
@@ -337,6 +358,8 @@ func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []Exporte
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- oe.defaultsDescription
 	ch <- oe.overrideDescription
+	ch <- oe.blockedQueryRuleExpiresAt
+	ch <- oe.limitedQueryRuleExpiresAt
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
@@ -366,6 +389,38 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 			}
 			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.Get(limits), em.Name, tenant)
 		}
+	}
+
+	// Rules never expire and always keep being enforced: expires_at is purely informational. Rules sharing the
+	// same id (including no id at all) are grouped under one series per tenant, keyed on the earliest expiry, so
+	// that duplicate ids can't produce two series with identical labels, which client_golang would reject.
+	blockedExpiry := map[tenantRuleID]time.Time{}
+	limitedExpiry := map[tenantRuleID]time.Time{}
+	for tenant, limits := range allLimits {
+		for _, rule := range limits.BlockedQueries {
+			if rule.ExpiresAt.IsZero() {
+				continue
+			}
+			key := tenantRuleID{tenant: tenant, id: rule.ID}
+			if existing, ok := blockedExpiry[key]; !ok || rule.ExpiresAt.Before(existing) {
+				blockedExpiry[key] = rule.ExpiresAt
+			}
+		}
+		for _, rule := range limits.LimitedQueries {
+			if rule.ExpiresAt.IsZero() {
+				continue
+			}
+			key := tenantRuleID{tenant: tenant, id: rule.ID}
+			if existing, ok := limitedExpiry[key]; !ok || rule.ExpiresAt.Before(existing) {
+				limitedExpiry[key] = rule.ExpiresAt
+			}
+		}
+	}
+	for key, expiresAt := range blockedExpiry {
+		ch <- prometheus.MustNewConstMetric(oe.blockedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
+	}
+	for key, expiresAt := range limitedExpiry {
+		ch <- prometheus.MustNewConstMetric(oe.limitedQueryRuleExpiresAt, prometheus.GaugeValue, float64(expiresAt.Unix()), key.tenant, key.id)
 	}
 }
 

@@ -114,10 +114,13 @@ type CachingBucket struct {
 
 // NewCachingBucket creates new caching bucket with provided configuration. Configuration should not be
 // changed after creating caching bucket.
-func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
+func NewCachingBucket(bucketID, bucketName string, bucketClient objstore.Bucket, cfg *CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (*CachingBucket, error) {
 	if bucketClient == nil {
 		return nil, errors.New("bucket is nil")
 	}
+
+	// Tells apart the metrics of several caching buckets registered by the same component.
+	bucketLabel := prometheus.Labels{"bucket": bucketName}
 
 	cb := &CachingBucket{
 		Bucket:       bucketClient,
@@ -127,25 +130,30 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 		logger:       logger,
 
 		requestedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
-			Help: "Total number of bytes requested via GetRange.",
+			Name:        "thanos_store_bucket_cache_getrange_requested_bytes_total",
+			Help:        "Total number of bytes requested via GetRange.",
+			ConstLabels: bucketLabel,
 		}, []string{"config"}),
 		fetchedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_fetched_bytes_total",
-			Help: "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
+			Name:        "thanos_store_bucket_cache_getrange_fetched_bytes_total",
+			Help:        "Total number of bytes fetched because of GetRange operation. Data from bucket is then stored to cache.",
+			ConstLabels: bucketLabel,
 		}, []string{"origin", "config"}),
 		refetchedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_getrange_refetched_bytes_total",
-			Help: "Total number of bytes re-fetched from storage because of GetRange operation, despite being in cache already.",
+			Name:        "thanos_store_bucket_cache_getrange_refetched_bytes_total",
+			Help:        "Total number of bytes re-fetched from storage because of GetRange operation, despite being in cache already.",
+			ConstLabels: bucketLabel,
 		}, []string{"origin", "config"}),
 
 		operationRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_operation_requests_total",
-			Help: "Number of requested operations matching given config which triggered a cache lookup.",
+			Name:        "thanos_store_bucket_cache_operation_requests_total",
+			Help:        "Number of requested operations matching given config which triggered a cache lookup.",
+			ConstLabels: bucketLabel,
 		}, []string{"operation", "config"}),
 		operationHits: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "thanos_store_bucket_cache_operation_hits_total",
-			Help: "Number of operations served from cache for given config.",
+			Name:        "thanos_store_bucket_cache_operation_hits_total",
+			Help:        "Number of operations served from cache for given config.",
+			ConstLabels: bucketLabel,
 		}, []string{"operation", "config"}),
 	}
 

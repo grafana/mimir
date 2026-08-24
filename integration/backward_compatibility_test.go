@@ -301,11 +301,6 @@ func checkQueries(
 				labels.MustNewMatcher(labels.MatchEqual, "name", "store-gateway-client"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-			// Wait until the query-frontend has updated the querier ring.
-			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
 			// Wait until the store-gateway has loaded the blocks before querying.
 			//
 			// The store-gateway switches to ACTIVE in the ring only after its initial block sync completes,
@@ -330,7 +325,7 @@ func checkQueries(
 
 			for _, query := range instantQueries {
 				t.Run(fmt.Sprintf("instant query: %s", query.expr), func(t *testing.T) {
-					result, err := c.Query(query.expr, query.time)
+					result, _, _, err := c.Query(query.expr, query.time)
 					require.NoError(t, err)
 					require.Equal(t, model.ValVector, result.Type())
 					require.Equal(t, query.expectedVector, result.(model.Vector))

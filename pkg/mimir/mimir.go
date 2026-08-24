@@ -76,6 +76,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -351,8 +352,8 @@ func (c *Config) Validate(log log.Logger) error {
 		// don't need it. The ruler queries blocks only through remote rule evaluation (required with
 		// compartments), so it doesn't build a local compartment-aware queryable.
 		if c.isQuerierEnabled() {
-			if !strings.Contains(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
-				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must contain the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
+			if !strings.HasSuffix(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must end with the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
 	}
@@ -1012,6 +1013,13 @@ type Mimir struct {
 	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
 	// including when running in monolithic and read/write modes.
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
+
+	// ExtraQueryFrontendASTOptimizationPasses are registered on the query-frontend planner only (not the
+	// querier planner).
+	// They let downstream builds run query-mutating logic as MQE optimisation passes whose effect is visible
+	// via the analysis endpoint. They run after the built-in passes and before sharding/subquery-spinoff, and
+	// must be set before the query planner modules initialise.
+	ExtraQueryFrontendASTOptimizationPasses []optimize.ASTOptimizationPass
 }
 
 // New makes a new Mimir.

@@ -21,7 +21,7 @@ load 1m
   series{job="api", le="+Inf"} 3
 
 eval instant at 0m histogram_quantiles(series, "quantile", 0.5, 2)
-  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got 2
+  expect warn regex: PromQL warning: quantile value should be between 0 and 1, got 2 \([0-9]+:[0-9]+\)
   {job="api", quantile="0.5"} 3.25
   {job="api", quantile="2.0"} +Inf
 

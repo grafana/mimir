@@ -391,14 +391,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),
           expr: |||
-            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (%(alert_aggregation_labels)s) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (%(alert_aggregation_labels)s, partition)) by (%(alert_aggregation_labels)s)
-          ||| % $._config,
+            max by (%(alert_aggregation_labels)s, read_compartment) (%(active_partitions)s)
+              >
+            (
+              count by (%(alert_aggregation_labels)s, read_compartment) (
+                count by (%(alert_aggregation_labels)s, read_compartment, partition) (%(partition_consumers)s)
+              )
+                or
+              # A compartment that lost all its consumers has no series here and would drop out of the comparison, so default it to zero.
+              (max by (%(alert_aggregation_labels)s, read_compartment) (%(active_partitions)s) * 0)
+            )
+          ||| % $._config {
+            // The compartment is in the ring name on one side, in the ingester job name on the other.
+            active_partitions: $.withReadCompartmentLabel('cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}', 'name'),
+            partition_consumers: $.withReadCompartmentLabel('cortex_ingest_storage_reader_last_consumed_offset{}'),
+          },
           'for': '15m',
           labels: {
             severity: 'critical',
           },
           annotations: {
-                         message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
+                         message: '%(product)s ingesters in %(alert_aggregation_variables)s{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} have fewer ingesters consuming than active partitions.' % $._config,
                        }
                        // Alternative dashboards for investigation:
                        //   - Mimir / Reads (mimir-reads.json)
@@ -408,5 +421,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

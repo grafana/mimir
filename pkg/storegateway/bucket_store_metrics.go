@@ -197,9 +197,9 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.streamingSeriesRequestDurationByStage = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
-		Help:    "Time it takes to process a series request split by stages.",
+		Help:    "Time it takes to process a Series, LabelNames or LabelValues request split by stages.",
 		Buckets: durationBuckets,
-	}, []string{"stage"})
+	}, []string{"route", "stage"})
 	m.streamingSeriesBatchPreloadingLoadDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_load_duration_seconds",
 		Help:    "Time spent by store-gateway to load batches for a single request. This metric is tracked only if the request is split into 2+ batches.",

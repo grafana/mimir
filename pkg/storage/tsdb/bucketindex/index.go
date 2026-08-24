@@ -113,6 +113,9 @@ type Block struct {
 	// Whether the block was from out of order samples
 	OutOfOrder bool `json:"out_of_order,omitempty"`
 
+	// NumSeries is the number of series in the block.
+	NumSeries uint64 `json:"num_series,omitempty"`
+
 	// Labels contains the external labels from the block's metadata.
 	Labels map[string]string `json:"labels,omitempty"`
 }
@@ -151,6 +154,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 			MinTime: m.MinTime,
 			MaxTime: m.MaxTime,
 			Version: block.TSDBVersion1,
+			Stats:   tsdb.BlockStats{NumSeries: m.NumSeries},
 			Compaction: tsdb.BlockMetaCompaction{
 				Level: m.CompactionLevel,
 				Hints: compactionHints,
@@ -200,6 +204,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		Source:           string(meta.Thanos.Source),
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
+		NumSeries:        meta.Stats.NumSeries,
 		Labels:           maps.Clone(meta.Thanos.Labels),
 	}
 }

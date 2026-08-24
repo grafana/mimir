@@ -8,6 +8,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
+	github_com_prometheus_prometheus_model_labels "github.com/prometheus/prometheus/model/labels"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	io "io"
 	math "math"
@@ -72,9 +73,18 @@ type Stats struct {
 	// processing this request.
 	// 0 means all requests succeeded on the first attempt.
 	Retries uint32 `protobuf:"varint,18,opt,name=retries,proto3" json:"retries,omitempty"`
+	// SeenSelectorCardinalities records the number of series selected by each selector evaluated while
+	// processing this request, keyed by the selector's matchers and queried time range.
+	// If the query is sharded, then the selectors here may contain matchers on __query_shard__.
+	SeenSelectorCardinalities []SelectorCardinality `protobuf:"bytes,19,rep,name=seen_selector_cardinalities,json=seenSelectorCardinalities,proto3" json:"seen_selector_cardinalities"`
+	// EstimatedSelectorCardinalities records the estimated number of series selected by each selector
+	// used while preparing this request.
+	// The selectors here will never contain __query_shard__, as the estimates are for the full
+	// cardinality of the selector (i.e. summed across all shards).
+	EstimatedSelectorCardinalities []SelectorCardinality `protobuf:"bytes,20,rep,name=estimated_selector_cardinalities,json=estimatedSelectorCardinalities,proto3" json:"estimated_selector_cardinalities"`
 	// The number of QueryStream RPCs issued to readcache instances for the query
 	// (nautilus read routing). 0 when the query was served by ingesters only.
-	ReadcacheQueryStreamCalls uint32 `protobuf:"varint,19,opt,name=readcache_query_stream_calls,json=readcacheQueryStreamCalls,proto3" json:"readcache_query_stream_calls,omitempty"`
+	ReadcacheQueryStreamCalls uint32 `protobuf:"varint,21,opt,name=readcache_query_stream_calls,json=readcacheQueryStreamCalls,proto3" json:"readcache_query_stream_calls,omitempty"`
 }
 
 func (m *Stats) Reset()      { *m = Stats{} }
@@ -235,6 +245,20 @@ func (m *Stats) GetRetries() uint32 {
 	return 0
 }
 
+func (m *Stats) GetSeenSelectorCardinalities() []SelectorCardinality {
+	if m != nil {
+		return m.SeenSelectorCardinalities
+	}
+	return nil
+}
+
+func (m *Stats) GetEstimatedSelectorCardinalities() []SelectorCardinality {
+	if m != nil {
+		return m.EstimatedSelectorCardinalities
+	}
+	return nil
+}
+
 func (m *Stats) GetReadcacheQueryStreamCalls() uint32 {
 	if m != nil {
 		return m.ReadcacheQueryStreamCalls
@@ -294,58 +318,207 @@ func (m *StepStat) GetValue() int64 {
 	return 0
 }
 
+// SelectorCardinality records the number of series selected by a single selector over a time range,
+// or an estimate of the selector's cardinality.
+type SelectorCardinality struct {
+	// The matchers of the selector.
+	Matchers []LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers"`
+	// The inclusive start of the time range that was queried (if this is a seen cardinality) or the start
+	// of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
+	MinT int64 `protobuf:"varint,2,opt,name=min_t,json=minT,proto3" json:"min_t,omitempty"`
+	// The inclusive end of the time range that was queried (if this is a seen cardinality) or the end
+	// of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
+	MaxT int64 `protobuf:"varint,3,opt,name=max_t,json=maxT,proto3" json:"max_t,omitempty"`
+	// The number of series selected.
+	SeriesCount uint64 `protobuf:"varint,4,opt,name=series_count,json=seriesCount,proto3" json:"series_count,omitempty"`
+}
+
+func (m *SelectorCardinality) Reset()      { *m = SelectorCardinality{} }
+func (*SelectorCardinality) ProtoMessage() {}
+func (*SelectorCardinality) Descriptor() ([]byte, []int) {
+	return fileDescriptor_b4756a0aec8b9d44, []int{2}
+}
+func (m *SelectorCardinality) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SelectorCardinality) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SelectorCardinality.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SelectorCardinality) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SelectorCardinality.Merge(m, src)
+}
+func (m *SelectorCardinality) XXX_Size() int {
+	return m.Size()
+}
+func (m *SelectorCardinality) XXX_DiscardUnknown() {
+	xxx_messageInfo_SelectorCardinality.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SelectorCardinality proto.InternalMessageInfo
+
+func (m *SelectorCardinality) GetMatchers() []LabelMatcher {
+	if m != nil {
+		return m.Matchers
+	}
+	return nil
+}
+
+func (m *SelectorCardinality) GetMinT() int64 {
+	if m != nil {
+		return m.MinT
+	}
+	return 0
+}
+
+func (m *SelectorCardinality) GetMaxT() int64 {
+	if m != nil {
+		return m.MaxT
+	}
+	return 0
+}
+
+func (m *SelectorCardinality) GetSeriesCount() uint64 {
+	if m != nil {
+		return m.SeriesCount
+	}
+	return 0
+}
+
+// LabelMatcher is a single label matcher.
+type LabelMatcher struct {
+	Type  github_com_prometheus_prometheus_model_labels.MatchType `protobuf:"varint,1,opt,name=type,proto3,casttype=github.com/prometheus/prometheus/model/labels.MatchType" json:"type,omitempty"`
+	Name  string                                                  `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Value string                                                  `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
+func (*LabelMatcher) ProtoMessage() {}
+func (*LabelMatcher) Descriptor() ([]byte, []int) {
+	return fileDescriptor_b4756a0aec8b9d44, []int{3}
+}
+func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelMatcher) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelMatcher.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelMatcher) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelMatcher.Merge(m, src)
+}
+func (m *LabelMatcher) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelMatcher) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelMatcher.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
+
+func (m *LabelMatcher) GetType() github_com_prometheus_prometheus_model_labels.MatchType {
+	if m != nil {
+		return m.Type
+	}
+	return 0
+}
+
+func (m *LabelMatcher) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *LabelMatcher) GetValue() string {
+	if m != nil {
+		return m.Value
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*Stats)(nil), "stats.Stats")
 	proto.RegisterType((*StepStat)(nil), "stats.StepStat")
+	proto.RegisterType((*SelectorCardinality)(nil), "stats.SelectorCardinality")
+	proto.RegisterType((*LabelMatcher)(nil), "stats.LabelMatcher")
 }
 
 func init() { proto.RegisterFile("stats.proto", fileDescriptor_b4756a0aec8b9d44) }
 
 var fileDescriptor_b4756a0aec8b9d44 = []byte{
-	// 674 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x94, 0x3d, 0x6f, 0x13, 0x4d,
-	0x10, 0xc7, 0x7d, 0x8f, 0xe3, 0xc4, 0x5e, 0xe7, 0xcd, 0x1b, 0xe7, 0xc9, 0x25, 0x4f, 0xb4, 0xb1,
-	0xf2, 0x14, 0x58, 0x42, 0x72, 0x50, 0x40, 0x34, 0x48, 0x80, 0xec, 0x50, 0x50, 0x11, 0xce, 0x88,
-	0x82, 0x66, 0xb5, 0xbe, 0x1b, 0xdb, 0x27, 0xee, 0xcd, 0xbb, 0x7b, 0x21, 0xee, 0x28, 0x29, 0x29,
-	0xf9, 0x08, 0x7c, 0x94, 0x94, 0x29, 0x53, 0x01, 0xb9, 0x34, 0x94, 0xf9, 0x08, 0x68, 0x77, 0xef,
-	0x1c, 0x27, 0x34, 0xe9, 0xbc, 0xf3, 0xfb, 0xff, 0x67, 0x66, 0x67, 0xc7, 0x87, 0xea, 0x42, 0x32,
-	0x29, 0x3a, 0x09, 0x8f, 0x65, 0x8c, 0x2b, 0xfa, 0xb0, 0xd3, 0x1c, 0xc5, 0xa3, 0x58, 0x47, 0x0e,
-	0xd4, 0x2f, 0x03, 0x77, 0xc8, 0x28, 0x8e, 0x47, 0x01, 0x1c, 0xe8, 0xd3, 0x20, 0x1d, 0x1e, 0x78,
-	0x29, 0x67, 0xd2, 0x8f, 0x23, 0xc3, 0xf7, 0xbf, 0x54, 0x51, 0xa5, 0xaf, 0xfc, 0xf8, 0x25, 0xaa,
-	0x7d, 0x62, 0x41, 0x40, 0xa5, 0x1f, 0x82, 0x6d, 0xb5, 0xac, 0x76, 0xfd, 0x70, 0xbb, 0x63, 0xdc,
-	0x9d, 0xc2, 0xdd, 0x39, 0xca, 0xdd, 0xdd, 0xea, 0xd9, 0x8f, 0xbd, 0xd2, 0xb7, 0x9f, 0x7b, 0x96,
-	0x53, 0x55, 0xae, 0x77, 0x7e, 0x08, 0xf8, 0x11, 0x6a, 0x0e, 0x41, 0xba, 0x63, 0xf0, 0xa8, 0x00,
-	0xee, 0x83, 0xa0, 0x6e, 0x9c, 0x46, 0xd2, 0xfe, 0xa7, 0x65, 0xb5, 0x17, 0x1c, 0x9c, 0xb3, 0xbe,
-	0x46, 0x3d, 0x45, 0x70, 0x07, 0x6d, 0x14, 0x0e, 0x77, 0x9c, 0x46, 0x1f, 0xe9, 0x60, 0x2a, 0x41,
-	0xd8, 0x65, 0x6d, 0x68, 0xe4, 0xa8, 0xa7, 0x48, 0x57, 0x81, 0xf9, 0x0a, 0x5a, 0x5f, 0x54, 0x58,
-	0xb8, 0x55, 0x41, 0x1b, 0xf2, 0x0a, 0x0f, 0xd0, 0x9a, 0x18, 0x33, 0xee, 0x81, 0x47, 0x27, 0xa9,
-	0xae, 0x6c, 0x57, 0x5a, 0x56, 0x7b, 0xc5, 0x59, 0xcd, 0xc3, 0x6f, 0x4d, 0x14, 0xff, 0x8f, 0x56,
-	0x44, 0x12, 0xf8, 0x72, 0x26, 0x5b, 0xd4, 0xb2, 0x65, 0x1d, 0x2c, 0x44, 0x73, 0xfd, 0xfa, 0x91,
-	0x07, 0xa7, 0x79, 0xbf, 0x4b, 0xb7, 0xfa, 0x7d, 0xad, 0x88, 0xe9, 0xf7, 0x09, 0xfa, 0x17, 0x84,
-	0xf4, 0x43, 0x26, 0xef, 0xce, 0xa4, 0xaa, 0x2d, 0xcd, 0x19, 0x9d, 0x9f, 0x4a, 0x17, 0xa1, 0x49,
-	0x0a, 0x29, 0x98, 0xa7, 0xa8, 0xdd, 0xff, 0x29, 0x6a, 0xda, 0xa6, 0xdf, 0xe2, 0x08, 0xd5, 0x21,
-	0x72, 0x63, 0x2f, 0x4f, 0x82, 0xee, 0x9f, 0x04, 0x19, 0x9f, 0xce, 0xf2, 0x10, 0x35, 0x04, 0x0b,
-	0x93, 0x00, 0x04, 0x4d, 0x78, 0xec, 0x82, 0x10, 0xe0, 0xd9, 0x75, 0xdd, 0xfa, 0x7a, 0x0e, 0x8e,
-	0x8b, 0xb8, 0x1a, 0x8e, 0x48, 0xd2, 0x88, 0xc6, 0xc3, 0x21, 0x15, 0xe9, 0xa0, 0x98, 0xe3, 0xb2,
-	0x9e, 0x63, 0x43, 0xa1, 0x37, 0xc3, 0x61, 0x7f, 0x06, 0xb0, 0x83, 0x76, 0xfe, 0x4a, 0x4e, 0x13,
-	0xe0, 0x54, 0x48, 0x48, 0xec, 0x95, 0x56, 0xb9, 0x5d, 0x3f, 0x5c, 0xeb, 0x98, 0x4d, 0xef, 0x4b,
-	0x48, 0xd4, 0x9a, 0x76, 0x17, 0x54, 0x9f, 0xce, 0xd6, 0xdd, 0xe2, 0xc7, 0xc0, 0x95, 0x04, 0xf7,
-	0x10, 0xe1, 0x10, 0xc6, 0x12, 0x28, 0x9c, 0x82, 0x9b, 0xaa, 0xab, 0x51, 0x0e, 0x93, 0x14, 0x84,
-	0xcc, 0x07, 0xbf, 0xaa, 0xdb, 0xf9, 0xcf, 0xa8, 0x5e, 0x15, 0x22, 0xc7, 0x68, 0x66, 0x5b, 0x69,
-	0x56, 0x81, 0xb3, 0x68, 0x04, 0xf4, 0x04, 0x5c, 0x19, 0x73, 0x61, 0xaf, 0x15, 0x17, 0x09, 0x7c,
-	0xe9, 0x28, 0xf2, 0xde, 0x00, 0xfc, 0x14, 0x6d, 0xc1, 0x24, 0xf5, 0x4f, 0x58, 0x00, 0x91, 0xa4,
-	0xc5, 0x9d, 0x38, 0x30, 0xcf, 0x5e, 0xd7, 0xb3, 0xda, 0xbc, 0xc1, 0x7d, 0x43, 0x1d, 0x60, 0x1e,
-	0x3e, 0x44, 0x9b, 0xc9, 0x78, 0x2a, 0x7c, 0x97, 0x05, 0xb7, 0x5d, 0x0d, 0xed, 0xda, 0x28, 0xe0,
-	0xbc, 0xc7, 0x46, 0x4b, 0x1c, 0xa4, 0x1e, 0x2c, 0xd6, 0xfd, 0x14, 0x47, 0xfc, 0x02, 0xed, 0x2a,
-	0xb3, 0xcb, 0xdc, 0x31, 0xe8, 0x25, 0x9e, 0x52, 0x21, 0x39, 0xb0, 0x90, 0xba, 0x2c, 0x08, 0x84,
-	0xbd, 0xa1, 0xe5, 0xdb, 0x33, 0x8d, 0xda, 0xe9, 0x69, 0x5f, 0x2b, 0x7a, 0x4a, 0xb0, 0xff, 0x1c,
-	0x55, 0x8b, 0x31, 0xe3, 0x5d, 0x54, 0x53, 0x7b, 0x23, 0x24, 0x0b, 0x13, 0xfd, 0x31, 0x28, 0x3b,
-	0x37, 0x01, 0xdc, 0x44, 0x95, 0x13, 0x16, 0xa4, 0xa0, 0xff, 0xd9, 0x65, 0xc7, 0x1c, 0xba, 0xcf,
-	0xce, 0x2f, 0x49, 0xe9, 0xe2, 0x92, 0x94, 0xae, 0x2f, 0x89, 0xf5, 0x39, 0x23, 0xd6, 0xf7, 0x8c,
-	0x58, 0x67, 0x19, 0xb1, 0xce, 0x33, 0x62, 0xfd, 0xca, 0x88, 0xf5, 0x3b, 0x23, 0xa5, 0xeb, 0x8c,
-	0x58, 0x5f, 0xaf, 0x48, 0xe9, 0xfc, 0x8a, 0x94, 0x2e, 0xae, 0x48, 0xe9, 0x83, 0xf9, 0x7a, 0x0d,
-	0x16, 0xf5, 0x4a, 0x3e, 0xfe, 0x13, 0x00, 0x00, 0xff, 0xff, 0xc4, 0x05, 0x79, 0x24, 0xda, 0x04,
-	0x00, 0x00,
+	// 877 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x55, 0xbf, 0x73, 0x1b, 0x45,
+	0x14, 0xd6, 0x21, 0x29, 0x91, 0x9e, 0xec, 0x38, 0x5e, 0xc9, 0xe4, 0xec, 0x64, 0xce, 0xc2, 0x14,
+	0x78, 0x86, 0x19, 0x99, 0x31, 0xbf, 0x8a, 0xcc, 0x00, 0x23, 0x85, 0x82, 0x19, 0x98, 0x84, 0x93,
+	0x87, 0x82, 0x66, 0x59, 0xdd, 0x3d, 0x49, 0x07, 0xf7, 0xcb, 0xb7, 0x7b, 0xc6, 0xea, 0x68, 0xe9,
+	0x28, 0xe1, 0x3f, 0xe0, 0x4f, 0x49, 0xe9, 0x8a, 0x49, 0x15, 0xb0, 0xdc, 0x50, 0xa6, 0xa6, 0x62,
+	0xf6, 0xed, 0x9d, 0x7c, 0x4a, 0x5c, 0xb8, 0xd3, 0xbe, 0xef, 0xfb, 0xde, 0x7b, 0xfb, 0xdd, 0xdb,
+	0x27, 0xe8, 0x48, 0x25, 0x94, 0x1c, 0xa4, 0x59, 0xa2, 0x12, 0xd6, 0xa4, 0xc3, 0x5e, 0x6f, 0x96,
+	0xcc, 0x12, 0x8a, 0x1c, 0xe9, 0x5f, 0x06, 0xdc, 0x73, 0x66, 0x49, 0x32, 0x0b, 0xf1, 0x88, 0x4e,
+	0x93, 0x7c, 0x7a, 0xe4, 0xe7, 0x99, 0x50, 0x41, 0x12, 0x1b, 0xfc, 0xe0, 0xaf, 0x36, 0x34, 0xc7,
+	0x5a, 0xcf, 0xbe, 0x80, 0xf6, 0xcf, 0x22, 0x0c, 0xb9, 0x0a, 0x22, 0xb4, 0xad, 0xbe, 0x75, 0xd8,
+	0x39, 0xde, 0x1d, 0x18, 0xf5, 0xa0, 0x54, 0x0f, 0x9e, 0x14, 0xea, 0x61, 0xeb, 0xf9, 0xcb, 0xfd,
+	0xda, 0xef, 0x7f, 0xef, 0x5b, 0x6e, 0x4b, 0xab, 0x4e, 0x82, 0x08, 0xd9, 0x07, 0xd0, 0x9b, 0xa2,
+	0xf2, 0xe6, 0xe8, 0x73, 0x89, 0x59, 0x80, 0x92, 0x7b, 0x49, 0x1e, 0x2b, 0xfb, 0xad, 0xbe, 0x75,
+	0xd8, 0x70, 0x59, 0x81, 0x8d, 0x09, 0x1a, 0x69, 0x84, 0x0d, 0xa0, 0x5b, 0x2a, 0xbc, 0x79, 0x1e,
+	0xff, 0xc4, 0x27, 0x0b, 0x85, 0xd2, 0xae, 0x93, 0x60, 0xbb, 0x80, 0x46, 0x1a, 0x19, 0x6a, 0xa0,
+	0x5a, 0x81, 0xf8, 0x65, 0x85, 0xc6, 0x5a, 0x05, 0x12, 0x14, 0x15, 0xde, 0x83, 0x2d, 0x39, 0x17,
+	0x99, 0x8f, 0x3e, 0x3f, 0xcd, 0xa9, 0xb2, 0xdd, 0xec, 0x5b, 0x87, 0x9b, 0xee, 0xbd, 0x22, 0xfc,
+	0xad, 0x89, 0xb2, 0x77, 0x61, 0x53, 0xa6, 0x61, 0xa0, 0x56, 0xb4, 0x3b, 0x44, 0xdb, 0xa0, 0x60,
+	0x49, 0xaa, 0xf4, 0x1b, 0xc4, 0x3e, 0x9e, 0x17, 0xfd, 0xde, 0x5d, 0xeb, 0xf7, 0x2b, 0x8d, 0x98,
+	0x7e, 0x3f, 0x82, 0xb7, 0x51, 0xaa, 0x20, 0x12, 0xea, 0x75, 0x4f, 0x5a, 0x24, 0xe9, 0xad, 0xd0,
+	0xaa, 0x2b, 0x43, 0x80, 0xd3, 0x1c, 0x73, 0x34, 0x9f, 0xa2, 0x7d, 0xfb, 0x4f, 0xd1, 0x26, 0x19,
+	0x7d, 0x8b, 0x27, 0xd0, 0xc1, 0xd8, 0x4b, 0xfc, 0x22, 0x09, 0xdc, 0x3e, 0x09, 0x18, 0x1d, 0x65,
+	0x79, 0x1f, 0xb6, 0xa5, 0x88, 0xd2, 0x10, 0x25, 0x4f, 0xb3, 0xc4, 0x43, 0x29, 0xd1, 0xb7, 0x3b,
+	0xd4, 0xfa, 0xfd, 0x02, 0x78, 0x56, 0xc6, 0xb5, 0x39, 0x32, 0xcd, 0x63, 0x9e, 0x4c, 0xa7, 0x5c,
+	0xe6, 0x93, 0xd2, 0xc7, 0x0d, 0xf2, 0x71, 0x5b, 0x43, 0x4f, 0xa7, 0xd3, 0xf1, 0x0a, 0x60, 0x2e,
+	0xec, 0xbd, 0x91, 0x9c, 0xa7, 0x98, 0x71, 0xa9, 0x30, 0xb5, 0x37, 0xfb, 0xf5, 0xc3, 0xce, 0xf1,
+	0xd6, 0xc0, 0x4c, 0xfa, 0x58, 0x61, 0xaa, 0xc7, 0x74, 0xd8, 0xd0, 0x7d, 0xba, 0x0f, 0x5e, 0x2f,
+	0xfe, 0x0c, 0x33, 0x4d, 0x61, 0x23, 0x70, 0x32, 0x8c, 0x12, 0x85, 0x1c, 0xcf, 0xd1, 0xcb, 0xf5,
+	0xd5, 0x78, 0x86, 0xa7, 0x39, 0x4a, 0x55, 0x18, 0x7f, 0x8f, 0xda, 0x79, 0x68, 0x58, 0x5f, 0x96,
+	0x24, 0xd7, 0x70, 0x56, 0x53, 0x69, 0x46, 0x21, 0x13, 0xf1, 0x0c, 0xf9, 0x19, 0x7a, 0x2a, 0xc9,
+	0xa4, 0xbd, 0x55, 0x5e, 0x24, 0x0c, 0x94, 0xab, 0x91, 0xef, 0x0c, 0xc0, 0x3e, 0x81, 0x07, 0x78,
+	0x9a, 0x07, 0x67, 0x22, 0xc4, 0x58, 0xf1, 0xf2, 0x4e, 0x19, 0x0a, 0xdf, 0xbe, 0x4f, 0x5e, 0xed,
+	0x5c, 0xc3, 0x63, 0x83, 0xba, 0x28, 0x7c, 0x76, 0x0c, 0x3b, 0xe9, 0x7c, 0x21, 0x03, 0x4f, 0x84,
+	0xeb, 0xaa, 0x6d, 0x52, 0x75, 0x4b, 0xb0, 0xaa, 0xb1, 0xe1, 0x6e, 0x86, 0x8a, 0x8c, 0x65, 0xd4,
+	0x4f, 0x79, 0x64, 0x3f, 0xc0, 0x43, 0x89, 0x18, 0x73, 0x89, 0x21, 0xf5, 0xc5, 0x3d, 0x91, 0xf9,
+	0x41, 0x2c, 0xc2, 0x40, 0x69, 0x76, 0x97, 0xfc, 0xdc, 0x2b, 0xfd, 0x2c, 0x48, 0xa3, 0x15, 0x67,
+	0x51, 0x58, 0xbb, 0xab, 0x93, 0xbc, 0x09, 0xeb, 0x0a, 0x3f, 0x42, 0xbf, 0x3a, 0xcd, 0x37, 0x96,
+	0xe9, 0xdd, 0xb2, 0x8c, 0x53, 0x99, 0xfc, 0x9b, 0x6a, 0x7d, 0x0e, 0x8f, 0xb4, 0x15, 0x9e, 0xf0,
+	0xe6, 0x48, 0x4f, 0x72, 0xc1, 0xa5, 0xca, 0x50, 0x44, 0xdc, 0x13, 0x61, 0x28, 0xed, 0x1d, 0xba,
+	0xfc, 0xee, 0x8a, 0xa3, 0x5f, 0xe8, 0x62, 0x4c, 0x8c, 0x91, 0x26, 0x1c, 0x7c, 0x06, 0xad, 0x72,
+	0x68, 0xd8, 0x23, 0x68, 0xeb, 0x57, 0x20, 0x95, 0x88, 0x52, 0x5a, 0x6d, 0x75, 0xf7, 0x3a, 0xc0,
+	0x7a, 0xd0, 0x3c, 0x13, 0x61, 0x8e, 0xb4, 0xa7, 0xea, 0xae, 0x39, 0x1c, 0xfc, 0x61, 0x41, 0xf7,
+	0x86, 0xf6, 0xd9, 0xc7, 0xd0, 0x8a, 0x84, 0x7e, 0xe7, 0x99, 0xb4, 0x2d, 0xba, 0x6c, 0xb7, 0xb8,
+	0xec, 0xd7, 0x62, 0x82, 0xe1, 0x37, 0x06, 0x2b, 0x6e, 0xb9, 0xa2, 0xb2, 0x2e, 0x34, 0xa3, 0x20,
+	0xe6, 0xaa, 0x28, 0xd2, 0x88, 0x82, 0xf8, 0x84, 0x82, 0xe2, 0x9c, 0x2b, 0x5a, 0x78, 0x3a, 0x28,
+	0xce, 0x4f, 0xd8, 0x3b, 0xb0, 0xb1, 0xb6, 0x29, 0xcc, 0x6e, 0xeb, 0xc8, 0xeb, 0x05, 0x71, 0xf0,
+	0xab, 0x05, 0x1b, 0xd5, 0x6a, 0xec, 0x29, 0x34, 0xd4, 0x22, 0x35, 0x6b, 0xbb, 0x3e, 0x7c, 0xfc,
+	0xdf, 0xcb, 0xfd, 0x4f, 0x67, 0x81, 0x9a, 0xe7, 0x93, 0x81, 0x97, 0x44, 0x7a, 0xf7, 0x47, 0xa8,
+	0xe6, 0x98, 0xcb, 0xea, 0xcf, 0x28, 0xf1, 0x31, 0x3c, 0x0a, 0x75, 0x1a, 0x39, 0xa0, 0x44, 0x27,
+	0x8b, 0x14, 0x5d, 0x4a, 0xc4, 0x18, 0x34, 0x62, 0x11, 0x19, 0x4b, 0xda, 0x2e, 0xfd, 0xbe, 0xf6,
+	0xa9, 0x4e, 0x41, 0x73, 0x18, 0x3e, 0xbe, 0xb8, 0x74, 0x6a, 0x2f, 0x2e, 0x9d, 0xda, 0xab, 0x4b,
+	0xc7, 0xfa, 0x65, 0xe9, 0x58, 0x7f, 0x2e, 0x1d, 0xeb, 0xf9, 0xd2, 0xb1, 0x2e, 0x96, 0x8e, 0xf5,
+	0xcf, 0xd2, 0xb1, 0xfe, 0x5d, 0x3a, 0xb5, 0x57, 0x4b, 0xc7, 0xfa, 0xed, 0xca, 0xa9, 0x5d, 0x5c,
+	0x39, 0xb5, 0x17, 0x57, 0x4e, 0xed, 0x7b, 0xf3, 0x9f, 0x35, 0xb9, 0x43, 0x8b, 0xe8, 0xc3, 0xff,
+	0x03, 0x00, 0x00, 0xff, 0xff, 0x08, 0x6f, 0xc7, 0x42, 0xd0, 0x06, 0x00, 0x00,
 }
 
 func (this *Stats) Equal(that interface{}) bool {
@@ -426,6 +599,22 @@ func (this *Stats) Equal(that interface{}) bool {
 	if this.Retries != that1.Retries {
 		return false
 	}
+	if len(this.SeenSelectorCardinalities) != len(that1.SeenSelectorCardinalities) {
+		return false
+	}
+	for i := range this.SeenSelectorCardinalities {
+		if !this.SeenSelectorCardinalities[i].Equal(&that1.SeenSelectorCardinalities[i]) {
+			return false
+		}
+	}
+	if len(this.EstimatedSelectorCardinalities) != len(that1.EstimatedSelectorCardinalities) {
+		return false
+	}
+	for i := range this.EstimatedSelectorCardinalities {
+		if !this.EstimatedSelectorCardinalities[i].Equal(&that1.EstimatedSelectorCardinalities[i]) {
+			return false
+		}
+	}
 	if this.ReadcacheQueryStreamCalls != that1.ReadcacheQueryStreamCalls {
 		return false
 	}
@@ -458,11 +647,79 @@ func (this *StepStat) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SelectorCardinality) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SelectorCardinality)
+	if !ok {
+		that2, ok := that.(SelectorCardinality)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Matchers) != len(that1.Matchers) {
+		return false
+	}
+	for i := range this.Matchers {
+		if !this.Matchers[i].Equal(&that1.Matchers[i]) {
+			return false
+		}
+	}
+	if this.MinT != that1.MinT {
+		return false
+	}
+	if this.MaxT != that1.MaxT {
+		return false
+	}
+	if this.SeriesCount != that1.SeriesCount {
+		return false
+	}
+	return true
+}
+func (this *LabelMatcher) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelMatcher)
+	if !ok {
+		that2, ok := that.(LabelMatcher)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.Name != that1.Name {
+		return false
+	}
+	if this.Value != that1.Value {
+		return false
+	}
+	return true
+}
 func (this *Stats) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 23)
+	s := make([]string, 0, 25)
 	s = append(s, "&stats.Stats{")
 	s = append(s, "WallTime: "+fmt.Sprintf("%#v", this.WallTime)+",\n")
 	s = append(s, "FetchedSeriesCount: "+fmt.Sprintf("%#v", this.FetchedSeriesCount)+",\n")
@@ -488,6 +745,20 @@ func (this *Stats) GoString() string {
 	s = append(s, "EquivalentSamplesRead: "+fmt.Sprintf("%#v", this.EquivalentSamplesRead)+",\n")
 	s = append(s, "PhysicalSamplesRead: "+fmt.Sprintf("%#v", this.PhysicalSamplesRead)+",\n")
 	s = append(s, "Retries: "+fmt.Sprintf("%#v", this.Retries)+",\n")
+	if this.SeenSelectorCardinalities != nil {
+		vs := make([]SelectorCardinality, len(this.SeenSelectorCardinalities))
+		for i := range vs {
+			vs[i] = this.SeenSelectorCardinalities[i]
+		}
+		s = append(s, "SeenSelectorCardinalities: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	if this.EstimatedSelectorCardinalities != nil {
+		vs := make([]SelectorCardinality, len(this.EstimatedSelectorCardinalities))
+		for i := range vs {
+			vs[i] = this.EstimatedSelectorCardinalities[i]
+		}
+		s = append(s, "EstimatedSelectorCardinalities: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
 	s = append(s, "ReadcacheQueryStreamCalls: "+fmt.Sprintf("%#v", this.ReadcacheQueryStreamCalls)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -499,6 +770,37 @@ func (this *StepStat) GoString() string {
 	s := make([]string, 0, 6)
 	s = append(s, "&stats.StepStat{")
 	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
+	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SelectorCardinality) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&stats.SelectorCardinality{")
+	if this.Matchers != nil {
+		vs := make([]LabelMatcher, len(this.Matchers))
+		for i := range vs {
+			vs[i] = this.Matchers[i]
+		}
+		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "MinT: "+fmt.Sprintf("%#v", this.MinT)+",\n")
+	s = append(s, "MaxT: "+fmt.Sprintf("%#v", this.MaxT)+",\n")
+	s = append(s, "SeriesCount: "+fmt.Sprintf("%#v", this.SeriesCount)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelMatcher) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&stats.LabelMatcher{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Name: "+fmt.Sprintf("%#v", this.Name)+",\n")
 	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -536,7 +838,39 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x1
 		i--
-		dAtA[i] = 0x98
+		dAtA[i] = 0xa8
+	}
+	if len(m.EstimatedSelectorCardinalities) > 0 {
+		for iNdEx := len(m.EstimatedSelectorCardinalities) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.EstimatedSelectorCardinalities[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintStats(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xa2
+		}
+	}
+	if len(m.SeenSelectorCardinalities) > 0 {
+		for iNdEx := len(m.SeenSelectorCardinalities) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.SeenSelectorCardinalities[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintStats(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x9a
+		}
 	}
 	if m.Retries != 0 {
 		i = encodeVarintStats(dAtA, i, uint64(m.Retries))
@@ -688,6 +1022,100 @@ func (m *StepStat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *SelectorCardinality) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SelectorCardinality) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SelectorCardinality) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SeriesCount != 0 {
+		i = encodeVarintStats(dAtA, i, uint64(m.SeriesCount))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.MaxT != 0 {
+		i = encodeVarintStats(dAtA, i, uint64(m.MaxT))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.MinT != 0 {
+		i = encodeVarintStats(dAtA, i, uint64(m.MinT))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Matchers) > 0 {
+		for iNdEx := len(m.Matchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Matchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintStats(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *LabelMatcher) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelMatcher) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Value) > 0 {
+		i -= len(m.Value)
+		copy(dAtA[i:], m.Value)
+		i = encodeVarintStats(dAtA, i, uint64(len(m.Value)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintStats(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Type != 0 {
+		i = encodeVarintStats(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintStats(dAtA []byte, offset int, v uint64) int {
 	offset -= sovStats(v)
 	base := offset
@@ -759,6 +1187,18 @@ func (m *Stats) Size() (n int) {
 	if m.Retries != 0 {
 		n += 2 + sovStats(uint64(m.Retries))
 	}
+	if len(m.SeenSelectorCardinalities) > 0 {
+		for _, e := range m.SeenSelectorCardinalities {
+			l = e.Size()
+			n += 2 + l + sovStats(uint64(l))
+		}
+	}
+	if len(m.EstimatedSelectorCardinalities) > 0 {
+		for _, e := range m.EstimatedSelectorCardinalities {
+			l = e.Size()
+			n += 2 + l + sovStats(uint64(l))
+		}
+	}
 	if m.ReadcacheQueryStreamCalls != 0 {
 		n += 2 + sovStats(uint64(m.ReadcacheQueryStreamCalls))
 	}
@@ -780,6 +1220,50 @@ func (m *StepStat) Size() (n int) {
 	return n
 }
 
+func (m *SelectorCardinality) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Matchers) > 0 {
+		for _, e := range m.Matchers {
+			l = e.Size()
+			n += 1 + l + sovStats(uint64(l))
+		}
+	}
+	if m.MinT != 0 {
+		n += 1 + sovStats(uint64(m.MinT))
+	}
+	if m.MaxT != 0 {
+		n += 1 + sovStats(uint64(m.MaxT))
+	}
+	if m.SeriesCount != 0 {
+		n += 1 + sovStats(uint64(m.SeriesCount))
+	}
+	return n
+}
+
+func (m *LabelMatcher) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Type != 0 {
+		n += 1 + sovStats(uint64(m.Type))
+	}
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + sovStats(uint64(l))
+	}
+	l = len(m.Value)
+	if l > 0 {
+		n += 1 + l + sovStats(uint64(l))
+	}
+	return n
+}
+
 func sovStats(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -795,6 +1279,16 @@ func (this *Stats) String() string {
 		repeatedStringForSamplesProcessedPerStep += strings.Replace(strings.Replace(f.String(), "StepStat", "StepStat", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForSamplesProcessedPerStep += "}"
+	repeatedStringForSeenSelectorCardinalities := "[]SelectorCardinality{"
+	for _, f := range this.SeenSelectorCardinalities {
+		repeatedStringForSeenSelectorCardinalities += strings.Replace(strings.Replace(f.String(), "SelectorCardinality", "SelectorCardinality", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForSeenSelectorCardinalities += "}"
+	repeatedStringForEstimatedSelectorCardinalities := "[]SelectorCardinality{"
+	for _, f := range this.EstimatedSelectorCardinalities {
+		repeatedStringForEstimatedSelectorCardinalities += strings.Replace(strings.Replace(f.String(), "SelectorCardinality", "SelectorCardinality", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForEstimatedSelectorCardinalities += "}"
 	s := strings.Join([]string{`&Stats{`,
 		`WallTime:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.WallTime), "Duration", "durationpb.Duration", 1), `&`, ``, 1) + `,`,
 		`FetchedSeriesCount:` + fmt.Sprintf("%v", this.FetchedSeriesCount) + `,`,
@@ -814,6 +1308,8 @@ func (this *Stats) String() string {
 		`EquivalentSamplesRead:` + fmt.Sprintf("%v", this.EquivalentSamplesRead) + `,`,
 		`PhysicalSamplesRead:` + fmt.Sprintf("%v", this.PhysicalSamplesRead) + `,`,
 		`Retries:` + fmt.Sprintf("%v", this.Retries) + `,`,
+		`SeenSelectorCardinalities:` + repeatedStringForSeenSelectorCardinalities + `,`,
+		`EstimatedSelectorCardinalities:` + repeatedStringForEstimatedSelectorCardinalities + `,`,
 		`ReadcacheQueryStreamCalls:` + fmt.Sprintf("%v", this.ReadcacheQueryStreamCalls) + `,`,
 		`}`,
 	}, "")
@@ -825,6 +1321,36 @@ func (this *StepStat) String() string {
 	}
 	s := strings.Join([]string{`&StepStat{`,
 		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SelectorCardinality) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForMatchers := "[]LabelMatcher{"
+	for _, f := range this.Matchers {
+		repeatedStringForMatchers += strings.Replace(strings.Replace(f.String(), "LabelMatcher", "LabelMatcher", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForMatchers += "}"
+	s := strings.Join([]string{`&SelectorCardinality{`,
+		`Matchers:` + repeatedStringForMatchers + `,`,
+		`MinT:` + fmt.Sprintf("%v", this.MinT) + `,`,
+		`MaxT:` + fmt.Sprintf("%v", this.MaxT) + `,`,
+		`SeriesCount:` + fmt.Sprintf("%v", this.SeriesCount) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelMatcher) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&LabelMatcher{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
 		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
 		`}`,
 	}, "")
@@ -1267,6 +1793,74 @@ func (m *Stats) Unmarshal(dAtA []byte) error {
 				}
 			}
 		case 19:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeenSelectorCardinalities", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthStats
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStats
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SeenSelectorCardinalities = append(m.SeenSelectorCardinalities, SelectorCardinality{})
+			if err := m.SeenSelectorCardinalities[len(m.SeenSelectorCardinalities)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 20:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EstimatedSelectorCardinalities", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthStats
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStats
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EstimatedSelectorCardinalities = append(m.EstimatedSelectorCardinalities, SelectorCardinality{})
+			if err := m.EstimatedSelectorCardinalities[len(m.EstimatedSelectorCardinalities)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 21:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ReadcacheQueryStreamCalls", wireType)
 			}
@@ -1373,6 +1967,280 @@ func (m *StepStat) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipStats(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthStats
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SelectorCardinality) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowStats
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SelectorCardinality: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SelectorCardinality: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Matchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthStats
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthStats
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Matchers = append(m.Matchers, LabelMatcher{})
+			if err := m.Matchers[len(m.Matchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MinT", wireType)
+			}
+			m.MinT = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MinT |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxT", wireType)
+			}
+			m.MaxT = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxT |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesCount", wireType)
+			}
+			m.SeriesCount = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesCount |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipStats(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthStats
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowStats
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelMatcher: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelMatcher: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			m.Type = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Type |= github_com_prometheus_prometheus_model_labels.MatchType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthStats
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthStats
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStats
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthStats
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthStats
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Value = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipStats(dAtA[iNdEx:])

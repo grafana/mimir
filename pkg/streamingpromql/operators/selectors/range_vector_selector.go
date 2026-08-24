@@ -299,6 +299,8 @@ func (m *RangeVectorSelector) FinishedReading(ctx context.Context) error {
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
+
+	m.Selector.FinishedReading(ctx)
 	m.Selector.Close()
 	return nil
 }

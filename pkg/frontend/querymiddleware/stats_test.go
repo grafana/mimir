@@ -299,8 +299,8 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 1}, {TimestampMs: 1000, Value: 2}}},
-						{Samples: []mimirpb.Sample{{TimestampMs: 0, Value: 3}}},
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 0, Value: 1}, {TimestampMs: 1000, Value: 2}}},
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 0, Value: 3}}},
 					},
 				},
 			},
@@ -329,7 +329,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
 						{
-							Samples:    []mimirpb.Sample{{TimestampMs: 0, Value: 1}},
+							Samples:    []mimirpb.FloatSample{{TimestampMs: 0, Value: 1}},
 							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1000}},
 						},
 					},
@@ -346,7 +346,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
-							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+							Samples: []mimirpb.FloatSample{{TimestampMs: 1_500}},
 						},
 					},
 				},
@@ -360,7 +360,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValScalar.String(),
 					Result: []SampleStream{
-						{Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
 					},
 				},
 			},

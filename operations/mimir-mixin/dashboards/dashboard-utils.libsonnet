@@ -1515,7 +1515,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             container_fs_writes_bytes_total{
               %(namespaceMatcher)s,
               container=~"%(containerName)s",
-              device!~".*sda.*"
+              device!~"%(nodeBootDiskDeviceRegex)s"
             }
           ),
           "device",
@@ -1529,6 +1529,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       containerName: containerName,
       nodeLabel: $._config.per_node_label,
       namespaceMatcher: $.namespaceMatcher(),
+      nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
     },
 
   filterKedaScalerErrorsByHPA(hpa_name)::

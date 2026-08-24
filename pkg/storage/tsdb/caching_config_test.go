@@ -64,7 +64,7 @@ func TestMetadataCachingBucket_CacheKeysAreIsolatedByBucketID(t *testing.T) {
 		require.NoError(t, bkt.Upload(ctx, path, strings.NewReader(content)))
 
 		cfg := configureMetadataCaching(sharedCache, metadataCfg, bucketcache.NewCachingBucketConfig())
-		cachingBkt, err := bucketcache.NewCachingBucket(bucketID, bkt, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		cachingBkt, err := bucketcache.NewCachingBucket(bucketID, bucketID, bkt, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		return cachingBkt
 	}

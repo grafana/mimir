@@ -58,7 +58,7 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		m.AnchoredResetsChanges == otherMatrixSelector.AnchoredResetsChanges
 }
 
-func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
+func (m *MatrixSelector) GetMatchers() []LabelMatcher {
 	return m.Matchers
 }
 

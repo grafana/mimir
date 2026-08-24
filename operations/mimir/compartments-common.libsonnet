@@ -70,12 +70,78 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
   // Creates a { compartment_0: …, compartment_1: … } resource map when enabled, otherwise returns {}.
   // fn is called with the compartment index (integer) for each compartment in [0, numCompartments).
+  // excludedCompartments skips the given compartment indexes from the map; it's meant only for
+  // autoscaling resources (ScaledObjects, ReplicaTemplates) — workload maps must keep every compartment.
   // Usage: foo_zone_a_deployments: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments,
   //          function(compartment) $.newFooCompartmentDeployment('a', compartment, …)),
-  mimirCompartmentsCreateIf(enabled, numCompartments, fn):: if !enabled then {} else {
+  mimirCompartmentsCreateIf(enabled, numCompartments, fn, excludedCompartments=[]):: if !enabled then {} else {
     ['compartment_%d' % compartment]: fn(compartment)
     for compartment in std.range(0, numCompartments - 1)
+    if !std.member(excludedCompartments, compartment)
   },
+
+  // Validates a component's paired per-compartment autoscaling disable knobs:
+  // disabledCompartments (compartment indexes whose ScaledObject must not render) and
+  // staticReplicas ({ compartment_<id>: <replicas> } entries for exactly those compartments).
+  // Returns a human-readable error string, or null when the configuration is valid.
+  //
+  // When a compartmentized component gains per-compartment ScaledObjects, give it the paired
+  // autoscaling_<component>_disabled_compartments / <component>_compartment_static_replicas
+  // knobs too: pass the disabled list as mimirCompartmentsCreateIf's excludedCompartments for
+  // the ScaledObject map, branch the workloads between the replica strip and an explicit
+  // static replica count (never layer one on the other — the strip hides the replicas field),
+  // and assert on this validator. See compartments-compactor.libsonnet for the simplest
+  // worked example.
+  validateMimirCompartmentsAutoscalingDisabledKnobs(disabledKnobName, disabledCompartments, staticReplicasKnobName, staticReplicas, numCompartments, autoscalingKnobName, autoscalingEnabled)::
+    local isInt(v) = std.isNumber(v) && v == std.floor(v);
+
+    local shapeError =
+      if !std.isArray(disabledCompartments) then
+        '%s must be a list of compartment indexes.' % disabledKnobName
+      else if !std.isObject(staticReplicas) then
+        '%s must be an object mapping "compartment_<id>" keys to replica counts.' % staticReplicasKnobName
+      else null;
+
+    local idError(id) =
+      if !isInt(id) then
+        '%s contains %s, but compartment indexes must be integers.' % [disabledKnobName, std.toString(id)]
+      else if id < 0 || id >= numCompartments then
+        '%s contains compartment index %d, but only compartments [0, %d) exist; remove the out-of-range index or raise the compartment count.' % [disabledKnobName, id, numCompartments]
+      else null;
+
+    local pairingError(id) =
+      local key = 'compartment_%d' % id;
+      if !std.objectHas(staticReplicas, key) then
+        'compartment %d is listed in %s, so its ScaledObject is not rendered and its replica count is no longer autoscaler-owned; set an explicit count via %s: { %s: <replicas> }.' % [id, disabledKnobName, staticReplicasKnobName, key]
+      else if !isInt(staticReplicas[key]) || staticReplicas[key] <= 0 then
+        '%s.%s must be an integer greater than 0.' % [staticReplicasKnobName, key]
+      else null;
+
+    local staleKeyError(key) =
+      if !std.member(['compartment_%d' % id for id in disabledCompartments], key) then
+        '%s has entry "%s", but that compartment is not listed in %s: static replicas apply only to compartments whose autoscaling is disabled; remove the entry or add the compartment to %s.' % [staticReplicasKnobName, key, disabledKnobName, disabledKnobName]
+      else null;
+
+    // Checked in order, first failure wins; later checks may assume earlier ones passed
+    // (e.g. the pairing and stale-key checks format ids with %d, valid only for integer ids).
+    local checks =
+      [shapeError] +
+      (
+        if shapeError != null then [] else
+          [idError(id) for id in disabledCompartments] +
+          [
+            if std.length(std.set(disabledCompartments)) != std.length(disabledCompartments) then
+              '%s contains duplicate compartment indexes.' % disabledKnobName
+            else null,
+            if std.length(disabledCompartments) > 0 && !autoscalingEnabled then
+              '%s is set but %s is false: with the component-level autoscaling switch off, no compartment renders a ScaledObject, so a per-compartment disable list has no effect; remove the entries or enable %s.' % [disabledKnobName, autoscalingKnobName, autoscalingKnobName]
+            else null,
+          ] +
+          [pairingError(id) for id in disabledCompartments] +
+          [staleKeyError(key) for key in std.objectFields(staticReplicas)]
+      );
+
+    std.foldl(function(firstError, err) if firstError != null then firstError else err, checks, null),
 
   // Base (empty) per-compartment caching config.
   blocks_chunks_zone_a_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),

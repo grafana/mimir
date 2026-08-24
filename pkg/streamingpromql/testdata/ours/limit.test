@@ -168,12 +168,12 @@ eval range from 0 to 50m step 5m count(limit_ratio(-1.0, http_requests) and http
 
 # Capped to 1.0 -> all samples.
 eval range from 0 to 50m step 5m count(limit_ratio(1.1, http_requests) and http_requests)
-  expect warn msg: PromQL warning: ratio value should be between -1 and 1, got 1.1, capping to 1
+  expect warn msg: PromQL warning: ratio value should be between -1 and 1, got 1.1, capping to 1 (1:19)
   {} 8+0x10
 
 # Capped to -1.0 -> all samples.
 eval range from 0 to 50m step 5m count(limit_ratio(-1.1, http_requests) and http_requests)
-  expect warn msg: PromQL warning: ratio value should be between -1 and 1, got -1.1, capping to -1
+  expect warn msg: PromQL warning: ratio value should be between -1 and 1, got -1.1, capping to -1 (1:19)
   {} 8+0x10
 
 # Half~ish samples: verify we get "near" 4 (of 0.5 * 8).

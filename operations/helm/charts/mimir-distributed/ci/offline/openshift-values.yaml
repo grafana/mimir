@@ -19,3 +19,12 @@ rollout_operator:
     fsGroup: null
     runAsGroup: null
     runAsUser: null
+
+# Run the meta-monitoring agent under its own service account, in a namespace other than the release
+# namespace, to cover the SCC Role and RoleBinding that the chart creates alongside that account.
+metaMonitoring:
+  grafanaAgent:
+    enabled: true
+    namespace: citestns-monitoring
+    serviceAccount:
+      create: true

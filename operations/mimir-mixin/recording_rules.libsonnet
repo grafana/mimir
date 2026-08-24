@@ -25,9 +25,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_request_duration_seconds', $._config.job_labels + ['route'], $.rateInterval('1m'), record_native=true),
       },
       {
-        name: 'mimir_querier_api',
+        name: 'mimir_querier_api_1',
         rules:
-          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true) +
+          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
+      },
+      {
+        name: 'mimir_querier_api_2',
+        rules:
           utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $.rateInterval('1m'), record_native=true) +
           utils.histogramRules('cortex_querier_request_duration_seconds', $._config.job_labels + ['route'], $.rateInterval('1m'), record_native=true),
       },
@@ -43,9 +47,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
       },
       {
-        name: 'mimir_ingester_queries',
+        name: 'mimir_ingester_queries_1',
         rules:
-          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job', 'stage'], $.rateInterval('1m'), record_native=true) +
+          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job', 'stage'], $.rateInterval('1m'), record_native=true),
+      },
+      {
+        name: 'mimir_ingester_queries_2',
+        rules:
           utils.histogramRules('cortex_ingester_queried_samples', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true) +
           utils.histogramRules('cortex_ingester_queried_exemplars', [$._config.per_cluster_label, 'job'], $.rateInterval('1m'), record_native=true),
       },
