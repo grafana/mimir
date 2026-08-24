@@ -558,7 +558,19 @@ func selectorCardinalityCacheKeys(ctx context.Context, cfg streamingpromql.Cardi
 	firstBucket := (minT + offset) / bucketMs
 	lastBucket := (maxT + offset) / bucketMs
 	if lastBucket < firstBucket {
-		return nil, fmt.Errorf("last bucket must not be before first bucket, but got minT=%d and maxT=%d", minT, maxT)
+		// minT > maxT means this selector's queried time range is empty/inverted - e.g. a subquery
+		// whose range is shorter than its step (see SubqueryChildrenTimeRange) can produce this.
+		// This mirrors types.NewRangeQueryTimeRange's handling of StartT > EndT: there's no data to
+		// estimate cardinality for, so return no cache keys rather than erroring. The caller already
+		// treats a selector with zero cache keys as "no cardinality estimate available", which lets
+		// the query proceed (without a sharding hint for this selector) instead of failing outright.
+		logger.DebugLog(
+			"msg", "selector's queried time range is empty; no cardinality estimate will be used for it",
+			"selector", canonicalSelector,
+			"minT", minT,
+			"maxT", maxT,
+		)
+		return nil, nil
 	}
 
 	desiredBucketCount := lastBucket - firstBucket + 1
