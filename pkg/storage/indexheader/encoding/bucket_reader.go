@@ -78,6 +78,8 @@ var bucketBufPool = sync.Pool{
 	},
 }
 
+var _ BufReader = (*BucketBufReader)(nil)
+
 type BucketBufReader struct {
 	ctx         context.Context
 	bkt         objstore.BucketReader

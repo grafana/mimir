@@ -17,6 +17,8 @@ import (
 // value is arbitrary and will likely change in the future based on profiling results.
 const readerBufferSize = 4096
 
+var _ BufReader = (*FileReader)(nil)
+
 type FileReader struct {
 	file   *os.File
 	closer filepool.FilePoolCloser

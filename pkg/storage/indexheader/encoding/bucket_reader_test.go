@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"sync"
 	"testing"
 
@@ -278,12 +279,12 @@ func TestBucketBufReader_GetRangeCalls_Buffering(t *testing.T) {
 		_, err := r.Read(1)
 		require.NoError(t, err)
 	}
-	require.Len(t, bkt.calls, 1)
+	require.Len(t, bkt.calls(), 1)
 
 	// Buffer depleted; next read operation triggers another bufio fill and GetRange call.
 	_, err := r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Len(t, bkt.calls(), 2)
 }
 
 func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
@@ -291,13 +292,13 @@ func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
 
 	_, err := r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 1)
+	require.Len(t, bkt.calls(), 1)
 
 	// After Reset the buffer is discarded; the next read must refetch from the bucket.
 	require.NoError(t, r.Reset())
 	_, err = r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Len(t, bkt.calls(), 2)
 }
 
 func TestBucketBufReader_Read_GetRangeError(t *testing.T) {
@@ -317,9 +318,12 @@ func TestBucketBufReader_ReadInto_GetRangeError(t *testing.T) {
 }
 
 // trackingBucket wraps an InstrumentedBucketReader and records every GetRange call.
+// BucketAsyncBufReader issues concurrent GetRange calls, so a mutex guards the record.
 type trackingBucket struct {
 	objstore.InstrumentedBucketReader
-	calls []rangeCall
+
+	mtx      sync.Mutex
+	rangeOps []rangeCall
 }
 
 type rangeCall struct {
@@ -328,8 +332,17 @@ type rangeCall struct {
 }
 
 func (b *trackingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	b.calls = append(b.calls, rangeCall{off, length})
+	b.mtx.Lock()
+	b.rangeOps = append(b.rangeOps, rangeCall{off, length})
+	b.mtx.Unlock()
 	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+// calls returns a copy of the GetRange calls recorded so far.
+func (b *trackingBucket) calls() []rangeCall {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return slices.Clone(b.rangeOps)
 }
 
 func newTrackingBucket(t *testing.T, objectData []byte) *trackingBucket {
