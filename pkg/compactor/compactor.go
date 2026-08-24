@@ -592,8 +592,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	if c.ringBasedCleanupDisabled() {
 		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.disable-ring-based-cleanup is enabled. At least one compactor without this flag must run, otherwise block cleanup stops and the bucket index goes stale, which breaks queries.")
-		// The scheduler is the authority on which jobs this worker runs, so the ring is not needed.
-		c.shardingStrategy = noRingShardingStrategy{}
 	} else {
 		if err := c.startRing(ctx); err != nil {
 			return err
@@ -936,6 +934,12 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 }
 
 func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
+	// ring sharding may be disabled
+	var ownJob ownCompactionJobFunc
+	if c.shardingStrategy != nil {
+		ownJob = c.shardingStrategy.ownJob
+	}
+
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
@@ -945,7 +949,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
-		c.shardingStrategy.ownJob,
+		ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.CompactionOOOWaitPeriod,
@@ -1063,18 +1067,6 @@ func (s *splitAndMergeShardingStrategy) instanceOwningJob(job *Job) (ring.Instan
 	}
 
 	return rs.Instances[0], nil
-}
-
-// noRingShardingStrategy is used in scheduler mode when the ring is not created. The scheduler is the
-// authority on which tenants and jobs each worker handles, so the compactor owns everything it is handed.
-type noRingShardingStrategy struct{}
-
-func (noRingShardingStrategy) compactorOwnsUser(string) (bool, error)     { return true, nil }
-func (noRingShardingStrategy) blocksCleanerOwnsUser(string) (bool, error) { return true, nil }
-func (noRingShardingStrategy) ownJob(*Job) (bool, error)                  { return true, nil }
-
-func (noRingShardingStrategy) instanceOwningJob(*Job) (ring.InstanceDesc, error) {
-	return ring.InstanceDesc{}, errors.New("instanceOwningJob is not supported without the ring")
 }
 
 func instancesForKey(r ring.ReadRing, key string) (ring.ReplicationSet, error) {

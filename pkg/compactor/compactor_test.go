@@ -358,7 +358,7 @@ func TestMultitenantCompactor_DisableRingBasedCleanup(t *testing.T) {
 	assert.Nil(t, c.ring)
 	assert.Nil(t, c.ringLifecycler)
 	assert.Nil(t, c.ringSubservices)
-	assert.Equal(t, noRingShardingStrategy{}, c.shardingStrategy)
+	assert.Nil(t, c.shardingStrategy)
 
 	// The blocks cleaner is not created at all: constructing it would register its metrics, and a
 	// cleanup timestamp stuck at 0 fires CompactorNotCleaningUpBlocks.
