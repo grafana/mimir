@@ -1,7 +1,4 @@
 {
-  local statefulSet = $.apps.v1.statefulSet,
-  local service = $.core.v1.service,
-
   _config+:: {
     // Run a second compactor fleet dedicated to slow compaction jobs. The scheduler splits
     // compaction work into a p1 and a p2 lane, the "compactor" fleet serves p1 (plus planning) and
@@ -24,8 +21,6 @@
 
     // Replicas of the p2 fleet. Only used when the fleet is not autoscaled.
     compactor_p2_replicas: 1,
-
-    compactor_p2_max_unavailable: std.max(std.floor($._config.compactor_p2_replicas / 2), 1),
   },
 
   assert !$._config.compactor_p2_fleet_enabled || $._config.compactor_scheduler_enabled
@@ -51,9 +46,16 @@
   },
 
   // One worker goroutine per concurrent job, each serving p2 only.
+  //
+  // The p2 workers do not clean, and so have no use for the ring: its only remaining job in
+  // scheduler mode is electing a cleaner per tenant. Cleanup stays with the "compactor" fleet,
+  // which keeps its ring. Dropping the ring also keeps the p2 fleet's scaling from reshuffling
+  // cleanup ownership, and lets a new worker lease its first job without waiting for ring
+  // stability, which is when a fleet sized for spikes can least afford to wait.
   compactor_p2_args:: $.compactor_args {
     'compactor.compaction-concurrency': $._config.compactor_p2_max_concurrency,
     'compactor.scheduler-client.lanes': std.join(',', std.repeat(['compact-p2'], $._config.compactor_p2_max_concurrency)),
+    'compactor.scheduler-client.disable-ring-based-cleanup': true,
   },
 
   compactor_p2_env_map:: $.compactor_env_map,
@@ -67,20 +69,16 @@
     $.compactor_p2_env_map,
   ),
 
-  compactor_p2_statefulset: if !$._config.compactor_p2_fleet_enabled then null else
-    $.newCompactorStatefulSet(
+  compactor_p2_deployment: if !$._config.compactor_p2_fleet_enabled then null else
+    $.newCompactorWorkerDeployment(
       'compactor-p2',
+      $._config.compactor_p2_replicas,
       $.compactor_p2_container,
       $.compactor_p2_node_affinity_matchers,
-      $._config.cortex_compactor_concurrent_rollout_enabled,
-      $._config.compactor_p2_max_unavailable,
-    ) +
-    statefulSet.mixin.spec.withReplicas($._config.compactor_p2_replicas) +
-    $.compactorWorkerPvcRetentionMixin,
+    ),
 
   compactor_p2_service: if !$._config.compactor_p2_fleet_enabled then null else
-    $.util.serviceFor($.compactor_p2_statefulset, $._config.service_ignored_labels) +
-    service.mixin.spec.withClusterIp('None'),
+    $.util.serviceFor($.compactor_p2_deployment, $._config.service_ignored_labels),
 
   compactor_p2_pdb: if !$._config.compactor_p2_fleet_enabled then null else
     $.newMimirPdb('compactor-p2'),

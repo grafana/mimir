@@ -954,7 +954,7 @@
   //
   // Only the backlog is lane-scoped. The throughput estimate is measured across every fleet, because
   // the worker-side duration and bytes metrics carry no lane label.
-  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas, lane='', include_plan_jobs=true)::
+  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas, lane='', include_plan_jobs=true, kind='StatefulSet')::
     // We calculate the estimated time it would take a single worker to drain the queue,
     // then divide by the target drain time to get the desired number of replicas.
     //
@@ -1160,7 +1160,7 @@
           ignore_null_values: false,
         },
       ],
-    }, kind='StatefulSet') + {
+    }, kind=kind) + {
       spec+: {
         advanced: {
           horizontalPodAutoscalerConfig: {
@@ -1237,10 +1237,11 @@
       $._config.autoscaling_compactor_p2_max_replicas,
       'compaction-p2',
       false,
+      'Deployment',
     ),
 
-  compactor_p2_statefulset: overrideSuperIfExists(
-    'compactor_p2_statefulset',
+  compactor_p2_deployment: overrideSuperIfExists(
+    'compactor_p2_deployment',
     if !$._config.autoscaling_compactor_p2_enabled then {} else $.removeReplicasFromSpec
   ),
 

@@ -106,7 +106,6 @@
 
   alertmanager_statefulset: overrideSuperIfExists('alertmanager_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  compactor_p2_statefulset: overrideSuperIfExists('compactor_p2_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   compactor_statefulsets+: overrideSuperCompartmentsIfExists('compactor_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_deployment: overrideSuperIfExists('distributor_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_zone_a_deployment: overrideSuperIfExists('distributor_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),

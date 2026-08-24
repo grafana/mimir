@@ -3,6 +3,7 @@
   local volumeMount = $.core.v1.volumeMount,
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
+  local deployment = $.apps.v1.deployment,
 
   compactor_args::
     $._config.commonConfig +
@@ -123,6 +124,30 @@
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts +
     (if !concurrent_rollout_enabled then {} else $.newCompactorConcurrentRolloutMixin(name, max_unavailable)),
+
+  // Only valid for workers running with -compactor.scheduler-client.disable-ring-based-cleanup.
+  newCompactorWorkerDeployment(name, replicas, container, nodeAffinityMatchers=[])::
+    deployment.new(name, replicas, [container]) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    deployment.spec.template.spec.withVolumes([
+      {
+        name: 'compactor-data',
+        ephemeral: {
+          volumeClaimTemplate: {
+            spec: {
+              accessModes: ['ReadWriteOnce'],
+              storageClassName: $._config.compactor_data_disk_class,
+              resources: { requests: { storage: $._config.compactor_data_disk_size } },
+            },
+          },
+        },
+      },
+    ]) +
+    $.mimirVolumeMounts +
+    (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('25%') +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   compactor_statefulset:
     $.newCompactorStatefulSet(
