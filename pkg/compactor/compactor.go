@@ -591,7 +591,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	if c.ringBasedCleanupDisabled() {
-		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.disable-ring-based-cleanup is enabled. At least one compactor without this flag must run, otherwise block cleanup stops and the bucket index goes stale, which breaks queries.")
+		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.disable-ring-based-cleanup is enabled.")
 	} else {
 		if err := c.startRing(ctx); err != nil {
 			return err

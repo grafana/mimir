@@ -634,7 +634,6 @@ func TestSchedulerExecutor_WorkerIDFallsBackToHostnameWithoutRing(t *testing.T) 
 	}
 
 	cfg := makeTestCompactorConfig(t)
-	// A single lane request keeps the worker ID free of the per-goroutine suffix.
 	cfg.SchedulerClientConfig.Lanes = flagext.StringSliceCSV{"compact+plan"}
 
 	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
