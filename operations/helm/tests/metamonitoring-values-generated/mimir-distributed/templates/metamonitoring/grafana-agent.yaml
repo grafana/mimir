@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: meta-monitoring
     app.kubernetes.io/managed-by: Helm
 spec:
-  serviceAccountName: metamonitoring-values-mimir
+  serviceAccountName: metamonitoring-values-mimir-grafana-agent
   containers:
     # The container specs here are merged with the ones in the operator using a strategic merge patch.
     - name: config-reloader

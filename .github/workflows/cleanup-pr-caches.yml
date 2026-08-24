@@ -1,0 +1,41 @@
+name: cleanup-pr-caches
+
+# Caches written by a PR run are scoped to its merge ref and only restorable by re-runs of the
+# same PR, so once it closes nothing can hit them again. Caches it read from main are owned by
+# refs/heads/main and aren't matched by the ref filter below.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  delete-pr-caches:
+    runs-on: ubuntu-latest
+    # Fork PRs get a read-only token; leave theirs to the retention policy.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      actions: write
+    steps:
+      - name: Delete caches scoped to this pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -euo pipefail
+
+          # Collect every id first: deleting shifts the list endpoint's pages.
+          IDS=$(gh api --paginate "/repos/$GH_REPO/actions/caches?ref=$PR_REF&per_page=100" --jq '.actions_caches[].id')
+
+          if [[ -z "$IDS" ]]; then
+            echo "No caches scoped to $PR_REF."
+            exit 0
+          fi
+
+          echo "Found $(echo "$IDS" | wc -l | tr -d ' ') cache(s) scoped to $PR_REF."
+          while read -r id; do
+            gh api --method DELETE "/repos/$GH_REPO/actions/caches/$id" --silent
+            echo "Deleted cache $id"
+          done <<< "$IDS"

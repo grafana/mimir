@@ -1843,7 +1843,9 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration,
 // For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
+// If atTimestamp is non-nil, every step is evaluated as of that fixed timestamp instead of the
+// step timestamp; the sample is still emitted at the step timestamp.
+func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool, atTimestamp *int64) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(series))
@@ -1863,7 +1865,11 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
+			lookupTS := ts
+			if atTimestamp != nil {
+				lookupTS = *atTimestamp
+			}
+			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, lookupTS)
 			if !ok {
 				continue
 			}
@@ -2542,7 +2548,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			ws.Merge(smoothAnnos)
 			return mat, ws
 		}
-		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, false, nil)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -4610,6 +4616,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		// Hence we wrap the inside of subquery irrespective of
 		// @ on subquery (given it is also step invariant) so that
 		// it is evaluated only once w.r.t. the start time of subquery.
+		// Like MatrixSelector we never wrap the subquery itself.
 		isInvariant, _ := preprocessExprHelper(n.Expr, start, end)
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
@@ -4620,7 +4627,7 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		case parser.END:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
-		return n.Timestamp != nil, n.Timestamp != nil
+		return n.Timestamp != nil, false
 
 	case *parser.ParenExpr:
 		return preprocessExprHelper(n.Expr, start, end)
@@ -4687,8 +4694,8 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		}
 
 	pathLoop:
-		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
-			switch p := path[i].(type) {
+		for _, v := range slices.Backward(path) { // Walk backwards up the path.
+			switch p := v.(type) {
 			case *parser.SubqueryExpr:
 				// If we ever see a subquery in the path, we
 				// will not skip the buckets. We need the

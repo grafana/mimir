@@ -101,9 +101,6 @@ type Config struct {
 	ExtraPropagateHeaders flagext.StringSliceCSV `yaml:"extra_propagated_headers" category:"advanced"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
-
-	// Deprecated in Mimir 3.1, remove in Mimir 3.3.
-	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats" category:"deprecated"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -128,7 +125,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SubquerySpinOff.SpinOffWithExcessDownstreamQueries, "query-frontend.subquery-spin-off-with-excess-downstream-queries", false, fmt.Sprintf("Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
-	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
 	cfg.ResultsCache.RegisterFlags(f)
 
 	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
@@ -558,7 +554,10 @@ func newQueryMiddlewares(
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
-		if cfg.CardinalityBasedShardingEnabled() {
+		//
+		// When splitting and caching run inside MQE, this is handled by the cardinality
+		// estimator inside the sharding optimisation pass.
+		if cfg.CardinalityBasedShardingEnabled() && !cfg.UseMQEForSplittingAndCachingResults {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,

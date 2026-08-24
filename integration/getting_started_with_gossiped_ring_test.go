@@ -96,6 +96,13 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	// Wait until the query-frontends have updated the querier ring.
+	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
+		require.NoError(t, instance.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+	}
+
 	runTestGettingStartedWithGossipedRing(t, mimir1, mimir2, "series_1", generateFloatSeries, 0)
 	runTestGettingStartedWithGossipedRing(t, mimir1, mimir2, "hseries_1", generateHistogramSeries, 1)
 }
@@ -116,7 +123,7 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, mimir1 *e2emimir.MimirS
 	require.Equal(t, 200, res.StatusCode)
 
 	// Query the series via Mimir 1
-	result, err := c1.Query(seriesName, now)
+	result, _, _, err := c1.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))

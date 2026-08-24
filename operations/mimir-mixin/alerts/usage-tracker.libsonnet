@@ -53,7 +53,7 @@
 
   groups+:
     $.withRunbookURL(
-      'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s',
+      'https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#%s',
       $.withExtraLabelsAnnotations(alertGroups)
     ),
 }

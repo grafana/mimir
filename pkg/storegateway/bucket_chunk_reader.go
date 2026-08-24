@@ -201,6 +201,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		// where the crc32 + length varint size are a substantial part of the chunk.
 		localStats.chunksTouchedSizeSum += varint.UvarintSize(chunkDataLen) + chunkEncDataLen + crc32.Size
 	}
+
+	// Chunk lengths are estimated, so drain any overfetched tail to make the connection reusable.
+	_, _ = io.Copy(io.Discard, reader)
+
 	return nil
 }
 

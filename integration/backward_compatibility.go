@@ -10,6 +10,9 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"grafana/mimir:3.1.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
 	),
+	"grafana/mimir:3.2.0": e2emimir.ChainFlagMappers(
+		removePartitionRingFlags,
+	),
 }
 
 // Always remove this flag so that it's not a pain to run GEM integration tests.

@@ -593,7 +593,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	stats := newSafeQueryStats()
-	defer s.recordSeriesCallResult(stats)
+	defer s.recordSeriesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
@@ -1120,17 +1120,28 @@ func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators [
 	return mergedIterator
 }
 
-func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
+// grpcRoute returns the full gRPC method from the request context, e.g. "/gatewaypb.StoreGateway/Series".
+// This matches the route labeling of cortex_request_duration_seconds applied by dskit interceptors.
+func grpcRoute(ctx context.Context) string {
+	if method, ok := grpc.Method(ctx); ok {
+		return method
+	}
+	return "unknown" // matches existing label convention
+}
+
+func (s *BucketStore) recordSeriesCallResult(route string, safeStats *safeQueryStats) {
 	stats := safeStats.export()
 	s.recordPostingsStats(stats)
 	s.recordSeriesStats(stats)
 	s.recordCachedPostingStats(stats)
 	s.recordSeriesHashCacheStats(stats)
-	s.recordStreamingSeriesStats(stats)
+	s.recordStreamingSeriesStats(route, stats)
 
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
+	// These request duration stages are only utilized by the `Series` rpc.
+	// LabelNames & LabelValues requests do not currently stream responses or wait at the query gate.
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "encode").Observe(stats.streamingSeriesEncodeResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "send").Observe(stats.streamingSeriesSendResponseDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "wait_max_concurrent").Observe(stats.streamingSeriesConcurrencyLimitWaitDuration.Seconds())
 
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "fetched").Observe(float64(stats.chunksFetchedSizeSum))
@@ -1154,24 +1165,24 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.chunkSizeEstimateType.WithLabelValues("fallback").Add(float64(stats.chunksFallbackSizeCount))
 }
 
-func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
+func (s *BucketStore) recordLabelNamesCallResult(route string, safeStats *safeQueryStats) {
 	stats := safeStats.export()
 	s.recordPostingsStats(stats)
 	s.recordSeriesStats(stats)
 	s.recordCachedPostingStats(stats)
 	s.recordSeriesHashCacheStats(stats)
-	s.recordStreamingSeriesStats(stats)
+	s.recordStreamingSeriesStats(route, stats)
 
 	for m, count := range stats.blocksQueriedByBlockMeta {
 		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), m.level, strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 }
 
-func (s *BucketStore) recordLabelValuesCallResult(safeStats *safeQueryStats) {
+func (s *BucketStore) recordLabelValuesCallResult(route string, safeStats *safeQueryStats) {
 	stats := safeStats.export()
 	s.recordPostingsStats(stats)
 	s.recordSeriesStats(stats)
-	s.recordStreamingSeriesStats(stats)
+	s.recordStreamingSeriesStats(route, stats)
 	s.recordCachedPostingStats(stats)
 }
 
@@ -1191,7 +1202,7 @@ func (s *BucketStore) recordSeriesStats(stats *queryStats) {
 	s.metrics.seriesRefetches.Add(float64(stats.seriesRefetches))
 }
 
-func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
+func (s *BucketStore) recordStreamingSeriesStats(route string, stats *queryStats) {
 	// Track the streaming store-gateway preloading effectiveness metrics only if the request had
 	// more than 1 batch. If the request only had 1 batch, then preloading is not triggered at all.
 	if stats.streamingSeriesBatchCount > 1 {
@@ -1199,9 +1210,9 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 		s.metrics.streamingSeriesBatchPreloadingWaitDuration.Observe(stats.streamingSeriesWaitBatchLoadedDuration.Seconds())
 	}
 
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "expand_postings").Observe(stats.streamingSeriesExpandPostingsDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "fetch_series_and_chunks").Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
 
 	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
@@ -1212,7 +1223,7 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 
 	// "other" time is any time we have spent according to the wall clock,
 	// that hasn't been recorded in any of the known categories.
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe((stats.streamingSeriesAmbientTime - categorizedTime).Seconds())
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues(route, "other").Observe((stats.streamingSeriesAmbientTime - categorizedTime).Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
@@ -1291,7 +1302,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		resHints = &storepb.LabelNamesResponseHints{}
 	)
 
-	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
@@ -1484,7 +1495,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}
 
 	stats := newSafeQueryStats()
-	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	resHints := &storepb.LabelValuesResponseHints{}

@@ -16,7 +16,6 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,11 +179,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// the store-gateway ring if blocks sharding is enabled.
 			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
-			// Wait until the query-frontend has updated the querier ring.
-			require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't know which store-gateway instance will sync the blocks, so we need to wait on
 			// metrics extracted from all instances.
@@ -206,7 +200,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, err)
 			instantQueriesCount++
 
-			result, err := c.Query(series1Name, series1Timestamp)
+			result, _, _, err := c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -214,7 +208,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 1, Postings: 1, Series: 1
 			instantQueriesCount++
 
-			result, err = c.Query(series2Name, series2Timestamp)
+			result, _, _, err = c.Query(series2Name, series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
@@ -222,7 +216,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 2, Series: 2
 			instantQueriesCount++
 
-			result, err = c.Query(series3Name, series3Timestamp)
+			result, _, _, err = c.Query(series3Name, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
@@ -248,7 +242,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			}
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
-			result, err = c.Query(series1Name, series1Timestamp)
+			result, _, _, err = c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -270,7 +264,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			const numRangeQueries = 10
 
 			for i := 0; i < numRangeQueries; i++ {
-				result, err = c.QueryRange(`count({__name__=~"series.*"})`, series3Timestamp, series3Timestamp, time.Minute)
+				result, _, _, err = c.QueryRange(`count({__name__=~"series.*"})`, series3Timestamp, series3Timestamp, time.Minute)
 				require.NoError(t, err)
 				require.Equal(t, model.ValMatrix, result.Type())
 
@@ -282,7 +276,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			}
 
 			// This instant query can be sharded.
-			result, err = c.Query(`count({__name__=~"series.*"})`, series3Timestamp)
+			result, _, _, err = c.Query(`count({__name__=~"series.*"})`, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			vector := result.(model.Vector)
@@ -461,21 +455,21 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			//
 			// If the series does not exist in the block, then we return early after checking expanded postings and
 			// subsequently the index on disk.
-			result, err := c.Query(series1Name, series1Timestamp)
+			result, _, _, err := c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
 			expectedCacheRequests += seriesReplicationFactor * 3                                  // expanded postings, postings, series
 			expectedMemcachedOps += (seriesReplicationFactor * 3) + (seriesReplicationFactor * 3) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
 
-			result, err = c.Query(series2Name, series2Timestamp)
+			result, _, _, err = c.Query(series2Name, series2Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector2, result.(model.Vector))
 			expectedCacheRequests += seriesReplicationFactor*3 + seriesReplicationFactor      // expanded postings, postings, series for 1 time range; only expanded postings for another
 			expectedMemcachedOps += 2 * (seriesReplicationFactor*3 + seriesReplicationFactor) // Same reasoning as for expectedCacheRequests, but this also includes a set for each get that is not a hit
 
-			result, err = c.Query(series3Name, series3Timestamp)
+			result, _, _, err = c.Query(series3Name, series3Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
@@ -497,7 +491,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// It should get a hit on expanded postings; this means that it will not request individual postings for matchers.
 			// It should get a hit on series.
 			// We expect 2 cache requests and 2 cache hits.
-			result, err = c.Query(series1Name, series1Timestamp)
+			result, _, _, err = c.Query(series1Name, series1Timestamp)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
@@ -570,7 +564,7 @@ func testPromQLEngine(t *testing.T, engineType string) {
 	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	result, err := c.Query(seriesName, seriesTimestamp)
+	result, _, _, err := c.Query(seriesName, seriesTimestamp)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -880,12 +874,12 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	result, err := c.Query(series1Name, series1Timestamp)
+	result, _, _, err := c.Query(series1Name, series1Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector1, result.(model.Vector))
 
-	result, err = c.Query(series2Name, series2Timestamp)
+	result, _, _, err = c.Query(series2Name, series2Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector2, result.(model.Vector))
@@ -897,14 +891,14 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 
 	// Query back again the series. Now we do expect a 500 error because the blocks are
 	// missing from the storage.
-	_, err = c.Query(series1Name, series1Timestamp)
+	_, _, _, err = c.Query(series1Name, series1Timestamp)
 	require.Error(t, err)
 	var apiErr *v1.Error
 	require.ErrorAs(t, err, &apiErr)
 	assert.Contains(t, apiErr.Detail, "get range reader: The specified key does not exist")
 
 	// We expect this to still be queryable as it was not in the cleared storage
-	_, err = c.Query(series2Name, series2Timestamp)
+	_, _, _, err = c.Query(series2Name, series2Timestamp)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector2, result.(model.Vector))
@@ -970,7 +964,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	result, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
+	result, _, _, err := c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series2Timestamp.Add(1*time.Hour), blockRangePeriod)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, result.Type())
 
@@ -981,7 +975,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	_, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
+	_, _, _, err = c.QueryRange("{__name__=~\"series_.+\"}", series1Timestamp, series4Timestamp.Add(1*time.Hour), blockRangePeriod)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
 }
@@ -1067,7 +1061,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-0")
 	require.NoError(t, err)
 
-	result, err := c.Query("fingerprint_collision", now)
+	result, _, _, err := c.Query("fingerprint_collision", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	require.Equal(t, expectedVector, result.(model.Vector))

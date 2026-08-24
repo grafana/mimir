@@ -19,7 +19,7 @@ import (
 
 func TestSplittingCacheKey_RoundTrip(t *testing.T) {
 	node := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{
+		Matchers: []core.LabelMatcher{
 			{Name: "__name__", Type: labels.MatchEqual, Value: "metric"},
 			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
 		},
@@ -56,7 +56,7 @@ func TestSplittingCacheKey_RoundTrip(t *testing.T) {
 func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 	matrixSelectorA := func() *core.MatrixSelector {
 		return &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-			Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
+			Matchers: []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
 			Range:    time.Hour,
 		}}
 	}
@@ -79,7 +79,7 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 		},
 		"different matchers produce a different cache key": {
 			node: &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "b"}},
+				Matchers: []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "b"}},
 				Range:    time.Hour,
 			}},
 			params:              &planning.QueryParameters{},
@@ -87,7 +87,7 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 		},
 		"different range produces a different cache key": {
 			node: &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
+				Matchers: []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
 				Range:    2 * time.Hour,
 			}},
 			params:              &planning.QueryParameters{},
@@ -130,7 +130,7 @@ func TestSplittingCacheKey_FieldSensitivity(t *testing.T) {
 
 func TestSplittingCacheKey_DoesNotMutateCallersQueryParameters(t *testing.T) {
 	node := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []*core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
+		Matchers: []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "a"}},
 		Range:    time.Hour,
 	}}
 	params := &planning.QueryParameters{

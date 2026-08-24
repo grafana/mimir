@@ -321,11 +321,15 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	f.inflightRequestCount.Inc()
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
-	cleanup := func() {
+	// This runs when the caller closes the response body, which reaches the query-frontend
+	// middleware chain as an http.Response.Body. Closing one of those more than once is
+	// routine in Go, so the cleanup has to be idempotent: a second Dec() would take the
+	// in-flight gauge below the real value and it would never recover.
+	cleanup := sync.OnceFunc(func() {
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
 		f.inflightRequestCount.Dec()
-	}
+	})
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {

@@ -62,6 +62,7 @@
     memberlistConfig:: {
       'memberlist.bind-port': gossipRingPort,
       'memberlist.join': 'dns+gossip-ring.%s.svc.%s:%d' % [$._config.namespace, $._config.cluster_domain, gossipRingPort],
+      'memberlist.rejoin-interval': '60s',
     } + (
       if $._config.memberlist_cluster_label == '' then {} else {
         'memberlist.cluster-label': $._config.memberlist_cluster_label,
