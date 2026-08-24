@@ -553,6 +553,13 @@ func (c *MultitenantCompactor) cacheBucketID() string {
 	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
 }
 
+// ringBasedCleanupDisabled reports whether this compactor skips the ring-sharded background blocks
+// cleaner. In scheduler mode the ring's only remaining purpose is sharding that cleaner, so the ring
+// is not created either and this compactor only executes jobs leased from the scheduler.
+func (c *MultitenantCompactor) ringBasedCleanupDisabled() bool {
+	return c.compactorCfg.SchedulerClientConfig.Enabled && c.compactorCfg.SchedulerClientConfig.DisableRingBasedCleanup
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -572,18 +579,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
 
-	// Initialize the compactors ring if sharding is enabled. With compartments enabled the compactor
-	// registers into its read compartment's own ring.
-	name, key := ringName, ringKey
-	if c.compactorCfg.Compartments.Enabled {
-		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
-		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
-	}
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
-	if err != nil {
-		return err
-	}
-
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
 		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation, c.registerer)
@@ -593,6 +588,57 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	} else {
 		// Uses the ring to shard jobs between compactor instances
 		c.executor = &standaloneExecutor{}
+	}
+
+	if c.ringBasedCleanupDisabled() {
+		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.disable-ring-based-cleanup is enabled. At least one compactor without this flag must run, otherwise block cleanup stops and the bucket index goes stale, which breaks queries.")
+		// The scheduler is the authority on which jobs this worker runs, so the ring is not needed.
+		c.shardingStrategy = noRingShardingStrategy{}
+	} else {
+		if err := c.startRing(ctx); err != nil {
+			return err
+		}
+
+		// Create the blocks cleaner (service).
+		c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
+			DeletionDelay:                 c.compactorCfg.DeletionDelay,
+			CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+			CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
+			TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
+			DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
+			GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
+			UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
+			CompactionBlockRanges:         c.compactorCfg.BlockRanges,
+			EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
+		}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
+
+		// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
+		if err := c.blocksCleaner.StartAsync(ctx); err != nil {
+			c.ringSubservices.StopAsync()
+			return fmt.Errorf("failed to start the blocks cleaner: %w", err)
+		}
+	}
+
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
+
+	return nil
+}
+
+// startRing initializes the compactor ring, starts its subservices, waits until this instance is ACTIVE,
+// and builds the ring-backed sharding strategy.
+func (c *MultitenantCompactor) startRing(ctx context.Context) error {
+	var err error
+
+	// With compartments enabled the compactor registers into its read compartment's own ring.
+	name, key := ringName, ringKey
+	if c.compactorCfg.Compartments.Enabled {
+		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
+		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
+	}
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
+	if err != nil {
+		return err
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -640,29 +686,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
-
-	// Create the blocks cleaner (service).
-	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:                 c.compactorCfg.DeletionDelay,
-		CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
-		DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
-		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
-		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
-		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
-		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
-	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
-
-	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
-	if err := c.blocksCleaner.StartAsync(ctx); err != nil {
-		c.ringSubservices.StopAsync()
-		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
-	}
-
-	// Remove validation directories possibly left behind by block upload
-	c.cleanupLeftoverValidationDirectories()
-
 	return nil
 }
 
@@ -708,7 +731,9 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 		}
 	}
 
-	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
+	if c.blocksCleaner != nil {
+		services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
+	}
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
@@ -1038,6 +1063,18 @@ func (s *splitAndMergeShardingStrategy) instanceOwningJob(job *Job) (ring.Instan
 	}
 
 	return rs.Instances[0], nil
+}
+
+// noRingShardingStrategy is used in scheduler mode when the ring is not created. The scheduler is the
+// authority on which tenants and jobs each worker handles, so the compactor owns everything it is handed.
+type noRingShardingStrategy struct{}
+
+func (noRingShardingStrategy) compactorOwnsUser(string) (bool, error)     { return true, nil }
+func (noRingShardingStrategy) blocksCleanerOwnsUser(string) (bool, error) { return true, nil }
+func (noRingShardingStrategy) ownJob(*Job) (bool, error)                  { return true, nil }
+
+func (noRingShardingStrategy) instanceOwningJob(*Job) (ring.InstanceDesc, error) {
+	return ring.InstanceDesc{}, errors.New("instanceOwningJob is not supported without the ring")
 }
 
 func instancesForKey(r ring.ReadRing, key string) (ring.ReplicationSet, error) {

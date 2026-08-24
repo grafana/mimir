@@ -614,6 +614,37 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	require.True(t, gotWork)
 }
 
+func TestSchedulerExecutor_WorkerIDFallsBackToHostnameWithoutRing(t *testing.T) {
+	hostname, err := os.Hostname()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	workerIDs := make(chan string, 1)
+	mockSchedulerClient := &mockCompactorSchedulerClient{
+		LeaseJobFunc: func(_ context.Context, in *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+			select {
+			case workerIDs <- in.WorkerId:
+			default:
+			}
+			cancel()
+			return &compactorschedulerpb.LeaseJobResponse{}, nil
+		},
+	}
+
+	cfg := makeTestCompactorConfig(t)
+	// A single lane request keeps the worker ID free of the per-goroutine suffix.
+	cfg.SchedulerClientConfig.Lanes = flagext.StringSliceCSV{"compact+plan"}
+
+	schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
+	c := prepareCompactorForExecutorTest(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
+	require.Nil(t, c.ringLifecycler)
+
+	require.NoError(t, schedulerExec.run(ctx, c))
+	require.Equal(t, hostname, <-workerIDs)
+}
+
 func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	var mockSchedulerClient *mockCompactorSchedulerClient
 	mockSchedulerClient = &mockCompactorSchedulerClient{
