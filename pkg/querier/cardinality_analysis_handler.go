@@ -52,6 +52,10 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 		}
 		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				http.Error(w, fmt.Errorf("%w: try narrowing the label selector", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
 			respondFromError(err, w)
 			return
 		}
@@ -61,7 +65,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 }
 
 // LabelValuesCardinalityHandler creates handler for label values cardinality endpoint.
-func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
+func LabelValuesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
@@ -81,8 +85,12 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, cardinalityRequest.LabelNames, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
+		seriesCountTotal, cardinalityResponse, err := d.LabelValuesCardinality(ctx, cardinalityRequest.LabelNames, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				http.Error(w, fmt.Errorf("%w: try narrowing the label selector", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
 			respondFromError(err, w)
 			return
 		}
