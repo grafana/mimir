@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +24,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -100,15 +102,39 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				b := realByteSlice(indexFile.Bytes())
 
 				// Write sparse index headers to disk on first build.
-				_, err = NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				r1, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
+				requireCleanup(t, r1.Close)
 				// Read sparse index headers to disk on second build.
 				r2, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
+				requireCleanup(t, r2.Close)
 
 				// Check correctness of sparse index headers.
 				compareIndexToHeader(t, b, r2)
 				compareIndexToHeaderPostings(t, b, r2)
+				require.False(t, r2.postingsOffsetTable.IsRemote(),
+					"postings offsets should be read from local disk when the bucket reader is disabled")
+
+				// Build the sparse index-header by reading the postings offset table from object storage.
+				bucketDir := filepath.Join(tmpDir, "bucket-reader")
+				bucketCfg := Config{BucketReader: BucketReaderConfig{
+					Enabled:             true,
+					BucketIndexSections: SectionPostingsOffsetsTable,
+				}}
+				r3, err := NewStreamBinaryReader(ctx, blockID, bkt, bucketDir, bucketCfg, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				require.NoError(t, err)
+				requireCleanup(t, r3.Close)
+				require.True(t, r3.postingsOffsetTable.IsRemote(),
+					"postings offsets should be read from object storage when the bucket reader is enabled")
+
+				// Check correctness of sparse index headers built from the bucket.
+				compareIndexToHeader(t, b, r3)
+				compareIndexToHeaderPostings(t, b, r3)
+
+				// TODO: the full index-header, including the postings offset table, is still written to local
+				//  disk even when th2e bucket reader is enabled. Once WriteBinary can emit a symbols-only
+				//  index-header, assert that the one written to bucketDir has no postings offset table.
 			})
 		}
 	}
@@ -283,6 +309,22 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	labelNames, err := newReader.LabelNames(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"a", "b"}, labelNames)
+}
+
+// readSparseHeaderFromDisk reads back the sparse index-header a StreamBinaryReader wrote under dir.
+func readSparseHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID, logger log.Logger) *indexheaderpb.Sparse {
+	t.Helper()
+
+	gzipped, err := os.ReadFile(filepath.Join(dir, blockID.String(), block.SparseIndexHeaderFilename))
+	require.NoError(t, err)
+
+	raw, err := unzipSparseHeader(gzipped, logger)
+	require.NoError(t, err)
+
+	sparse := &indexheaderpb.Sparse{}
+	require.NoError(t, sparse.Unmarshal(raw))
+
+	return sparse
 }
 
 // trackedBucket wraps a BucketReader and tracks details about downloaded files
