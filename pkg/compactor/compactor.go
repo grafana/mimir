@@ -557,7 +557,7 @@ func (c *MultitenantCompactor) cacheBucketID() string {
 // cleaner. In scheduler mode the ring's only remaining purpose is sharding that cleaner, so the ring
 // is not created either and this compactor only executes jobs leased from the scheduler.
 func (c *MultitenantCompactor) ringBasedCleanupDisabled() bool {
-	return c.compactorCfg.SchedulerClientConfig.Enabled && c.compactorCfg.SchedulerClientConfig.DisableRingBasedCleanup
+	return c.compactorCfg.SchedulerClientConfig.Enabled && !c.compactorCfg.SchedulerClientConfig.EnableRingBasedCleanup
 }
 
 // Start the compactor.
@@ -591,7 +591,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	if c.ringBasedCleanupDisabled() {
-		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.disable-ring-based-cleanup is enabled.")
+		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.enable-ring-based-cleanup is disabled.")
 	} else {
 		if err := c.startRing(ctx); err != nil {
 			return err

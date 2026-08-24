@@ -154,16 +154,16 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.SchedulerClientConfig.Enabled = true
 				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
-				cfg.SchedulerClientConfig.DisableRingBasedCleanup = true
+				cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
 			},
 			expected: "",
 		},
 		"should fail with ring-based cleanup disabled and scheduler client disabled": {
 			setup: func(cfg *Config) {
 				cfg.SchedulerClientConfig.Enabled = false
-				cfg.SchedulerClientConfig.DisableRingBasedCleanup = true
+				cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
 			},
-			expected: errInvalidSchedulerDisableRingBasedCleanup.Error(),
+			expected: errInvalidSchedulerRingBasedCleanup.Error(),
 		},
 		"should fail with scheduler mode enabled and zero update interval": {
 			setup: func(cfg *Config) {
@@ -341,7 +341,7 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	))
 }
 
-func TestMultitenantCompactor_DisableRingBasedCleanup(t *testing.T) {
+func TestMultitenantCompactor_RingBasedCleanupDisabled(t *testing.T) {
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{}, nil)
@@ -349,7 +349,7 @@ func TestMultitenantCompactor_DisableRingBasedCleanup(t *testing.T) {
 	cfg := prepareConfig(t)
 	cfg.SchedulerClientConfig.Enabled = true
 	cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
-	cfg.SchedulerClientConfig.DisableRingBasedCleanup = true
+	cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
 
 	c, _, _, logs, reg := prepare(t, cfg, bucketClient)
 	require.NoError(t, c.starting(t.Context()))

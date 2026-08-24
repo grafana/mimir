@@ -91,12 +91,12 @@ var (
 	errInvalidSchedulerUpdateMinBackoff              = errors.New("invalid compactor.scheduler-client.update-min-backoff, must be positive")
 	errInvalidSchedulerUpdateMaxBackoff              = errors.New("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
 	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
-	errInvalidSchedulerDisableRingBasedCleanup       = errors.New("invalid compactor.scheduler-client.disable-ring-based-cleanup, requires compactor.scheduler-client.enabled to be true")
+	errInvalidSchedulerRingBasedCleanup              = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, can only be disabled when compactor.scheduler-client.enabled is true")
 )
 
 type SchedulerClientConfig struct {
 	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
-	DisableRingBasedCleanup       bool                   `yaml:"disable_ring_based_cleanup" category:"experimental"`
+	EnableRingBasedCleanup        bool                   `yaml:"enable_ring_based_cleanup" category:"experimental"`
 	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
 	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
 	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
@@ -114,7 +114,7 @@ type SchedulerClientConfig struct {
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	flagPrefix := "compactor.scheduler-client."
 	f.BoolVar(&cfg.Enabled, flagPrefix+"enabled", false, "Controls whether compactors should contact a scheduler to request work.")
-	f.BoolVar(&cfg.DisableRingBasedCleanup, flagPrefix+"disable-ring-based-cleanup", false, "Don't run the ring-based blocks cleaner on this compactor and don't join the compactor ring, which is then unused. Requires -"+flagPrefix+"enabled. WARNING: enabling this on every compactor stops cleanup and breaks reads cluster-wide.")
+	f.BoolVar(&cfg.EnableRingBasedCleanup, flagPrefix+"enable-ring-based-cleanup", true, "Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -"+flagPrefix+"enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide.")
 	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"scheduler-endpoint", "", "Compactor scheduler endpoint.")
 	f.DurationVar(&cfg.UpdateInterval, flagPrefix+"update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
 	f.DurationVar(&cfg.LeasingMinBackoff, flagPrefix+"leasing-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
@@ -132,8 +132,8 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *SchedulerClientConfig) Validate() error {
 	if !cfg.Enabled {
-		if cfg.DisableRingBasedCleanup {
-			return errInvalidSchedulerDisableRingBasedCleanup
+		if !cfg.EnableRingBasedCleanup {
+			return errInvalidSchedulerRingBasedCleanup
 		}
 		return nil
 	}

@@ -1285,10 +1285,10 @@ Usage of ./cmd/mimir/mimir:
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.scheduler-client.compaction-dir-cleanup-interval duration
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
-  -compactor.scheduler-client.disable-ring-based-cleanup
-    	[experimental] Don't run the ring-based blocks cleaner on this compactor and don't join the compactor ring, which is then unused. Requires -compactor.scheduler-client.enabled. WARNING: enabling this on every compactor stops cleanup and breaks reads cluster-wide.
   -compactor.scheduler-client.enable-interrupted-reassign
     	[experimental] Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown). (default true)
+  -compactor.scheduler-client.enable-ring-based-cleanup
+    	[experimental] Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide. (default true)
   -compactor.scheduler-client.enabled
     	[experimental] Controls whether compactors should contact a scheduler to request work.
   -compactor.scheduler-client.grpc-client-config.backoff-max-period duration

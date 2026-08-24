@@ -14060,12 +14060,12 @@
             },
             {
               "kind": "field",
-              "name": "disable_ring_based_cleanup",
+              "name": "enable_ring_based_cleanup",
               "required": false,
-              "desc": "Don't run the ring-based blocks cleaner on this compactor and don't join the compactor ring, which is then unused. Requires -compactor.scheduler-client.enabled. WARNING: enabling this on every compactor stops cleanup and breaks reads cluster-wide.",
+              "desc": "Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "compactor.scheduler-client.disable-ring-based-cleanup",
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.scheduler-client.enable-ring-based-cleanup",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
