@@ -28,7 +28,7 @@ For more information, refer to [experimental features](../../../../configure/abo
 The block-builder-scheduler coordinates work across block-builder workers:
 
 1. The block-builder-scheduler monitors the Kafka topic that holds series data. From offset ranges in each topic partition, it creates jobs
-that it schedules for block-builder workers to pick up.
+   that it schedules for block-builder workers to pick up.
 1. A block-builder leases a job from the scheduler.
 1. The block-builder consumes the range of records from a Kafka topic partition that the job covers.
 1. The block-builder creates TSDB blocks per tenant locally and uploads them to long-term object storage.
@@ -39,7 +39,7 @@ The block-builder-scheduler is a singleton process: as of today, there must be o
 the scheduler doesn't coordinate its state between its own replicas.
 
 The scheduler oversees the backlog in the Kafka topic, creates jobs, assigns them to block-builders, and tracks their progress.
-It keeps its active job queue in memory and stores progress as Kafka consumer group offsets. 
+It keeps its active job queue in memory and stores progress as Kafka consumer group offsets.
 
 On a restart, the scheduler first reconstructs its state from Kafka consumer group offsets and pings from active block-builder workers.
 
