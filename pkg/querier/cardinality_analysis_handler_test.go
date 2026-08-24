@@ -208,6 +208,11 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			expectedHTTPStatusCode: 500,
 			expectedHTTPBody:       "non httpgrpc error\n",
 		},
+		"should return request entity too large if the distributor returns ErrResponseTooLarge": {
+			distributorError:       pkg_distributor.ErrResponseTooLarge,
+			expectedHTTPStatusCode: http.StatusRequestEntityTooLarge,
+			expectedHTTPBody:       "response too large: try narrowing the label selector\n",
+		},
 	}
 
 	for testName, testData := range tests {
@@ -772,6 +777,11 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			distributorError:       fmt.Errorf("non httpgrpc error"),
 			expectedHTTPStatusCode: 500,
 			expectedHTTPBody:       "non httpgrpc error\n",
+		},
+		"should return request entity too large if the distributor returns ErrResponseTooLarge": {
+			distributorError:       pkg_distributor.ErrResponseTooLarge,
+			expectedHTTPStatusCode: http.StatusRequestEntityTooLarge,
+			expectedHTTPBody:       "response too large: try narrowing the label selector\n",
 		},
 	}
 
