@@ -185,7 +185,7 @@ func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labe
 		if len(obj) > api.MaxActiveSeriesFrameSize {
 			err := fmt.Errorf("active series frame size %d exceeds maximum %d", len(obj), api.MaxActiveSeriesFrameSize)
 			if !wroteFrame {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			}
 			return err
 		}
