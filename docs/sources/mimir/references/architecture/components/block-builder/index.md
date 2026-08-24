@@ -66,7 +66,7 @@ The block-builder requires Grafana Mimir to run in the [ingest storage architect
 
 {{< admonition type="note" >}}
 During the outlined migration process both ingesters and block-builders upload TSDB blocks to long-term object storage.
-During this overlap, the uploaded blocks contain the same samples. The compactor deduplicates these blocks,
+Because the two systems are performing the same work during this period of overlap, the uploaded blocks will contain duplicate versions of the same samples. The compactor will deduplicate these blocks,
 but the additional uncompacted blocks from the block-builder temporarily increase compactor and store-gateway load.
 {{< /admonition >}}
 
