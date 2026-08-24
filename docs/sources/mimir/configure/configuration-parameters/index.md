@@ -6901,6 +6901,13 @@ scheduler_client:
   # CLI flag: -compactor.scheduler-client.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) Run the ring-based blocks cleaner and join the compactor
+  # ring, which is otherwise unused. Can only be disabled when
+  # -compactor.scheduler-client.enabled is true. WARNING: disabling this on
+  # every compactor stops cleanup and breaks reads cluster-wide.
+  # CLI flag: -compactor.scheduler-client.enable-ring-based-cleanup
+  [enable_ring_based_cleanup: <boolean> | default = true]
+
   # (experimental) Compactor scheduler endpoint.
   # CLI flag: -compactor.scheduler-client.scheduler-endpoint
   [scheduler_endpoint: <string> | default = ""]

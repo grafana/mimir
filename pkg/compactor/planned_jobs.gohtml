@@ -9,7 +9,8 @@
 <h1>Compaction jobs based on bucket-index</h1>
 <p>
     This page shows compaction jobs computed from the bucket index. This is not an up-to-date view of compaction jobs.
-    Compactors owning the job are computed using the current <a href="/compactor/ring">compactor ring</a>, and ignore <code>-compactor.enabled-tenants</code> and <code>-compactor.disabled-tenants</code> configuration.
+    {{ if .SchedulerEnabled }}Jobs are planned by the compaction scheduler, so this list does not reflect the jobs the scheduler has queued, leased or completed.
+    {{ else }}Compactors owning the job are computed using the current <a href="/compactor/ring">compactor ring</a>, and ignore <code>-compactor.enabled-tenants</code> and <code>-compactor.disabled-tenants</code> configuration.{{ end }}
 </p>
 <ul>
     <li>Current time: {{ .Now }}</li>
@@ -23,7 +24,7 @@
 
 <form>
     <input type="checkbox" id="show-blocks" name="show_blocks" {{ if .ShowBlocks }} checked {{ end }}>&nbsp;<label for="show-blocks">Show Blocks</label>&nbsp;&nbsp;
-    <input type="checkbox" id="show-compactors" name="show_compactors" {{ if .ShowCompactors }} checked {{ end }}>&nbsp;<label for="show-compactors">Show Compactors</label>&nbsp;&nbsp;
+    {{ if not .SchedulerEnabled }}<input type="checkbox" id="show-compactors" name="show_compactors" {{ if .ShowCompactors }} checked {{ end }}>&nbsp;<label for="show-compactors">Show Compactors</label>&nbsp;&nbsp;{{ end }}
     <label for="split-groups">Split groups:</label>&nbsp;<input id="split-groups" name="split_groups" type="text" value="{{ .SplitGroups }}" style="width: 6em;"/>&nbsp;&nbsp;
     <label for="merge-shards">Merge shards:</label>&nbsp;<input id="merge-shards" name="merge_shards" type="text" value="{{ .MergeShards }}" style="width: 6em;"/>&nbsp;&nbsp;
     <button type="submit" style="background-color: lightgrey;">
