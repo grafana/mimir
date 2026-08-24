@@ -979,6 +979,27 @@ func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
 		resp = serve(t, api.ContentTypeActiveSeriesFramed+";q=0")
 		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 	})
+
+	t.Run("returns request entity too large when a single series exceeds the max frame size", func(t *testing.T) {
+		// Spread the size across many labels, well under any single label's own size limit, rather
+		// than one huge value: only the marshaled series as a whole needs to exceed
+		// api.MaxActiveSeriesFrameSize.
+		const numLabels = api.MaxActiveSeriesFrameSize/1000 + 1000
+		pairs := make([]string, 0, numLabels*2)
+		for i := 0; i < numLabels; i++ {
+			pairs = append(pairs, fmt.Sprintf("label_%06d", i), strings.Repeat("a", 990))
+		}
+		oversized := []labels.Labels{labels.FromStrings(pairs...)}
+
+		d := &mockDistributor{}
+		d.On("ActiveSeries", mock.Anything, mock.Anything).Return(oversized, error(nil))
+		handler := createEnabledHandler(t, activeSeriesCardinalityHandler, d)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(t, api.ContentTypeActiveSeriesFramed))
+		resp := recorder.Result()
+
+		require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+	})
 }
 
 func framedFrames(t *testing.T, body []byte) [][]byte {
