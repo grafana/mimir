@@ -63,7 +63,7 @@ You're using an IDE you may find useful the following settings for the Grafana M
 When making changes to jsonnet/libsonnet files, always format before creating commits:
 
 - **Mixin files** (`operations/mimir-mixin/`): Run `make format-mixin` then `make build-mixin` to render compiled YAML outputs
-- **Other jsonnet files** (`operations/mimir`, `operations/mimir-tests`, `development/`): Run `make format-jsonnet-manifests`
+- **All other jsonnet files** (anywhere outside `operations/mimir-mixin/`): Run `make format-jsonnet-manifests`
 
 This prevents formatting-only commits and ensures your jsonnet changes compile correctly.
 
