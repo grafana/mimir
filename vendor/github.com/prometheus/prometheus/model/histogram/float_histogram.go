@@ -381,7 +381,8 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 				false,
 				hPositiveSpans, hPositiveBuckets, h.CustomValues,
 				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
-				nil, intersectedBounds)
+				nil, intersectedBounds,
+			)
 			h.CustomValues = intersectedBounds
 		}
 		return h, counterResetCollision, nhcbBoundsReconciled, nil
@@ -458,7 +459,8 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 				false,
 				hPositiveSpans, hPositiveBuckets, h.CustomValues,
 				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
-				cPositiveBuckets, intersectedBounds)
+				cPositiveBuckets, intersectedBounds,
+			)
 			h.CustomValues = intersectedBounds
 			c.CustomValues = intersectedBounds
 		}
@@ -566,7 +568,8 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 				true,
 				hPositiveSpans, hPositiveBuckets, h.CustomValues,
 				otherPositiveSpans, otherPositiveBuckets, other.CustomValues,
-				nil, intersectedBounds)
+				nil, intersectedBounds,
+			)
 			h.CustomValues = intersectedBounds
 		}
 		return h, counterResetCollision, nhcbBoundsReconciled, nil
@@ -822,6 +825,7 @@ func detectReset(currIt, prevIt *floatBucketIterator) bool {
 			if !prevIt.Next() {
 				return false
 			}
+			prevBucket = prevIt.strippedAt()
 		}
 	}
 	currBucket := currIt.strippedAt()
@@ -841,6 +845,7 @@ func detectReset(currIt, prevIt *floatBucketIterator) bool {
 					if !prevIt.Next() {
 						return false
 					}
+					prevBucket = prevIt.strippedAt()
 				}
 			}
 			currBucket = currIt.strippedAt()

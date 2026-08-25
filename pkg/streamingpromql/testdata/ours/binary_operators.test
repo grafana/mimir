@@ -159,6 +159,17 @@ eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
 
 clear
 
+# One-to-one matching with multiple matches on right side, with the empty match group produced by on().
+load 6m
+  left_side 100 200 300
+  right_side{pod="a"} 1 2 3
+  right_side{pod="b"} 4 5 6
+
+eval_fail range from 0 to 12m step 6m left_side > on () right_side
+  expected_fail_regexp (found duplicate series for the match group \{\} on the right hand-side of the operation: \[\{__name__="right_side", pod="a"\}, \{__name__="right_side", pod="b"\}\];many-to-many matching not allowed: matching labels must be unique on one side|found duplicate series for the match group \{\} on the right side of the operation at timestamp 1970-01-01T00:00:00Z: \{__name__="right_side", pod="a"\} and \{__name__="right_side", pod="b"\})
+
+clear
+
 # One-to-one matching with more series on left side than right (and vice-versa)
 # We have an optimsation that favours the smaller side, these tests ensure it behaves correctly.
 load 1m
