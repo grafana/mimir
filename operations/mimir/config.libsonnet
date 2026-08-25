@@ -93,13 +93,9 @@
     // the scheduler instead of planning them locally.
     compactor_scheduler_enabled: false,
 
-    // Run a second compactor fleet dedicated to slow compaction jobs. The scheduler splits
-    // compaction work into a p1 and a p2 lane, the "compactor" fleet serves p1 (plus planning) and
-    // the "compactor-p2" fleet serves p2, so that the recurring p2 spikes can be absorbed and
-    // sized on their own instead of delaying the p1 work that keeps up with freshly written blocks.
-    //
-    // The lanes must be served by separate fleets: the scheduler walks the lanes a worker asks for
-    // in order, so a worker asking for both drains every tenant's p1 work before any p2 work.
+    // Run a second compactor fleet for slow compaction jobs, so the recurring spikes can be sized
+    // separately. Separate fleets are required: the scheduler serves the lanes a worker asks for in
+    // order, so one worker asking for both drains every tenant's p1 work before any p2 work.
     compactor_p2_fleet_enabled: false,
 
     // Allow to fine tune compactor.

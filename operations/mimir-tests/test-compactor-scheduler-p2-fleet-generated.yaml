@@ -516,7 +516,7 @@ spec:
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
-        - -compactor.scheduler-client.disable-ring-based-cleanup=true
+        - -compactor.scheduler-client.enable-ring-based-cleanup=false
         - -compactor.scheduler-client.enabled=true
         - -compactor.scheduler-client.lanes=compact-p2,compact-p2
         - -compactor.scheduler-client.metadata-cache.backend=memcached

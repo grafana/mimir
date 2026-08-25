@@ -116,11 +116,9 @@
 
   compactor_args+:: if $._config.compactor_scheduler_enabled then $.compactor_scheduler_worker_args else {},
 
-  // Compactors act as ephemeral workers when the scheduler is enabled (the scheduler re-leases
+  // When the scheduler is enabled, compactors act as ephemeral workers (the scheduler re-leases
   // jobs from compactors that go away), so their data volumes are deleted on scale-down/deletion.
-  compactorWorkerPvcRetentionMixin::
+  compactor_statefulset+: if !$._config.compactor_scheduler_enabled then {} else
     statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Delete') +
     statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenDeleted('Delete'),
-
-  compactor_statefulset+: if !$._config.compactor_scheduler_enabled then {} else $.compactorWorkerPvcRetentionMixin,
 }
