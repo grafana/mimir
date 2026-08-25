@@ -12,6 +12,8 @@
 
 ### Documentation
 
+* [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
+
 ### Tools
 
 * [CHANGE] `create-draft-release-notes.sh` doesn't require release notes ready for release candidate. #16286
