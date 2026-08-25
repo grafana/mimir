@@ -332,6 +332,24 @@ func sumFloats(head, tail []promql.FPoint) float64 {
 }
 
 func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	sum, compensation, err := KahanSumHistograms(head, tail, emitAnnotation)
+	if err != nil {
+		return sum, err
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if compensation != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		sum, _, _, err = sum.Add(compensation)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return sum, nil
+}
+
+func KahanSumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, *histogram.FloatHistogram, error) {
 	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 
@@ -373,11 +391,11 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	}
 
 	if ok, err := accumulate(head); err != nil || !ok {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if ok, err := accumulate(tail); err != nil || !ok {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if counterResetSeen && notCounterResetSeen {
@@ -387,17 +405,7 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
-	// Apply Kahan compensation to get the final accurate result
-	if compensation != nil {
-		// Use regular Add (not KahanAdd) to apply the final compensation
-		sum, _, _, err := sum.Add(compensation)
-		if err != nil {
-			return nil, err
-		}
-		return sum, nil
-	}
-
-	return sum, nil
+	return sum, compensation, nil
 }
 
 func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
