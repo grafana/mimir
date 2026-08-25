@@ -94,7 +94,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/term v0.45.0
 	google.golang.org/api v0.290.0
-	google.golang.org/protobuf v1.36.12-0.20260806062936-644d0267c26e
+	google.golang.org/protobuf v1.36.12
 	sigs.k8s.io/kustomize/kyaml v0.21.1
 )
 
@@ -346,7 +346,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260824135418-61254ba903bc
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260825091547-1ed024ecc090
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
