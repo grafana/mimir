@@ -37,8 +37,6 @@
 * [BUGFIX] Block-builder-scheduler: Fail startup instead of silently switching to normal operation without assigning any jobs when probing the initial consumption offsets fails. #16028
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the cardinality `label_names` and `label_values` endpoints when the merged response exceeds `-querier.label-names-and-values-results-max-size-bytes`. #16452
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the active series endpoint's framed response format when a single series' JSON exceeds the maximum frame size. #16452
-* [BUGFIX] Ingester, Block-builder: Honor a start timestamp attached to any sample or histogram within a batch, not just the first one. Previously, only the first sample or histogram in a Remote Write 2.0 request's batch could ever trigger a zero sample for its start timestamp; now each distinct start timestamp within the same batch does. #16475
-* [BUGFIX] Distributor, Ingester: Restore wire compatibility with the deprecated per-series `created_timestamp` field, both for Remote Write 2.0 senders that still set it and for internal distributor-to-ingester and ingest-storage records produced by a not-yet-upgraded Mimir component during a rolling upgrade, by decoding it and applying it to every sample and histogram in that series that doesn't already carry its own start timestamp. #16475
 
 ### Mixin
 
