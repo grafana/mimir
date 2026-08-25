@@ -106,3 +106,18 @@ func (m *WriteRequest) ProtocolVersion() string {
 	}
 	return RemoteWriteVersion2
 }
+
+// legacyCreatedTimestampForMarshal returns the value to marshal into the reserved
+// TimeSeries/TimeSeriesRW2 field 6 (formerly created_timestamp), for backward compatibility with
+// not-yet-upgraded readers (e.g. during a rolling upgrade) that don't understand the newer
+// per-sample/per-histogram StartTimestamp fields. It takes the StartTimestamp of the first
+// sample, or if there are no samples, of the first histogram.
+func legacyCreatedTimestampForMarshal(samples []Sample, histograms []Histogram) int64 {
+	if len(samples) > 0 {
+		return samples[0].StartTimestamp
+	}
+	if len(histograms) > 0 {
+		return histograms[0].StartTimestamp
+	}
+	return 0
+}
