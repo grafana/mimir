@@ -150,8 +150,6 @@
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] MQE: Fix `histogram_count()`, `histogram_sum()` and `histogram_avg()` returning wrong results when they wrap an `==` or `!=` comparison of native histograms, `changes()` or `count_values()`. Native histograms with the same count and sum but different buckets were treated as equal. #16913
-* [BUGFIX] Ingester, Block-builder: Honor a start timestamp attached to any sample or histogram within a batch, not just the first one. Previously, only the first sample or histogram in a Remote Write 2.0 request's batch could ever trigger a zero sample for its start timestamp; now each distinct start timestamp within the same batch does. #16475
-* [BUGFIX] Distributor, Ingester: Restore wire compatibility with the deprecated per-series `created_timestamp` field, both for Remote Write 2.0 senders that still set it and for internal distributor-to-ingester and ingest-storage records produced by a not-yet-upgraded Mimir component during a rolling upgrade, by decoding it and applying it to every sample and histogram in that series that doesn't already carry its own start timestamp. #16475
 
 ### Mixin
 
