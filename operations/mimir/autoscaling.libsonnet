@@ -84,9 +84,9 @@
     autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric: true,
 
     // Sized from its own lane's backlog, so there is no CPU-based fallback.
-    autoscaling_compactor_p2_enabled: $._config.compactor_p2_fleet_enabled && $._config.autoscaling_compactor_scheduler_drain_enabled,
-    autoscaling_compactor_p2_min_replicas: error 'you must set autoscaling_compactor_p2_min_replicas in the _config',
-    autoscaling_compactor_p2_max_replicas: error 'you must set autoscaling_compactor_p2_max_replicas in the _config',
+    autoscaling_compactor_defer_enabled: $._config.compactor_defer_fleet_enabled && $._config.autoscaling_compactor_scheduler_drain_enabled,
+    autoscaling_compactor_defer_min_replicas: error 'you must set autoscaling_compactor_defer_min_replicas in the _config',
+    autoscaling_compactor_defer_max_replicas: error 'you must set autoscaling_compactor_defer_max_replicas in the _config',
   },
 
   // Utility used to override a field only if exists in super.
@@ -1184,7 +1184,7 @@
       },
     },
 
-  local compactor_p1_lane = if !$._config.compactor_p2_fleet_enabled then '' else 'compaction-p1',
+  local compactor_urgent_lane = if !$._config.compactor_defer_fleet_enabled then '' else 'compaction-urgent',
 
   // When the compactor-scheduler is enabled, scale compactors based on the scheduler queue drain time,
   // otherwise fall back to CPU-based autoscaling.
@@ -1196,7 +1196,7 @@
         '',
         $._config.autoscaling_compactor_min_replicas,
         $._config.autoscaling_compactor_max_replicas,
-        lane=compactor_p1_lane,
+        lane=compactor_urgent_lane,
       )
     else if $._config.autoscaling_compactor_enabled then
       $.newCompactorScaledObject(
@@ -1212,21 +1212,21 @@
     if !$._config.autoscaling_compactor_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  compactor_p2_scaled_object: if !$._config.autoscaling_compactor_p2_enabled then null else
+  compactor_defer_scaled_object: if !$._config.autoscaling_compactor_defer_enabled then null else
     $.newCompactorSchedulerDrainScaledObject(
-      'compactor-p2',
+      'compactor-defer',
       '',
       '',
-      $._config.autoscaling_compactor_p2_min_replicas,
-      $._config.autoscaling_compactor_p2_max_replicas,
-      lane='compaction-p2',
+      $._config.autoscaling_compactor_defer_min_replicas,
+      $._config.autoscaling_compactor_defer_max_replicas,
+      lane='compaction-defer',
       include_plan_jobs=false,
       kind='Deployment',
     ),
 
-  compactor_p2_deployment: overrideSuperIfExists(
-    'compactor_p2_deployment',
-    if !$._config.autoscaling_compactor_p2_enabled then {} else $.removeReplicasFromSpec
+  compactor_defer_deployment: overrideSuperIfExists(
+    'compactor_defer_deployment',
+    if !$._config.autoscaling_compactor_defer_enabled then {} else $.removeReplicasFromSpec
   ),
 
   //

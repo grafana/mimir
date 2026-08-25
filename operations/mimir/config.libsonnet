@@ -93,10 +93,10 @@
     // the scheduler instead of planning them locally.
     compactor_scheduler_enabled: false,
 
-    // Run a second compactor fleet for slow compaction jobs, so the recurring spikes can be sized
-    // separately. Separate fleets are required: the scheduler serves the lanes a worker asks for in
-    // order, so one worker asking for both drains every tenant's p1 work before any p2 work.
-    compactor_p2_fleet_enabled: false,
+    // Run a second compactor fleet for deferred (slow) compaction jobs, so the recurring spikes can
+    // be sized separately. Separate fleets are required: the scheduler serves the lanes a worker
+    // asks for in order, so one worker asking for both drains every tenant's urgent work first.
+    compactor_defer_fleet_enabled: false,
 
     // Allow to fine tune compactor.
     compactor_max_concurrency: 1,

@@ -21,7 +21,7 @@
 (import 'query-scheduler.libsonnet') +
 (import 'compactor.libsonnet') +
 (import 'compactor-scheduler.libsonnet') +
-(import 'compactor-p2-fleet.libsonnet') +
+(import 'compactor-defer-fleet.libsonnet') +
 (import 'block-builder.libsonnet') +
 (import 'block-builder-scheduler.libsonnet') +
 (import 'store-gateway.libsonnet') +

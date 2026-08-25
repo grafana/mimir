@@ -20,14 +20,14 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: compactor-p2
-  name: compactor-p2
+    name: compactor-defer
+  name: compactor-defer
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: compactor-p2
+      name: compactor-defer
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -207,8 +207,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: compactor-p2
-  name: compactor-p2
+    name: compactor-defer
+  name: compactor-defer
   namespace: default
 spec:
   ports:
@@ -222,7 +222,7 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: compactor-p2
+    name: compactor-defer
 ---
 apiVersion: v1
 kind: Service
@@ -479,14 +479,14 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: compactor-p2
+  name: compactor-defer
   namespace: default
 spec:
   minReadySeconds: 10
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: compactor-p2
+      name: compactor-defer
   strategy:
     rollingUpdate:
       maxSurge: 25%
@@ -494,7 +494,7 @@ spec:
   template:
     metadata:
       labels:
-        name: compactor-p2
+        name: compactor-defer
     spec:
       containers:
       - args:
@@ -518,7 +518,7 @@ spec:
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enable-ring-based-cleanup=false
         - -compactor.scheduler-client.enabled=true
-        - -compactor.scheduler-client.lanes=compact-p2,compact-p2
+        - -compactor.scheduler-client.lanes=compact-defer,compact-defer
         - -compactor.scheduler-client.metadata-cache.backend=memcached
         - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
@@ -965,7 +965,7 @@ spec:
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enabled=true
-        - -compactor.scheduler-client.lanes=compact-p1+plan,plan
+        - -compactor.scheduler-client.lanes=compact-urgent+plan,plan
         - -compactor.scheduler-client.metadata-cache.backend=memcached
         - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
@@ -1060,8 +1060,9 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -compactor-scheduler.bbolt.dir=/data
-        - -compactor-scheduler.lane-policy.compaction-urgency.p1-max-span=2h
-        - -compactor-scheduler.lane-policy.policy=compaction-urgency
+        - -compactor-scheduler.lane-policy.policy=urgency
+        - -compactor-scheduler.lane-policy.urgency.max-span=2h
+        - -compactor-scheduler.lane-policy.urgency.out-of-order=true
         - -compactor-scheduler.persistence-type=bbolt
         - -compactor-scheduler.planning-interval=30m
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1635,7 +1636,7 @@ spec:
               # Compaction jobs: outstanding bytes * seconds/byte per compaction type
               sum(
                 (
-                  sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-p1"})
+                  sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-urgent"})
                   * (
                     sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="default", job_type="compaction", compaction_type=~"split|merge"}[3h] @ end())))
                     / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="default", compaction_type=~"split|merge"}[3h] @ end())))
@@ -1643,7 +1644,7 @@ spec:
                   )
                 )
                 or
-                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-p1"}) * 1e-07
+                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-urgent"}) * 1e-07
               )
               +
               # Plan jobs: pending jobs * seconds/job.
@@ -1662,7 +1663,7 @@ spec:
         * (
           clamp_max(
             1 + 0.1 * floor(
-              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-p1"}[36000s]) > 0)) / 3600
+              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-urgent"}[36000s]) > 0)) / 3600
             ),
             2
           )
@@ -1678,7 +1679,7 @@ spec:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: compactor-p2
+  name: compactor-defer
   namespace: default
 spec:
   advanced:
@@ -1702,11 +1703,11 @@ spec:
   minReplicaCount: 1
   pollingInterval: 10
   scaleTargetRef:
-    name: compactor-p2
+    name: compactor-defer
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_compactor_p2_drain_scheduler_hpa_default
+      metricName: cortex_compactor_defer_drain_scheduler_hpa_default
       query: |+
         max_over_time(
           (
@@ -1714,7 +1715,7 @@ spec:
               # Compaction jobs: outstanding bytes * seconds/byte per compaction type
               sum(
                 (
-                  sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-p2"})
+                  sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-defer"})
                   * (
                     sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="default", job_type="compaction", compaction_type=~"split|merge"}[3h] @ end())))
                     / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="default", compaction_type=~"split|merge"}[3h] @ end())))
@@ -1722,7 +1723,7 @@ spec:
                   )
                 )
                 or
-                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-p2"}) * 1e-07
+                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-defer"}) * 1e-07
               )
             )
             / 3600
@@ -1733,7 +1734,7 @@ spec:
         * (
           clamp_max(
             1 + 0.1 * floor(
-              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-p2"}[36000s]) > 0)) / 3600
+              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-defer"}[36000s]) > 0)) / 3600
             ),
             2
           )
@@ -1743,5 +1744,5 @@ spec:
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1"
     metricType: AverageValue
-    name: cortex_compactor_p2_drain_scheduler_hpa_default
+    name: cortex_compactor_defer_drain_scheduler_hpa_default
     type: prometheus

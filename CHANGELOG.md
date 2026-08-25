@@ -55,7 +55,7 @@
 ### Jsonnet
 
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
-* [FEATURE] Compactor: Add `compactor_p2_fleet_enabled` to run a second compactor fleet dedicated to slow compaction jobs. The compactor-scheduler splits compaction work into a p1 and a p2 lane at `compactor_scheduler_p1_max_span` (default `2h`), the `compactor` fleet serves p1 and planning, and the new `compactor-p2` fleet serves p2, each autoscaled from its own lane's backlog. #16446
+* [FEATURE] Compactor: Add `compactor_defer_fleet_enabled` to run a second compactor fleet dedicated to deferred (slow) compaction jobs. The compactor-scheduler splits compaction work into an urgent and a deferred lane at `compactor_scheduler_urgency_max_span` (default `2h`), the `compactor` fleet serves the urgent lane and planning, and the new `compactor-defer` fleet serves the deferred lane, each autoscaled from its own lane's backlog. #16446
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440
