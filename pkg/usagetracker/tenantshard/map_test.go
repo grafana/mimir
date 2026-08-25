@@ -678,3 +678,132 @@ func BenchmarkMapTrackCleanupGarbage(b *testing.B) {
 	}
 	b.Logf("Rehashes: %d, rehashes per iteration %.2f", m.rehashes, float64(m.rehashes)/float64(b.N))
 }
+
+// buildMapForCleanup fills a Map with size entries whose timestamps are spread so that
+// approximately expiredFraction of them are older than the returned watermark.
+// Keys are returned so callers can refill the removed entries between timed iterations.
+func buildMapForCleanup(size int, expiredFraction float64, seed int64) (m *Map, keys []uint64, values []clock.Minutes, watermark clock.Minutes) {
+	// Live entries get minute 60, expired ones get minute 0. Watermark 30 splits them.
+	// All values stay well inside the 1h window clock.Minutes comparisons require.
+	const (
+		expiredMinute = clock.Minutes(0)
+		watermarkTs   = clock.Minutes(30)
+		liveMinute    = clock.Minutes(60)
+	)
+
+	m = New(uint32(size))
+	keys = make([]uint64, size)
+	values = make([]clock.Minutes, size)
+	r := rand.New(rand.NewSource(seed))
+	expiredUpTo := int(float64(size) * expiredFraction)
+	for i := 0; i < size; i++ {
+		keys[i] = r.Uint64()
+		if i < expiredUpTo {
+			values[i] = expiredMinute
+		} else {
+			values[i] = liveMinute
+		}
+		m.Put(keys[i], values[i], nil, nil, false)
+	}
+	return m, keys, values, watermarkTs
+}
+
+// refill re-inserts every key, restoring the map to the state it had before Cleanup ran.
+func refill(m *Map, keys []uint64, values []clock.Minutes) {
+	for i, k := range keys {
+		m.Put(k, values[i], nil, nil, false)
+	}
+}
+
+func logCleanupStats(b *testing.B, m *Map, size, removed int) {
+	s := m.Stats()
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(size), "ns/entry")
+	b.Logf("size=%d removed=%d resident=%d dead=%d limit=%d groups=%d rehashes=%d bytes=%d",
+		size, removed, s.Resident, s.Dead, s.Limit, s.Length, s.Rehashes, s.Length*80)
+}
+
+// BenchmarkMapCleanupBySize measures Cleanup as the shard grows. 64e6 entries per shard
+// corresponds to ~1e9 series per partition (16 shards).
+func BenchmarkMapCleanupBySize(b *testing.B) {
+	for _, size := range []int{1e6, 4e6, 16e6, 64e6} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			m, keys, values, watermark := buildMapForCleanup(size, 0.25, 1)
+			removed := 0
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				removed = m.Cleanup(watermark, nil)
+				b.StopTimer()
+				refill(m, keys, values)
+				b.StartTimer()
+			}
+			b.StopTimer()
+			logCleanupStats(b, m, size, removed)
+		})
+	}
+}
+
+// BenchmarkMapCleanupByExpiredFraction isolates the cost of the plain scan (0% expired,
+// only the data array is read) from the cost of the per-removal compaction.
+func BenchmarkMapCleanupByExpiredFraction(b *testing.B) {
+	const size = 16e6
+	for _, fraction := range []float64{0, 0.01, 0.05, 0.25, 1} {
+		b.Run(fmt.Sprintf("expired=%.0f%%", fraction*100), func(b *testing.B) {
+			m, keys, values, watermark := buildMapForCleanup(size, fraction, 1)
+			removed := 0
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				removed = m.Cleanup(watermark, nil)
+				b.StopTimer()
+				refill(m, keys, values)
+				b.StartTimer()
+			}
+			b.StopTimer()
+			logCleanupStats(b, m, size, removed)
+		})
+	}
+}
+
+// BenchmarkMapRehashRealistic measures the rehash that Cleanup triggers when
+// dead > limit/2. Unlike BenchmarkMapRehash, it rehashes into the group count nextSize()
+// would actually pick, so the allocation figure matches production.
+func BenchmarkMapRehashRealistic(b *testing.B) {
+	for _, size := range []int{1e6, 16e6, 64e6} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			m, _, _, _ := buildMapForCleanup(size, 0, 1)
+			target := m.nextSize(0)
+			b.Logf("entries=%d groups now=%d nextSize=%d", size, len(m.index), target)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.rehash(target)
+			}
+			b.StopTimer()
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(size), "ns/entry")
+		})
+	}
+}
+
+// BenchmarkMapCleanupSparse measures an oversized map holding few live entries, which is
+// what a shrinking tenant leaves behind: Cleanup only shrinks via the dead > limit/2 rehash.
+func BenchmarkMapCleanupSparse(b *testing.B) {
+	const groups = 16e6 / maxAvgGroupLoad
+	for _, live := range []int{0, 1e3, 1e6} {
+		b.Run(fmt.Sprintf("live=%d", live), func(b *testing.B) {
+			m := New(16e6)
+			keys := make([]uint64, live)
+			values := make([]clock.Minutes, live)
+			r := rand.New(rand.NewSource(1))
+			for i := 0; i < live; i++ {
+				keys[i] = r.Uint64()
+				values[i] = clock.Minutes(60)
+				m.Put(keys[i], values[i], nil, nil, false)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.Cleanup(clock.Minutes(30), nil)
+			}
+			b.StopTimer()
+			s := m.Stats()
+			b.Logf("live=%d groups=%d (allocated for %d) resident=%d", live, s.Length, int(groups), s.Resident)
+		})
+	}
+}
