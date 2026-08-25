@@ -46,6 +46,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -81,6 +82,18 @@ var (
 	ingesterShapes    = []string{"same-request", "ooo-same-request", "across-requests", "ooo"}
 	allShapes         = append(append([]string{}, distributorShapes...), ingesterShapes...)
 )
+
+// needsPairInOneRequest reports whether a shape puts a sample and its duplicate in separate
+// TimeSeries objects within the same request, so both must fit in one request.
+func needsPairInOneRequest(shape string) bool {
+	switch shape {
+	case "same-request", "ooo-same-request":
+		return true
+	case "all":
+		return true
+	}
+	return false
+}
 
 // withinObject reports whether a shape keeps the duplicate inside one TimeSeries object.
 func withinObject(shape string) bool {
@@ -205,9 +218,9 @@ func (c *config) validate() error {
 	if c.replicationFactor < 1 {
 		return fmt.Errorf("-replication-factor must be >= 1")
 	}
-	// The within-request shapes put a sample and its duplicate in the same request,
-	// so a request has to be able to hold both.
-	if c.seriesPerRequest < 2 && !withinObject(c.shape) {
+	// Only the shapes that pack a sample and its duplicate into the same request need
+	// room for two objects; the others send them separately.
+	if c.seriesPerRequest < 2 && needsPairInOneRequest(c.shape) {
 		return fmt.Errorf("-series-per-request must be >= 2 for shape %q, so a duplicate pair fits in one request", c.shape)
 	}
 
@@ -295,10 +308,13 @@ func expect(cfg config, f flow) expectation {
 func main() {
 	cfg := config{extraLabels: labelSet{}}
 	cfg.registerFlags(flag.CommandLine)
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	if err := cfg.validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		flag.Usage()
+		flag.CommandLine.Usage()
 		os.Exit(2)
 	}
 	if cfg.runID == "" {
@@ -744,7 +760,13 @@ func scrape(cfg config) (snapshot, error) {
 			}
 			for _, m := range family.GetMetric() {
 				labels := labelsOf(m)
-				if user, ok := labels["user"]; ok && user != cfg.tenantID {
+				// cortex_discarded_attributed_samples_total names the tenant "tenant";
+				// the others name it "user".
+				tenant, ok := labels["user"]
+				if !ok {
+					tenant, ok = labels["tenant"]
+				}
+				if ok && tenant != cfg.tenantID {
 					continue
 				}
 				key := name
@@ -831,7 +853,11 @@ func report(cfg config, f flow, exp expectation, before, after snapshot, duplica
 	// Reported, not asserted: cost attribution is a per-series label the caller opts
 	// into, so the expected total depends on how -labels was set.
 	if len(cfg.extraLabels) > 0 && (after.present[attributedMetric] || before.present[attributedMetric]) {
-		fmt.Printf("    %-28s %+.0f (reported only)\n", "attributed discards", after.delta(before, attributedMetric))
+		var attributed float64
+		for _, reason := range []string{reasonDistributorDuplicate, reasonSameValue, reasonNewValue} {
+			attributed += after.delta(before, attributedMetric+"/"+reason)
+		}
+		fmt.Printf("    %-28s %+.0f (reported only)\n", "attributed discards", attributed)
 	}
 	return ok
 }
