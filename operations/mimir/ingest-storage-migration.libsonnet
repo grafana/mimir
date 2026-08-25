@@ -104,7 +104,7 @@
     self.newIngesterZoneContainer('a', $.ingester_partition_zone_a_args, $.ingester_partition_zone_a_env_map),
 
   ingester_partition_zone_a_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_a_enabled then null else
-    self.newIngesterZoneStatefulSet('a-partition', $.ingester_partition_zone_a_container, $.ingester_partition_zone_a_node_affinity_matchers) +
+    self.newIngesterZoneStatefulSet('a-partition', $.ingester_partition_zone_a_container, $._config.ingester_zone_a_data_disk_class, $.ingester_partition_zone_a_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_a_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     partitionIngesterStatefulSetPolicies +
@@ -118,7 +118,7 @@
     self.newIngesterZoneContainer('b', $.ingester_partition_zone_b_args, $.ingester_partition_zone_b_env_map),
 
   ingester_partition_zone_b_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_b_enabled then null else
-    self.newIngesterZoneStatefulSet('b-partition', $.ingester_partition_zone_b_container, $.ingester_partition_zone_b_node_affinity_matchers) +
+    self.newIngesterZoneStatefulSet('b-partition', $.ingester_partition_zone_b_container, $._config.ingester_zone_b_data_disk_class, $.ingester_partition_zone_b_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_b_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     partitionIngesterStatefulSetPolicies +
@@ -132,7 +132,7 @@
     self.newIngesterZoneContainer('c', $.ingester_partition_zone_c_args, $.ingester_partition_zone_c_env_map),
 
   ingester_partition_zone_c_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_c_enabled then null else
-    self.newIngesterZoneStatefulSet('c-partition', $.ingester_partition_zone_c_container, $.ingester_partition_zone_c_node_affinity_matchers) +
+    self.newIngesterZoneStatefulSet('c-partition', $.ingester_partition_zone_c_container, $._config.ingester_zone_c_data_disk_class, $.ingester_partition_zone_c_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_c_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     partitionIngesterStatefulSetPolicies +
