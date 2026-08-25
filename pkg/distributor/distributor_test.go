@@ -3998,7 +3998,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 	}{
 		"expected error if sizeLimit is reached": {
 			sizeLimitBytes: 20,
-			expectedError:  "size of distinct label names and values is greater than 20 bytes",
+			expectedError:  "exceeds limit 20 bytes",
 		},
 		"expected no error if sizeLimit is not reached": {
 			sizeLimitBytes: 25,
@@ -4036,10 +4036,11 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 					}
 
 					_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
-					if len(testData.expectedError) == 0 {
+					if testData.expectedError == "" {
 						require.NoError(t, err)
 					} else {
-						require.EqualError(t, err, testData.expectedError)
+						require.ErrorIs(t, err, ErrResponseTooLarge)
+						require.ErrorContains(t, err, testData.expectedError)
 					}
 				})
 			}
