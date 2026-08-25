@@ -4676,6 +4676,11 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if legacyCreatedTimestamp := legacyCreatedTimestampForMarshal(m.Samples, m.Histograms); legacyCreatedTimestamp != 0 {
+		i = encodeVarintMimir(dAtA, i, uint64(legacyCreatedTimestamp))
+		i--
+		dAtA[i] = 0x30
+	}
 	if len(m.Histograms) > 0 {
 		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -6051,6 +6056,11 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if legacyCreatedTimestamp := legacyCreatedTimestampForMarshal(m.Samples, m.Histograms); legacyCreatedTimestamp != 0 {
+		i = encodeVarintMimir(dAtA, i, uint64(legacyCreatedTimestamp))
+		i--
+		dAtA[i] = 0x30
+	}
 	{
 		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
@@ -6335,6 +6345,9 @@ func (m *TimeSeries) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovMimir(uint64(l))
 		}
+	}
+	if legacyCreatedTimestamp := legacyCreatedTimestampForMarshal(m.Samples, m.Histograms); legacyCreatedTimestamp != 0 {
+		n += 1 + sovMimir(uint64(legacyCreatedTimestamp))
 	}
 	return n
 }
@@ -6961,6 +6974,9 @@ func (m *TimeSeriesRW2) Size() (n int) {
 	}
 	l = m.Metadata.Size()
 	n += 1 + l + sovMimir(uint64(l))
+	if legacyCreatedTimestamp := legacyCreatedTimestampForMarshal(m.Samples, m.Histograms); legacyCreatedTimestamp != 0 {
+		n += 1 + sovMimir(uint64(legacyCreatedTimestamp))
+	}
 	return n
 }
 

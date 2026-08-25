@@ -1044,6 +1044,108 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 }
 
+// TestMarshalLegacyCreatedTimestamp verifies that TimeSeries/TimeSeriesRW2 marshalling still
+// writes the reserved per-series created_timestamp field (6), for the benefit of not-yet-upgraded
+// readers (e.g. during a rolling upgrade) that only understand that field, not the newer
+// per-sample/per-histogram StartTimestamp fields.
+func TestMarshalLegacyCreatedTimestamp(t *testing.T) {
+	t.Run("TimeSeries.Marshal writes the first sample's StartTimestamp into the legacy field", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+				{Value: 2, TimestampMs: 2000, StartTimestamp: 500},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(500), got)
+	})
+
+	t.Run("TimeSeries.Marshal falls back to the first histogram's StartTimestamp when there are no samples", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		ts.Histograms[0].StartTimestamp = 700
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(700), got)
+	})
+
+	t.Run("TimeSeries.Marshal omits the legacy field when there is no start timestamp to report", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels:  []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{{Value: 1, TimestampMs: 1000}},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		_, found := readVarintField(data, 6)
+		require.False(t, found)
+	})
+
+	t.Run("TimeSeriesRW2.Marshal writes the first sample's StartTimestamp into the legacy field", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(500), got)
+	})
+
+	t.Run("TimeSeriesRW2.Marshal falls back to the first histogram's StartTimestamp when there are no samples", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		ts.Histograms[0].StartTimestamp = 700
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(700), got)
+	})
+
+	t.Run("a round trip through Marshal and Unmarshal by an upgraded reader is unaffected", func(t *testing.T) {
+		// The legacy field is redundant once decoded by an upgraded reader: every sample/histogram
+		// already carries its own StartTimestamp from the modern fields, so the fan-out in
+		// Unmarshal (which only fills in a zero StartTimestamp) is a no-op here.
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+				{Value: 2, TimestampMs: 2000, StartTimestamp: 900},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		received := TimeSeries{}
+		require.NoError(t, received.Unmarshal(data))
+		require.Equal(t, ts, received)
+	})
+}
+
 func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *WriteRequest {
 	req := &WriteRequest{
 		TimeseriesRW2: []TimeSeriesRW2{
@@ -1097,4 +1199,62 @@ func appendBytesField(buf []byte, fieldNum int, data []byte) []byte {
 	buf = appendVarint(buf, uint64(fieldNum)<<3|2)
 	buf = appendVarint(buf, uint64(len(data)))
 	return append(buf, data...)
+}
+
+// readVarint reads a standard protobuf varint from the start of buf, returning the value and the
+// number of bytes consumed (0 if buf doesn't start with a valid varint).
+func readVarint(buf []byte) (uint64, int) {
+	var v uint64
+	for i, b := range buf {
+		v |= uint64(b&0x7F) << (7 * i)
+		if b < 0x80 {
+			return v, i + 1
+		}
+	}
+	return 0, 0
+}
+
+// readVarintField scans data for the first occurrence of fieldNum with a varint wire type and
+// returns its value, without going through the (symbol-aware) generated Unmarshal path. Used to
+// verify legacy-compat fields are actually present on the wire, independent of whether the
+// current Go types can still decode them into a named field.
+func readVarintField(data []byte, fieldNum int) (int64, bool) {
+	i := 0
+	for i < len(data) {
+		tag, n := readVarint(data[i:])
+		if n == 0 {
+			return 0, false
+		}
+		i += n
+		fn := int(tag >> 3)
+		wt := int(tag & 0x7)
+		if fn == fieldNum && wt == 0 {
+			v, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			return int64(v), true
+		}
+		switch wt {
+		case 0: // varint
+			_, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			i += n
+		case 1: // fixed64
+			i += 8
+		case 2: // length-delimited
+			l, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			i += n + int(l)
+		case 5: // fixed32
+			i += 4
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
 }
