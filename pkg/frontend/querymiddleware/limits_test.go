@@ -1351,7 +1351,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "foo", Value: "bar"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 1000, Value: 5},
 								{TimestampMs: 3000, Value: 15},
 								{TimestampMs: 5000, Value: 25},
@@ -1379,7 +1379,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "foo", Value: "bar"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 15},
 							},
 						},
@@ -1398,7 +1398,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					ResultType: model.ValScalar.String(),
 					Result: []SampleStream{
 						{
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 3},
 							},
 						},
@@ -1423,7 +1423,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "value", Value: "foo"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 0},
 							},
 						},

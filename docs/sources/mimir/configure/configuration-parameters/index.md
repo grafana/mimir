@@ -4899,6 +4899,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         regex: true
 #         reason: expensive queries over 7 days are blocked
 #         time_range_longer_than: 1w
+#         id: block-expensive-queries
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 #       - pattern: .*
 #         regex: true
 #         reason: queries longer than 21 days are blocked
@@ -4930,6 +4933,25 @@ blocked_queries:
     # queries and queries with no step are not blocked. Set to 0 to disable.
     [step_size_shorter_than: <duration> | default = ]
 
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
@@ -4937,6 +4959,10 @@ blocked_queries:
 #   limited_queries:
 #       - query: rate(metric_counter[5m])
 #         allowed_frequency: 1m0s
+#         reason: the query is expensive and should not run more than once a minute
+#         id: limit-metric-counter-rate
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 limited_queries:
   - # Literal PromQL expression to match.
     [query: <string> | default = ""]
@@ -4944,6 +4970,28 @@ limited_queries:
     # Minimum duration between matching queries. If a matching query arrives
     # more often than this, it is rejected.
     [allowed_frequency: <duration> | default = ]
+
+    # Reason returned to clients when rejecting matching queries.
+    [reason: <string> | default = ""]
+
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
 
 # (experimental) List of HTTP requests to block.
 # Example:
@@ -6671,18 +6719,17 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks containing out-of-order samples. When set to 0 (default), out-of-order
-# blocks do not delay compaction.
+# How long the compactor waits before compacting first-level blocks containing
+# out-of-order samples. When set to 0, out-of-order blocks do not delay
+# compaction.
 # CLI flag: -compactor.first-level-compaction-ooo-wait-period
-[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
+[first_level_compaction_ooo_wait_period: <duration> | default = 5m]
 
-# (experimental) When enabled, the compactor skips first-level compaction jobs
-# if any source block has a MaxTime more recent than the wait period threshold.
-# This prevents premature compaction of blocks that may still receive
-# late-arriving data.
+# When enabled, the compactor skips first-level compaction jobs if any source
+# block has a MaxTime more recent than the wait period threshold. This prevents
+# premature compaction of blocks that may still receive late-arriving data.
 # CLI flag: -compactor.first-level-compaction-skip-future-max-time
-[first_level_compaction_skip_future_max_time: <boolean> | default = false]
+[first_level_compaction_skip_future_max_time: <boolean> | default = true]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -6852,6 +6899,13 @@ scheduler_client:
   # request work.
   # CLI flag: -compactor.scheduler-client.enabled
   [enabled: <boolean> | default = false]
+
+  # (experimental) Run the ring-based blocks cleaner and join the compactor
+  # ring, which is otherwise unused. Can only be disabled when
+  # -compactor.scheduler-client.enabled is true. WARNING: disabling this on
+  # every compactor stops cleanup and breaks reads cluster-wide.
+  # CLI flag: -compactor.scheduler-client.enable-ring-based-cleanup
+  [enable_ring_based_cleanup: <boolean> | default = true]
 
   # (experimental) Compactor scheduler endpoint.
   # CLI flag: -compactor.scheduler-client.scheduler-endpoint

@@ -2230,8 +2230,10 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			expectedErrRegex: "",
 		},
 		"error while finding blocks matching the query time range": {
-			finderErr:        errors.New("unable to find blocks"),
-			expectedErrRegex: "unable to find blocks",
+			finderErr: errors.New("unable to find blocks"),
+			// Anchored: with compartments disabled the error must reach the caller verbatim, with no read
+			// compartment prefixed to it.
+			expectedErrRegex: "^unable to find blocks$",
 		},
 		"error while getting clients to query the store-gateway": {
 			finderResult: bucketindex.Blocks{
@@ -2241,7 +2243,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			storeSetResponses: []interface{}{
 				errors.New("no client found"),
 			},
-			expectedErrRegex: "no client found",
+			expectedErrRegex: "^no client found$",
 		},
 		"a single store-gateway instance holds the required blocks": {
 			finderResult: bucketindex.Blocks{
