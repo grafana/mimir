@@ -146,6 +146,11 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			if err := snapshot.Err(); err != nil {
 				return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
 			}
+			if snapshotTs >= clock.Cycle {
+				// The file is corrupted: no timestamp we ever write is out of the clock face.
+				// Loading it would store a series that comparisons cannot reason about, so drop it.
+				continue
+			}
 			if expirationWatermark.GreaterThan(snapshotTs) {
 				// We're not interested in this series, it was about to be evicted.
 				continue

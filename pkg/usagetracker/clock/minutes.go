@@ -22,6 +22,10 @@ func ToMinutes(t time.Time) Minutes {
 // This value only makes sense within the last hour.
 type Minutes uint8
 
+// Cycle is the number of values Minutes takes before wrapping back to zero.
+// ToMinutes always returns a value below it, and comparisons are only defined for such values.
+const Cycle Minutes = 2 * 60
+
 // GreaterThan returns true if this value is greater than other on a four-hour clock face assuming that none of the values is ever older than 1h.
 func (m Minutes) GreaterThan(other Minutes) bool {
 	if m > other {
