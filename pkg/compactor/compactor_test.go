@@ -150,6 +150,21 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidSchedulerEndpoint.Error(),
 		},
+		"should pass with ring-based cleanup disabled and scheduler client enabled": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = true
+				cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+				cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
+			},
+			expected: "",
+		},
+		"should fail with ring-based cleanup disabled and scheduler client disabled": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerClientConfig.Enabled = false
+				cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
+			},
+			expected: errInvalidSchedulerRingBasedCleanup.Error(),
+		},
 		"should fail with scheduler mode enabled and zero update interval": {
 			setup: func(cfg *Config) {
 				cfg.SchedulerClientConfig.Enabled = true
@@ -324,6 +339,35 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		"cortex_compactor_block_cleanup_completed_total",
 		"cortex_compactor_block_cleanup_failed_total",
 	))
+}
+
+func TestMultitenantCompactor_RingBasedCleanupDisabled(t *testing.T) {
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
+	bucketClient.MockIter("", []string{}, nil)
+
+	cfg := prepareConfig(t)
+	cfg.SchedulerClientConfig.Enabled = true
+	cfg.SchedulerClientConfig.SchedulerEndpoint = "localhost:9095"
+	cfg.SchedulerClientConfig.EnableRingBasedCleanup = false
+
+	c, _, _, logs, reg := prepare(t, cfg, bucketClient)
+	require.NoError(t, c.starting(t.Context()))
+	t.Cleanup(func() { require.NoError(t, c.stopping(nil)) })
+
+	assert.Nil(t, c.ring)
+	assert.Nil(t, c.ringLifecycler)
+	assert.Nil(t, c.ringSubservices)
+	assert.Nil(t, c.shardingStrategy)
+
+	// The blocks cleaner is not created at all: constructing it would register its metrics, and a
+	// cleanup timestamp stuck at 0 fires CompactorNotCleaningUpBlocks.
+	assert.Nil(t, c.blocksCleaner)
+	cleanupMetrics, err := prom_testutil.GatherAndCount(reg, "cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds")
+	require.NoError(t, err)
+	assert.Zero(t, cleanupMetrics)
+
+	assert.Contains(t, logs.String(), "will not run the blocks cleaner and will not join the ring")
 }
 
 func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUsersFromBucket(t *testing.T) {

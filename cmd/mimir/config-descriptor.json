@@ -2514,17 +2514,6 @@
         },
         {
           "kind": "field",
-          "name": "filter_queryables_enabled",
-          "required": false,
-          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.filter-queryables-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,
           "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
@@ -6098,6 +6087,17 @@
         },
         {
           "kind": "field",
+          "name": "max_blocks_per_store_request",
+          "required": false,
+          "desc": "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-blocks-per-store-request",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_lookback",
           "required": false,
           "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
@@ -6398,6 +6398,49 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "id",
+                "required": false,
+                "desc": "Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "note",
+                "required": false,
+                "desc": "Freeform operator note describing why this rule exists (e.g. an incident reference or chat link).",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "created_by",
+                "required": false,
+                "desc": "Identity of whoever created this rule, if known.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "block",
+                "name": "created_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "block",
+                "name": "expires_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
               }
             ],
             "fieldValue": null,
@@ -6435,6 +6478,58 @@
                 "fieldValue": null,
                 "fieldDefaultValue": null,
                 "fieldType": "duration"
+              },
+              {
+                "kind": "field",
+                "name": "reason",
+                "required": false,
+                "desc": "Reason returned to clients when rejecting matching queries.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "id",
+                "required": false,
+                "desc": "Stable identifier for this rule. Optional; used by tooling to correlate edits and as a metric label for expiry export.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "note",
+                "required": false,
+                "desc": "Freeform operator note describing why this rule exists (e.g. an incident reference or chat link).",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "created_by",
+                "required": false,
+                "desc": "Identity of whoever created this rule, if known.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "block",
+                "name": "created_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
+              },
+              {
+                "kind": "block",
+                "name": "expires_at",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null
               }
             ],
             "fieldValue": null,
@@ -9185,17 +9280,6 @@
           "fieldType": "string"
         },
         {
-          "kind": "field",
-          "name": "cache_samples_processed_stats",
-          "required": false,
-          "desc": "Cache statistics of processed samples on results cache. Deprecated: has no effect.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.cache-samples-processed-stats",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
           "kind": "block",
           "name": "client_cluster_validation",
           "required": false,
@@ -9356,17 +9440,6 @@
               "fieldFlag": "ingest-storage.kafka.write-timeout-overhead",
               "fieldType": "duration",
               "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "write_clients",
-              "required": false,
-              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).",
-              "fieldValue": null,
-              "fieldDefaultValue": 1,
-              "fieldFlag": "ingest-storage.kafka.write-clients",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -10394,6 +10467,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -10606,6 +10690,17 @@
                   "fieldFlag": "blocks-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -10830,6 +10925,17 @@
                   "fieldFlag": "blocks-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -12981,17 +13087,6 @@
             },
             {
               "kind": "field",
-              "name": "head_postings_for_matchers_cache_size",
-              "required": false,
-              "desc": "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
-              "fieldValue": null,
-              "fieldDefaultValue": 100,
-              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
               "name": "head_postings_for_matchers_cache_max_bytes",
               "required": false,
               "desc": "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.",
@@ -13022,17 +13117,6 @@
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "block_postings_for_matchers_cache_size",
-              "required": false,
-              "desc": "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.",
-              "fieldValue": null,
-              "fieldDefaultValue": 100,
-              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-size",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",
@@ -13345,12 +13429,11 @@
           "kind": "field",
           "name": "first_level_compaction_ooo_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.",
+          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -13358,10 +13441,9 @@
           "required": false,
           "desc": "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "compactor.first-level-compaction-skip-future-max-time",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -13971,6 +14053,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "compactor.scheduler-client.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_ring_based_cleanup",
+              "required": false,
+              "desc": "Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.scheduler-client.enable-ring-based-cleanup",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -17984,6 +18077,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -18196,6 +18300,17 @@
                   "fieldFlag": "ruler-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -18420,6 +18535,17 @@
                   "fieldFlag": "ruler-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -20297,6 +20423,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.s3.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_ca_path",
                   "required": false,
                   "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -20509,6 +20646,17 @@
                   "fieldFlag": "alertmanager-storage.gcs.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.gcs.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -20733,6 +20881,17 @@
                   "fieldFlag": "alertmanager-storage.azure.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "force_attempt_http2",
+                  "required": false,
+                  "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.azure.http.force-attempt-http2",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -23385,6 +23544,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.s3.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_ca_path",
                       "required": false,
                       "desc": "Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.",
@@ -23597,6 +23767,17 @@
                       "fieldFlag": "common.storage.gcs.max-connections-per-host",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.gcs.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -23821,6 +24002,17 @@
                       "fieldFlag": "common.storage.azure.max-connections-per-host",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "force_attempt_http2",
+                      "required": false,
+                      "desc": "If enabled, the HTTP client attempts HTTP/2 for HTTPS connections. Without this option, a client with a custom TLS configuration uses HTTP/1.1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.azure.http.force-attempt-http2",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",

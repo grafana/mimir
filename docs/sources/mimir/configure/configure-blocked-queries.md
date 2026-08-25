@@ -127,7 +127,7 @@ rate(metric_counter[15m]) / rate(other_counter[15m])
 
 ## View blocked queries
 
-Blocked queries are logged with `msg="query blocked"` at info level, including the query text, duration, step, rule index, and reason. Use these fields to identify which rule matched and why.
+Blocked queries are logged with `msg="query blocked"` at info level, including the query text, duration, step, rule index, rule `id`, reason, and whether the matched rule's `expires_at` has passed (`expired`). Use these fields to identify which rule matched and why.
 
 Blocked queries are also counted in the `cortex_query_frontend_rejected_queries_total` metric per tenant (`user` label) with `reason="blocked"`. Note that the same metric tracks rate-limited queries under `reason="limited"`.
 

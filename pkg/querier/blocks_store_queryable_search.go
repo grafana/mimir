@@ -83,7 +83,7 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 		resSources []storage.SearchResultSet
 	)
 
-	queryF := func(ctx context.Context, clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		sources, queriedBlocks, err := q.fetchSearchLabelNamesFromStore(ctx, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
@@ -136,7 +136,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 		resSources []storage.SearchResultSet
 	)
 
-	queryF := func(ctx context.Context, clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		sources, queriedBlocks, err := q.fetchSearchLabelValuesFromStore(ctx, name, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
@@ -169,7 +169,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 // every source already collected is closed before returning.
 func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 	ctx context.Context,
-	clients map[BlocksStoreClient][]ulid.ULID,
+	clients map[BlocksStoreClient][][]ulid.ULID,
 	minT int64,
 	maxT int64,
 	tenantID string,
@@ -188,28 +188,30 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 		queriedBlocks []ulid.ULID
 	)
 
-	for c, blockIDs := range clients {
-		g.Go(func() error {
-			source, myBlocks, retriable, err := q.openSearchLabelNamesStream(reqCtx, gCtx, c, blockIDs, minT, maxT, params, hints, wireMatchers)
-			if err != nil {
-				if retriable {
-					level.Warn(spanLog).Log("msg", "failed to open search label names stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
-					return nil
+	for c, partitions := range clients {
+		for _, blockIDs := range partitions {
+			g.Go(func() error {
+				source, myBlocks, retriable, err := q.openSearchLabelNamesStream(reqCtx, gCtx, c, blockIDs, minT, maxT, params, hints, wireMatchers)
+				if err != nil {
+					if retriable {
+						level.Warn(spanLog).Log("msg", "failed to open search label names stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					return errors.Wrapf(err, "non-retriable error while fetching search label names from store %s", c.RemoteAddress())
 				}
-				return errors.Wrapf(err, "non-retriable error while fetching search label names from store %s", c.RemoteAddress())
-			}
 
-			spanLog.DebugLog("msg", "received header from store-gateway",
-				"instance", c,
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myBlocks), " "))
+				spanLog.DebugLog("msg", "received header from store-gateway",
+					"instance", c,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myBlocks), " "))
 
-			mtx.Lock()
-			sources = append(sources, source)
-			queriedBlocks = append(queriedBlocks, myBlocks...)
-			mtx.Unlock()
-			return nil
-		})
+				mtx.Lock()
+				sources = append(sources, source)
+				queriedBlocks = append(queriedBlocks, myBlocks...)
+				mtx.Unlock()
+				return nil
+			})
+		}
 	}
 
 	if err := g.Wait(); err != nil {
@@ -223,7 +225,7 @@ func (q *blocksStoreQuerier) fetchSearchLabelNamesFromStore(
 func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 	ctx context.Context,
 	name string,
-	clients map[BlocksStoreClient][]ulid.ULID,
+	clients map[BlocksStoreClient][][]ulid.ULID,
 	minT int64,
 	maxT int64,
 	tenantID string,
@@ -242,29 +244,31 @@ func (q *blocksStoreQuerier) fetchSearchLabelValuesFromStore(
 		queriedBlocks []ulid.ULID
 	)
 
-	for c, blockIDs := range clients {
-		g.Go(func() error {
-			source, myBlocks, retriable, err := q.openSearchLabelValuesStream(reqCtx, gCtx, c, name, blockIDs, minT, maxT, params, hints, wireMatchers)
-			if err != nil {
-				if retriable {
-					level.Warn(spanLog).Log("msg", "failed to open search label values stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
-					return nil
+	for c, partitions := range clients {
+		for _, blockIDs := range partitions {
+			g.Go(func() error {
+				source, myBlocks, retriable, err := q.openSearchLabelValuesStream(reqCtx, gCtx, c, name, blockIDs, minT, maxT, params, hints, wireMatchers)
+				if err != nil {
+					if retriable {
+						level.Warn(spanLog).Log("msg", "failed to open search label values stream; error is retriable", "remote", c.RemoteAddress(), "err", err)
+						return nil
+					}
+					return errors.Wrapf(err, "non-retriable error while fetching search label values from store %s", c.RemoteAddress())
 				}
-				return errors.Wrapf(err, "non-retriable error while fetching search label values from store %s", c.RemoteAddress())
-			}
 
-			spanLog.DebugLog("msg", "received header from store-gateway",
-				"instance", c,
-				"label", name,
-				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myBlocks), " "))
+				spanLog.DebugLog("msg", "received header from store-gateway",
+					"instance", c,
+					"label", name,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myBlocks), " "))
 
-			mtx.Lock()
-			sources = append(sources, source)
-			queriedBlocks = append(queriedBlocks, myBlocks...)
-			mtx.Unlock()
-			return nil
-		})
+				mtx.Lock()
+				sources = append(sources, source)
+				queriedBlocks = append(queriedBlocks, myBlocks...)
+				mtx.Unlock()
+				return nil
+			})
+		}
 	}
 
 	if err := g.Wait(); err != nil {

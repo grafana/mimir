@@ -1533,7 +1533,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 							Value: "hi",
 						},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							TimestampMs: 1,
 						},
@@ -1547,7 +1547,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			err:   false,
 			expected: []SampleStream{
 				{
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1579,7 +1579,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1591,7 +1591,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       2,
 							TimestampMs: 2,
@@ -1627,7 +1627,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1643,7 +1643,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       8,
 							TimestampMs: 1,

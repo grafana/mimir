@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -1297,6 +1298,27 @@ func TestHandlerConfig_Validate(t *testing.T) {
 			for _, sub := range tc.expectErrSubs {
 				assert.Contains(t, err.Error(), sub)
 			}
+		})
+	}
+}
+
+func TestFormatQueryString_KeepsQueriesWithLineBreaksParseable(t *testing.T) {
+	// Dropping the line breaks would fuse the tokens either side of them into "orsum",
+	// leaving a logged query that no longer parses.
+	for name, query := range map[string]string{
+		"LF":   "sum(up)\nor\nsum(down)",
+		"CRLF": "sum(up)\r\nor\r\nsum(down)",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fields := formatQueryString(nil, url.Values{"query": []string{query}})
+
+			require.Len(t, fields, 2)
+			require.Equal(t, "param_query", fields[0])
+
+			logged := fmt.Sprint(fields[1])
+			_, err := promqlext.NewPromQLParser().ParseExpr(logged)
+			require.NoError(t, err, "logged query should still parse: %q", logged)
+			require.Equal(t, []string{"sum(up)", "or", "sum(down)"}, strings.Fields(logged))
 		})
 	}
 }

@@ -67,6 +67,9 @@ var (
 	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 
+	// lineBreaksToSpaces replaces line breaks with spaces.
+	lineBreaksToSpaces = strings.NewReplacer("\n", " ", "\r", " ")
+
 	// sensitiveHeaderNames is the deny list of HTTP header names whose values
 	// carry credentials or session material and must never appear in logs.
 	sensitiveHeaderNames = []string{
@@ -495,7 +498,7 @@ func formatQueryString(details *querydetails.QueryDetails, queryString url.Value
 		if formattedValue == "" {
 			formattedValue = strings.Join(v, ",")
 		}
-		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(formattedValue))
+		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(lineBreaksToSpaces.Replace(formattedValue)))
 	}
 	return fields
 }

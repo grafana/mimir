@@ -149,25 +149,25 @@ func TestBlocksStoreQuerier_Compartments_LabelNames(t *testing.T) {
 		// within each response, as the store-gateways return them.
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{"label_from_compartment_0", "shared_label"},
 							ResponseHints: mockNamesResponseHints(block0),
 						},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{"label_from_compartment_1", "shared_label"},
 							ResponseHints: mockNamesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -208,6 +208,7 @@ func TestBlocksStoreQuerier_Compartments_LabelNames(t *testing.T) {
 		require.Equal(t, 0, testutil.CollectAndCount(reg, "cortex_querier_compartments_hit_per_query"))
 		assertStoreGatewayInstancesHit(t, reg, 1, 0)
 	})
+
 }
 
 func TestBlocksStoreQuerier_Compartments_LabelValues(t *testing.T) {
@@ -324,25 +325,25 @@ func TestBlocksStoreQuerier_Compartments_LabelValues(t *testing.T) {
 		// within each response, as the store-gateways return them.
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{"shared_value", "value_from_compartment_0"},
 							ResponseHints: mockValuesResponseHints(block0),
 						},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{"shared_value", "value_from_compartment_1"},
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -408,21 +409,21 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(seriesA, minT, 1).
 						addBlocks(block0).
 						build(),
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(seriesB, minT, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -474,25 +475,25 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedSeriesResponses: newSeriesResponseBuilder().
 							addValue(seriesA, minT, 1).
 							addBlocks(block0).
 							build(),
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedSeriesResponses: newSeriesResponseBuilder().
 							addValue(seriesB, minT, 2).
 							addBlocks(block1).
 							build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -521,39 +522,56 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 
 	t.Run("should stop on the first compartment error", func(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), compartmentsTestTenant)
+		router := compartments.NewRouter(2)
 
-		// One compartment's finder fails; the fan-out query must fail fast and return that error. The sibling
-		// compartment may or may not have been reached before the shared context was cancelled.
-		newFinders := func() []*blocksFinderMock {
+		// One compartment's finder fails; the query must fail fast and return that error, naming the
+		// compartment it came from. The sibling compartment may or may not have been reached before the
+		// shared context was cancelled.
+		newFinders := func(failing int) []*blocksFinderMock {
 			finders := []*blocksFinderMock{{}, {}}
-			finders[0].On("GetBlocks", mock.Anything, compartmentsTestTenant, minT, maxT).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), errors.New("finder failed"))
-			finders[1].On("GetBlocks", mock.Anything, compartmentsTestTenant, minT, maxT).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil).Maybe()
+			finders[failing].On("GetBlocks", mock.Anything, compartmentsTestTenant, minT, maxT).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), errors.New("finder failed"))
+			finders[1-failing].On("GetBlocks", mock.Anything, compartmentsTestTenant, minT, maxT).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil).Maybe()
 			return finders
 		}
 		stores := func() []BlocksStoreSet { return []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}} }
-		fanOut := labels.MustNewMatcher(labels.MatchEqual, "job", "test")
 
-		t.Run("via LabelNames", func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			q := newCompartmentsTestQuerier(newFinders(), stores(), reg, minT, maxT)
-			_, _, err := q.LabelNames(ctx, nil, fanOut)
-			require.ErrorContains(t, err, "finder failed")
-			// A failed query observes none of the per-query metrics.
-			assertStoreGatewayInstancesHit(t, reg, 0, 0)
-		})
+		for failing := 0; failing < 2; failing++ {
+			matchers := []struct {
+				name    string
+				matcher *labels.Matcher
+			}{
+				{"pinned to the failing compartment", labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricNameForCompartment(t, router, failing))},
+				{"fanned out to all compartments", labels.MustNewMatcher(labels.MatchEqual, "job", "test")},
+			}
 
-		t.Run("via Select", func(t *testing.T) {
-			sctx := limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, 0, 0, nil))
-			sctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(sctx)
-			sctx = limiter.ContextWithNewSeriesLabelsDeduplicator(sctx, limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()))
-			_, sctx = stats.ContextWithEmptyStats(sctx)
+			for _, m := range matchers {
+				t.Run(fmt.Sprintf("compartment %d, %s", failing, m.name), func(t *testing.T) {
+					expectedErr := fmt.Sprintf("read compartment %d: finder failed", failing)
 
-			reg := prometheus.NewPedanticRegistry()
-			q := newCompartmentsTestQuerier(newFinders(), stores(), reg, minT, maxT)
-			set := q.Select(sctx, true, &storage.SelectHints{Start: minT, End: maxT}, fanOut)
-			require.ErrorContains(t, set.Err(), "finder failed")
-			assertStoreGatewayInstancesHit(t, reg, 0, 0)
-		})
+					t.Run("via LabelNames", func(t *testing.T) {
+						reg := prometheus.NewPedanticRegistry()
+						q := newCompartmentsTestQuerier(newFinders(failing), stores(), reg, minT, maxT)
+						_, _, err := q.LabelNames(ctx, nil, m.matcher)
+						require.EqualError(t, err, expectedErr)
+						// A failed query observes none of the per-query metrics.
+						assertStoreGatewayInstancesHit(t, reg, 0, 0)
+					})
+
+					t.Run("via Select", func(t *testing.T) {
+						sctx := limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, 0, 0, nil))
+						sctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(sctx)
+						sctx = limiter.ContextWithNewSeriesLabelsDeduplicator(sctx, limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()))
+						_, sctx = stats.ContextWithEmptyStats(sctx)
+
+						reg := prometheus.NewPedanticRegistry()
+						q := newCompartmentsTestQuerier(newFinders(failing), stores(), reg, minT, maxT)
+						set := q.Select(sctx, true, &storage.SelectHints{Start: minT, End: maxT}, m.matcher)
+						require.EqualError(t, set.Err(), expectedErr)
+						assertStoreGatewayInstancesHit(t, reg, 0, 0)
+					})
+				})
+			}
+		}
 	})
 }
 
@@ -575,7 +593,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 		// store-gateway returns its values sorted by value ascending (the default search ordering).
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 						searchLabelNamesBatches: []*storepb.SearchResultBatch{{
@@ -586,11 +604,11 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block0},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
 						searchLabelNamesBatches: []*storepb.SearchResultBatch{{
@@ -601,7 +619,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block1},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
@@ -641,7 +659,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 		// store-gateway returns its values sorted by value ascending (the default search ordering).
 		stores := []BlocksStoreSet{
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "1.1.1.1"},
 						searchLabelValuesBatches: []*storepb.SearchResultBatch{{
@@ -652,11 +670,11 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block0},
-					}: {block0},
+					}: {{block0}},
 				},
 			}},
 			&blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&searchStoreGatewayClientMock{
 						storeGatewayClientMock: storeGatewayClientMock{remoteAddr: "2.2.2.2"},
 						searchLabelValuesBatches: []*storepb.SearchResultBatch{{
@@ -667,7 +685,7 @@ func TestBlocksStoreQuerier_Compartments_SearchLabelValues(t *testing.T) {
 							},
 						}},
 						queriedBlockIDs: []ulid.ULID{block1},
-					}: {block1},
+					}: {{block1}},
 				},
 			}},
 		}
