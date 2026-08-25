@@ -13429,12 +13429,11 @@
           "kind": "field",
           "name": "first_level_compaction_ooo_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.",
+          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -13442,10 +13441,9 @@
           "required": false,
           "desc": "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "compactor.first-level-compaction-skip-future-max-time",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -14055,6 +14053,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "compactor.scheduler-client.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_ring_based_cleanup",
+              "required": false,
+              "desc": "Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "compactor.scheduler-client.enable-ring-based-cleanup",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },

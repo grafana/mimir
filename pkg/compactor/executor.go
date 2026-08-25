@@ -91,10 +91,12 @@ var (
 	errInvalidSchedulerUpdateMinBackoff              = errors.New("invalid compactor.scheduler-client.update-min-backoff, must be positive")
 	errInvalidSchedulerUpdateMaxBackoff              = errors.New("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
 	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
+	errInvalidSchedulerRingBasedCleanup              = errors.New("invalid compactor.scheduler-client.enable-ring-based-cleanup, can only be disabled when compactor.scheduler-client.enabled is true")
 )
 
 type SchedulerClientConfig struct {
 	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
+	EnableRingBasedCleanup        bool                   `yaml:"enable_ring_based_cleanup" category:"experimental"`
 	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
 	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
 	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
@@ -112,6 +114,7 @@ type SchedulerClientConfig struct {
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	flagPrefix := "compactor.scheduler-client."
 	f.BoolVar(&cfg.Enabled, flagPrefix+"enabled", false, "Controls whether compactors should contact a scheduler to request work.")
+	f.BoolVar(&cfg.EnableRingBasedCleanup, flagPrefix+"enable-ring-based-cleanup", true, "Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -"+flagPrefix+"enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide.")
 	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"scheduler-endpoint", "", "Compactor scheduler endpoint.")
 	f.DurationVar(&cfg.UpdateInterval, flagPrefix+"update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
 	f.DurationVar(&cfg.LeasingMinBackoff, flagPrefix+"leasing-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
@@ -129,6 +132,9 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *SchedulerClientConfig) Validate() error {
 	if !cfg.Enabled {
+		if !cfg.EnableRingBasedCleanup {
+			return errInvalidSchedulerRingBasedCleanup
+		}
 		return nil
 	}
 	if strings.TrimSpace(cfg.SchedulerEndpoint) == "" {
@@ -283,7 +289,15 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	baseWorkerID := c.ringLifecycler.GetInstanceID()
+	// The ring may not be used, if so fall back to the hostname.
+	var baseWorkerID string
+	if c.ringLifecycler != nil {
+		baseWorkerID = c.ringLifecycler.GetInstanceID()
+	} else if hostname, err := os.Hostname(); err == nil {
+		baseWorkerID = hostname
+	} else {
+		level.Warn(e.logger).Log("msg", "failed to determine hostname for worker ID", "err", err)
+	}
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", baseWorkerID)
 
 	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
@@ -303,14 +317,16 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	var subserviceErr error
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		select {
-		case <-ctx.Done():
-		case err := <-c.ringSubservicesWatcher.Chan():
-			subserviceErr = fmt.Errorf("compactor subservice failed: %w", err)
-			cancel(subserviceErr)
-		}
-	})
+	if c.ringSubservicesWatcher != nil {
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+			case err := <-c.ringSubservicesWatcher.Chan():
+				subserviceErr = fmt.Errorf("compactor subservice failed: %w", err)
+				cancel(subserviceErr)
+			}
+		})
+	}
 
 	for i, lanes := range e.laneRequests {
 		workerID := baseWorkerID
