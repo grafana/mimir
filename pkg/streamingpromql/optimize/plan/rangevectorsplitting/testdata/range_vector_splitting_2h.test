@@ -148,6 +148,29 @@ eval instant at 6h sum_over_time(mixed_histo_sum[5h])
 
 clear
 
+# Histogram sums where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+clear
+
+load 1h
+  kahan_schema_metric{env="prod"} {{schema:2 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:1e100 buckets:[1]}} {{schema:0 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:-1e100 buckets:[1]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
+
+clear
+
 # ===== rate / increase (floats) =====
 
 load 1m
