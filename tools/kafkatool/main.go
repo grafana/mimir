@@ -22,13 +22,17 @@ func main() {
 	)
 
 	app := kingpin.New("kafkatool", "A command-line tool to manage Kafka.")
-	app.Flag("kafka-address", "Kafka broker address.").Required().StringVar(&kafkaAddress)
+	app.Flag("kafka-address", "Kafka broker address. Required for commands that talk to Kafka; optional for offline dump analyse/print/find-duplicates.").StringVar(&kafkaAddress)
 	app.Flag("kafka-client-id", "Kafka client ID.").StringVar(&kafkaClientID)
 	app.Flag("kafka-sasl-username", "SASL username. SASL plain authentication is enabled when both username and password are set.").StringVar(&kafkaSASLUsername)
 	app.Flag("kafka-sasl-password", "SASL password. SASL plain authentication is enabled when both username and password are set.").StringVar(&kafkaSASLPassword)
 
 	// Create the Kafka client before any command is executed.
 	app.Action(func(_ *kingpin.ParseContext) error {
+		// Offline dump subcommands (analyse/print/find-duplicates) only read --file.
+		if kafkaAddress == "" {
+			return nil
+		}
 		var err error
 		var auth sasl.Mechanism
 
@@ -56,6 +60,11 @@ func main() {
 
 	// Function passed to commands to get Kafka client.
 	getKafkaClient := func() *kgo.Client {
+		if kafkaClient == nil {
+			// kingpin already validated most flags; surface a clear error if a
+			// Kafka-touching command ran without --kafka-address.
+			app.Fatalf("--kafka-address is required for this command")
+		}
 		return kafkaClient
 	}
 
