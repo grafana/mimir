@@ -250,6 +250,56 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, int64(900), received.Timeseries[0].Samples[0].StartTimestamp)
 	})
 
+	t.Run("legacy per-series created_timestamp fans out via the plain TimeSeries.Unmarshal too", func(t *testing.T) {
+		// The plain (non-RW2) TimeSeries.Unmarshal is used not just for Remote Write 1.0, but also
+		// for internal distributor->ingester gRPC and ingest-storage Kafka records. A not-yet-
+		// upgraded Mimir component in those internal paths would still encode the reserved field 6
+		// (formerly created_timestamp) instead of a per-sample/per-histogram StartTimestamp, so
+		// this must fan out here too, not just in UnmarshalRW2.
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+				{Value: 2, TimestampMs: 2000},
+			},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+		data = appendVarintField(data, 6, 500)
+
+		received := TimeSeries{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Samples, 2)
+		require.Equal(t, int64(500), received.Samples[0].StartTimestamp)
+		require.Equal(t, int64(500), received.Samples[1].StartTimestamp)
+		require.Len(t, received.Histograms, 1)
+		require.Equal(t, int64(500), received.Histograms[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp via the plain TimeSeries.Unmarshal does not override an explicit per-sample StartTimestamp", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 900},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+		data = appendVarintField(data, 6, 500)
+
+		received := TimeSeries{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Samples, 1)
+		require.Equal(t, int64(900), received.Samples[0].StartTimestamp)
+	})
+
 	t.Run("zero timeseries does not panic", func(t *testing.T) {
 		syms := rw2util.NewSymbolTableBuilder(nil)
 		syms.GetSymbol("unused_symbol")
