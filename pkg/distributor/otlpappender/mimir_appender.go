@@ -28,12 +28,8 @@ type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
 
-	series []mimirpb.PreallocTimeseries
-	// seriesStartTimestamp tracks the start timestamp of the last data point appended to the
-	// corresponding entry in series, parallel to it by index. Used by ctRequiresNewSeries to
-	// detect a new counter generation (a different start timestamp) within the same push.
-	seriesStartTimestamp []int64
-	metadata             []*mimirpb.MetricMetadata
+	series   []mimirpb.PreallocTimeseries
+	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
 	// multiple times, we keep track of the appended time series.
 	refs          map[uint64]labelsIdx
@@ -65,8 +61,8 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 
 	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
 
-	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
+	if !seenSeries {
+		c.createNewSeries(&idx, collisionIdx, hash, ls)
 	}
 
 	switch {
@@ -96,12 +92,6 @@ func (c *MimirAppender) recalcCreatedTimestamp(t, ct int64) int64 {
 	}
 
 	return ct
-}
-
-// ctRequiresNewSeries checks if the created timestamp is meaningful and different
-// from the one already stored for the series at the given index.
-func (c *MimirAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
-	return ct > 0 && c.seriesStartTimestamp[seriesIdx] != ct
 }
 
 // processLabelsAndMetadata figures out if we have already seen this
@@ -147,11 +137,10 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 	return
 }
 
-func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
+func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels) {
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
-	c.seriesStartTimestamp = append(c.seriesStartTimestamp, ct)
 	idx.idx = len(c.series) - 1
 
 	if collisionIdx == -1 {

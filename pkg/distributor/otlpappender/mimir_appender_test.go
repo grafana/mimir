@@ -221,45 +221,16 @@ func TestMimirAppender(t *testing.T) {
 					2400, 3000, 52.0,
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
 			},
+			// Both samples land in the same series entry, each carrying its own StartTimestamp;
+			// there's no longer a need to split into a new TimeSeries when the created timestamp
+			// changes mid-series, since StartTimestamp is per-sample now.
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
-						},
-						Exemplars: []mimirpb.Exemplar{
-							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
-								Value:       27,
-								TimestampMs: 1500,
-							},
-						},
-					},
-				},
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
-						Samples: []mimirpb.Sample{
 							{TimestampMs: 3000, Value: 52.0, StartTimestamp: 2400},
-						},
-						Exemplars: []mimirpb.Exemplar{
-							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
-								Value:       45,
-								TimestampMs: 2500,
-							},
-						},
-					},
-				},
-			},
-			expectTimeseriesNoCT: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
-						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
-							{TimestampMs: 3000, Value: 52.0},
 						},
 						Exemplars: []mimirpb.Exemplar{
 							{
