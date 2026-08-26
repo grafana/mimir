@@ -159,6 +159,17 @@ eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
 
 clear
 
+# One-to-one matching with multiple matches on right side, with the empty match group produced by on().
+load 6m
+  left_side 100 200 300
+  right_side{pod="a"} 1 2 3
+  right_side{pod="b"} 4 5 6
+
+eval_fail range from 0 to 12m step 6m left_side > on () right_side
+  expected_fail_regexp (found duplicate series for the match group \{\} on the right hand-side of the operation: \[\{__name__="right_side", pod="a"\}, \{__name__="right_side", pod="b"\}\];many-to-many matching not allowed: matching labels must be unique on one side|found duplicate series for the match group \{\} on the right side of the operation at timestamp 1970-01-01T00:00:00Z: \{__name__="right_side", pod="a"\} and \{__name__="right_side", pod="b"\})
+
+clear
+
 # One-to-one matching with more series on left side than right (and vice-versa)
 # We have an optimsation that favours the smaller side, these tests ensure it behaves correctly.
 load 1m
@@ -1854,6 +1865,19 @@ eval instant at 0 a + on (__name__, env) group_left a
 
 eval_fail instant at 0 {__name__=~"a|b"} + on (__name__, env) group_left {__name__=~"a|b"}
   expected_fail_regexp (vector cannot contain metrics with the same labelset|multiple matches for labels: grouping labels must ensure unique matches)
+
+# MQE rejects a 'fill' modifier with __name__ in the 'on' clause, because the filled output labels
+# drop __name__ and so two match groups can collide. See TestUnsupportedPromQLFeatures.
+# The two queries below set no fill value. In each one, the extra left series has no matching right
+# group. The operator drops that series, so the output labels never collide. Other queries without a
+# fill value can still collide.
+eval instant at 0 {__name__=~"a|b"} + on (__name__, env) a
+  {env="prod"} 20
+  {env="test"} 24
+
+eval instant at 0 a + on (__name__, env) {__name__=~"a|b"}
+  {env="prod"} 20
+  {env="test"} 24
 
 clear
 

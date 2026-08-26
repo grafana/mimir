@@ -36,8 +36,9 @@ func NewPromQLParserOptions() parser.Options {
 		// keeps it on globally for parity with the prior always-on behaviour. See #11344.
 		ExperimentalDurationExpr: true,
 
-		// Disabled by default.
-		EnableBinopFillModifiers: false,
+		// Enabled globally. Access is controlled by the experimental features middleware
+		// via the per-tenant query-frontend.enabled-promql-binop-fill-modifiers setting.
+		EnableBinopFillModifiers: true,
 	}
 }
 
