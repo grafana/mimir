@@ -68,6 +68,8 @@ The following features are currently experimental:
     - `-compactor.max-lookback`
   - Limit how many block indexes are validated for health concurrently during a compaction job.
     - `-compactor.block-health-validation-concurrency`
+  - Merge blocks directly into a larger compaction range rather than compacting into an intermediate range when the time period covered has elapsed.
+    - `-compactor.skip-elapsed-intermediate-block-ranges`
 - Compactor scheduler
   - Coordinate compactors through a shared job queue and expose additional metrics about pending and active compaction work.
     - `-compactor-scheduler.*`
