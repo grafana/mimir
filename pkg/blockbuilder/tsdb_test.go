@@ -485,6 +485,78 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
+func TestTSDBBuilder_CompactAndUpload_verificationFail(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = true
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	errVerificationFailed := fmt.Errorf("verification failed")
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		return errVerificationFailed
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	uploaderCalled := false
+	_, err := builder.CompactAndUpload(ctx, func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
+		uploaderCalled = true
+		return nil
+	})
+	require.ErrorIs(t, err, errVerificationFailed)
+	require.False(t, uploaderCalled, "the uploader must not be called when block verification fails")
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_blockbuilder_tsdb_block_verification_failed_total Total number of blocks that failed verification before upload.
+		# TYPE cortex_blockbuilder_tsdb_block_verification_failed_total counter
+		cortex_blockbuilder_tsdb_block_verification_failed_total{partition="0"} 1
+	`), "cortex_blockbuilder_tsdb_block_verification_failed_total"))
+	require.Equal(t, 1, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration), "verification duration should still be observed on failure")
+}
+
+func TestTSDBBuilder_CompactAndUpload_verificationDisabled(t *testing.T) {
+	partitionID := int32(0)
+	userID := "user1"
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.VerifyBlocksBeforeUpload = false
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(registry)
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	builder.verifyBlock = func(_ context.Context, _ log.Logger, _ string, _, _ int64, _ bool) error {
+		t.Fatal("verifyBlock must not be called when verification is disabled")
+		return nil
+	}
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := createWriteRequest(userID, floatSample(1000, 1), nil)
+	require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+
+	shipperDir := t.TempDir()
+	_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+	require.NoError(t, err)
+
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationFailed))
+	require.Equal(t, 0, testutil.CollectAndCount(tsdbBuilderMetrics.blockVerificationDuration))
+}
+
 func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
 	ll := log.NewNopLogger()
 

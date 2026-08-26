@@ -33,6 +33,7 @@ import (
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -50,6 +51,9 @@ type TSDBBuilder struct {
 	logger             log.Logger
 	tsdbBuilderMetrics tsdbBuilderMetrics
 	tsdbMetrics        *mimir_tsdb.TSDBMetrics
+
+	// verifyBlock verifies the integrity of a block before upload. Overridable in tests.
+	verifyBlock func(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error
 
 	// Number of series in memory across all tenants.
 	seriesCount atomic.Int64
@@ -88,6 +92,7 @@ func NewTSDBBuilder(
 		logger:             logger,
 		tsdbBuilderMetrics: tsdbBuilderMetrics,
 		tsdbMetrics:        tsdbMetrics,
+		verifyBlock:        block.VerifyBlock,
 	}
 }
 
@@ -511,12 +516,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
+			partitionStr := strconv.Itoa(int(tenant.partitionID))
 			defer func(t time.Time) {
 				if errors.Is(err, context.Canceled) {
 					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
 					return
 				}
-				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
 					b.tsdbBuilderMetrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
@@ -534,6 +539,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			var localMetas []tsdb.BlockMeta
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
+			}
+
+			if b.cfg.VerifyBlocksBeforeUpload {
+				if err := b.verifyBlocks(ctx, partitionStr, dbDir, localMetas); err != nil {
+					return err
+				}
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
@@ -651,6 +662,25 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 		return err
 	}
 
+	return nil
+}
+
+// verifyBlocks verifies the integrity of each block in the metas list in the directory, before it is uploaded.
+// On failure, the block's ULID and error are logged and the failure metric is incremented.
+func (b *TSDBBuilder) verifyBlocks(ctx context.Context, partition, dbDir string, metas []tsdb.BlockMeta) error {
+	start := time.Now()
+	defer func() {
+		b.tsdbBuilderMetrics.blockVerificationDuration.WithLabelValues(partition).Observe(time.Since(start).Seconds())
+	}()
+
+	for _, m := range metas {
+		blockDir := filepath.Join(dbDir, m.ULID.String())
+		if err := b.verifyBlock(ctx, b.logger, blockDir, m.MinTime, m.MaxTime, false); err != nil {
+			b.tsdbBuilderMetrics.blockVerificationFailed.WithLabelValues(partition).Inc()
+			level.Error(b.logger).Log("msg", "block verification failed", "block", m.ULID.String(), "err", err)
+			return fmt.Errorf("verify block %s: %w", m.ULID.String(), err)
+		}
+	}
 	return nil
 }
 
