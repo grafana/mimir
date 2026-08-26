@@ -108,13 +108,15 @@ To restrict the blocking to such selectors, use a regex pattern with the curly b
 
 To set up runtime overrides, refer to [runtime configuration](../about-runtime-configuration/).
 
-{{% admonition type="note" %}}
+{{< admonition type="note" >}}
 The order of patterns is preserved, so the first matching pattern will be used.
-{{% /admonition %}}
+{{< /admonition >}}
 
 ## Rate limit queries
 
-_Rate limiting queries with `limited_queries` is an experimental feature._
+{{< admonition type="note" >}}
+Rate limiting queries with `limited_queries` is an experimental feature.
+{{< /admonition >}}
 
 Use the `limited_queries` limit when a query should only be allowed to run once per configured time period.
 
