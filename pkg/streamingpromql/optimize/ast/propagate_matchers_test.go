@@ -164,19 +164,13 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
 
-	// Fill modifiers: matchers must not propagate into the covered (fully-produced) side.
-	// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series produces
-	// output. RHS matchers must not narrow the LHS, but LHS matchers may still narrow the RHS
-	// (unmatched RHS series produce nothing anyway).
-	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down{foo="bar"}`,
+	// Fill modifiers prevent matcher propagation that removes required series.
+	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down`,
 	`up + fill_right(0) down{foo="bar"}`: `up + fill_right(0) down{foo="bar"}`,
-	// fill_left synthesises the LHS for every unmatched RHS series, so every RHS series produces
-	// output. LHS matchers must not narrow the RHS, but RHS matchers may still narrow the LHS
-	// (unmatched LHS series produce nothing anyway).
+	// fill_left preserves all right-side series because each series can produce output.
 	`up + fill_left(0) down{foo="bar"}`: `up{foo="bar"} + fill_left(0) down{foo="bar"}`,
 	`up{foo="bar"} + fill_left(0) down`: `up{foo="bar"} + fill_left(0) down`,
-	// fill (both sides): no propagation in either direction, since every series on both sides
-	// produces output.
+	// fill preserves both sides because every series can produce output.
 	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
 	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
 }

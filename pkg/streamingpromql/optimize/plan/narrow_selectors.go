@@ -77,8 +77,8 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
-		// A left fill requires unmatched right-side series, so narrowing would change the result.
-		if e.VectorMatching.FillValues.LhsSet {
+		// Prometheus validates every right-side match group when any fill modifier is active.
+		if e.VectorMatching.FillValues.LhsSet || e.VectorMatching.FillValues.RhsSet {
 			return true, nil
 		}
 

@@ -419,30 +419,17 @@ eval_fail instant at 0 {__name__=~"dup_a|dup_b"} != fill_right(0) other
 eval_fail instant at 0 {__name__=~"dup_a|dup_b"} + fill_right(0) missing_metric
   expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left (hand-)?side of the operation)
 
-# ---------- Known parity gap: duplicate detection when the opposite side is empty ----------
-#
-# Prometheus disables its short-circuit that skips right-side uniqueness validation when a fill
-# modifier is set. It therefore validates match-group uniqueness on the right side even when the
-# left side has no series in that group. MQE never populates an unused right group, so it does
-# not detect the duplicate.
-#
-# This is Prometheus being stricter, not MQE being wrong. Without a fill modifier both engines
-# agree (Prometheus short-circuits). The gap is introduced by the fill modifier and is documented
-# here as a known difference.
-#
-# The case below is NOT run as eval_fail because MQE does not error. It is kept as a comment
-# so the repro is preserved for future work.
-#
-# load 5m
-#   b_left{g="a"}            2
-#   b_right{g="b", pod="p1"} 1
-#   b_right{g="b", pod="p2"} 2
-#
-# eval instant at 0 b_left + on(g) fill_right(0) b_right
-#   {g="a"} 2
-#
-# Prometheus fails: found duplicate series for the match group {g="b"} on the right hand-side.
-# MQE passes and returns {g="a"} 2.
+# ---------- Regression: validate unmatched right-side groups when fill is active ----------
+
+clear
+
+load 5m
+  b_left{g="a"}             2
+  b_right{g="b", pod="p1"} 1
+  b_right{g="b", pod="p2"} 2
+
+eval_fail instant at 0 b_left + on(g) fill_right(0) b_right
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
 
 # ---------- Regression: allow time-disjoint series within an unmatched match group ----------
 #

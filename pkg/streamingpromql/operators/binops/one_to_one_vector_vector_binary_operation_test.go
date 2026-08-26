@@ -1108,8 +1108,8 @@ func TestOneToOneVectorVectorBinaryOperation_FillModifiers_SeriesUsed(t *testing
 	// nil. InstantVectorOperatorBuffer reads a nil "used" slice as "the operator needs all series".
 	// This removes the need to get and fill an all-true slice.
 	//
-	// With fill_left, the operator uses every right series. All rightSeriesUsed entries are true,
-	// because unmatched right groups still make output. rightSeriesUsed keeps its explicit form today.
+	// Any fill modifier uses every right series because Prometheus validates unmatched right groups.
+	// rightSeriesUsed keeps its explicit form today.
 	// The nil optimization also applies to the right side, but computeOutputSeries does not use it yet.
 	//
 	// The test also checks that the last-used index equals the final input index for a full side.
@@ -1144,10 +1144,10 @@ func TestOneToOneVectorVectorBinaryOperation_FillModifiers_SeriesUsed(t *testing
 			expectAllLeftUsed:  false,
 			expectAllRightUsed: true,
 		},
-		"fill_right leaves leftSeriesUsed nil, but not every right series is used": {
+		"fill_right leaves leftSeriesUsed nil and validates every right series": {
 			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}},
 			expectLeftUsedNil:  true,
-			expectAllRightUsed: false,
+			expectAllRightUsed: true,
 		},
 		"fill both leaves leftSeriesUsed nil and marks every right series used": {
 			vectorMatching:     parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
@@ -2311,7 +2311,7 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 				labels.FromStrings("env", "prod"),
 			},
 		},
-		"fill_right with hints preserves unmatched left output": {
+		"fill_right ignores hints to preserve unmatched right groups": {
 			vectorMatching: parser.VectorMatching{
 				Card:           parser.CardOneToOne,
 				On:             true,
@@ -2327,9 +2327,7 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 				labels.FromStrings("env", "prod"),
 				labels.FromStrings("env", "staging"),
 			},
-			expectedRHSMatchers: types.Matchers{
-				{Type: labels.MatchRegexp, Name: "env", Value: "dev|prod"},
-			},
+			expectedRHSMatchers: nil,
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("env", "prod"),
 				labels.FromStrings("env", "dev"),

@@ -638,15 +638,15 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 0,
 		},
-		"binary expression with fill_right narrows the right side": {
+		"binary expression with fill_right is not narrowed": {
 			expr: `some_metric + on (cluster) fill_right(0) some_other_metric`,
 			expectedPlan: `
-				- BinaryExpression: LHS + on (cluster) fill_right (0) RHS, hints include (cluster)
+				- BinaryExpression: LHS + on (cluster) fill_right (0) RHS
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression with fill_left is not narrowed": {
 			expr: `some_metric + ignoring (env) fill_left(0) some_other_metric`,

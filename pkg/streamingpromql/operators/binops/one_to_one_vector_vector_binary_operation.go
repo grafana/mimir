@@ -106,7 +106,11 @@ type OneToOneVectorVectorBinaryOperation struct {
 	remainingSeries []*oneToOneBinaryOperationOutputSeries
 	leftBuffer      *operators.InstantVectorOperatorBuffer
 	rightBuffer     *operators.InstantVectorOperatorBuffer
-	evaluator       *vectorVectorBinaryOperationEvaluator
+
+	// rightValidationGroups holds unmatched right groups that fill_right must validate without producing output.
+	rightValidationGroups []*oneToOneBinaryOperationRightSide
+
+	evaluator *vectorVectorBinaryOperationEvaluator
 
 	expressionPosition posrange.PositionRange
 	timeRange          types.QueryTimeRange
@@ -427,8 +431,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
-	} else if len(b.leftMetadata) == 0 && !fillLeft {
-		// No series on left-hand side and not filling it, so we'll never have any output series.
+	} else if len(b.leftMetadata) == 0 && !fillLeft && !fillRight {
+		// No fill modifier requires right-side validation, so an empty left side cannot produce output.
 		if err = b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
@@ -445,8 +449,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
 	// to labels that don't exist on the RHS of this binary operation.
 	//
-	// Fill-left expressions have no hints because they require unmatched right-side series.
-	if b.hints != nil {
+	// Fill expressions have no hints because Prometheus validates every right-side match group.
+	if b.hints != nil && !fillLeft && !fillRight {
 		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
 
@@ -476,10 +480,15 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		return nil, err
 	}
 
+	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
+	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
+
+	if err := b.validateRightGroups(ctx); err != nil {
+		return nil, err
+	}
+
 	if len(allMetadata) == 0 {
 		types.SeriesMetadataSlicePool.Put(&allMetadata, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
 
 		if err := b.FinishedReading(ctx); err != nil {
 			return nil, err
@@ -490,9 +499,6 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
-
-	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
-	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -539,7 +545,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	// When filling the left side, unmatched right-side groups must still produce output, so we can't
 	// prune them via the left-side groups map.
-	if !fillLeft && len(b.leftMetadata) < len(b.rightMetadata) {
+	if !fillLeft && !fillRight && len(b.leftMetadata) < len(b.rightMetadata) {
 		leftSideGroupsMap = b.computeLeftSideGroups(groupKeyFunc)
 	}
 
@@ -739,6 +745,24 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		}
 	}
 
+	if fillRight && !fillLeft {
+		for _, rightSide := range rightSideGroupsMap {
+			if rightSide.outputSeriesCount > 0 {
+				continue
+			}
+
+			b.rightValidationGroups = append(b.rightValidationGroups, rightSide)
+			for _, rightSeriesIndex := range rightSide.rightSeriesIndices {
+				rightSeriesUsed[rightSeriesIndex] = true
+			}
+			lastRightSeriesUsedIndex = max(lastRightSeriesUsedIndex, rightSide.latestRightSeriesIndex())
+		}
+
+		sort.Slice(b.rightValidationGroups, func(i, j int) bool {
+			return b.rightValidationGroups[i].rightSeriesIndices[0] < b.rightValidationGroups[j].rightSeriesIndices[0]
+		})
+	}
+
 	allMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, -1, nil, -1, err
@@ -754,6 +778,29 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	}
 
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) validateRightGroups(ctx context.Context) error {
+	for _, rightSide := range b.rightValidationGroups {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("validate unmatched right-side groups for fill: %w", err)
+		}
+
+		data, err := b.rightBuffer.GetSeries(ctx, rightSide.rightSeriesIndices)
+		if err != nil {
+			return fmt.Errorf("read unmatched right-side group for fill validation: %w", err)
+		}
+
+		merged, err := b.mergeSingleSide(data, rightSide.rightSeriesIndices, b.rightMetadata, "right")
+		if err != nil {
+			return fmt.Errorf("validate unmatched right-side group for fill: %w", err)
+		}
+
+		types.PutInstantVectorSeriesData(merged, b.MemoryConsumptionTracker)
+	}
+
+	b.rightValidationGroups = nil
+	return nil
 }
 
 // addUnmatchedLeftSeriesWithFilledRightSides emits one filled-right output series for each left-side

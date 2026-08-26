@@ -91,9 +91,8 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		}
 	}
 	var newMatchersR []*labels.Matcher
-	if e.VectorMatching.FillValues.LHS != nil {
-		// fill_left synthesises the LHS for every unmatched RHS series, so every RHS series
-		// produces output. LHS matchers must not narrow the RHS.
+	if e.VectorMatching.FillValues.LHS != nil || e.VectorMatching.FillValues.RHS != nil {
+		// Prometheus validates every right-side match group when any fill modifier is active.
 		newMatchersR = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersR = mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
