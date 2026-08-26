@@ -311,6 +311,128 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "b"}, labelNames)
 }
 
+// TestStreamBinaryReader_IndexHeaderVersionOnDisk tests which index-header format StreamBinaryReader
+// ends up with on local disk, for each combination of V2 writing being enabled and of which format
+// (if any) an earlier configuration already left on disk.
+func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
+	const samplingRate = 3
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	tmpDir := t.TempDir()
+
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, bkt.Close())
+		require.NoError(t, ubkt.Close())
+	})
+
+	blockID, err := block.CreateBlock(
+		ctx, tmpDir,
+		generateLabels(generateSymbols("name", 5), generateSymbols("value", 50)),
+		100, 0, 1000, labels.FromStrings("ext1", "1"),
+	)
+	require.NoError(t, err)
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, blockID.String(), block.IndexFilename))
+	require.NoError(t, err)
+	requireCleanup(t, indexFile.Close)
+	indexBytes := realByteSlice(indexFile.Bytes())
+
+	// Writing V2 is only coherent alongside the bucket reader, since the postings offsets it omits
+	// have to come from somewhere; config validation rejects the other combination.
+	writeV2Cfg := Config{BucketReader: BucketReaderConfig{
+		Enabled:             true,
+		BucketIndexSections: SectionPostingsOffsetsTable,
+		WriteV2IndexHeader:  true,
+	}}
+	require.NoError(t, writeV2Cfg.Validate())
+
+	for _, tc := range []struct {
+		name                     string
+		extantIndexHeaderVersion string
+		cfg                      Config
+		expectVersion            int
+		expectRemote             bool
+	}{
+		{
+			name: "write-v2 disabled, nothing on disk", extantIndexHeaderVersion: "", cfg: Config{},
+			expectVersion: BinaryFormatV1, expectRemote: false,
+		},
+		{
+			name: "write-v2 enabled, nothing on disk", extantIndexHeaderVersion: "", cfg: writeV2Cfg,
+			expectVersion: BinaryFormatV2, expectRemote: true,
+		},
+		{
+			name: "write-v2 enabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: writeV2Cfg,
+			expectVersion: BinaryFormatV1, expectRemote: true,
+		},
+		{
+			name: "vwrite-v2 enabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: writeV2Cfg,
+			expectVersion: BinaryFormatV2, expectRemote: true,
+		},
+
+		{
+			name: "write-v2 disabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: Config{},
+			expectVersion: BinaryFormatV1, expectRemote: false,
+		},
+		{
+			name: "write-v2 disabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: Config{},
+			expectVersion: BinaryFormatV1, expectRemote: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readerDir := filepath.Join(tmpDir, tc.name)
+
+			if tc.extantIndexHeaderVersion != "" {
+				seedIndexHeaderOnDisk(t, ctx, bkt, blockID, readerDir, tc.extantIndexHeaderVersion == "v2")
+			}
+
+			reader, err := NewStreamBinaryReader(ctx, blockID, bkt, readerDir, tc.cfg, samplingRate, logger, NewStreamBinaryReaderMetrics(nil))
+			require.NoError(t, err)
+			requireCleanup(t, reader.Close)
+
+			require.Equal(t, tc.expectVersion, reader.IndexHeaderVersion())
+			// Assert the format on disk too, not just what the reader reports,
+			// so this still fails if the reader and the file ever disagree.
+			require.Equal(t, byte(tc.expectVersion), readIndexHeaderFromDisk(t, readerDir, blockID)[4])
+
+			require.Equal(t, tc.expectRemote, reader.postingsOffsetTable.IsRemote())
+
+			// The reader must resolve symbols, label values, and postings correctly against the block index.
+			compareIndexToHeader(t, indexBytes, reader)
+			compareIndexToHeaderPostings(t, indexBytes, reader)
+		})
+	}
+}
+
+// seedIndexHeaderOnDisk writes an index-header of the given format under dir, standing in for one
+// left behind by an earlier configuration.
+func seedIndexHeaderOnDisk(t *testing.T, ctx context.Context, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, dir string, writeV2 bool) {
+	t.Helper()
+
+	blockDir := filepath.Join(dir, blockID.String())
+	require.NoError(t, os.MkdirAll(blockDir, os.ModePerm))
+	require.NoError(t, WriteBinary(ctx, bkt, blockID, filepath.Join(blockDir, block.IndexHeaderFilename), writeV2))
+}
+
+// readIndexHeaderFromDisk reads the raw index-header bytes a StreamBinaryReader wrote under dir.
+func readIndexHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID) []byte {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(dir, blockID.String(), block.IndexHeaderFilename))
+	require.NoError(t, err)
+	require.Greater(t, len(raw), HeaderLen, "index-header on disk is too short to contain its header")
+
+	return raw
+}
+
 // readSparseHeaderFromDisk reads back the sparse index-header a StreamBinaryReader wrote under dir.
 func readSparseHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID, logger log.Logger) *indexheaderpb.Sparse {
 	t.Helper()
