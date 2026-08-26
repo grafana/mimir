@@ -83,6 +83,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ],
   },
 
+  local widePanels = ['Per-instance runs / sec', 'Last successful run per-compactor replica'],
+
   local lastRunCommonTransformations = [
     $.transformation('organize', {
       renameByName: {
@@ -272,8 +274,13 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             sortBy: [{ desc: true, displayName: 'Last run' }],
           },
         },
-      )
-      .setPanelSpans([3, 2, 2, 2, 3])
+      ) + {
+        panels: [
+          // Custom width for panels, so that the last successful run table has room for its columns.
+          panel { span: if std.member(widePanels, panel.title) then 3 else 2 }
+          for panel in super.panels
+        ],
+      }
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
