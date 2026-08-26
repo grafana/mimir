@@ -45,7 +45,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	require.NoError(b, err)
 
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName, false))
 
 	// TODO: are these sensible values for parallelism?
 	for _, parallelism := range []int{1, 2, 4, 8, 20, 100} {
@@ -127,7 +127,7 @@ func BenchmarkLabelNames(b *testing.B) {
 			require.NoError(b, err)
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName, false))
 
 			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), blockDir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
@@ -170,7 +170,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			require.NoError(b, err)
 
 			indexName := filepath.Join(dir, blockID.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, blockID, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, blockID, indexName, false))
 
 			bucketReg := prometheus.NewPedanticRegistry()
 
@@ -355,7 +355,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		require.NoError(b, err)
 
 		indexName := filepath.Join(dir, idIndexV2.String(), block.IndexHeaderFilename)
-		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName, false))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 			binaryReader, err := NewStreamBinaryReader(ctx, idIndexV2, objstore.WithNoopInstr(bkt), dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
@@ -401,7 +401,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 			require.NoError(b, err)
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName, false))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {

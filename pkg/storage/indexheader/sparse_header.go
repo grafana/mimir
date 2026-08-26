@@ -281,7 +281,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	}
 
 	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := buildInMemorySparseHeaderFromIndexHeader(
-		ctx, indexHeaderSectionSource{indexTOC, filePoolDecbufFactory}, indexHeaderSectionSource{indexTOC, filePoolDecbufFactory}, sparseSampleFactor, false, l,
+		ctx, sectionSource{indexTOC, filePoolDecbufFactory}, sectionSource{indexTOC, filePoolDecbufFactory}, sparseSampleFactor, false, l,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
@@ -299,15 +299,15 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	return nil
 }
 
-type indexHeaderSectionSource struct {
+type sectionSource struct {
 	toc *TOCCompat
 	decbufFactory streamencoding.DecbufFactory
 }
 
 func buildInMemorySparseHeaderFromIndexHeader(
 	ctx context.Context,
-	symbols indexHeaderSectionSource,
-	postingsOffsets indexHeaderSectionSource,
+	symbols sectionSource,
+	postingsOffsets sectionSource,
 	sparseSampleFactor int,
 	doChecksum bool,
 	l log.Logger,
