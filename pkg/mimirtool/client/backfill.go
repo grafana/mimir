@@ -22,32 +22,41 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/mimir/pkg/mimirtool/backfill/verify"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-var ErrBlockInvalid = errors.New("block is invalid")
-
-func (c *MimirClient) doBackfillRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
-	}
-
-	if err := c.checkResponse(resp); err != nil {
-		_ = resp.Body.Close()
-		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
-	}
-
-	return resp, nil
+func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
+	return c.BackfillWithOptions(ctx, blocks, sleepTime, verify.NewVerifier(c.logger), false)
 }
 
-func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
+// BackfillWithOptions runs the provided verifier over all blocks before any
+// upload begins. If any block fails verification, the method returns the
+// aggregated error without issuing any /api/v1/upload/block/... requests.
+// If dryRun is true and verification passes, the method returns nil without
+// uploading.
+//
+// Passing a nil verifier is equivalent to passing verify.NewVerifier(logger)
+// (no checks registered, every block trivially passes).
+func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, sleepTime time.Duration, verifier *verify.Verifier, dryRun bool) error {
+	if verifier == nil {
+		verifier = verify.NewVerifier(c.logger)
+	}
+
+	report := verifier.Run(ctx, blocks)
+	if report.HasFailures() {
+		for _, f := range report.Failures() {
+			logctx := log.With(c.logger, "block", f.BlockULID)
+			level.Error(logctx).Log("check", f.Check, "msg", f.Err.Error())
+		}
+		return report.Err()
+	}
+
+	if dryRun {
+		level.Info(c.logger).Log("msg", "dry-run: verification passed, skipping uploads", "blocks", len(blocks))
+		return nil
+	}
+
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
