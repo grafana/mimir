@@ -89,7 +89,7 @@ local overrides = {
     src: './dist/tmp/packages/%s-linux-%s' % [name, arch],
     dst: '/usr/local/bin/%s' % name,
     file_info: {
-      mode: std.parseOctal("755"),
+      mode: std.parseOctal('755'),
     },
   }],
 } + overrides[name]

@@ -6631,6 +6631,16 @@
         },
         {
           "kind": "field",
+          "name": "enabled_promql_binop_fill_modifiers",
+          "required": false,
+          "desc": "Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-binop-fill-modifiers",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "prom2_range_compat",
           "required": false,
           "desc": "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics",
@@ -13429,12 +13439,11 @@
           "kind": "field",
           "name": "first_level_compaction_ooo_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.",
+          "desc": "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "compactor.first-level-compaction-ooo-wait-period",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -13442,10 +13451,9 @@
           "required": false,
           "desc": "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "compactor.first-level-compaction-skip-future-max-time",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
