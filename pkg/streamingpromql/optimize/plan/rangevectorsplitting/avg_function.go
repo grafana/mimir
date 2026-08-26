@@ -152,7 +152,14 @@ func avgOverTimeCombine(pieces []AvgOverTimeIntermediate, _ int64, _ int64, emit
 				// avg = avg·(countH/totalCnt) + (piece + pieceComp)·q, where q = pieceCnt/totalCnt.
 				// Scaling the accumulator down before adding the piece keeps intermediate values from overflowing.
 				q := pieceCnt / totalCnt
-				pieceAvgPart := h.Copy().Mul(q)
+
+				// Avoid double rounding if there's only one sample in the piece.
+				pieceAvgPart := h.Copy()
+				if pieceCnt == 1 {
+					pieceAvgPart.Div(totalCnt)
+				} else {
+					pieceAvgPart.Mul(q)
+				}
 
 				incrementalAvgH.Mul(countH / totalCnt)
 

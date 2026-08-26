@@ -596,6 +596,17 @@ eval instant at 6h avg_over_time(overflow_avg_metric[7h])
 
 clear
 
+load 1h
+  double_rounding_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
+
+clear
+
 # Floats in one split, histograms in another
 load 1h
   mixed_avg{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
