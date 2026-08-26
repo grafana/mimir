@@ -83,8 +83,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ],
   },
 
-  local widePanels = ['Per-instance runs / sec', 'Last successful run per-compactor replica'],
-
   local lastRunCommonTransformations = [
     $.transformation('organize', {
       renameByName: {
@@ -275,11 +273,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
         },
       ) + {
-        panels: [
-          // Custom width for panels, so that the last successful run table has room for its columns.
-          panel { span: if std.member(widePanels, panel.title) then 3 else 2 }
-          for panel in super.panels
-        ],
+        // Custom width for panels, in the order they are added above, so that the last successful
+        // run table has room for its columns.
+        local spans = [3, 2, 2, 2, 3],
+        panels: [super.panels[i] { span: spans[i] } for i in std.range(0, std.length(super.panels) - 1)],
       }
     )
     .addRowIf(
