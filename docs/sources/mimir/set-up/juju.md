@@ -11,4 +11,4 @@ Grafana Mimir can be deployed on Kubernetes using [Juju](https://juju.is/), an o
 
 ## See also
 
-To deploy Mimir using the Juju operator, see [How to deploy Mimir on Juju](https://documentation.ubuntu.com/observability/latest/how-to/deploy-and-manage/deploy-mimir-on-juju/).
+To deploy Mimir using Juju, see [How to deploy Mimir on Juju](https://documentation.ubuntu.com/observability/latest/how-to/deploy-and-manage/deploy-mimir-on-juju/).
