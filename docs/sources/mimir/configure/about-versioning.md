@@ -246,6 +246,7 @@ The following features are currently experimental:
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
+  - Rate limiting queries on a per-tenant basis (configured with the `limited_queries` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit, as well as `-query-frontend.subquery-spin-off-simple-subqueries` and `-query-frontend.subquery-spin-off-with-excess-downstream-queries`)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
