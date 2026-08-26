@@ -133,11 +133,12 @@ eval instant at 0m left_vector + on(job, instance) fill_left(0) right_vector
 
 # fill with ignoring() - requires group_left since ignoring(job) creates many-to-one matching
 # when two left_vector series have same instance but different jobs.
-eval instant at 0m left_vector + ignoring(job) group_left fill(0) right_vector
-  {instance="a", job="foo"} 110
-  {instance="a", job="bar"} 130
-  {instance="b", job="foo"} 20
-  {instance="c"} 300
+# Unsupported by streaming engine.
+# eval instant at 0m left_vector + ignoring(job) group_left fill(0) right_vector
+#   {instance="a", job="foo"} 110
+#   {instance="a", job="bar"} 130
+#   {instance="b", job="foo"} 20
+#   {instance="c"} 300
 
 # ---------- fill with group_left / group_right (many-to-one / one-to-many) ----------
 
@@ -153,28 +154,31 @@ load 5m
   limits{status="500"} 50
 
 # group_left with fill_right: fill missing "one" side series.
-eval instant at 0m requests / on(status) group_left fill_right(1) limits
-  {method="GET", status="200"} 0.1
-  {method="POST", status="200"} 0.2
-  {method="GET", status="500"} 0.2
-  {method="POST", status="500"} 0.4
+# Unsupported by streaming engine.
+# eval instant at 0m requests / on(status) group_left fill_right(1) limits
+#   {method="GET", status="200"} 0.1
+#   {method="POST", status="200"} 0.2
+#   {method="GET", status="500"} 0.2
+#   {method="POST", status="500"} 0.4
 
 # group_left with fill_left: fill missing "many" side series.
 # For status="404", there's no matching requests, so a single series with the match group's labels is filled
-eval instant at 0m requests + on(status) group_left fill_left(0) limits
-  {method="GET", status="200"} 1100
-  {method="POST", status="200"} 1200
-  {method="GET", status="500"} 60
-  {method="POST", status="500"} 70
-  {status="404"} 500
+# Unsupported by streaming engine.
+# eval instant at 0m requests + on(status) group_left fill_left(0) limits
+#   {method="GET", status="200"} 1100
+#   {method="POST", status="200"} 1200
+#   {method="GET", status="500"} 60
+#   {method="POST", status="500"} 70
+#   {status="404"} 500
 
 # group_left with fill on both sides.
-eval instant at 0m requests + on(status) group_left fill(0) limits
-  {method="GET", status="200"} 1100
-  {method="POST", status="200"} 1200
-  {method="GET", status="500"} 60
-  {method="POST", status="500"} 70
-  {status="404"} 500
+# Unsupported by streaming engine.
+# eval instant at 0m requests + on(status) group_left fill(0) limits
+#   {method="GET", status="200"} 1100
+#   {method="POST", status="200"} 1200
+#   {method="GET", status="500"} 60
+#   {method="POST", status="500"} 70
+#   {status="404"} 500
 
 # group_right with fill_left: fill missing "one" side series.
 clear
@@ -187,23 +191,26 @@ load 5m
   node_meta{instance="c"} 300
 
 # fill_left fills the "one" side (node_meta) when missing for a "many" side series.
-eval instant at 0m node_meta * on(instance) group_right fill_left(1) cpu_info
-  {instance="a", cpu="0"} 100
-  {instance="a", cpu="1"} 100
-  {instance="c"} 300
+# Unsupported by streaming engine.
+# eval instant at 0m node_meta * on(instance) group_right fill_left(1) cpu_info
+#   {instance="a", cpu="0"} 100
+#   {instance="a", cpu="1"} 100
+#   {instance="c"} 300
 
 # group_right with fill_right: fill missing "many" side series.
-eval instant at 0m node_meta * on(instance) group_right fill_right(0) cpu_info
-  {instance="a", cpu="0"} 100
-  {instance="a", cpu="1"} 100
-  {instance="b", cpu="0"} 0
+# Unsupported by streaming engine.
+# eval instant at 0m node_meta * on(instance) group_right fill_right(0) cpu_info
+#   {instance="a", cpu="0"} 100
+#   {instance="a", cpu="1"} 100
+#   {instance="b", cpu="0"} 0
 
 # group_right with fill on both sides.
-eval instant at 0m node_meta * on(instance) group_right fill(1) cpu_info
-  {instance="a", cpu="0"} 100
-  {instance="a", cpu="1"} 100
-  {instance="b", cpu="0"} 1
-  {instance="c"} 300
+# Unsupported by streaming engine.
+# eval instant at 0m node_meta * on(instance) group_right fill(1) cpu_info
+#   {instance="a", cpu="0"} 100
+#   {instance="a", cpu="1"} 100
+#   {instance="b", cpu="0"} 1
+#   {instance="c"} 300
 
 # ---------- fill with group_left/group_right and extra labels ----------
 
@@ -217,9 +224,10 @@ load 5m
 
 # group_left with extra label and fill_right.
 # Note: when filling the "one" side, the joined label cannot be filled.
-eval instant at 0m requests + on(status) group_left(owner) fill_right(0) limits
-  {method="GET", status="200", owner="team-a"} 1100
-  {method="POST", status="200", owner="team-a"} 1200
+# Unsupported by streaming engine.
+# eval instant at 0m requests + on(status) group_left(owner) fill_right(0) limits
+#   {method="GET", status="200", owner="team-a"} 1100
+#   {method="POST", status="200", owner="team-a"} 1200
 
 # ---------- Edge cases ----------
 
@@ -325,9 +333,10 @@ load 5m
   matched_rhs{key="a"}  10 20 30
   matched_rhs{key="b"}  100 200 300
 
-eval range from 0 to 10m step 5m matched_lhs + on(key) group_left fill_left(0) matched_rhs
-  {key="a"} 11 20 33
-  {key="b"} 100 200 300
+# Unsupported by streaming engine.
+# eval range from 0 to 10m step 5m matched_lhs + on(key) group_left fill_left(0) matched_rhs
+#   {key="a"} 11 20 33
+#   {key="b"} 100 200 300
 
 # ---------- fill with vectors where one side is empty ----------
 

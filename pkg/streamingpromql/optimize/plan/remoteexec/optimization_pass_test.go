@@ -13,11 +13,14 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -853,6 +856,185 @@ func TestOptimizationPass(t *testing.T) {
 	}
 }
 
+func TestOptimizationPass_KeepsUnsupportedNodesLocal(t *testing.T) {
+	ctx := user.InjectOrgID(t.Context(), "tenant-1")
+	testCases := map[string]struct {
+		version  planning.QueryPlanVersion
+		expected string
+	}{
+		"V19 queriers": {
+			version: planning.QueryPlanV19,
+			expected: `
+				- BinaryExpression: LHS + fill_right (0) RHS
+					- LHS: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup
+							- node 0: VectorSelector: {__name__="left_metric"}
+					- RHS: RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup
+							- node 0: VectorSelector: {__name__="right_metric"}
+			`,
+		},
+		"V20 queriers": {
+			version: planning.QueryPlanV20,
+			expected: `
+				- RemoteExecutionConsumer: node 0
+					- RemoteExecutionGroup
+						- node 0: BinaryExpression: LHS + fill_right (0) RHS
+							- LHS: VectorSelector: {__name__="left_metric"}
+							- RHS: VectorSelector: {__name__="right_metric"}
+			`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := streamingpromql.NewTestEngineOpts()
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(testCase.version))
+			require.NoError(t, err)
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+			plan, err := planner.NewQueryPlan(
+				ctx,
+				"left_metric + fill_right(0) right_metric",
+				types.NewInstantQueryTimeRange(time.Now()),
+				streamingpromql.DefaultLookbackDelta,
+				false,
+				streamingpromql.NoopPlanningObserver{},
+			)
+			require.NoError(t, err)
+			require.Equal(t, testutils.TrimIndent(testCase.expected), plan.String())
+		})
+	}
+}
+
+func TestOptimizationPass_EagerLoadsCompatibleDescendantsInUnsupportedShardedLegs(t *testing.T) {
+	ctx := user.InjectOrgID(t.Context(), "tenant-1")
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.QueryPlanV19))
+	require.NoError(t, err)
+	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, opts.Logger))
+
+	plan, err := planner.NewQueryPlan(
+		ctx,
+		"sum(source_metric)",
+		types.NewInstantQueryTimeRange(time.Now()),
+		streamingpromql.DefaultLookbackDelta,
+		false,
+		streamingpromql.NoopPlanningObserver{},
+	)
+	require.NoError(t, err)
+
+	var shardingConcat *core.FunctionCall
+	err = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) (bool, error) {
+		if functionCall, ok := node.(*core.FunctionCall); ok && functionCall.Function == functions.FUNCTION_SHARDING_CONCAT {
+			shardingConcat = functionCall
+			return false, nil
+		}
+		return true, nil
+	}))
+	require.NoError(t, err)
+	require.NotNil(t, shardingConcat)
+
+	for idx, shardedLeg := range shardingConcat.Args {
+		fillOpts := streamingpromql.NewTestEngineOpts()
+		fillPlanner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(fillOpts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.QueryPlanV19))
+		require.NoError(t, err)
+		fillPlan, err := fillPlanner.NewQueryPlan(
+			ctx,
+			"left_metric + fill_right(0) right_metric",
+			plan.Parameters.TimeRange,
+			streamingpromql.DefaultLookbackDelta,
+			false,
+			streamingpromql.NoopPlanningObserver{},
+		)
+		require.NoError(t, err)
+		fillExpression, ok := fillPlan.Root.(*core.BinaryExpression)
+		require.True(t, ok)
+		fillExpression.LHS = shardedLeg
+		require.NoError(t, shardingConcat.ReplaceChild(idx, fillExpression))
+	}
+
+	plan, err = remoteexec.NewOptimizationPass().Apply(ctx, plan, planning.QueryPlanV19)
+	require.NoError(t, err)
+
+	remoteConsumers := 0
+	localFillExpressions := 0
+	err = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) (bool, error) {
+		switch n := node.(type) {
+		case *remoteexec.RemoteExecutionConsumer:
+			remoteConsumers++
+			require.True(t, n.Group.EagerLoad)
+			remoteNode := n.Group.Nodes[n.NodeIndex]
+			version, err := planning.MinimumRequiredPlanVersion(remoteNode, plan.Parameters.TimeRange)
+			require.NoError(t, err)
+			require.LessOrEqual(t, version, planning.QueryPlanV19)
+			return false, nil
+		case *core.BinaryExpression:
+			if n.VectorMatching != nil && n.VectorMatching.FillValues.RhsSet {
+				localFillExpressions++
+			}
+		}
+
+		return true, nil
+	}))
+	require.NoError(t, err)
+	require.Positive(t, remoteConsumers)
+	require.Positive(t, localFillExpressions)
+}
+
+func TestOptimizationPass_UsesAdjustedRangeForEvaluationRoots(t *testing.T) {
+	ctx := user.InjectOrgID(t.Context(), "tenant-1")
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.QueryPlanV10))
+	require.NoError(t, err)
+	plan, err := planner.NewQueryPlan(
+		ctx,
+		"max_over_time((__vector_evaluation_root__(source_metric))[2h:1m])",
+		types.NewInstantQueryTimeRange(time.Now()),
+		streamingpromql.DefaultLookbackDelta,
+		false,
+		streamingpromql.NoopPlanningObserver{},
+	)
+	require.NoError(t, err)
+
+	var evaluationRoot *core.EvaluationRoot
+	err = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) (bool, error) {
+		if root, ok := node.(*core.EvaluationRoot); ok {
+			evaluationRoot = root
+			return false, nil
+		}
+		return true, nil
+	}))
+	require.NoError(t, err)
+	require.NotNil(t, evaluationRoot)
+
+	matrixOpts := streamingpromql.NewTestEngineOpts()
+	matrixPlanner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(matrixOpts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.QueryPlanV10))
+	require.NoError(t, err)
+	matrixPlan, err := matrixPlanner.NewQueryPlan(
+		ctx,
+		"source_metric[5m]",
+		plan.Parameters.TimeRange,
+		streamingpromql.DefaultLookbackDelta,
+		false,
+		streamingpromql.NoopPlanningObserver{},
+	)
+	require.NoError(t, err)
+
+	duplicate := &commonsubexpressionelimination.Duplicate{
+		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+		Inner:            matrixPlan.Root,
+	}
+	evaluationRoot.Inner = duplicate
+
+	_, err = remoteexec.NewOptimizationPass().Apply(ctx, plan, planning.QueryPlanV10)
+	require.NoError(t, err)
+	require.Same(t, duplicate, evaluationRoot.Inner)
+	remoteConsumer, ok := duplicate.Inner.(*remoteexec.RemoteExecutionConsumer)
+	require.True(t, ok)
+	require.Same(t, matrixPlan.Root, remoteConsumer.Group.Nodes[remoteConsumer.NodeIndex])
+}
+
 // TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
 // subqueries, remote execution is applied to each __vector_evaluation_root__ subtree independently: sharded
 // subtrees have each leg wrapped, unsharded subtrees are wrapped whole (beneath any splitting and
@@ -864,10 +1046,31 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 	instantQueryTimeRange := types.NewInstantQueryTimeRange(time.Unix(0, 0).Add(30 * time.Hour))
 
 	testCases := map[string]struct {
-		expr            string
-		expectedPlan    string
-		disableSharding bool
+		expr                 string
+		expectedPlan         string
+		disableSharding      bool
+		supportedPlanVersion planning.QueryPlanVersion
 	}{
+		"spun-off subquery keeps unsupported fill local": {
+			expr:                 `max_over_time((__vector_evaluation_root__(left_metric + fill_right(0) right_metric))[2h:1m])`,
+			disableSharding:      true,
+			supportedPlanVersion: planning.QueryPlanV19,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: max_over_time(...)
+						- Subquery: [2h0m0s:1m0s]
+							- EvaluationRoot
+								- TimeRangeSplit: interval 24h0m0s
+									- Cache: split interval 24h0m0s
+										- BinaryExpression: LHS + fill_right (0) RHS
+											- LHS: RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: VectorSelector: {__name__="left_metric"}
+											- RHS: RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: VectorSelector: {__name__="right_metric"}
+			`,
+		},
 		"spun-off subquery with shardable subtree": {
 			expr: `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m])`,
 			expectedPlan: `
@@ -1097,7 +1300,11 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
-			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion))
+			supportedPlanVersion := testCase.supportedPlanVersion
+			if supportedPlanVersion == planning.QueryPlanVersionZero {
+				supportedPlanVersion = planning.MaximumSupportedQueryPlanVersion
+			}
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(supportedPlanVersion))
 			require.NoError(t, err)
 
 			if !testCase.disableSharding {
