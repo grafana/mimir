@@ -22,6 +22,39 @@ type DataLabelSelector struct {
 	*DataLabelSelectorDetails
 }
 
+// infoSelectTimestampAndOffset returns the @ timestamp and offset modifiers the info function's
+// data label selector should use, given the plan subtree of the info function's first argument.
+//
+// It mirrors Prometheus's infoSelectHints: the reference time is derived from the first vector or
+// matrix selector found in a pre-order traversal of node, which matches the first VectorSelector
+// found by parser.Inspect over the equivalent expression AST. (In the AST the @/offset modifiers of
+// a range vector selector live on its inner VectorSelector, but in the plan they live on the
+// MatrixSelector node itself, so both node types are considered here.) Enclosing subqueries shift
+// the selector's reference time: their offsets add up until an @ timestamp anchors it, after which
+// modifiers further out are irrelevant.
+func infoSelectTimestampAndOffset(node planning.Node) (ts *time.Time, offset time.Duration, found bool) {
+	switch n := node.(type) {
+	case *VectorSelector:
+		return n.Timestamp, n.Offset, true
+	case *MatrixSelector:
+		return n.Timestamp, n.Offset, true
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		if ts, offset, found := infoSelectTimestampAndOffset(child); found {
+			// As the traversal unwinds back through an enclosing subquery, compose its modifiers:
+			// add its offset and take its @ timestamp, unless the reference time is already anchored.
+			if sq, ok := node.(*Subquery); ok && ts == nil {
+				offset += sq.Offset
+				ts = sq.Timestamp
+			}
+			return ts, offset, found
+		}
+	}
+
+	return nil, 0, false
+}
+
 func (t *DataLabelSelector) Details() proto.Message {
 	return t.DataLabelSelectorDetails
 }
