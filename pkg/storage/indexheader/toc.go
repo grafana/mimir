@@ -26,14 +26,13 @@ import (
 // TOCCompat unifies the Prometheus TSDB index TOC values available from different index types,
 // containing only the TOC offsets required for index-header reads of the Symbols and Postings Offsets.
 //
-// The StreamBinaryReader can use either file-backed or bucket-backed DecbufFactory to read the index-header.
+// TOCCompat can be built from one of:
+//   - Prometheus TSDB block index in object storage
+//   - Prometheus TSDB block index on disk
+//   - a Mimir index-header on disk (either BinaryFormatV1 or BinaryFormatV2)
 //
-// The FilePoolDecbufFactory reads the index-header BinaryFormatV1 from disk.
-// This index-header format differs from the full block index, as it only contains the Symbols and Postings Offsets:
-//   - The section offsets differ from a full Prometheus TSDB index file
-//   - The file metadata does not contain a full Prometheus block TOC, since not all index sections are present.
-//
-// The BucketDecbufFactory loads the full Prometheus TSDB index TOC from the block in object storage.
+// Because offsets will differ depending on the source of information (Prometheus TSDB index file vs Mimir block index-header),
+// the relevant DecbufFactory gets bundled with TOCCompat in sectionSource when resolving the offsets referenced by TOCCompat.
 type TOCCompat struct {
 	IndexVersion int
 
@@ -47,7 +46,9 @@ type TOCCompat struct {
 	// in which the end of the Postings list is the beginning of the Label Indices table.
 	// Prometheus block index TOC only contains start offsets for sections, not end offsets,
 	// so we use Label Indices Table offset as the end bound of the Postings List.
-	PostingsListEnd     uint64
+	PostingsListEnd uint64
+
+	// If PostingsOffsetTable is 0, the index or index-header this TOCCompat represents should not be used to resolve postings offsets
 	PostingsOffsetTable uint64
 }
 
@@ -88,19 +89,19 @@ func TOCFromBucketTSDBIndex(
 	postingsListEnd := tsdbTOC.LabelIndicesTable
 
 	return &TOCCompat{
-		IndexVersion: indexVersion,
-		Symbols:      tsdbTOC.Symbols,
-
+		IndexVersion:        indexVersion,
+		Symbols:             tsdbTOC.Symbols,
 		PostingsListEnd:     postingsListEnd,
 		PostingsOffsetTable: tsdbTOC.PostingsTable,
 	}, nil
 }
 
-// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir BinaryFormatV1.
-// This format currently only exists on-disk in the store-gateways.
+// TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir BinaryFormatV1 or BinaryFormatV2.
+// These formats currently only exists on-disk in the store-gateways.
 // The BinaryFormatV1 only has two main sections, which are copies of the Symbols and PostingsOffsets tables,
 // and it has a different layout for the header/metadata and TOC.
 // This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.
+// BinaryFormatV2 does not copy the postings offsets table.
 func TOCFromIndexHeader(
 	ctx context.Context,
 	castagnoliTable *crc32.Table,
@@ -125,43 +126,49 @@ func TOCFromIndexHeader(
 	level.Debug(l).Log("msg", "index header file size", "bytes", indexHeaderSize)
 
 	indexHeaderVersion = int(decbuf.Byte())
-	if indexHeaderVersion != BinaryFormatV1 {
-		return nil, 0, fmt.Errorf("unknown or unsupported index header format version %d", indexHeaderVersion)
+	switch indexHeaderVersion {
+	case BinaryFormatV1, BinaryFormatV2:
+		indexVersion := int(decbuf.Byte())
+		if indexVersion != index.FormatV2 {
+			return nil, indexHeaderVersion, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
+		}
+
+		postingsListEnd := decbuf.Be64()
+		if err = decbuf.Err(); err != nil {
+			return nil, indexHeaderVersion, fmt.Errorf("cannot read version and index version: %w", err)
+		}
+
+		indexHeaderTOCOffset := indexHeaderSize - BinaryTOCLen
+		if decbuf.ResetAt(indexHeaderTOCOffset); decbuf.Err() != nil {
+			return nil, indexHeaderVersion, decbuf.Err()
+		}
+
+		if decbuf.CheckCrc32(castagnoliTable); decbuf.Err() != nil {
+			return nil, indexHeaderVersion, decbuf.Err()
+		}
+		decbuf.ResetAt(indexHeaderTOCOffset)
+		symbols := decbuf.Be64()
+		postingsOffsetTable := decbuf.Be64()
+
+		if err := decbuf.Err(); err != nil {
+			return nil, indexHeaderVersion, err
+		}
+
+		// Index-header version of 2 must have a zero-offset postings offset table,
+		// all other versions must have a non-zero offset postings offset table.
+		if (indexHeaderVersion == BinaryFormatV2) != (postingsOffsetTable == 0) {
+			return nil, indexHeaderVersion, fmt.Errorf("index-header format version %d has offset %d for postings offsets table", indexHeaderVersion, postingsOffsetTable)
+		}
+
+		return &TOCCompat{
+			IndexVersion:        indexVersion,
+			Symbols:             symbols,
+			PostingsListEnd:     postingsListEnd,
+			PostingsOffsetTable: postingsOffsetTable,
+		}, indexHeaderVersion, nil
+	default:
+		return nil, indexHeaderVersion, fmt.Errorf("unknown or unsupported index header format version %d", indexHeaderVersion)
 	}
-
-	indexVersion := int(decbuf.Byte())
-	if indexVersion != index.FormatV2 {
-		return nil, 0, fmt.Errorf("unknown or unsupported index format version %d", indexVersion)
-	}
-
-	postingsListEnd := decbuf.Be64()
-	if err = decbuf.Err(); err != nil {
-		return nil, 0, fmt.Errorf("cannot read version and index version: %w", err)
-	}
-
-	indexHeaderTOCOffset := indexHeaderSize - BinaryTOCLen
-	if decbuf.ResetAt(indexHeaderTOCOffset); decbuf.Err() != nil {
-		return nil, 0, decbuf.Err()
-	}
-
-	if decbuf.CheckCrc32(castagnoliTable); decbuf.Err() != nil {
-		return nil, 0, decbuf.Err()
-	}
-	decbuf.ResetAt(indexHeaderTOCOffset)
-	symbols := decbuf.Be64()
-	postingsOffsetTable := decbuf.Be64()
-
-	if err := decbuf.Err(); err != nil {
-		return nil, 0, err
-	}
-
-	return &TOCCompat{
-		IndexVersion: indexVersion,
-		Symbols:      symbols,
-
-		PostingsListEnd:     postingsListEnd,
-		PostingsOffsetTable: postingsOffsetTable,
-	}, indexHeaderVersion, nil
 }
 
 func fetchRange(ctx context.Context, bkt objstore.BucketReader, objectPath string, offset, length int64) (data []byte, err error) {

@@ -52,6 +52,7 @@ func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReader
 //  2. Reading only the Symbols table from the v1 index-header file format on disk,
 //     and reading the Postings Offset table directly from the full block index in the bucket.
 type StreamBinaryReader struct {
+	indexHeaderVersion int
 	symbolsTOC         *TOCCompat
 	postingsOffsetsTOC *TOCCompat
 
@@ -133,7 +134,8 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath); err != nil {
+		// TODO (casie): Pass something to determine version of index header to build
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
@@ -142,36 +144,41 @@ func NewStreamBinaryReader(
 		)
 	}
 
-	// With full index-header now on disk, initialize the local-disk-backed decbuf factory and read the TOC.
+	// Initialize the local-disk-backed decbuf factory and read the TOC.
 	// The index-header's TOC is also required to build the sparse index-header if one does not already exist.
 	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
 		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
 	)
-	indexHeaderTOC, _, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
-	if err != nil {
-		// TOC read checks CRC32; assume a failure here is file corruption and attempt to recreate the index-header.
+	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
+	needPostingsOffsetsOnDisk := !cfg.BucketReader.Enabled
+	if err != nil || (indexHeaderVersion == BinaryFormatV2 && needPostingsOffsetsOnDisk) {
+		// TOC read checks CRC32; assume a failure here is either due to a file corruption.
 		level.Debug(spanLog).Log(
 			"msg", "failed to read table of contents from index-header on disk; will recreate from bucket block index",
-			"path", localIndexHeaderPath, "err", err,
+			"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath); err != nil {
+		// TODO (casie): Figure out how to pass expected BinaryFormatVersion information
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
-		indexHeaderTOC, _, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
-		if err != nil {
-			// Failure after recreating index-header from bucket; assume this is unrecoverable.
-			return nil, fmt.Errorf("failed to read table of contents from index-header on disk after recreate from bucket block index: %w", err)
-		}
+
+		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+	}
+	if err != nil {
+		// Failure after recreating index-header from bucket; assume this is unrecoverable.
+		return nil, fmt.Errorf("failed to read table of contents from index-header on disk after recreate from bucket block index: %w", err)
 	}
 
 	// Everything is now loaded from bucket or disk.
 	streamBinaryReader := &StreamBinaryReader{
 		sparseSampleFactor: sparseSampleFactor,
+		indexHeaderVersion: indexHeaderVersion,
 	}
 
 	// Set up each of the Symbols table and Postings Offsets table readers
@@ -214,8 +221,8 @@ func NewStreamBinaryReader(
 		start := time.Now()
 		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
 			ctx,
-			indexHeaderSectionSource{streamBinaryReader.symbolsTOC, streamBinaryReader.symbolsDecbufFactory},
-			indexHeaderSectionSource{ streamBinaryReader.postingsOffsetsTOC, streamBinaryReader.postingsOffsetsDecbufFactory},
+			sectionSource{streamBinaryReader.symbolsTOC, streamBinaryReader.symbolsDecbufFactory},
+			sectionSource{streamBinaryReader.postingsOffsetsTOC, streamBinaryReader.postingsOffsetsDecbufFactory},
 			sparseSampleFactor, cfg.VerifyOnLoad, l,
 		)
 		if err != nil {
@@ -282,7 +289,7 @@ func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {
 }
 
 func (r *StreamBinaryReader) IndexHeaderVersion() int {
-	return BinaryFormatV1
+	return r.indexHeaderVersion
 }
 
 func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, returnErr error) {
