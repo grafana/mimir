@@ -1,17 +1,17 @@
 diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
-index 5d61498352..63a7fa070a 100644
+index 9971cd085a..8e76013f0a 100644
 --- a/pkg/storegateway/storepb/rpc.pb.go
 +++ b/pkg/storegateway/storepb/rpc.pb.go
-@@ -8,8 +8,6 @@ import (
+@@ -9,8 +9,6 @@ import (
  	_ "github.com/gogo/protobuf/gogoproto"
  	proto "github.com/gogo/protobuf/proto"
- 	types "github.com/gogo/protobuf/types"
+ 	_ "github.com/gogo/protobuf/types"
 -	"github.com/grafana/mimir/pkg/mimirpb"
 -
  	io "io"
  	math "math"
  	math_bits "math/bits"
-@@ -166,9 +164,6 @@ func (m *Stats) XXX_DiscardUnknown() {
+@@ -213,9 +211,6 @@ func (m *Stats) XXX_DiscardUnknown() {
  var xxx_messageInfo_Stats proto.InternalMessageInfo
  
  type SeriesResponse struct {
@@ -20,4 +20,4 @@ index 5d61498352..63a7fa070a 100644
 -
  	// Types that are valid to be assigned to Result:
  	//	*SeriesResponse_Warning
- 	//	*SeriesResponse_Hints
+ 	//	*SeriesResponse_Stats
