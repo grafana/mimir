@@ -117,21 +117,27 @@ const (
 
 var (
 	errInvalidIndexHeaderSection = errors.New(fmt.Sprintf("invalid index-header section; must be one of: %s", SectionPostingsOffsetsTable))
+	errInvalidIndexHeaderVersion = errors.New("bucket reader must be enabled to write v2 index-header")
 )
 
 type BucketReaderConfig struct {
 	Enabled             bool   `yaml:"enabled" category:"experimental"`
 	BucketIndexSections string `yaml:"index_sections"  category:"experimental"`
+	WriteV2IndexHeader  bool   `yaml:"write_v2_index_header" category:"experimental"`
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, fmt.Sprintf("Enable reading TSDB index-header sections from object storage. When enabled, the configured -%s are not downloaded to local disk.", prefix+"index-sections"))
 	f.StringVar(&cfg.BucketIndexSections, prefix+"index-sections", SectionPostingsOffsetsTable, fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionPostingsOffsetsTable))
+	f.BoolVar(&cfg.WriteV2IndexHeader, prefix+"write-v2-index-header", false, "Write only symbols table to on-disk index header.")
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
 	if !slices.Contains([]string{SectionPostingsOffsetsTable}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
+	}
+	if cfg.WriteV2IndexHeader && !cfg.Enabled {
+		return errInvalidIndexHeaderVersion
 	}
 	return nil
 }

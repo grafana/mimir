@@ -204,7 +204,7 @@ func ensureIndexHeaderOnDisk(
 	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath); err != nil {
+	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath, false); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
