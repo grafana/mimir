@@ -382,6 +382,40 @@ func TestConfigValidation(t *testing.T) {
 			expectedError: errInvalidBucketConfig,
 		},
 		{
+			name: "S3: should fail if storage prefixes overlap between alertmanager and blocks storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				cfg.BlocksStorage.Bucket.StoragePrefix = "team-a"
+				cfg.AlertmanagerStorage.StoragePrefix = "team-a/mimir_alertmanager"
+				return cfg
+			},
+			expectedError: errInvalidBucketConfig,
+		},
+		{
+			name: "S3: should pass if storage prefixes are sibling subpaths",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+
+				for _, bucketCfg := range []*bucket.Config{&cfg.BlocksStorage.Bucket, &cfg.AlertmanagerStorage.Config} {
+					bucketCfg.Backend = bucket.S3
+					bucketCfg.S3.BucketName = "b1"
+					bucketCfg.S3.Region = "r1"
+				}
+				cfg.BlocksStorage.Bucket.StoragePrefix = "team-a/mimir_blocks"
+				cfg.AlertmanagerStorage.StoragePrefix = "team-a/mimir_alertmanager"
+				return cfg
+			},
+			expectedError: nil,
+		},
+		{
 			name: "GCS: should fail if bucket name is shared between alertmanager and blocks storage",
 			getTestConfig: func() *Config {
 				cfg := newDefaultConfig()
@@ -754,6 +788,29 @@ func TestConfigValidation(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestStoragePrefixesOverlap(t *testing.T) {
+	testCases := map[string]struct {
+		first    string
+		second   string
+		expected bool
+	}{
+		"equal prefixes":         {first: "team-a/mimir", second: "team-a/mimir", expected: true},
+		"first prefix is parent": {first: "team-a", second: "team-a/mimir", expected: true},
+		"second prefix is parent": {
+			first: "team-a/mimir", second: "team-a", expected: true,
+		},
+		"sibling prefixes":       {first: "team-a/blocks", second: "team-a/ruler", expected: false},
+		"similar segment names":  {first: "team-a", second: "team-alerts", expected: false},
+		"empty and named prefix": {first: "", second: "team-a", expected: false},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, storagePrefixesOverlap(tc.first, tc.second))
 		})
 	}
 }
