@@ -1,10 +1,6 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
 kubeVersionOverride: "1.32"
 
-distributor:
-  service:
-    trafficDistribution: PreferClose
-
 gateway:
   enabledNonEnterprise: true
   resources:

@@ -1,21 +1,22 @@
 ---
-# Source: mimir-distributed/templates/distributor/distributor-svc.yaml
+# Source: mimir-distributed/templates/distributor/distributor-svc-headless.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: gateway-nginx-values-mimir-distributor
+  name: test-traffic-distribution-values-mimir-distributor-headless
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: gateway-nginx-values
+    app.kubernetes.io/instance: test-traffic-distribution-values
     app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
+    prometheus.io/service-monitor: "false"
   annotations:
     {}
   namespace: "citestns"
 spec:
   type: ClusterIP
-  internalTrafficPolicy: Cluster
+  clusterIP: None
   ports:
     - port: 8080
       protocol: TCP
@@ -27,6 +28,6 @@ spec:
       targetPort: grpc
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: gateway-nginx-values
+    app.kubernetes.io/instance: test-traffic-distribution-values
     app.kubernetes.io/component: distributor
 

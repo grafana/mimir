@@ -1,0 +1,86 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-traffic-distribution-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-traffic-distribution-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-traffic-distribution-values
+  template:
+    metadata:
+      name: test-traffic-distribution-values-minio
+      labels:
+        app: minio
+        release: test-traffic-distribution-values
+      annotations:
+        checksum/secrets: 6d8db6965e6b22f8d1c6da20945b12a1deba3627f72ec8717ea83b2dc91256a1
+        checksum/config: 307f1b262bb1358bedb0a7adb33eca689f5a5f89c197b417270359f50f1ddf10
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-traffic-distribution-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-traffic-distribution-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-traffic-distribution-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-traffic-distribution-values-minio        
+
