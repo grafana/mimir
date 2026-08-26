@@ -165,9 +165,14 @@ func TestCloneExpr(t *testing.T) {
 func TestCloneExpr_EngineTestCases(t *testing.T) {
 	testCases := loadTestExpressions(t)
 
+	// Some engine test cases use the experimental fill binary operator modifiers, so enable them here.
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableBinopFillModifiers = true
+	p := parser.NewParser(parserOpts)
+
 	for _, testCase := range testCases {
 		t.Run(testCase, func(t *testing.T) {
-			originalExpression, err := promqlext.NewPromQLParser().ParseExpr(testCase)
+			originalExpression, err := p.ParseExpr(testCase)
 			require.NoError(t, err)
 
 			clonedExpression, err := CloneExpr(originalExpression)

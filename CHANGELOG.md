@@ -12,6 +12,7 @@
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
+* [ENHANCEMENT] MQE: Add experimental support for `fill`, `fill_left`, and `fill_right` modifiers for filling missing samples in one-to-one binary operations. #16071
 * [ENHANCEMENT] Ruler: Split oversized remote distributor writes to keep resulting calls within the configured gRPC maximum send size, and expose the number of generated requests in `cortex_ruler_remote_distributor_requests_per_write_request`. #16160
 * [ENHANCEMENT] Alerts: Don't fire `MimirMemberlistZoneAwareRoutingAutoFailover` while the node is still joining the cluster. #16315
 * [ENHANCEMENT] Store-gateway: added a `route` label to the `cortex_bucket_store_series_request_stage_duration_seconds` metric to match the `route` label of `cortex_request_duration_seconds`. #16374
@@ -41,6 +42,7 @@
 ### Mixin
 
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
+* [CHANGE] Dashboards: Make `cluster` and `namespace` single-select on the `Mimir / Compactor resources` dashboard. #16476
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
 * [FEATURE] Alerts: Add `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired`, firing when a `blocked_queries`/`limited_queries` rule's `expires_at` has passed. #16395
 * [FEATURE] Dashboards: Add a "Query blocking and rate limiting" row to the `Mimir / Queries` dashboard, showing blocked and limited queries by tenant and expired blocked/limited-query rules by tenant. #16395
@@ -57,17 +59,16 @@
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440
-* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
-
-### Mixin
-
-### Jsonnet
-
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
+* [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
+* [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
+* [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 
 ### Documentation
 
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
+* [ENHANCEMENT] Clarify that `/ingester/prepare-partition-downscale` is only available in the ingest storage architecture and `/ingester/prepare-instance-ring-downscale` only in the classic architecture. #16469
+* [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
 
 ### Tools
 
