@@ -273,8 +273,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
         },
       ) + {
-        // Custom width for panels, in the order they are added above, so that the last successful
-        // run table has room for its columns.
         local spans = [3, 2, 2, 2, 3],
         panels: [super.panels[i] { span: spans[i] } for i in std.range(0, std.length(super.panels) - 1)],
       }
