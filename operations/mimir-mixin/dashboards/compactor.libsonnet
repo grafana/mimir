@@ -107,7 +107,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     .addShowNativeLatencyVariable($.latencyVariableDefault())
     .addRowIf(
       $._config.compactor_standalone_enabled,
-      $.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary')
+      ($.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary') +
+       { collapse: $._config.compactor_standalone_summary_collapsed })
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
@@ -253,6 +254,27 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
         },
       )
+      .addPanel(
+        $.timeseriesPanel('Estimated Compaction Jobs') +
+        $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
+                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
+        $.panelDescription(
+          'Estimated Compaction Jobs',
+          |||
+            Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
+            and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
+
+            Metric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if
+            there were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more
+            jobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job
+            covering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.
+
+            In other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.
+          |||
+        ),
+      )
+      // 5 panels don't divide the 12 columns of a row evenly.
+      .justifyPanels()
     )
     .addRowIf(
       $._config.compactor_scheduler_enabled,
@@ -386,26 +408,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRow(
       $.row('Compaction')
-      .addPanelIf(
-        $._config.compactor_standalone_enabled,
-        $.timeseriesPanel('Estimated Compaction Jobs') +
-        $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
-                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
-        $.panelDescription(
-          'Estimated Compaction Jobs',
-          |||
-            Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
-            and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
-
-            Metric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if
-            there were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more
-            jobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job
-            covering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.
-
-            In other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.
-          |||
-        ),
-      )
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
         $.ncLatencyPanel('cortex_compactor_block_max_time_delta_seconds', $.jobMatcher($._config.job_names.compactor)) +
@@ -496,7 +498,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
         $.stack,
       )
-      .splitIntoLines(if $._config.compactor_standalone_enabled then [4, 4] else [3, 4])
+      .splitIntoLines([3, 4])
     )
     .addRow(
       $.row('Garbage collector')
