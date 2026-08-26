@@ -13,6 +13,16 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
+const (
+	ReadBufferSize = 1 << 20 // 1 MiB
+)
+
+var bucketBufioPool = sync.Pool{
+	New: func() any {
+		return bufio.NewReaderSize(nil, ReadBufferSize)
+	},
+}
+
 type BucketReader struct {
 	ctx    context.Context
 	bkt    objstore.BucketReader
@@ -70,14 +80,6 @@ func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
-var bucketBufPool = sync.Pool{
-	New: func() any {
-		// 1MiB buffer chosen as starting point;
-		// we could make this configurable and benchmark.
-		return bufio.NewReaderSize(nil, 1<<20)
-	},
-}
-
 type BucketBufReader struct {
 	ctx         context.Context
 	bkt         objstore.BucketReader
@@ -88,7 +90,7 @@ type BucketBufReader struct {
 	r           *BucketReader
 	resetReader func(off int) error
 	buf         *bufio.Reader
-	// Hold a reference to the pool for returning on Close - allows tests to use different pool.
+	// bufPool reference to return to on Close
 	bufPool *sync.Pool
 }
 
@@ -107,7 +109,7 @@ func resetReaderFunc(bufReader *BucketBufReader) func(off int) error {
 func NewBucketBufReader(
 	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
 ) *BucketBufReader {
-	return newBucketBufReader(ctx, &bucketBufPool, bkt, name, base, length)
+	return newBucketBufReader(ctx, &bucketBufioPool, bkt, name, base, length)
 }
 
 func newBucketBufReader(
