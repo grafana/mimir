@@ -24,7 +24,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -116,12 +115,15 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				require.False(t, r2.postingsOffsetTable.IsRemote(),
 					"postings offsets should be read from local disk when the bucket reader is disabled")
 
-				// Build the sparse index-header by reading the postings offset table from object storage.
+				// Build the sparse index-header by reading the postings offset table from object storage,
+				// with only the symbols table kept on local disk.
 				bucketDir := filepath.Join(tmpDir, "bucket-reader")
 				bucketCfg := Config{BucketReader: BucketReaderConfig{
 					Enabled:             true,
 					BucketIndexSections: SectionPostingsOffsetsTable,
+					WriteV2IndexHeader:  true,
 				}}
+				require.NoError(t, bucketCfg.Validate())
 				r3, err := NewStreamBinaryReader(ctx, blockID, bkt, bucketDir, bucketCfg, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
 				requireCleanup(t, r3.Close)
@@ -132,9 +134,12 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				compareIndexToHeader(t, b, r3)
 				compareIndexToHeaderPostings(t, b, r3)
 
-				// TODO: the full index-header, including the postings offset table, is still written to local
-				//  disk even when th2e bucket reader is enabled. Once WriteBinary can emit a symbols-only
-				//  index-header, assert that the one written to bucketDir has no postings offset table.
+				// The v2 index-header holds the symbols table only, and should be smaller than the full one written by r1.
+				v1Header := readIndexHeaderFromDisk(t, tmpDir, blockID)
+				v2Header := readIndexHeaderFromDisk(t, bucketDir, blockID)
+				require.Equal(t, byte(BinaryFormatV1), v1Header[4])
+				require.Equal(t, byte(BinaryFormatV2), v2Header[4])
+				require.Less(t, len(v2Header), len(v1Header))
 			})
 		}
 	}
@@ -362,6 +367,11 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 		expectRemote             bool
 	}{
 		{
+			name: "bucket reader enabled, write-v2 disabled", extantIndexHeaderVersion: "",
+			cfg:           Config{BucketReader: BucketReaderConfig{Enabled: true, BucketIndexSections: SectionPostingsOffsetsTable, WriteV2IndexHeader: false}},
+			expectVersion: BinaryFormatV1, expectRemote: true,
+		},
+		{
 			name: "write-v2 disabled, nothing on disk", extantIndexHeaderVersion: "", cfg: Config{},
 			expectVersion: BinaryFormatV1, expectRemote: false,
 		},
@@ -431,22 +441,6 @@ func readIndexHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID) []byte
 	require.Greater(t, len(raw), HeaderLen, "index-header on disk is too short to contain its header")
 
 	return raw
-}
-
-// readSparseHeaderFromDisk reads back the sparse index-header a StreamBinaryReader wrote under dir.
-func readSparseHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID, logger log.Logger) *indexheaderpb.Sparse {
-	t.Helper()
-
-	gzipped, err := os.ReadFile(filepath.Join(dir, blockID.String(), block.SparseIndexHeaderFilename))
-	require.NoError(t, err)
-
-	raw, err := unzipSparseHeader(gzipped, logger)
-	require.NoError(t, err)
-
-	sparse := &indexheaderpb.Sparse{}
-	require.NoError(t, sparse.Unmarshal(raw))
-
-	return sparse
 }
 
 // trackedBucket wraps a BucketReader and tracks details about downloaded files
