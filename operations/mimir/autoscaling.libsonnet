@@ -85,6 +85,9 @@
 
     // Sized from its own lane's backlog, so there is no CPU-based fallback.
     autoscaling_compactor_defer_enabled: $._config.compactor_defer_fleet_enabled && $._config.autoscaling_compactor_scheduler_drain_enabled,
+    // Deferred jobs are the periodic spike, so the fleet is given longer to drain it than the
+    // urgent fleet gets, and is sized for the average of the spike rather than its peak.
+    autoscaling_compactor_defer_drain_target_seconds: 3 * 3600,
     autoscaling_compactor_defer_min_replicas: error 'you must set autoscaling_compactor_defer_min_replicas in the _config',
     autoscaling_compactor_defer_max_replicas: error 'you must set autoscaling_compactor_defer_max_replicas in the _config',
   },
@@ -951,7 +954,7 @@
   // scheduler queues all compaction work into one lane. Only the backlog is scoped: the worker-side
   // duration and bytes metrics carry no lane label, so the throughput estimate spans every fleet.
   // `include_plan_jobs` belongs on the one fleet serving the plan lane, and only on it.
-  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas, lane='', include_plan_jobs=true, kind='StatefulSet')::
+  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas, lane='', include_plan_jobs=true, kind='StatefulSet', drain_target_seconds=$._config.autoscaling_compactor_scheduler_drain_target_seconds)::
     // We calculate the estimated time it would take a single worker to drain the queue,
     // then divide by the target drain time to get the desired number of replicas.
     //
@@ -1032,7 +1035,7 @@
     // Lag trigger: multiplies the drain-time signal by a factor that grows the longer the pending
     // queue stays non-empty. Starts at 1, grows by `lag_period_increase` per period the queue has
     // been continuously non-empty, capped at `lag_max_multiplier`.
-    local lag_period_seconds = $._config.autoscaling_compactor_scheduler_drain_target_seconds;
+    local lag_period_seconds = drain_target_seconds;
     local lag_period_increase = 0.1;
     local lag_max_multiplier = 2;
     local lag_max_periods = (lag_max_multiplier - 1) / lag_period_increase;
@@ -1123,7 +1126,7 @@
       )
       %(lag_multiplier)s
     ||| % {
-      drain_target_seconds: $._config.autoscaling_compactor_scheduler_drain_target_seconds,
+      drain_target_seconds: drain_target_seconds,
       incomplete_bytes: incomplete_bytes,
       bytes_to_seconds: indented(bytes_to_seconds, 10),
       plan_term: plan_term,
@@ -1222,6 +1225,7 @@
       lane='compaction-defer',
       include_plan_jobs=false,
       kind='Deployment',
+      drain_target_seconds=$._config.autoscaling_compactor_defer_drain_target_seconds,
     ),
 
   compactor_defer_deployment: overrideSuperIfExists(

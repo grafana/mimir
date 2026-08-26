@@ -1726,15 +1726,15 @@ spec:
                 sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="default", compaction_type=~"split|merge", lane="compaction-defer"}) * 1e-07
               )
             )
-            / 3600
+            / 10800
           )[1h:5m]
         )
         # A [1;2] multiplier, based on the time since we last saw an empty queue.
-        # We increment 0.1 every 3600 seconds of continuous pending jobs.
+        # We increment 0.1 every 10800 seconds of continuous pending jobs.
         * (
           clamp_max(
             1 + 0.1 * floor(
-              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-defer"}[36000s]) > 0)) / 3600
+              (time() - max(max_over_time(cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{namespace="default", lane="compaction-defer"}[108000s]) > 0)) / 10800
             ),
             2
           )
