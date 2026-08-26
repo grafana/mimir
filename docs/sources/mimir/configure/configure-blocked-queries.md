@@ -114,7 +114,7 @@ The order of patterns is preserved, so the first matching pattern will be used.
 
 ## Rate limit queries
 
-*Rate limiting queries with `limited_queries` is an experimental feature.*
+_Rate limiting queries with `limited_queries` is an experimental feature._
 
 Use the `limited_queries` limit when a query should only be allowed to run once per configured time period.
 
