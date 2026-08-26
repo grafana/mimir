@@ -134,7 +134,6 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "err", err,
 		)
 		start := time.Now()
-		// TODO (casie): Pass something to determine version of index header to build
 		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
@@ -159,7 +158,6 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 		)
 		start := time.Now()
-		// TODO (casie): Figure out how to pass expected BinaryFormatVersion information
 		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
