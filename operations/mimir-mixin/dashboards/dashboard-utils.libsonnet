@@ -54,6 +54,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ],
         },
 
+      // setPanelSpans sets the span of each panel of the row, e.g. [2, 2, 2, 2, 4]. Use it when the
+      // panels of a line are not all of the same width. Each line must add up to 12.
+      setPanelSpans(spans)::
+        local allPanels = self.panels;
+        assert std.length(allPanels) == std.length(spans) :
+               'setPanelSpans: got %d spans but row has %d panels' % [std.length(spans), std.length(allPanels)];
+        assert std.foldl(function(total, span) total + span, spans, 0) % 12 == 0 :
+               'setPanelSpans: spans must add up to a multiple of 12, got %s' % [std.toString(spans)];
+        self + {
+          panels: [allPanels[i] { span: spans[i] } for i in std.range(0, std.length(allPanels) - 1)],
+        },
+
       // splitIntoLines distributes panels across multiple visual lines within the same row,
       // allowing for multiple "sub-rows" within the same row, making them collapsible together.
       // panelsPerLine is an array with the number of panels on each line, e.g. [4, 2].

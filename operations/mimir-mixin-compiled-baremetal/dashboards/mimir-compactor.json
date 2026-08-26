@@ -162,7 +162,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 3,
+                  "span": 2,
                   "targets": [
                      {
                         "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} > 0\n",
@@ -172,6 +172,55 @@
                      }
                   ],
                   "title": "Tenants compaction progress",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
+                        "format": "time_series",
+                        "legendFormat": "Jobs",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated Compaction Jobs",
                   "type": "timeseries"
                },
                {
@@ -256,7 +305,7 @@
                      ]
                   },
                   "fill": 1,
-                  "id": 3,
+                  "id": 4,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -487,7 +536,7 @@
                         }
                      ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -504,7 +553,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 2,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "max by(instance) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(instance) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\nand max by(instance) (cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} == 0)\n",
@@ -576,55 +625,6 @@
                      }
                   ],
                   "type": "table"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 5,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 2,
-                  "targets": [
-                     {
-                        "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
-                        "format": "time_series",
-                        "legendFormat": "Jobs",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Estimated Compaction Jobs",
-                  "type": "timeseries"
                }
             ],
             "repeat": null,

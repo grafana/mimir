@@ -300,11 +300,6 @@
 
     // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
     compactor_standalone_enabled: true,
-
-    // Whether the standalone-mode summary row of the compactor dashboard is collapsed by default.
-    // While compactors run in both modes, the standalone-mode row covers the mode being migrated
-    // away from, so it's collapsed to keep the scheduler-mode row on screen. Set it to false to
-    // expand it, for example while most jobs still run in standalone mode.
     compactor_standalone_summary_collapsed: $._config.compactor_scheduler_enabled,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
