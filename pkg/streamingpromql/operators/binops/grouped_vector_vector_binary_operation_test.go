@@ -1277,6 +1277,8 @@ func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing
 					expectedMetadataCount := 0
 					if emptyCase.one && !emptyCase.many && fillCase.fillsOne {
 						expectedMetadataCount = 1
+					} else if emptyCase.many && !emptyCase.one && fillCase.fillsMany {
+						expectedMetadataCount = 1
 					}
 					require.Len(t, metadata, expectedMetadataCount)
 					types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
@@ -1881,6 +1883,234 @@ func TestGroupedVectorVectorBinaryOperation_FillsSyntheticOneSide(t *testing.T) 
 			require.NoError(t, operation.FinishedReading(t.Context()))
 			require.Equal(t, 1, left.finishedReadingCalls)
 			require.Equal(t, 1, right.finishedReadingCalls)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_BuildsSyntheticManySideCarriers(t *testing.T) {
+	fill := 3.0
+	type expectedOutput struct {
+		labels         labels.Labels
+		hasRealMany    bool
+		carrierSources [][]int
+	}
+	testCases := map[string]struct {
+		card         parser.VectorMatchCardinality
+		on           bool
+		matching     []string
+		include      []string
+		op           parser.ItemType
+		returnBool   bool
+		manySeries   []labels.Labels
+		oneSeries    []labels.Labels
+		expected     []expectedOutput
+		expectedRefs map[int]int
+		manyFinished bool
+	}{
+		"many-to-one on creates matched and unmatched variants": {
+			card:     parser.CardManyToOne,
+			on:       true,
+			matching: []string{"group"},
+			include:  []string{"owner"},
+			op:       parser.ADD,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "2"),
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one-a", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "one-b", "group", "a", "owner", "team-b"),
+				labels.FromStrings(model.MetricNameLabel, "one-c", "group", "b", "owner", "team-c"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("group", "b", "owner", "team-c"), carrierSources: [][]int{{2}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "1"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b", "series", "1"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "2"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b", "series", "2"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), carrierSources: [][]int{{0}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b"), carrierSources: [][]int{{1}}},
+			},
+			expectedRefs: map[int]int{0: 3, 1: 3, 2: 1},
+		},
+		"one-to-many on removes the synthetic metric name for retaining operators": {
+			card:     parser.CardOneToMany,
+			on:       true,
+			matching: []string{"group"},
+			include:  []string{"owner"},
+			op:       parser.LSS,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "b", "owner", "team-b"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("group", "b", "owner", "team-b"), carrierSources: [][]int{{1}}},
+				{labels: labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-a", "series", "1"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), carrierSources: [][]int{{0}}},
+			},
+			expectedRefs: map[int]int{0: 2, 1: 1},
+		},
+		"many-to-one ignoring builds labels from the one-side match": {
+			card:     parser.CardManyToOne,
+			matching: []string{"instance"},
+			include:  []string{"owner"},
+			op:       parser.ADD,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "instance", "many", "owner", "team-b", "zone", "eu"),
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "instance", "one", "owner", "team-a", "zone", "us"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("owner", "team-a", "zone", "us"), carrierSources: [][]int{{0}}},
+			},
+			expectedRefs: map[int]int{0: 1},
+			manyFinished: true,
+		},
+		"one-to-many ignoring builds labels from the one-side match": {
+			card:     parser.CardOneToMany,
+			matching: []string{"instance"},
+			include:  []string{"owner"},
+			op:       parser.ADD,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "instance", "many", "owner", "team-b", "zone", "eu"),
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "instance", "one", "owner", "team-a", "zone", "us"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("owner", "team-a", "zone", "us"), carrierSources: [][]int{{0}}},
+			},
+			expectedRefs: map[int]int{0: 1},
+			manyFinished: true,
+		},
+		"one-to-many merges a real output collision and sorts it last": {
+			card:     parser.CardOneToMany,
+			on:       true,
+			matching: []string{"group"},
+			include:  []string{"owner"},
+			op:       parser.ADD,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale", "series", "2"),
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "2"), hasRealMany: true},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), hasRealMany: true, carrierSources: [][]int{{0}}},
+			},
+			expectedRefs: map[int]int{0: 2},
+		},
+		"many-to-one merges absent and empty carrier variants": {
+			card:     parser.CardManyToOne,
+			on:       true,
+			matching: []string{"group"},
+			include:  []string{"owner"},
+			op:       parser.ADD,
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one-a", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "one-b", "group", "a", "owner", ""),
+			},
+			expected: []expectedOutput{
+				{labels: labels.FromStrings("group", "a"), carrierSources: [][]int{{0, 1}}},
+			},
+			expectedRefs: map[int]int{0: 1},
+			manyFinished: true,
+		},
+		"one-to-many merges carriers whose metric names are removed": {
+			card:     parser.CardOneToMany,
+			on:       true,
+			matching: []string{model.MetricNameLabel},
+			op:       parser.ADD,
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one-a"),
+				labels.FromStrings(model.MetricNameLabel, "one-b"),
+			},
+			expected: []expectedOutput{
+				{labels: labels.EmptyLabels(), carrierSources: [][]int{{0}, {1}}},
+			},
+			expectedRefs: map[int]int{0: 1, 1: 1},
+			manyFinished: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			many := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series:                   testCase.manySeries,
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series:                   testCase.oneSeries,
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             testCase.on,
+					MatchingLabels: testCase.matching,
+					Include:        testCase.include,
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				testCase.op,
+				testCase.returnBool,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, len(testCase.expected))
+			for idx, expected := range testCase.expected {
+				require.Equal(t, expected.labels, metadata[idx].Labels)
+				output := operation.remainingSeries[idx]
+				require.Equal(t, expected.hasRealMany, output.manySide != nil)
+				require.Len(t, output.manySideFillCarriers, len(expected.carrierSources))
+				for carrierIdx, sourceIndices := range expected.carrierSources {
+					require.Equal(t, sourceIndices, output.manySideFillCarriers[carrierIdx].oneSide.seriesIndices)
+				}
+			}
+
+			actualRefs := map[int]int{}
+			for _, output := range operation.remainingSeries {
+				if output.oneSide != nil {
+					actualRefs[output.oneSide.seriesIndices[0]] = output.oneSide.outputSeriesCount
+				}
+				for _, carrier := range output.manySideFillCarriers {
+					actualRefs[carrier.oneSide.seriesIndices[0]] = carrier.oneSide.outputSeriesCount
+				}
+			}
+			require.Equal(t, testCase.expectedRefs, actualRefs)
+			if testCase.manyFinished {
+				require.Equal(t, 1, many.finishedReadingCalls)
+			} else {
+				require.Zero(t, many.finishedReadingCalls)
+			}
+			require.Zero(t, one.finishedReadingCalls)
+
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Equal(t, 1, many.finishedReadingCalls)
+			require.Equal(t, 1, one.finishedReadingCalls)
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 			operation.Close()
 		})
