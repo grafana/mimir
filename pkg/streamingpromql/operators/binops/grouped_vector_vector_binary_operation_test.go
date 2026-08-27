@@ -4,13 +4,16 @@ package binops
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -1271,7 +1274,11 @@ func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing
 				if canProduceAnySeries && (emptyCase.many || emptyCase.one) {
 					metadata, _, oneUsed, _, manyUsed, _, err := o.computeOutputSeries()
 					require.NoError(t, err)
-					require.Empty(t, metadata)
+					expectedMetadataCount := 0
+					if emptyCase.one && !emptyCase.many && fillCase.fillsOne {
+						expectedMetadataCount = 1
+					}
+					require.Len(t, metadata, expectedMetadataCount)
 					types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
 					types.BoolSlicePool.Put(&oneUsed, memoryConsumptionTracker)
 					types.BoolSlicePool.Put(&manyUsed, memoryConsumptionTracker)
@@ -1282,6 +1289,858 @@ func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing
 				require.Equal(t, 1, one.finishedReadingCalls)
 			})
 		}
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_FillsSyntheticOneSide(t *testing.T) {
+	fillThree := 3.0
+	fillTwo := 2.0
+	fillInfinity := math.Inf(1)
+	fillNaN := math.NaN()
+	ts := int64(0)
+	secondTS := time.Minute.Milliseconds()
+	thirdTS := 2 * time.Minute.Milliseconds()
+
+	type expectedSeries struct {
+		labels    labels.Labels
+		floats    []promql.FPoint
+		histogram *histogram.FloatHistogram
+	}
+	testCases := map[string]struct {
+		card       parser.VectorMatchCardinality
+		op         parser.ItemType
+		returnBool bool
+		fill       parser.VectorMatchFillValues
+		include    []string
+		ignoring   []string
+		onLabels   []string
+
+		manySeries []labels.Labels
+		manyData   []types.InstantVectorSeriesData
+		oneSeries  []labels.Labels
+		oneData    []types.InstantVectorSeriesData
+		timeRange  types.QueryTimeRange
+
+		expected                       []expectedSeries
+		expectOneFinishedAfterMetadata bool
+		carrierFirst                   bool
+		expectCarrierCollision         bool
+	}{
+		"many-to-one arithmetic preserves all unmatched many series": {
+			card: parser.CardManyToOne,
+			op:   parser.SUB,
+			fill: parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "b", "series", "2"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: ts, F: 20}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "series", "1"), floats: []promql.FPoint{{T: ts, F: 7}}},
+				{labels: labels.FromStrings("group", "b", "series", "2"), floats: []promql.FPoint{{T: ts, F: 17}}},
+			},
+		},
+		"one-to-many arithmetic maps the synthetic operand to the left": {
+			card: parser.CardOneToMany,
+			op:   parser.SUB,
+			fill: parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "b", "series", "2"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: ts, F: 20}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "series", "1"), floats: []promql.FPoint{{T: ts, F: -7}}},
+				{labels: labels.FromStrings("group", "b", "series", "2"), floats: []promql.FPoint{{T: ts, F: -17}}},
+			},
+		},
+		"many-to-one uses real include labels and deletes synthetic values": {
+			card:    parser.CardManyToOne,
+			op:      parser.ADD,
+			fill:    parser.VectorMatchFillValues{RHS: &fillThree},
+			include: []string{"owner"},
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "b", "owner", "stale"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: ts, F: 20}}},
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+			},
+			oneData: []types.InstantVectorSeriesData{{}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a")},
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 13}}},
+				{labels: labels.FromStrings("group", "b"), floats: []promql.FPoint{{T: ts, F: 23}}},
+			},
+		},
+		"one-to-many uses real include labels and deletes synthetic values": {
+			card:    parser.CardOneToMany,
+			op:      parser.ADD,
+			fill:    parser.VectorMatchFillValues{RHS: &fillThree},
+			include: []string{"owner"},
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "b", "owner", "stale"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: ts, F: 20}}},
+			},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+			},
+			oneData: []types.InstantVectorSeriesData{{}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a")},
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 13}}},
+				{labels: labels.FromStrings("group", "b"), floats: []promql.FPoint{{T: ts, F: 23}}},
+			},
+		},
+		"many-to-one emits one carrier across intermittent include variants": {
+			card:         parser.CardManyToOne,
+			op:           parser.ADD,
+			fill:         parser.VectorMatchFillValues{RHS: &fillThree},
+			include:      []string{"owner"},
+			timeRange:    types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			carrierFirst: true,
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+			},
+			manyData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 10},
+				{T: secondTS, F: 20},
+				{T: thirdTS, F: 30},
+			}}},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-b"),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: ts, F: 11}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b"), floats: []promql.FPoint{{T: secondTS, F: 22}}},
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: thirdTS, F: 33}}},
+			},
+		},
+		"one-to-many merges a carrier collision across intermittent include variants": {
+			card:      parser.CardOneToMany,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{RHS: &fillThree},
+			include:   []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+			},
+			manyData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 10},
+				{T: secondTS, F: 20},
+				{T: thirdTS, F: 30},
+			}}},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 11}, {T: thirdTS, F: 33}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: secondTS, F: 22}}},
+			},
+		},
+		"many-to-one canonicalizes absent and empty include values": {
+			card:                   parser.CardManyToOne,
+			op:                     parser.ADD,
+			fill:                   parser.VectorMatchFillValues{RHS: &fillThree},
+			include:                []string{"owner"},
+			timeRange:              types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			manySeries:             []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			expectCarrierCollision: true,
+			manyData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 10},
+				{T: secondTS, F: 20},
+				{T: thirdTS, F: 30},
+			}}},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", ""),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 11}, {T: secondTS, F: 22}, {T: thirdTS, F: 33}}},
+			},
+		},
+		"one-to-many canonicalizes absent and empty include values": {
+			card:                   parser.CardOneToMany,
+			op:                     parser.ADD,
+			fill:                   parser.VectorMatchFillValues{RHS: &fillThree},
+			include:                []string{"owner"},
+			timeRange:              types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			manySeries:             []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			expectCarrierCollision: true,
+			manyData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 10},
+				{T: secondTS, F: 20},
+				{T: thirdTS, F: 30},
+			}}},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", ""),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 11}, {T: secondTS, F: 22}, {T: thirdTS, F: 33}}},
+			},
+		},
+		"many-to-one on retains an included matching label on fill": {
+			card:       parser.CardManyToOne,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			include:    []string{"owner"},
+			onLabels:   []string{"group", "owner"},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+		},
+		"one-to-many on retains an included matching label on fill": {
+			card:       parser.CardOneToMany,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			include:    []string{"owner"},
+			onLabels:   []string{"group", "owner"},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+		},
+		"many-to-one ignoring retains an included matching label on fill": {
+			card:       parser.CardManyToOne,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			include:    []string{"zone"},
+			ignoring:   []string{"instance"},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "many", "zone", "us")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a", "instance", "many", "zone", "us"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+		},
+		"one-to-many ignoring retains an included matching label on fill": {
+			card:       parser.CardOneToMany,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			include:    []string{"zone"},
+			ignoring:   []string{"instance"},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "many", "zone", "us")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a", "instance", "many", "zone", "us"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+		},
+		"many-to-one ignoring removes an ignored include and merges many series": {
+			card:      parser.CardManyToOne,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{RHS: &fillThree},
+			include:   []string{"owner"},
+			ignoring:  []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-b"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			expected: []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 13}, {T: secondTS, F: 23}}}},
+		},
+		"one-to-many ignoring removes an ignored include and merges many series": {
+			card:      parser.CardOneToMany,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{RHS: &fillThree},
+			include:   []string{"owner"},
+			ignoring:  []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "team-b"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			expected: []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 13}, {T: secondTS, F: 23}}}},
+		},
+		"many-to-one ignoring merges absent and empty included many labels": {
+			card:      parser.CardManyToOne,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{RHS: &fillThree},
+			include:   []string{"owner"},
+			ignoring:  []string{"instance"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x", "owner", ""),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			expected: []expectedSeries{{labels: labels.FromStrings("group", "a", "instance", "x"), floats: []promql.FPoint{{T: ts, F: 13}, {T: secondTS, F: 23}}}},
+		},
+		"one-to-many ignoring merges absent and empty included many labels": {
+			card:      parser.CardOneToMany,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{RHS: &fillThree},
+			include:   []string{"owner"},
+			ignoring:  []string{"instance"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x", "owner", ""),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			expected: []expectedSeries{{labels: labels.FromStrings("group", "a", "instance", "x"), floats: []promql.FPoint{{T: ts, F: 13}, {T: secondTS, F: 23}}}},
+		},
+		"many-to-one finishes a wholly unused disjoint one side": {
+			card:                           parser.CardManyToOne,
+			op:                             parser.ADD,
+			fill:                           parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries:                     []labels.Labels{labels.FromStrings("group", "many")},
+			manyData:                       []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			oneSeries:                      []labels.Labels{labels.FromStrings("group", "one")},
+			oneData:                        []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 20}}}},
+			expected:                       []expectedSeries{{labels: labels.FromStrings("group", "many"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+			expectOneFinishedAfterMetadata: true,
+		},
+		"one-to-many finishes a wholly unused disjoint one side": {
+			card:                           parser.CardOneToMany,
+			op:                             parser.ADD,
+			fill:                           parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries:                     []labels.Labels{labels.FromStrings("group", "many")},
+			manyData:                       []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			oneSeries:                      []labels.Labels{labels.FromStrings("group", "one")},
+			oneData:                        []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 20}}}},
+			expected:                       []expectedSeries{{labels: labels.FromStrings("group", "many"), floats: []promql.FPoint{{T: ts, F: 13}}}},
+			expectOneFinishedAfterMetadata: true,
+		},
+		"many-to-one comparison retains the many metric name": {
+			card:       parser.CardManyToOne,
+			op:         parser.GTR,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings(model.MetricNameLabel, "many", "group", "a"), floats: []promql.FPoint{{T: ts, F: 10}}},
+			},
+		},
+		"one-to-many comparison retains the many metric name": {
+			card:       parser.CardOneToMany,
+			op:         parser.LSS,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings(model.MetricNameLabel, "many", "group", "a"), floats: []promql.FPoint{{T: ts, F: 3}}},
+			},
+		},
+		"many-to-one bool comparison drops the metric name": {
+			card:       parser.CardManyToOne,
+			op:         parser.GTR,
+			returnBool: true,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 1}}},
+			},
+		},
+		"one-to-many bool comparison drops the metric name": {
+			card:       parser.CardOneToMany,
+			op:         parser.LSS,
+			returnBool: true,
+			fill:       parser.VectorMatchFillValues{RHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 1}}},
+			},
+		},
+		"many-to-one multiplies a histogram by the synthetic scalar": {
+			card:       parser.CardManyToOne,
+			op:         parser.MUL,
+			fill:       parser.VectorMatchFillValues{RHS: &fillTwo},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData: []types.InstantVectorSeriesData{{Histograms: []promql.HPoint{
+				{T: ts, H: &histogram.FloatHistogram{Count: 3, Sum: 6}},
+			}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), histogram: &histogram.FloatHistogram{Count: 6, Sum: 12}},
+			},
+		},
+		"one-to-many multiplies the synthetic scalar by a histogram": {
+			card:       parser.CardOneToMany,
+			op:         parser.MUL,
+			fill:       parser.VectorMatchFillValues{RHS: &fillTwo},
+			manySeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "many", "group", "a")},
+			manyData: []types.InstantVectorSeriesData{{Histograms: []promql.HPoint{
+				{T: ts, H: &histogram.FloatHistogram{Count: 3, Sum: 6}},
+			}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a"), histogram: &histogram.FloatHistogram{Count: 6, Sum: 12}},
+			},
+		},
+		"many-to-one applies an infinite fill value": {
+			card:       parser.CardManyToOne,
+			op:         parser.SUB,
+			fill:       parser.VectorMatchFillValues{RHS: &fillInfinity},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: math.Inf(-1)}}}},
+		},
+		"one-to-many applies an infinite fill value": {
+			card:       parser.CardOneToMany,
+			op:         parser.SUB,
+			fill:       parser.VectorMatchFillValues{RHS: &fillInfinity},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: math.Inf(1)}}}},
+		},
+		"many-to-one bool comparison accepts a NaN fill value": {
+			card:       parser.CardManyToOne,
+			op:         parser.GTR,
+			returnBool: true,
+			fill:       parser.VectorMatchFillValues{RHS: &fillNaN},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 0}}}},
+		},
+		"one-to-many bool comparison accepts a NaN fill value": {
+			card:       parser.CardOneToMany,
+			op:         parser.GTR,
+			returnBool: true,
+			fill:       parser.VectorMatchFillValues{RHS: &fillNaN},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			expected:   []expectedSeries{{labels: labels.FromStrings("group", "a"), floats: []promql.FPoint{{T: ts, F: 0}}}},
+		},
+		"many-to-one does not synthesize without a normalized one fill": {
+			card:       parser.CardManyToOne,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{LHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+		},
+		"one-to-many does not synthesize without a normalized one fill": {
+			card:       parser.CardOneToMany,
+			op:         parser.ADD,
+			fill:       parser.VectorMatchFillValues{LHS: &fillThree},
+			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
+			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			copyData := func(source []types.InstantVectorSeriesData) []types.InstantVectorSeriesData {
+				result := make([]types.InstantVectorSeriesData, len(source))
+				for i, data := range source {
+					if len(data.Floats) > 0 {
+						points, err := types.FPointSlicePool.Get(len(data.Floats), memoryConsumptionTracker)
+						require.NoError(t, err)
+						result[i].Floats = append(points, data.Floats...)
+					}
+					if len(data.Histograms) > 0 {
+						points, err := types.HPointSlicePool.Get(len(data.Histograms), memoryConsumptionTracker)
+						require.NoError(t, err)
+						for _, point := range data.Histograms {
+							points = append(points, promql.HPoint{T: point.T, H: point.H.Copy()})
+						}
+						result[i].Histograms = points
+					}
+				}
+				return result
+			}
+
+			many := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series:                   testCase.manySeries,
+				Data:                     copyData(testCase.manyData),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series:                   testCase.oneSeries,
+				Data:                     copyData(testCase.oneData),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			left, right := many, one
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			timeRange := testCase.timeRange
+			if timeRange.StepCount == 0 {
+				timeRange = types.NewInstantQueryTimeRange(timestamp.Time(ts))
+			}
+			vectorMatching := parser.VectorMatching{
+				Card:           testCase.card,
+				On:             true,
+				MatchingLabels: []string{"group"},
+				Include:        testCase.include,
+				FillValues:     testCase.fill,
+			}
+			if testCase.ignoring != nil {
+				vectorMatching.On = false
+				vectorMatching.MatchingLabels = testCase.ignoring
+			} else if testCase.onLabels != nil {
+				vectorMatching.MatchingLabels = testCase.onLabels
+			}
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				vectorMatching,
+				testCase.op,
+				testCase.returnBool,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				timeRange,
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			if testCase.expectOneFinishedAfterMetadata {
+				require.Equal(t, 1, one.finishedReadingCalls)
+			}
+			var expectedMetadata []types.SeriesMetadata
+			if len(testCase.expected) > 0 {
+				expectedMetadata = make([]types.SeriesMetadata, 0, len(testCase.expected))
+			}
+			for _, expected := range testCase.expected {
+				expectedMetadata = append(expectedMetadata, types.SeriesMetadata{Labels: expected.labels})
+			}
+			require.Equal(t, expectedMetadata, metadata)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			if testCase.expectCarrierCollision {
+				require.Len(t, operation.remainingSeries, 1)
+				require.NotNil(t, operation.remainingSeries[0].oneSide)
+				require.NotNil(t, operation.remainingSeries[0].fillCarrier)
+				require.Len(t, operation.remainingSeries[0].oneSide.seriesIndices, 2)
+			}
+			if testCase.carrierFirst {
+				carrierIndex := slices.IndexFunc(operation.remainingSeries, func(series *groupedBinaryOperationOutputSeries) bool {
+					return series.oneSide == nil && series.fillCarrier != nil
+				})
+				require.GreaterOrEqual(t, carrierIndex, 0)
+				carrier := operation.remainingSeries[carrierIndex]
+				copy(operation.remainingSeries[1:carrierIndex+1], operation.remainingSeries[:carrierIndex])
+				operation.remainingSeries[0] = carrier
+				expectedCarrier := testCase.expected[len(testCase.expected)-1]
+				copy(testCase.expected[1:], testCase.expected[:len(testCase.expected)-1])
+				testCase.expected[0] = expectedCarrier
+			}
+
+			for _, expected := range testCase.expected {
+				actual, err := operation.NextSeries(t.Context())
+				require.NoError(t, err)
+				require.Equal(t, expected.floats, actual.Floats)
+				if expected.histogram == nil {
+					require.Empty(t, actual.Histograms)
+				} else {
+					require.Len(t, actual.Histograms, 1)
+					require.Equal(t, ts, actual.Histograms[0].T)
+					require.Equal(t, expected.histogram, actual.Histograms[0].H)
+				}
+				types.PutInstantVectorSeriesData(actual, memoryConsumptionTracker)
+			}
+
+			_, err = operation.NextSeries(t.Context())
+			require.ErrorIs(t, err, types.EOS)
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Equal(t, 1, left.finishedReadingCalls)
+			require.Equal(t, 1, right.finishedReadingCalls)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *testing.T) {
+	fill := 3.0
+	firstTS := int64(0)
+	secondTS := time.Minute.Milliseconds()
+	testCases := map[string]struct {
+		card          parser.VectorMatchCardinality
+		duplicateTime bool
+	}{
+		"many-to-one early stop": {
+			card: parser.CardManyToOne,
+		},
+		"one-to-many early stop": {
+			card: parser.CardOneToMany,
+		},
+		"many-to-one evaluation error": {
+			card:          parser.CardManyToOne,
+			duplicateTime: true,
+		},
+		"one-to-many evaluation error": {
+			card:          parser.CardOneToMany,
+			duplicateTime: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			newData := func(points ...promql.FPoint) types.InstantVectorSeriesData {
+				pooled, err := types.FPointSlicePool.Get(len(points), memoryConsumptionTracker)
+				require.NoError(t, err)
+				return types.InstantVectorSeriesData{Floats: append(pooled, points...)}
+			}
+
+			secondOneSideTime := secondTS
+			if testCase.duplicateTime {
+				secondOneSideTime = firstTS
+			}
+			many := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+					labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "2"),
+				},
+				Data: []types.InstantVectorSeriesData{
+					newData(promql.FPoint{T: firstTS, F: 10}, promql.FPoint{T: secondTS, F: 20}),
+					newData(promql.FPoint{T: firstTS, F: 30}, promql.FPoint{T: secondTS, F: 40}),
+				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "one", "group", "a"),
+					labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+				},
+				Data: []types.InstantVectorSeriesData{
+					newData(promql.FPoint{T: firstTS, F: 1}),
+					newData(promql.FPoint{T: secondOneSideTime, F: 2}),
+				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			left, right := many, one
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					Include:        []string{"owner"},
+					FillValues:     parser.VectorMatchFillValues{RHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(firstTS), timestamp.Time(secondTS), time.Minute),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			result, err := operation.NextSeries(t.Context())
+			if testCase.duplicateTime {
+				require.ErrorContains(t, err, "duplicate series")
+			} else {
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(result, memoryConsumptionTracker)
+			}
+
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			if !testCase.duplicateTime {
+				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			}
+			require.Equal(t, 1, left.finishedReadingCalls)
+			require.Equal(t, 1, right.finishedReadingCalls)
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_RejectsInvalidPresenceTimestamps(t *testing.T) {
+	fill := 3.0
+	startTS := int64(0)
+	endTS := time.Minute.Milliseconds()
+	testCases := map[string]struct {
+		card          parser.VectorMatchCardinality
+		invalidTime   int64
+		expectedError string
+	}{
+		"many-to-one out of range": {
+			card:          parser.CardManyToOne,
+			invalidTime:   2 * time.Minute.Milliseconds(),
+			expectedError: "record one-side presence at timestamp 120000: timestamp 120000 is outside query range [0, 60000]",
+		},
+		"one-to-many out of range": {
+			card:          parser.CardOneToMany,
+			invalidTime:   2 * time.Minute.Milliseconds(),
+			expectedError: "record one-side presence at timestamp 120000: timestamp 120000 is outside query range [0, 60000]",
+		},
+		"many-to-one misaligned": {
+			card:          parser.CardManyToOne,
+			invalidTime:   30 * time.Second.Milliseconds(),
+			expectedError: "record one-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000",
+		},
+		"one-to-many misaligned": {
+			card:          parser.CardOneToMany,
+			invalidTime:   30 * time.Second.Milliseconds(),
+			expectedError: "record one-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			newData := func(point promql.FPoint) types.InstantVectorSeriesData {
+				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				return types.InstantVectorSeriesData{Floats: append(points, point)}
+			}
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{newData(promql.FPoint{T: startTS, F: 10})},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{newData(promql.FPoint{T: testCase.invalidTime, F: 20})},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{RHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(startTS), timestamp.Time(endTS), time.Minute),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.EqualError(t, err, testCase.expectedError)
+			require.Error(t, errors.Unwrap(err))
+			many.ReleaseUnreadData(memoryConsumptionTracker)
+			one.ReleaseUnreadData(memoryConsumptionTracker)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_CanonicalManySideIncludeValuesRejectOverlappingPoints(t *testing.T) {
+	fill := 3.0
+	testCases := map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	}
+
+	for name, cardinality := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			newData := func(value float64) types.InstantVectorSeriesData {
+				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				return types.InstantVectorSeriesData{Floats: append(points, promql.FPoint{T: 0, F: value})}
+			}
+			many := &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x"),
+					labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "instance", "x", "owner", ""),
+				},
+				Data:                     []types.InstantVectorSeriesData{newData(10), newData(20)},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					MatchingLabels: []string{"instance"},
+					Include:        []string{"owner"},
+					FillValues:     parser.VectorMatchFillValues{RHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, 1)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.ErrorIs(t, err, errMultipleMatchesOnManySide)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			operation.Close()
+		})
 	}
 }
 
