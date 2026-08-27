@@ -160,6 +160,10 @@ type Head struct {
 	memTruncationCallBack  func() // For testing purposes.
 
 	secondaryHashFunc func(labels.Labels) uint32
+
+	// testAfterSeriesLookup is invoked after getByID in appenders, before the
+	// series is locked. Tests use it to race GC against a resolved pointer.
+	testAfterSeriesLookup func(*memSeries)
 }
 
 type ExemplarStorage interface {
@@ -849,8 +853,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			// TODO(codesome): clear out all m-map chunks here for refSeries.
 			h.logger.Error("Loading on-disk chunks failed", "err", err)
-			var cerr *chunks.CorruptionErr
-			if errors.As(err, &cerr) {
+			if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 				h.metrics.mmapChunkCorruptionTotal.Inc()
 			}
 
@@ -1603,8 +1606,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		var cerr *chunks.CorruptionErr
-		if errors.As(err, &cerr) {
+		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -2460,6 +2462,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2658,6 +2661,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		stale, isHist, buckets := series.sampleState()
 		if stale {
 			staleSeriesDeleted++
@@ -2862,6 +2866,11 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// Whether garbage collection has removed this series from the head index. Such a
+	// series is unreachable, so appending to it would silently lose the samples;
+	// appenders that looked it up before it was collected have to get a fresh one
+	// instead. See headAppenderBase.lockForAppend.
+	gced bool
 	// headChunkCount tracks the number of head chunks. All mutations of the
 	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.

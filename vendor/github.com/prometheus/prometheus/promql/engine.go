@@ -4579,7 +4579,7 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 // Also resolves start() and end() on selector and subquery nodes.
 // Also remove superfluous parenthesis on parameters to functions and aggregations.
 // Return isStepInvariant is true when the whole subexpression is step invariant.
-// Return shoudlWrap is false for cases like MatrixSelector and StringLiteral that never need to be wrapped.
+// Return shouldWrap is false for cases like MatrixSelector and StringLiteral that never need to be wrapped.
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvariant, shouldWrap bool) {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
@@ -4751,7 +4751,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 					// further up (the latter wouldn't make sense,
 					// but no harm in detecting it).
 					n.SkipHistogramBuckets = true
-				case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
+				case "histogram_quantile", "histogram_quantiles", "histogram_fraction", "histogram_stddev", "histogram_stdvar":
 					// If we ever see a function that needs the
 					// whole histogram, we will not skip the
 					// buckets.
