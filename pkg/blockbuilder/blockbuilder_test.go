@@ -39,37 +39,31 @@ func TestBlockBuilder(t *testing.T) {
 	cases := []struct {
 		name                   string
 		startOffset, endOffset int64
-		// For per tenant slice.
-		expSampleRangeStart int
-		expSampleRangeEnd   int
 	}{
 		{
-			name:                "first offset till somewhere in between",
-			startOffset:         0,
-			endOffset:           3 * 6,
-			expSampleRangeStart: 0,
-			expSampleRangeEnd:   6,
+			name:        "first offset till somewhere in between",
+			startOffset: 0,
+			endOffset:   3 * 6,
 		},
 		{
-			name:                "somewhere in between till last offset",
-			startOffset:         int64(3 * 6),
-			endOffset:           3 * 10,
-			expSampleRangeStart: 6,
-			expSampleRangeEnd:   10,
+			name:        "somewhere in between till last offset",
+			startOffset: int64(3 * 6),
+			endOffset:   3 * 10,
 		},
 		{
-			name:                "somewhere in between to somewhere in between",
-			startOffset:         int64(3 * 3),
-			endOffset:           3 * 6,
-			expSampleRangeStart: 3,
-			expSampleRangeEnd:   6,
+			name:        "somewhere in between to somewhere in between",
+			startOffset: int64(3 * 3),
+			endOffset:   3 * 6,
 		},
 		{
-			name:                "entire partition",
-			startOffset:         0,
-			endOffset:           3 * 10,
-			expSampleRangeStart: 0,
-			expSampleRangeEnd:   10,
+			name:        "entire partition",
+			startOffset: 0,
+			endOffset:   3 * 10,
+		},
+		{
+			name:        "single record",
+			startOffset: 3 * 5,
+			endOffset:   3*5 + 1,
 		},
 	}
 
@@ -112,19 +106,23 @@ func TestBlockBuilder(t *testing.T) {
 						// past the job's end offset in tests where no further records arrive.
 						cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
 
-						producedSamples := make(map[string][]mimirpb.Sample, 0)
+						expectedSamples := make(map[string][]mimirpb.Sample, 0)
 						recsPerTenant := 0
+						var offset int64
 						kafkaRecTime := time.Now().Add(-time.Hour)
 						for range samplesPerTenant {
 							for _, tenant := range tenants {
 								samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
-								producedSamples[tenant] = append(producedSamples[tenant], samples...)
+								if offset >= c.startOffset && offset < c.endOffset {
+									expectedSamples[tenant] = append(expectedSamples[tenant], samples...)
+								}
+								offset++
 							}
 							recsPerTenant++
 
 							kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
 						}
-						require.NotEmpty(t, producedSamples)
+						require.NotEmpty(t, expectedSamples)
 
 						scheduler := &mockSchedulerClient{}
 						scheduler.addJob(
@@ -163,99 +161,15 @@ func TestBlockBuilder(t *testing.T) {
 								validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
 							}
 
-							expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
 							compareQueryWithDir(t,
 								tenantBucketDir,
-								expSamples, nil,
+								expectedSamples[tenant], nil,
 								labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 							)
 						}
 					})
 				})
 			}
-		})
-	}
-}
-
-// Regression test: a job spanning exactly one record must consume that record. The consumption
-// loop initialized lastConsumedOffset to startOffset (which is inclusive) and ran while
-// lastConsumedOffset < endOffset-1, so a [N, N+1) job exited before the first fetch, uploaded no
-// blocks, and was still reported to the scheduler as completed — silently losing the record.
-// Single-record jobs occur when the scheduler's time-bucketed planning strands one record of an
-// older bucket past the last job boundary, e.g. across a scheduler restart.
-func TestBlockBuilder_SingleRecordJob(t *testing.T) {
-	fetchModes := []struct {
-		name                string
-		fetchConcurrencyMax int
-	}{
-		{name: "without concurrent fetchers", fetchConcurrencyMax: 0},
-		{name: "with concurrent fetchers", fetchConcurrencyMax: 12},
-	}
-
-	for _, fm := range fetchModes {
-		t.Run(fm.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				ctx := t.Context()
-
-				var vnet kfake.VirtualNetwork
-
-				_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic, testkafka.WithVirtualNetwork(&vnet))
-
-				kafkaClient, err := kgo.NewClient(
-					kgo.SeedBrokers(kafkaAddr),
-					kgo.Dialer(vnet.DialContext),
-					kgo.RecordPartitioner(kgo.ManualPartitioner()),
-				)
-				require.NoError(t, err)
-				t.Cleanup(kafkaClient.Close)
-
-				cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
-				cfg.Kafka.Dialer = vnet.DialContext
-				cfg.Kafka.FetchConcurrencyMax = fm.fetchConcurrencyMax
-				cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
-
-				const tenant = "1"
-				const numRecords = 10
-				var producedSamples []mimirpb.Sample
-				kafkaRecTime := time.Now().Add(-time.Hour)
-				for range numRecords {
-					samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
-					producedSamples = append(producedSamples, samples...)
-					kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
-				}
-
-				// One produceSamples call produces one record, so record offsets equal call indexes.
-				const singleRecordOffset = 5
-				scheduler := &mockSchedulerClient{}
-				scheduler.addJob(
-					schedulerpb.JobKey{Id: "single-record-job", Epoch: 1},
-					schedulerpb.JobSpec{
-						Topic:       testTopic,
-						Partition:   1,
-						StartOffset: singleRecordOffset,
-						EndOffset:   singleRecordOffset + 1,
-					},
-				)
-
-				bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-				require.NoError(t, err)
-
-				require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-				t.Cleanup(func() {
-					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), bb))
-				})
-
-				require.Eventually(t, func() bool {
-					return scheduler.completeJobCallCount() > 0
-				}, 5*time.Second, 100*time.Millisecond, "expected job completion")
-
-				expSamples := producedSamples[singleRecordOffset : singleRecordOffset+1]
-				compareQueryWithDir(t,
-					path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
-					expSamples, nil,
-					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-				)
-			})
 		})
 	}
 }
