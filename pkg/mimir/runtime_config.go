@@ -53,7 +53,7 @@ type RuntimeConfigConfig struct {
 // Mimir-specific loader selector.
 func (c *RuntimeConfigConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Config.RegisterFlags(f)
-	f.StringVar(&c.Loader, "runtime-config.loader", runtimeConfigLoaderMap, fmt.Sprintf("Method used to decode the runtime configuration files. Supported values are: %q (decode directly using mapstructure) and %q (decode by round-tripping through YAML).", runtimeConfigLoaderMap, runtimeConfigLoaderYAML))
+	f.StringVar(&c.Loader, "runtime-config.loader", runtimeConfigLoaderYAML, fmt.Sprintf("Method used to decode the runtime configuration files. Supported values are: %q (decode directly using mapstructure) and %q (decode by round-tripping through YAML).", runtimeConfigLoaderMap, runtimeConfigLoaderYAML))
 }
 
 // runtimeConfigValues are values that can be reloaded from configuration file while Mimir is running.
@@ -258,9 +258,9 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	switch cfg.RuntimeConfig.Loader {
-	case runtimeConfigLoaderMap, "":
+	case runtimeConfigLoaderMap:
 		cfg.RuntimeConfig.Config.MapLoader = loader.loadFromMap
-	case runtimeConfigLoaderYAML:
+	case runtimeConfigLoaderYAML, "":
 		cfg.RuntimeConfig.Config.Loader = loader.load
 	default:
 		return nil, fmt.Errorf("invalid runtime config loader %q: supported values are %q and %q", cfg.RuntimeConfig.Loader, runtimeConfigLoaderMap, runtimeConfigLoaderYAML)

@@ -450,7 +450,7 @@ runtime_config:
   # Supported values are: "map" (decode directly using mapstructure) and "yaml"
   # (decode by round-tripping through YAML).
   # CLI flag: -runtime-config.loader
-  [loader: <string> | default = "map"]
+  [loader: <string> | default = "yaml"]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]

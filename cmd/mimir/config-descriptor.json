@@ -21194,7 +21194,7 @@
           "required": false,
           "desc": "Method used to decode the runtime configuration files. Supported values are: \"map\" (decode directly using mapstructure) and \"yaml\" (decode by round-tripping through YAML).",
           "fieldValue": null,
-          "fieldDefaultValue": "map",
+          "fieldDefaultValue": "yaml",
           "fieldFlag": "runtime-config.loader",
           "fieldType": "string",
           "fieldCategory": "experimental"

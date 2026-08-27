@@ -3696,7 +3696,7 @@ Usage of ./cmd/mimir/mimir:
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
   -runtime-config.loader string
-    	[experimental] Method used to decode the runtime configuration files. Supported values are: "map" (decode directly using mapstructure) and "yaml" (decode by round-tripping through YAML). (default "map")
+    	[experimental] Method used to decode the runtime configuration files. Supported values are: "map" (decode directly using mapstructure) and "yaml" (decode by round-tripping through YAML). (default "yaml")
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.additional-labels comma-separated-list-of-strings
