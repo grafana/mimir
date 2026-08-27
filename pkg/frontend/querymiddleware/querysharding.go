@@ -290,9 +290,7 @@ func NewQuerySharder(
 func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
-	s.metrics.shardingAttempts.Inc()
-
-	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
+	totalShards, err := s.ShardCount(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
 	if err != nil {
 		log.DebugLog("msg", "calculating the number of shards for the query failed", "err", err)
 		return nil, err
@@ -321,15 +319,22 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 
 	log.DebugLog("msg", "query has been rewritten into a shardable query", "rewritten", shardedExpr, "sharded_queries", shardingStats.GetShardedQueries())
 
-	// Update metrics.
-	s.metrics.shardingSuccesses.Inc()
-	s.metrics.shardedQueries.Add(float64(shardingStats.GetShardedQueries()))
-	s.metrics.shardedQueriesPerQuery.Observe(float64(shardingStats.GetShardedQueries()))
-
-	// Update query stats.
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
+	s.RecordSharding(ctx, shardingStats.GetShardedQueries())
 	return shardedExpr, nil
+}
+
+// ShardCount records a sharding attempt and returns the number of shards that Shard would use for this query.
+func (s *QuerySharder) ShardCount(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (int, error) {
+	s.metrics.shardingAttempts.Inc()
+	return s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, spanlogger.FromContext(ctx, s.logger))
+}
+
+// RecordSharding records a successful rewrite into sharded queries.
+func (s *QuerySharder) RecordSharding(ctx context.Context, shardedQueries int) {
+	s.metrics.shardingSuccesses.Inc()
+	s.metrics.shardedQueries.Add(float64(shardedQueries))
+	s.metrics.shardedQueriesPerQuery.Observe(float64(shardedQueries))
+	stats.FromContext(ctx).AddShardedQueries(uint32(shardedQueries))
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query

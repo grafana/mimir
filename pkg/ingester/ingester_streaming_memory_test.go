@@ -111,7 +111,7 @@ func TestIngester_SendStreamingQuerySeries_ConcurrentMemoryUsage(t *testing.T) {
 			hints := initSelectHints(now-1000, now+1000)
 			hints = configSelectHintsWithDisabledTrimming(hints)
 
-			_, _, err = i.sendStreamingQuerySeries(ctx, q, hints, matchers, stream)
+			_, _, err = i.sendStreamingQuerySeries(ctx, q, hints, matchers, nil, stream)
 			if err != nil {
 				errCh <- err
 			}

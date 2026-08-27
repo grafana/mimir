@@ -378,6 +378,20 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 	for _, c := range seenCardinalities {
 		selector, shard := selectorStringWithoutShardingMatcher(c.Matchers)
 
+		var parsedShard *sharding.ShardSelector
+		if shard != "" {
+			var err error
+			parsedShard, err = sharding.ParseQueryShardLabelValue(shard)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse shard label value in %v: %w", c.Matchers, err)
+			}
+			// Subset-shard observations don't describe the distribution of classic shards, so don't
+			// write them to the shared cardinality cache used to size classic sharding.
+			if len(parsedShard.ByLabels) > 0 {
+				continue
+			}
+		}
+
 		// Get all the cache keys (ie. buckets) that this seen selector maps to.
 		keys, err := selectorCardinalityCacheKeys(ctx, p.cfg, originalExpression, selector, c.MinT, c.MaxT, false, spanLogger)
 		if err != nil {
@@ -401,18 +415,13 @@ func (p *cardinalityStoringPostProcessor) summariseSeenCardinality(ctx context.C
 				continue
 			}
 
-			index, shardCount, err := sharding.ParseShardIDLabelValue(shard)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse shard label value in %v: %w", c.Matchers, err)
+			if _, ok := group.cardinalityByShardingFactor[parsedShard.ShardCount]; !ok {
+				group.cardinalityByShardingFactor[parsedShard.ShardCount] = make([]uint64, parsedShard.ShardCount)
 			}
 
-			if _, ok := group.cardinalityByShardingFactor[shardCount]; !ok {
-				group.cardinalityByShardingFactor[shardCount] = make([]uint64, shardCount)
-			}
-
-			// ParseShardIDFromLabelValue validates that the index is within the bounds of shardCount,
+			// ParseQueryShardLabelValue validates that the index is within the bounds of shardCount,
 			// so we don't need to do a bounds check here.
-			group.cardinalityByShardingFactor[shardCount][index] = max(group.cardinalityByShardingFactor[shardCount][index], c.SeriesCount)
+			group.cardinalityByShardingFactor[parsedShard.ShardCount][parsedShard.ShardIndex] = max(group.cardinalityByShardingFactor[parsedShard.ShardCount][parsedShard.ShardIndex], c.SeriesCount)
 		}
 	}
 

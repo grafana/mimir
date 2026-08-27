@@ -5,6 +5,8 @@ package sharding
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,6 +20,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	storagesharding "github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -26,6 +29,8 @@ import (
 )
 
 var tracer = otel.Tracer("pkg/streamingpromql/optimize/ast/sharding")
+
+const experimentalSubsetShardingHeader = "X-Mimir-Subset-Label-Sharding"
 
 type OptimizationPass struct {
 	sharder   *querymiddleware.QuerySharder
@@ -105,6 +110,24 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, origin
 		}
 	}
 
+	if strings.EqualFold(options.PropagatedHeaders.Get(experimentalSubsetShardingHeader), "true") {
+		if _, byLabels, ok := classicHistogramQuantileSelector(expr); ok {
+			shardCount, err := o.sharder.ShardCount(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
+			if err != nil {
+				return nil, err
+			}
+			if shardCount <= 1 {
+				return expr, nil
+			}
+			sharded, err := shardHistogramQuantileByLabels(expr, byLabels, shardCount)
+			if err != nil {
+				return nil, err
+			}
+			o.sharder.RecordSharding(ctx, shardCount)
+			return sharded, nil
+		}
+	}
+
 	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
 	if err != nil {
 		return nil, err
@@ -115,6 +138,78 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, origin
 	}
 
 	return shardedExpr, nil
+}
+
+func classicHistogramQuantileSelector(expr parser.Expr) (*parser.VectorSelector, []string, bool) {
+	call, ok := expr.(*parser.Call)
+	if !ok || call.Func.Name != "histogram_quantile" || len(call.Args) != 2 {
+		return nil, nil, false
+	}
+	if _, ok := call.Args[0].(*parser.NumberLiteral); !ok {
+		return nil, nil, false
+	}
+
+	aggregation, ok := call.Args[1].(*parser.AggregateExpr)
+	if !ok || aggregation.Op != parser.SUM || aggregation.Without {
+		return nil, nil, false
+	}
+
+	byLabels := make([]string, 0, len(aggregation.Grouping))
+	hasBucketLabel := false
+	for _, name := range aggregation.Grouping {
+		if name == model.BucketLabel {
+			hasBucketLabel = true
+		} else {
+			byLabels = append(byLabels, name)
+		}
+	}
+	if !hasBucketLabel || len(byLabels) == 0 {
+		return nil, nil, false
+	}
+	slices.Sort(byLabels)
+	byLabels = slices.Compact(byLabels)
+
+	rate, ok := aggregation.Expr.(*parser.Call)
+	if !ok || rate.Func.Name != "rate" || len(rate.Args) != 1 {
+		return nil, nil, false
+	}
+	matrix, ok := rate.Args[0].(*parser.MatrixSelector)
+	if !ok {
+		return nil, nil, false
+	}
+	selector, ok := matrix.VectorSelector.(*parser.VectorSelector)
+	if !ok {
+		return nil, nil, false
+	}
+	for _, matcher := range selector.LabelMatchers {
+		if matcher.Name == storagesharding.ShardLabel {
+			return nil, nil, false
+		}
+	}
+
+	return selector, byLabels, true
+}
+
+func shardHistogramQuantileByLabels(expr parser.Expr, byLabels []string, shardCount int) (parser.Expr, error) {
+	args := make([]parser.Expr, 0, shardCount)
+	for shardIndex := range shardCount {
+		cloned, err := astmapper.CloneExpr(expr)
+		if err != nil {
+			return nil, err
+		}
+		selector, _, ok := classicHistogramQuantileSelector(cloned)
+		if !ok {
+			return nil, errors.New("cloned histogram_quantile expression no longer matches subset sharding shape")
+		}
+		selector.LabelMatchers = append(selector.LabelMatchers, storagesharding.ShardSelector{
+			ShardIndex: uint64(shardIndex),
+			ShardCount: uint64(shardCount),
+			ByLabels:   byLabels,
+		}.Matcher())
+		args = append(args, cloned)
+	}
+
+	return &parser.Call{Func: ConcatFunction, Args: args}, nil
 }
 
 // collectEvaluationRoots returns the __vector_evaluation_root__ and __scalar_evaluation_root__ marker function calls in expr.

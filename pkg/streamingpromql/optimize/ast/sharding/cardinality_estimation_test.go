@@ -604,6 +604,17 @@ func TestCardinalityStoringPostProcessor(t *testing.T) {
 		require.Equal(t, uint64(70), result.EstimatedSeriesCount)
 	})
 
+	t.Run("ignores subset-sharded cardinality", func(t *testing.T) {
+		c, cfg := setupCardinalityEstimationTest()
+		ctx, qs := newCtxWithStats()
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("1_of_2_by_span_name")), MinT: minT, MaxT: maxT, SeriesCount: 30})
+		qs.AddSeenSelectorCardinality(stats.SelectorCardinality{Matchers: fooMatchers(shardMatcher("2_of_2_by_span_name")), MinT: minT, MaxT: maxT, SeriesCount: 40})
+
+		require.NoError(t, NewCardinalityStoringPostProcessor(cfg, log.NewNopLogger()).PostProcess(ctx, originalExpression))
+		require.Zero(t, c.SetCount)
+		require.Nil(t, estimateFoo(t, cfg))
+	})
+
 	t.Run("does not double-count the same selector reported more than once without sharding", func(t *testing.T) {
 		c, cfg := setupCardinalityEstimationTest()
 		ctx, qs := newCtxWithStats()

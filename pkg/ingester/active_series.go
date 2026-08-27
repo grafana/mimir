@@ -119,6 +119,9 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	if err != nil {
 		return nil, fmt.Errorf("error removing shard matcher: %w", err)
 	}
+	if shard != nil && len(shard.ByLabels) > 0 {
+		return nil, errors.New("subset-label sharding is not supported for active series queries")
+	}
 
 	var postings index.Postings
 	if shard != nil && matchAllSeries(matchers) {

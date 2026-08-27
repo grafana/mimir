@@ -583,7 +583,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSeries := 0
 
 	spanlog.DebugLog("msg", "using executeStreamingQuery")
-	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, selectHints, matchers, stream, req.StreamingChunksBatchSize, spanlog)
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, selectHints, matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -594,7 +594,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hints *storage.SelectHints, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -609,7 +609,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, hint
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, hints, matchers, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, hints, matchers, shard, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -659,7 +659,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
@@ -679,9 +679,20 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	allSeriesList := getChunkSeriesNode()
 	lastSeriesNode := allSeriesList
 	seriesCount := 0
+	subsetShard := shard != nil && len(shard.ByLabels) > 0
+	var shardHashBuffer []byte
 
 	for ss.Next() {
 		cs := ss.At()
+		var lbls labels.Labels
+		if subsetShard {
+			lbls = cs.Labels()
+			var hash uint64
+			hash, shardHashBuffer = lbls.HashForLabels(shardHashBuffer, shard.ByLabels...)
+			if hash%shard.ShardCount != shard.ShardIndex {
+				continue
+			}
+		}
 
 		if len(lastSeriesNode.series) == chunkSeriesNodeSize {
 			newNode := getChunkSeriesNode()
@@ -695,8 +706,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		if err != nil {
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
+		if !subsetShard {
+			lbls = cs.Labels()
+		}
 
-		lbls := cs.Labels()
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
 			ChunkCount: int64(chunkCount),
@@ -852,8 +865,8 @@ func initSelectHints(start, end int64) *storage.SelectHints {
 }
 
 func configSelectHintsWithShard(hints *storage.SelectHints, shard *sharding.ShardSelector) *storage.SelectHints {
-	if shard != nil {
-		// If query sharding is enabled, we need to pass it along with hints.
+	if shard != nil && len(shard.ByLabels) == 0 {
+		// If classic query sharding is enabled, we need to pass it along with hints.
 		hints.ShardIndex = shard.ShardIndex
 		hints.ShardCount = shard.ShardCount
 	}

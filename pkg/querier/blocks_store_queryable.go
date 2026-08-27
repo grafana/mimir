@@ -744,7 +744,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
 
-	if shard != nil && shard.ShardCount > 0 {
+	if shard != nil && shard.ShardCount > 0 && len(shard.ByLabels) == 0 {
 		spanLog.DebugLog("msg", "filtering blocks due to sharding", "blocksBeforeFiltering", knownBlocks.String(), "shardID", shard.LabelValue())
 
 		result, incompatibleBlocks := filterBlocksByShard(knownBlocks, shard.ShardIndex, shard.ShardCount)
