@@ -256,7 +256,6 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 // parseLaneRequests parses the requested lanes for each goroutine.
 // An example value is compact+plan,plan
 // '+' separates multiple lanes per goroutine, and ',' separates goroutines.
-// The scheduler's lane policy maps each requested lane onto the lanes it serves.
 func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorschedulerpb.LaneRequest, error) {
 	if len(configuredLanes) == 0 {
 		return nil, fmt.Errorf("invalid empty lane configuration")
