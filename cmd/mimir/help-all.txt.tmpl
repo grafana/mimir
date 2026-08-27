@@ -1122,7 +1122,11 @@ Usage of ./cmd/mimir/mimir:
   -compactor-scheduler.bbolt.shard-count int
     	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
   -compactor-scheduler.lane-policy.policy string
-    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
+    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple, urgency (default "simple")
+  -compactor-scheduler.lane-policy.urgency.max-span duration
+    	[experimental] Compaction jobs whose source blocks span at most this duration are served from the urgent lane. Jobs spanning longer are served from the defer lane. (default 2h0m0s)
+  -compactor-scheduler.lane-policy.urgency.out-of-order
+    	[experimental] Serve out-of-order compaction jobs from the urgent lane regardless of the duration they span. Disable if out-of-order jobs for a tenant grow large enough to dominate the urgent lane. (default true)
   -compactor-scheduler.lease-duration duration
     	[experimental] The duration of time without contact until the scheduler is able to lease a work item to another worker. (default 10m0s)
   -compactor-scheduler.maintenance-interval duration
@@ -1342,7 +1346,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduler-client.lanes comma-separated-list-of-strings
-    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. (default compact+plan,plan)
+    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of lanes, in the order they should be served. Valid lanes: plan, compact, compact-urgent, compact-defer. The compact-urgent and compact-defer lanes only differ from compact when the scheduler's lane policy separates compaction by urgency. (default compact+plan,plan)
   -compactor.scheduler-client.leasing-max-backoff duration
     	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
   -compactor.scheduler-client.leasing-min-backoff duration
