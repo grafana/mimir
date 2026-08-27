@@ -60,8 +60,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	// Splitting a subquery requires all queriers to support SplitFunctionCall nodes that wrap a Subquery, which is
-	// only guaranteed from V20 onwards.
-	enableSubquerySplitting := o.enableSubquerySplitting && maximumSupportedQueryPlanVersion >= planning.QueryPlanV20
+	// only guaranteed from V21 onwards.
+	enableSubquerySplitting := o.enableSubquerySplitting && maximumSupportedQueryPlanVersion >= planning.QueryPlanV21
 
 	var err error
 	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange, enableSubquerySplitting)

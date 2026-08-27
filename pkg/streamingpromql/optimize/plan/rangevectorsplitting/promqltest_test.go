@@ -159,27 +159,8 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 
 			// TODO: Precision is lost calculating avg_over_time across a block boundary, in cases
 			// of huge opposite-sign values (eg. +1e100/-1e100) that should cancel out exactly.
-
-			`eval instant at 3m avg_over_time(histogram_sum_over_time_3[4m:1m])
-    {} {{schema:0 count:2.5 sum:0.5}}`,
-
-			`eval instant at 6m avg_over_time(histogram_sum_over_time_4[7m:1m])
-    {} {{schema:0 count:4 sum:1.1857142857142857}}`,
-
-			`eval instant at 7m avg_over_time(histogram_sum_over_time_incremental[8m:1m])
-    {} {{schema:0 count:3.497116418577895e+307 sum:1.2539005843658437 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}`,
-
-			`eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_2[7m:1m])
-    {} {{schema:0 count:3.9967044783747367e+307 sum:1.1857142857142857}}`,
-
-			`eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_3[7m:1m])
-    {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}`,
-
 			`eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
     {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}`,
-
-			`eval instant at 3m avg_over_time(histogram_sum_over_time_incremental_6[4m:1m])
-    {} {{schema:0 count:6.99423283715579e+307 sum:0.5}}`,
 		}
 
 	default:

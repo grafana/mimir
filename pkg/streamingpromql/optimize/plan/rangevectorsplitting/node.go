@@ -69,7 +69,7 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if containsSubquery(s.Inner) {
-		return planning.QueryPlanV20, nil
+		return planning.QueryPlanV21, nil
 	}
 
 	return planning.QueryPlanV18, nil

@@ -563,7 +563,7 @@ func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
 }
 
 // TestQuerySplitting_MinimumRequiredPlanVersion verifies that a SplitFunctionCall reports QueryPlanV18 when it
-// wraps a plain selector and QueryPlanV20 when it wraps a subquery, in each case regardless of whether CSE has
+// wraps a plain selector and QueryPlanV21 when it wraps a subquery, in each case regardless of whether CSE has
 // inserted a Duplicate node between the SplitFunctionCall and what it wraps.
 func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -606,7 +606,7 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- MatrixSelector: {__name__="test_metric"}[10m0s]
 			`,
-			expectedVersion: planning.QueryPlanV20,
+			expectedVersion: planning.QueryPlanV21,
 		},
 		"subquery, CSE inserts Duplicate below SplitFunctionCall": {
 			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h]) / count_over_time(max_over_time(test_metric[10m])[5h:1h])`,
@@ -622,7 +622,7 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate ...
 			`,
-			expectedVersion: planning.QueryPlanV20,
+			expectedVersion: planning.QueryPlanV21,
 		},
 		"subquery, CSE inserts Duplicate above SplitFunctionCall": {
 			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h]) + sum_over_time(max_over_time(test_metric[10m])[5h:1h])`,
@@ -636,7 +636,7 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 										- MatrixSelector: {__name__="test_metric"}[10m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedVersion: planning.QueryPlanV20,
+			expectedVersion: planning.QueryPlanV21,
 		},
 	}
 
@@ -745,12 +745,12 @@ func TestQuerySplitting_DeduplicateAcrossSplitBlocks(t *testing.T) {
 			`,
 		},
 		"nested subquery shared by subset selector elimination: its child is still wrapped exactly once": {
-			expr: `count_over_time((sum_over_time(max_over_time(dedupe_filter_metric{a="1"}[1h])[5h:1h]) / min_over_time(max_over_time(dedupe_filter_metric[1h])[5h:1h]))[10h:12h])`,
+			expr: `count_over_time((sum_over_time(max_over_time(dedupe_filter_metric{a="1"}[1h])[5h:1h]) / ignoring(a) min_over_time(max_over_time(dedupe_filter_metric[1h])[5h:1h]))[10h:12h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: count_over_time(...)
 						- Subquery: [10h0m0s:12h0m0s]
-							- BinaryExpression: LHS / RHS, hints exclude ()
+							- BinaryExpression: LHS / ignoring (a) RHS, hints exclude (a)
 								- LHS: FunctionCall: sum_over_time(...)
 									- DuplicateFilter: {a="1"}, subset index: 0
 										- ref#1 Duplicate
