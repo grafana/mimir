@@ -84,6 +84,10 @@ spec:
       dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.smoke_test.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         {{- if .Values.smoke_test.extraVolumes }}
         {{ toYaml .Values.smoke_test.extraVolumes | nindent 8 }}
