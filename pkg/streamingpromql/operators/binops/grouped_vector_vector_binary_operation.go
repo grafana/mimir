@@ -43,12 +43,15 @@ type GroupedVectorVectorBinaryOperation struct {
 	hints              *Hints
 	logger             log.Logger
 
-	evaluator       *vectorVectorBinaryOperationEvaluator
-	remainingSeries []*groupedBinaryOperationOutputSeries
-	oneSide         types.InstantVectorOperator // Either Left or Right
-	manySide        types.InstantVectorOperator
-	oneSideBuffer   *operators.InstantVectorOperatorBuffer
-	manySideBuffer  *operators.InstantVectorOperatorBuffer
+	evaluator            *vectorVectorBinaryOperationEvaluator
+	remainingSeries      []*groupedBinaryOperationOutputSeries
+	oneSide              types.InstantVectorOperator // Either Left or Right
+	manySide             types.InstantVectorOperator
+	fillValues           parser.VectorMatchFillValues
+	oneSideBuffer        *operators.InstantVectorOperatorBuffer
+	manySideBuffer       *operators.InstantVectorOperatorBuffer
+	leftFinishedReading  bool
+	rightFinishedReading bool
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -73,6 +76,38 @@ func (g *groupedBinaryOperationOutputSeries) FinishedReading(memoryConsumptionTr
 type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
+}
+
+type normalizedGroupedSides struct {
+	many       types.InstantVectorOperator
+	one        types.InstantVectorOperator
+	fillValues parser.VectorMatchFillValues // LHS fills many, and RHS fills one.
+}
+
+func normalizeGroupedSides(left, right types.InstantVectorOperator, vectorMatching parser.VectorMatching) (normalizedGroupedSides, error) {
+	switch vectorMatching.Card {
+	case parser.CardManyToOne:
+		return normalizedGroupedSides{many: left, one: right, fillValues: vectorMatching.FillValues}, nil
+	case parser.CardOneToMany:
+		return normalizedGroupedSides{
+			many:       right,
+			one:        left,
+			fillValues: vectorMatching.FillValues,
+		}, nil
+	default:
+		return normalizedGroupedSides{}, fmt.Errorf("unsupported cardinality %d", int(vectorMatching.Card))
+	}
+}
+
+func (s normalizedGroupedSides) evaluatorFillValues(card parser.VectorMatchCardinality) (*float64, *float64, error) {
+	switch card {
+	case parser.CardManyToOne:
+		return s.fillValues.LHS, s.fillValues.RHS, nil
+	case parser.CardOneToMany:
+		return s.fillValues.RHS, s.fillValues.LHS, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported cardinality %d", int(card))
+	}
 }
 
 type manySide struct {
@@ -156,7 +191,16 @@ func NewGroupedVectorVectorBinaryOperation(
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange, nil, nil)
+	sides, err := normalizeGroupedSides(left, right, vectorMatching)
+	if err != nil {
+		return nil, err
+	}
+
+	fillLeft, fillRight, err := sides.evaluatorFillValues(vectorMatching.Card)
+	if err != nil {
+		return nil, err
+	}
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange, fillLeft, fillRight)
 	if err != nil {
 		return nil, err
 	}
@@ -174,15 +218,9 @@ func NewGroupedVectorVectorBinaryOperation(
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
-	}
-
-	switch g.VectorMatching.Card {
-	case parser.CardOneToMany:
-		g.oneSide, g.manySide = g.Left, g.Right
-	case parser.CardManyToOne:
-		g.manySide, g.oneSide = g.Left, g.Right
-	default:
-		return nil, fmt.Errorf("unsupported cardinality '%v'", g.VectorMatching.Card)
+		manySide:           sides.many,
+		oneSide:            sides.one,
+		fillValues:         sides.fillValues,
 	}
 
 	slices.Sort(g.VectorMatching.Include)
@@ -242,9 +280,9 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 	return allMetadata, nil
 }
 
-// loadSeriesMetadata loads series metadata from both sides of this operation.
-// It returns false if one side returned no series and that means there is no way for this operation to return any series.
-// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
+// loadSeriesMetadata loads child metadata and reports whether labels can drive output.
+// A nonempty side can drive output when the empty normalized side has a fill value.
+// Two empty sides cannot drive output.
 func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, matchers types.Matchers) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
@@ -269,8 +307,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, err
 	}
 
-	if len(g.oneSideMetadata) == 0 {
-		// The current grouped evaluator cannot produce output when the one side is empty.
+	oneSideEmpty := len(g.oneSideMetadata) == 0
+	if oneSideEmpty && g.fillValues.RHS == nil {
 		return false, nil
 	}
 
@@ -292,9 +330,22 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, err
 	}
 
-	if len(g.manySideMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
+	manySideEmpty := len(g.manySideMetadata) == 0
+	if oneSideEmpty && manySideEmpty {
 		return false, nil
+	}
+	if manySideEmpty && g.fillValues.LHS == nil {
+		return false, nil
+	}
+	if oneSideEmpty {
+		if err := g.finishOneSide(ctx); err != nil {
+			return false, err
+		}
+	}
+	if manySideEmpty {
+		if err := g.finishManySide(ctx); err != nil {
+			return false, err
+		}
 	}
 
 	return true, nil
@@ -649,7 +700,7 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 	case parser.CardManyToOne:
 		result, _, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide, computeResultOptions{})
 	default:
-		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
+		panic(fmt.Sprintf("unsupported cardinality %d", int(g.VectorMatching.Card)))
 	}
 
 	// If this is the last output series for that side, then we've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
@@ -850,7 +901,7 @@ func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {
 	case parser.CardManyToOne:
 		return "right"
 	default:
-		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
+		panic(fmt.Sprintf("unsupported cardinality %d", int(g.VectorMatching.Card)))
 	}
 }
 
@@ -894,12 +945,55 @@ func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context
 
 	g.remainingSeries = nil
 
-	// We don't need to call FinishedReading on g.oneSide or g.manySide, as these are either g.Left or g.Right and so will have FinishedReading called below.
-	if err := g.Left.FinishedReading(ctx); err != nil {
+	if err := g.finishLeft(ctx); err != nil {
 		return err
 	}
 
-	return g.Right.FinishedReading(ctx)
+	return g.finishRight(ctx)
+}
+
+func (g *GroupedVectorVectorBinaryOperation) finishOneSide(ctx context.Context) error {
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		return g.finishLeft(ctx)
+	case parser.CardManyToOne:
+		return g.finishRight(ctx)
+	default:
+		return fmt.Errorf("unsupported cardinality %d", int(g.VectorMatching.Card))
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) finishManySide(ctx context.Context) error {
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		return g.finishRight(ctx)
+	case parser.CardManyToOne:
+		return g.finishLeft(ctx)
+	default:
+		return fmt.Errorf("unsupported cardinality %d", int(g.VectorMatching.Card))
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) finishLeft(ctx context.Context) error {
+	if g.leftFinishedReading {
+		return nil
+	}
+	if err := g.Left.FinishedReading(ctx); err != nil {
+		return fmt.Errorf("finish left child: %w", err)
+	}
+	g.leftFinishedReading = true
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) finishRight(ctx context.Context) error {
+	if g.rightFinishedReading {
+		return nil
+	}
+	if err := g.Right.FinishedReading(ctx); err != nil {
+		return fmt.Errorf("finish right child: %w", err)
+	}
+	g.rightFinishedReading = true
+	return nil
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {

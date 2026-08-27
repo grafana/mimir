@@ -24,6 +24,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+type finishedReadingCountingOperator struct {
+	*operators.TestOperator
+	finishedReadingCalls int
+}
+
+func (o *finishedReadingCountingOperator) FinishedReading(ctx context.Context) error {
+	o.finishedReadingCalls++
+	return o.TestOperator.FinishedReading(ctx)
+}
+
 func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 	testCases := map[string]struct {
 		leftSeries  []labels.Labels
@@ -1044,6 +1054,259 @@ func TestGroupedVectorVectorBinaryOperation_IgnoresMatchersWithFill(t *testing.T
 			require.Nil(t, right.MatchersProvided)
 		})
 	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_NormalizesSidesAndEvaluatorFillValues(t *testing.T) {
+	lhsFill := 11.0
+	rhsFill := 22.0
+	testCases := map[string]struct {
+		card parser.VectorMatchCardinality
+		fill parser.VectorMatchFillValues
+
+		leftIsMany     bool
+		normalizedMany *float64
+		normalizedOne  *float64
+		evaluatorLeft  *float64
+		evaluatorRight *float64
+	}{
+		"many-to-one without fill": {
+			card:       parser.CardManyToOne,
+			leftIsMany: true,
+		},
+		"many-to-one with LHS fill": {
+			card:           parser.CardManyToOne,
+			fill:           parser.VectorMatchFillValues{LHS: &lhsFill},
+			leftIsMany:     true,
+			normalizedMany: &lhsFill,
+			evaluatorLeft:  &lhsFill,
+		},
+		"many-to-one with RHS fill": {
+			card:           parser.CardManyToOne,
+			fill:           parser.VectorMatchFillValues{RHS: &rhsFill},
+			leftIsMany:     true,
+			normalizedOne:  &rhsFill,
+			evaluatorRight: &rhsFill,
+		},
+		"many-to-one with both fills": {
+			card:           parser.CardManyToOne,
+			fill:           parser.VectorMatchFillValues{LHS: &lhsFill, RHS: &rhsFill},
+			leftIsMany:     true,
+			normalizedMany: &lhsFill,
+			normalizedOne:  &rhsFill,
+			evaluatorLeft:  &lhsFill,
+			evaluatorRight: &rhsFill,
+		},
+		"one-to-many without fill": {
+			card: parser.CardOneToMany,
+		},
+		"one-to-many with LHS fill": {
+			card:           parser.CardOneToMany,
+			fill:           parser.VectorMatchFillValues{LHS: &lhsFill},
+			normalizedMany: &lhsFill,
+			evaluatorRight: &lhsFill,
+		},
+		"one-to-many with RHS fill": {
+			card:          parser.CardOneToMany,
+			fill:          parser.VectorMatchFillValues{RHS: &rhsFill},
+			normalizedOne: &rhsFill,
+			evaluatorLeft: &rhsFill,
+		},
+		"one-to-many with both fills": {
+			card:           parser.CardOneToMany,
+			fill:           parser.VectorMatchFillValues{LHS: &lhsFill, RHS: &rhsFill},
+			normalizedMany: &lhsFill,
+			normalizedOne:  &rhsFill,
+			evaluatorLeft:  &rhsFill,
+			evaluatorRight: &lhsFill,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			left := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{Card: testCase.card, FillValues: testCase.fill},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.QueryTimeRange{},
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			if testCase.leftIsMany {
+				require.Same(t, left, o.manySide)
+				require.Same(t, right, o.oneSide)
+			} else {
+				require.Same(t, right, o.manySide)
+				require.Same(t, left, o.oneSide)
+			}
+			require.Same(t, testCase.normalizedMany, o.fillValues.LHS)
+			require.Same(t, testCase.normalizedOne, o.fillValues.RHS)
+			require.Same(t, testCase.evaluatorLeft, o.evaluator.fillLeft)
+			require.Same(t, testCase.evaluatorRight, o.evaluator.fillRight)
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing.T) {
+	fillValue := 1.0
+	fillCases := map[string]struct {
+		card      parser.VectorMatchCardinality
+		fill      parser.VectorMatchFillValues
+		fillsMany bool
+		fillsOne  bool
+	}{
+		"many-to-one without fill": {
+			card: parser.CardManyToOne,
+		},
+		"many-to-one with LHS fill": {
+			card:      parser.CardManyToOne,
+			fill:      parser.VectorMatchFillValues{LHS: &fillValue},
+			fillsMany: true,
+		},
+		"many-to-one with RHS fill": {
+			card:     parser.CardManyToOne,
+			fill:     parser.VectorMatchFillValues{RHS: &fillValue},
+			fillsOne: true,
+		},
+		"many-to-one with both fills": {
+			card:      parser.CardManyToOne,
+			fill:      parser.VectorMatchFillValues{LHS: &fillValue, RHS: &fillValue},
+			fillsMany: true,
+			fillsOne:  true,
+		},
+		"one-to-many without fill": {
+			card: parser.CardOneToMany,
+		},
+		"one-to-many with LHS fill": {
+			card:      parser.CardOneToMany,
+			fill:      parser.VectorMatchFillValues{LHS: &fillValue},
+			fillsMany: true,
+		},
+		"one-to-many with RHS fill": {
+			card:     parser.CardOneToMany,
+			fill:     parser.VectorMatchFillValues{RHS: &fillValue},
+			fillsOne: true,
+		},
+		"one-to-many with both fills": {
+			card:      parser.CardOneToMany,
+			fill:      parser.VectorMatchFillValues{LHS: &fillValue, RHS: &fillValue},
+			fillsMany: true,
+			fillsOne:  true,
+		},
+	}
+	emptyCases := map[string]struct {
+		many bool
+		one  bool
+	}{
+		"neither side empty": {},
+		"many side empty":    {many: true},
+		"one side empty":     {one: true},
+		"both sides empty":   {many: true, one: true},
+	}
+
+	for fillName, fillCase := range fillCases {
+		for emptyName, emptyCase := range emptyCases {
+			t.Run(fillName+"/"+emptyName, func(t *testing.T) {
+				memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+				manySeries := []labels.Labels{labels.FromStrings("group", "a")}
+				if emptyCase.many {
+					manySeries = nil
+				}
+				oneSeries := []labels.Labels{labels.FromStrings("group", "a")}
+				if emptyCase.one {
+					oneSeries = nil
+				}
+
+				many := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{Series: manySeries, Data: make([]types.InstantVectorSeriesData, len(manySeries)), MemoryConsumptionTracker: memoryConsumptionTracker}}
+				one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{Series: oneSeries, Data: make([]types.InstantVectorSeriesData, len(oneSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}}
+				left, right := many, one
+				if fillCase.card == parser.CardOneToMany {
+					left, right = one, many
+				}
+
+				o, err := NewGroupedVectorVectorBinaryOperation(
+					left,
+					right,
+					parser.VectorMatching{Card: fillCase.card, On: true, MatchingLabels: []string{"group"}, FillValues: fillCase.fill},
+					parser.ADD,
+					false,
+					memoryConsumptionTracker,
+					posrange.PositionRange{},
+					types.QueryTimeRange{},
+					nil,
+					log.NewNopLogger(),
+				)
+				require.NoError(t, err)
+
+				canProduceAnySeries, err := o.loadSeriesMetadata(t.Context(), nil)
+				require.NoError(t, err)
+
+				expectedManyCall := !emptyCase.one || fillCase.fillsOne
+				expectedContinuation := !emptyCase.many && !emptyCase.one
+				if emptyCase.many != emptyCase.one {
+					expectedContinuation = (emptyCase.many && fillCase.fillsMany) || (emptyCase.one && fillCase.fillsOne)
+				}
+				require.True(t, one.SeriesMetadataCalled)
+				require.Equal(t, expectedManyCall, many.SeriesMetadataCalled)
+				require.Equal(t, expectedContinuation, canProduceAnySeries)
+				expectedManyFinishedCalls := 0
+				expectedOneFinishedCalls := 0
+				if canProduceAnySeries && emptyCase.many {
+					expectedManyFinishedCalls = 1
+				}
+				if canProduceAnySeries && emptyCase.one {
+					expectedOneFinishedCalls = 1
+				}
+				require.Equal(t, expectedManyFinishedCalls, many.finishedReadingCalls)
+				require.Equal(t, expectedOneFinishedCalls, one.finishedReadingCalls)
+				if canProduceAnySeries && (emptyCase.many || emptyCase.one) {
+					metadata, _, oneUsed, _, manyUsed, _, err := o.computeOutputSeries()
+					require.NoError(t, err)
+					require.Empty(t, metadata)
+					types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+					types.BoolSlicePool.Put(&oneUsed, memoryConsumptionTracker)
+					types.BoolSlicePool.Put(&manyUsed, memoryConsumptionTracker)
+				}
+
+				require.NoError(t, o.FinishedReading(t.Context()))
+				require.Equal(t, 1, many.finishedReadingCalls)
+				require.Equal(t, 1, one.finishedReadingCalls)
+			})
+		}
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_RejectsMalformedCardinality(t *testing.T) {
+	invalidCardinality := parser.VectorMatchCardinality(99)
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+	left := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	_, err := NewGroupedVectorVectorBinaryOperation(
+		left,
+		right,
+		parser.VectorMatching{Card: invalidCardinality},
+		parser.ADD,
+		false,
+		memoryConsumptionTracker,
+		posrange.PositionRange{},
+		types.QueryTimeRange{},
+		nil,
+		log.NewNopLogger(),
+	)
+	require.EqualError(t, err, "unsupported cardinality 99")
+
+	_, _, err = (normalizedGroupedSides{}).evaluatorFillValues(invalidCardinality)
+	require.EqualError(t, err, "unsupported cardinality 99")
 }
 
 func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySide(t *testing.T) {
