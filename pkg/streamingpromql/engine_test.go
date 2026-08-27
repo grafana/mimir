@@ -5306,11 +5306,11 @@ func TestInfoFunctionMemoryReleasedOnError(t *testing.T) {
 	res := q.Exec(context.Background())
 	require.ErrorContains(t, res.Err, "conflicting label")
 
-	q.Close()
 	mqeQuery, ok := q.(*Query)
 	require.True(t, ok)
 	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(),
 		"all pooled memory should be returned even when info() fails partway through")
+	q.Close()
 }
 
 func TestEagerLoadSelectors(t *testing.T) {
