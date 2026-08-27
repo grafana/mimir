@@ -15,7 +15,7 @@ Mimir provides two per-tenant mechanisms for this, and you can use both at the s
 - `blocked_queries` rejects every matching query outright.
 - `limited_queries` allows a matching query to run no more often than a configured frequency, and rejects any matching query that arrives sooner.
 
-Blocking is evaluated before rate limiting, so a query that matches both a `blocked_queries` rule and a `limited_queries` rule is reported as blocked.
+Blocking is evaluated before rate limiting, so a query that matches both a `blocked_queries` rule and a `limited_queries` rule is blocked.
 
 ## Block queries
 
