@@ -42,7 +42,7 @@ Optional reference fields can be set. These have no functional impact and are fo
 
 - `created_by` - a string to flag who requested or added this rule
 - `created_at` - a date/time to flag when this rule was added
-- `note` - a string to track why this rule was added. For instance, it could be set to a support ticket reference or an incident ID
+- `note` - a string to track why this rule was added. For instance, it could be set to a support ticket reference or an incident ID. This is only relevant for an operator reviewing Mimir configuration files, and this note is not surfaced to callers or emitted in any logs or metrics.
 
 You can block queries using [per-tenant overrides](../about-runtime-configuration/):
 
