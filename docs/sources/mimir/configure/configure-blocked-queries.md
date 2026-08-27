@@ -157,7 +157,7 @@ If more than one rule matches a query, Mimir enforces the matching rule with the
 
 **This section is important when using a regular expression block rule or a limited query rule.**
 
-When you observe a `param_query=...` in the `query-frontend` `query stats` log line, the PromQL is what was sent by the operator. Before the blocking and/or limiting rules are applied, this query will be canonicalized. This may result in the query being transformed.
+When you observe a `param_query=...` in the `query-frontend` `query stats` log line, the PromQL is what was sent by the caller. Before the blocking and/or limiting rules are applied, this query will be canonicalized. This may result in the query being transformed.
 
 As such, **a regular expression pattern or limited query rule must be constructed to match the canonicalized version of a query**.
 
