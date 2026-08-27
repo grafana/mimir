@@ -774,26 +774,28 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"request with multiple instant vector operators with batching enabled": {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
-				`my_three_item_series{idx=~"(0|1|2)"} + my_three_item_series{idx=~".*"}`, // Make the selectors different so that CSE doesn't deduplicate them.
-				rangeQueryTimeRange,
+				`abs(my_three_item_series{idx=~"(0|1|2)"}) + ceil(my_three_item_series{idx=~".*"})`, // Different function calls on the same metric: CSE deduplicates the underlying selector as the labels become identical after matcher propagation and reduction, but the two function-call plan nodes are distinct and can be requested independently.
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
 				true,
 				2,
-				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}, subset index: 0`},
-				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "LHS: FunctionCall: abs(...)"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "RHS: FunctionCall: ceil(...)"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					2,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+					// abs() drops __name__, so labels only contain non-name labels.
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
 				newSeriesMetadataMessage(
-					1,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+					3,
+					// ceil() drops __name__, so labels only contain non-name labels.
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
 				newInstantVectorSeriesDataMessage(
 					2,
@@ -813,7 +815,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					1,
+					3,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3},
@@ -840,7 +842,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					1,
+					3,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5},
@@ -859,12 +861,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						FetchedChunksCount:  456,
 						FetchedChunkBytes:   789,
 						SeenSelectorCardinalities: []stats.SelectorCardinality{
-							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+							// After matcher propagation and reduction both function arguments share the same
+							// selector, so CSE deduplicates it and only a single selector is seen at storage.
 							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}, {Type: labels.MatchRegexp, Name: "idx", Value: "(0|1|2)"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
 						},
 					},
 					map[int64]types.EncodedOperatorEvaluationStats{
-						1: {
+						2: {
 							TimeRange: rangeQueryTimeRange.Encode(),
 							AllSeries: types.EncodedSubsetStats{
 								SamplesProcessedPerStep:     []int64{3, 3, 3},
@@ -872,7 +875,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								SamplesReadIfFirstStep:      []int64{3, 3, 3},
 							},
 						},
-						2: {
+						3: {
 							TimeRange: rangeQueryTimeRange.Encode(),
 							AllSeries: types.EncodedSubsetStats{
 								SamplesProcessedPerStep:     []int64{3, 3, 3},

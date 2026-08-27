@@ -99,11 +99,16 @@ const QueryPlanV18 = QueryPlanVersion(18)
 // QueryPlanV19 introduces support for deduplicating scalar expressions.
 const QueryPlanV19 = QueryPlanVersion(19)
 
-// QueryPlanV20 introduces support for splitting subqueries in range vector splitting, in addition
-// to range vector selectors.
+// QueryPlanV20 introduces support for the fill_left and fill_right modifiers in binary expressions.
+// Queriers that do not support this version would silently ignore the fill modifier and produce
+// incorrect results.
 const QueryPlanV20 = QueryPlanVersion(20)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV20
+// QueryPlanV21 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node
@@ -547,17 +552,6 @@ func RegisterNodeFactory(f NodeFactory) {
 	}
 
 	knownNodeTypes[id] = f
-}
-
-// NewNodeOfType creates a new, empty instance of the given node type, using the same factory registered by
-// RegisterNodeFactory
-func NewNodeOfType(nodeType NodeType) (Node, error) {
-	factory, exists := knownNodeTypes[nodeType]
-	if !exists {
-		return nil, fmt.Errorf("unknown node type: %d", nodeType)
-	}
-
-	return factory(), nil
 }
 
 // String returns a human-readable representation of the query plan, intended for use during debugging and tests.

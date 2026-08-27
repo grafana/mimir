@@ -3,6 +3,12 @@
   // of the rollout-operator. Only available when using multi-zone ingesters. This feature can be enabled
   // via the ingester_automated_downscale_v2_enabled flag.
   //
+  // This is only supported in the classic architecture, because it relies on the ingester read-only mode in the
+  // instance ring, via the /ingester/prepare-instance-ring-downscale endpoint. That endpoint is rejected with
+  // "405 Method Not Allowed" when ingest storage is enabled. Clusters running the ingest storage architecture
+  // should use ingest_storage_ingester_autoscaling_enabled instead, which downscales ingesters by moving their
+  // partition to the INACTIVE state via /ingester/prepare-partition-downscale.
+  //
   // When enabled, ReplicaTemplate/ingester-zone-a object is installed into the namespace. This object holds desired
   // number of replicas for each ingester zone in spec.replicas field. (There is only one ReplicaTemplate object,
   // and all ingester zones use it.)
@@ -35,6 +41,7 @@
   // Validate the configuration.
   assert !$._config.ingester_automated_downscale_v2_enabled || $._config.multi_zone_ingester_enabled : 'ingester downscaling requires multi_zone_ingester_enabled in namespace %s' % $._config.namespace,
   assert !$._config.ingester_automated_downscale_v2_enabled || !$._config.ingester_automated_downscale_enabled : 'ingester_automated_downscale_enabled_v2 and ingester_automated_downscale_enabled are mutually exclusive in namespace %s' % $._config.namespace,
+  assert !$._config.ingester_automated_downscale_v2_enabled || !$._config.ingest_storage_enabled : 'ingester_automated_downscale_v2_enabled is only supported in the classic architecture, use ingest_storage_ingester_autoscaling_enabled with ingest storage in namespace %s' % $._config.namespace,
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else

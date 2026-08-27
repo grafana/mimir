@@ -2660,6 +2660,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_propagate_matchers",
+              "required": false,
+              "desc": "Enable propagating label matchers across binary expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-propagate-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_reduce_matchers",
               "required": false,
               "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
@@ -6642,6 +6653,16 @@
         },
         {
           "kind": "field",
+          "name": "enabled_promql_binop_fill_modifiers",
+          "required": false,
+          "desc": "Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-binop-fill-modifiers",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "prom2_range_compat",
           "required": false,
           "desc": "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics",
@@ -9200,17 +9221,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.rewrite-histogram-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "rewrite_propagate_matchers",
-          "required": false,
-          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.rewrite-propagate-matchers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

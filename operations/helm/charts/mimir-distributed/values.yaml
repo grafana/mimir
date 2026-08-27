@@ -3554,15 +3554,15 @@ gateway:
 
             # Distributor endpoints
             location /distributor {
-              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              set $distributor {{ template "mimir.fullname" . }}-distributor{{ if not .Values.distributor.service.trafficDistribution }}-headless{{ end }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location = /api/v1/push {
-              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              set $distributor {{ template "mimir.fullname" . }}-distributor{{ if not .Values.distributor.service.trafficDistribution }}-headless{{ end }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location /otlp/v1/metrics {
-              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              set $distributor {{ template "mimir.fullname" . }}-distributor{{ if not .Values.distributor.service.trafficDistribution }}-headless{{ end }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$distributor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
 

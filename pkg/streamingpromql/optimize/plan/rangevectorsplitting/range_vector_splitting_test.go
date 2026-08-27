@@ -520,7 +520,12 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 // TestQuerySplitting_DuplicateAboveSplitFunctionCall verifies that a shared, split range vector function has its
 // Duplicate injected above the SplitFunctionCall.
 func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
-	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	// Propagate matchers is disabled so this test isolates SSE: otherwise a="1" from the LHS would be
+	// cross-propagated into the RHS rate(foo[3h]) selector, making both sides identical and removing
+	// the DuplicateFilter/subset structure this test checks.
+	opts := defaultSplittingOpts()
+	opts.EnablePropagateMatchers = false
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	buildPlan := func(t *testing.T, expr string) *planning.QueryPlan {
@@ -790,7 +795,12 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	backend, eng := setupEngineAndCache(t)
+	// Propagate matchers is disabled so this test isolates SSE: otherwise code!="err" from the
+	// histogram_fraction side would be cross-propagated into the histogram_count side, changing
+	// the broad selector's post-optimization matchers and cache key.
+	opts := defaultSplittingOpts()
+	opts.EnablePropagateMatchers = false
+	backend, eng := setupEngineAndCacheWithOpts(t, opts)
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
 	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
@@ -877,8 +887,11 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	expr := `sum_over_time(some_metric{env="prod", region="us"}[5h]) / sum_over_time(some_metric{env="prod"}[5h])`
 
 	// Without SSE: each MatrixSelector keeps its full matchers, so cache keys are just the matchers.
+	// Propagate matchers is disabled so this test isolates SSE: otherwise region="us" from the narrow
+	// selector would be cross-propagated into the broad selector, changing its post-optimization matchers.
 	withoutSSE := defaultSplittingOpts()
 	withoutSSE.EnableSubsetSelectorElimination = false
+	withoutSSE.EnablePropagateMatchers = false
 	backendNoSSE, engineNoSSE := setupEngineAndCacheWithOpts(t, withoutSSE)
 
 	result, _ := runInstantQuery(t, engineNoSSE, promStorage, expr, ts)
@@ -920,6 +933,7 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	// MatrixSelector, so there is one cache entry keyed by that broad (subset-aware) selector.
 	withSSE := defaultSplittingOpts()
 	withSSE.EnableSubsetSelectorElimination = true
+	withSSE.EnablePropagateMatchers = false
 	backendSSE, engineSSE := setupEngineAndCacheWithOpts(t, withSSE)
 
 	result, _ = runInstantQuery(t, engineSSE, promStorage, expr, ts)

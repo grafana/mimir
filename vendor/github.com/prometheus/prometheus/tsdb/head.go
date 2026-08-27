@@ -160,6 +160,10 @@ type Head struct {
 	memTruncationCallBack  func() // For testing purposes.
 
 	secondaryHashFunc func(labels.Labels) uint32
+
+	// testAfterSeriesLookup is invoked after getByID in appenders, before the
+	// series is locked. Tests use it to race GC against a resolved pointer.
+	testAfterSeriesLookup func(*memSeries)
 }
 
 type ExemplarStorage interface {
@@ -446,6 +450,7 @@ func (h *Head) resetWLReplayResources() {
 
 type headMetrics struct {
 	activeAppenders           prometheus.Gauge
+	appendersCreated          prometheus.Counter
 	series                    prometheus.GaugeFunc
 	staleSeries               prometheus.GaugeFunc
 	nativeHistogramSeries     prometheus.GaugeFunc
@@ -490,6 +495,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		activeAppenders: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_active_appenders",
 			Help: "Number of currently active appender transactions",
+		}),
+		appendersCreated: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_appenders_created_total",
+			Help: "Total number of appender transactions created.",
 		}),
 		series: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_series",
@@ -645,6 +654,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.activeAppenders,
+			m.appendersCreated,
 			m.series,
 			m.staleSeries,
 			m.nativeHistogramSeries,
@@ -843,8 +853,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			// TODO(codesome): clear out all m-map chunks here for refSeries.
 			h.logger.Error("Loading on-disk chunks failed", "err", err)
-			var cerr *chunks.CorruptionErr
-			if errors.As(err, &cerr) {
+			if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 				h.metrics.mmapChunkCorruptionTotal.Inc()
 			}
 
@@ -1597,8 +1606,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		var cerr *chunks.CorruptionErr
-		if errors.As(err, &cerr) {
+		if _, ok := errors.AsType[*chunks.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
@@ -2454,6 +2462,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2652,6 +2661,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.gced = true
 		stale, isHist, buckets := series.sampleState()
 		if stale {
 			staleSeriesDeleted++
@@ -2856,6 +2866,11 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
+	// Whether garbage collection has removed this series from the head index. Such a
+	// series is unreachable, so appending to it would silently lose the samples;
+	// appenders that looked it up before it was collected have to get a fresh one
+	// instead. See headAppenderBase.lockForAppend.
+	gced bool
 	// headChunkCount tracks the number of head chunks. All mutations of the
 	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
@@ -2944,6 +2959,13 @@ func (s *memSeries) maxTime() int64 {
 // (mmapChunks, truncateChunksBefore) must be immediately paired with a
 // setHeadChunks call.
 func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	// Chunk IDs can only be 23 bits, so a series cannot hold more than 2^23 chunks
+	// without two of them sharing an ID. This is not reachable in practice (head
+	// compaction keeps the live set tiny); panic rather than serve an ambiguous ID.
+	if len(s.mmappedChunks)+int(s.headChunkCount.Load()) >= oooChunkIDMask-1 {
+		panic(fmt.Sprintf("too many in-order head chunks for series %s (%d)", s.lset.String(), s.ref))
+	}
+
 	chk.prev = s.headChunks
 	s.headChunks = chk
 	s.headChunkCount.Add(1)
@@ -2971,7 +2993,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			if chk.maxTime < mint {
 				// If any head chunk is truncated, we can truncate all mmapped chunks.
 				removedInOrder = chk.len() + len(s.mmappedChunks)
-				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+				s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.setHeadChunks(nil, 0)
@@ -2996,7 +3018,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedInOrder = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+		s.firstChunkID = wrapChunkID(s.firstChunkID + chunks.HeadChunkID(removedInOrder))
 	}
 
 	var removedOOO int
@@ -3008,7 +3030,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 			removedOOO = i + 1
 		}
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks[:0], s.ooo.oooMmappedChunks[removedOOO:]...)
-		s.ooo.firstOOOChunkID += chunks.HeadChunkID(removedOOO)
+		s.ooo.firstOOOChunkID = wrapChunkID(s.ooo.firstOOOChunkID + chunks.HeadChunkID(removedOOO))
 
 		if len(s.ooo.oooMmappedChunks) == 0 && s.ooo.oooHeadChunk == nil {
 			s.ooo = nil
