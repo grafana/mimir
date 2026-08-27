@@ -652,10 +652,10 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 	}
 }
 
-// TestQuerySplitting_DeduplicateAcrossSplitBlocks checks that deduplicateAcrossSplitBlocks (see commonsubexpressionelimination/optimization_pass.go)
+// TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks checks that insertDuplicatesAcrossSplitBlocks (see commonsubexpressionelimination/optimization_pass.go)
 // wraps exactly the nodes it needs to in a Duplicate node. core.Subquery or core.StepInvariantExpression nested
 // below a split target's own child, at any depth, but not the split target's own child itself.
-func TestQuerySplitting_DeduplicateAcrossSplitBlocks(t *testing.T) {
+func TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 

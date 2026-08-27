@@ -96,8 +96,8 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	// Range vector splitting can materialize and execute a nested Subquery/StepInvariantExpression more than
-	// once, once per split block, deduplicate it here.
-	splitSubqueriesDeduplicated, err := e.deduplicateSplitSubqueriesAcrossBlocks(plan.Root)
+	// once, once per split block, insert Duplicate nodes here.
+	splitSubqueryDuplicatesInserted, err := e.insertSplitSubqueryDuplicates(plan.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		"selectors_inspected", len(paths),
 		"duplicate_selectors_eliminated", stats.duplicateSelectorsEliminated,
 		"subset_selectors_eliminated", stats.subsetSelectorsEliminated,
-		"split_subqueries_deduplicated", splitSubqueriesDeduplicated,
+		"split_subquery_duplicates_inserted", splitSubqueryDuplicatesInserted,
 	)
 
 	return plan, nil
@@ -938,10 +938,10 @@ func isDuplicateNode(node planning.Node) bool {
 	return isDuplicate
 }
 
-// deduplicateSplitSubqueriesAcrossBlocks finds SplitFunctionCall nodes wrapping a subquery, and deduplicates any
-// Subquery/StepInvariantExpression nested inside that subquery's inner expression.
-// Returns the number of Duplicate nodes introduced.
-func (e *OptimizationPass) deduplicateSplitSubqueriesAcrossBlocks(n planning.Node) (int, error) {
+// insertSplitSubqueryDuplicates finds SplitFunctionCall nodes wrapping a subquery, and inserts Duplicate nodes
+// (via insertDuplicatesAcrossSplitBlocks) around any Subquery/StepInvariantExpression nested inside that
+// subquery's inner expression. Returns the number of Duplicate nodes introduced.
+func (e *OptimizationPass) insertSplitSubqueryDuplicates(n planning.Node) (int, error) {
 	introduced := 0
 
 	if splitCall, ok := n.(*rangevectorsplitting.SplitFunctionCall); ok {
@@ -950,7 +950,7 @@ func (e *OptimizationPass) deduplicateSplitSubqueriesAcrossBlocks(n planning.Nod
 		}
 
 		if subquery, isSubquery := unwrapDuplicate(splitCall.Inner.Child(0)).(*core.Subquery); isSubquery {
-			count, err := e.deduplicateAcrossSplitBlocks(subquery.Child(0))
+			count, err := e.insertDuplicatesAcrossSplitBlocks(subquery.Child(0))
 			if err != nil {
 				return 0, err
 			}
@@ -959,8 +959,8 @@ func (e *OptimizationPass) deduplicateSplitSubqueriesAcrossBlocks(n planning.Nod
 		}
 	}
 
-	for i := range n.ChildCount() {
-		count, err := e.deduplicateSplitSubqueriesAcrossBlocks(n.Child(i))
+	for child := range planning.ChildrenIter(n) {
+		count, err := e.insertSplitSubqueryDuplicates(child)
 		if err != nil {
 			return 0, err
 		}
@@ -982,10 +982,11 @@ func unwrapDuplicate(n planning.Node) planning.Node {
 	}
 }
 
-// deduplicateAcrossSplitBlocks wraps the child of every core.Subquery/core.StepInvariantExpression in n's subtree in a
-// Duplicate node, at any nesting depth, so different split blocks can safely materialize it more than once (see range_vector_splitting_2h.test:830).
+// insertDuplicatesAcrossSplitBlocks wraps the child of every core.Subquery/core.StepInvariantExpression in n's
+// subtree in a Duplicate node, at any nesting depth, so different split blocks can safely materialize it more
+// than once (see hour_collision_metric test case in range_vector_splitting_2h.test).
 // Returns the number of Duplicate nodes introduced.
-func (e *OptimizationPass) deduplicateAcrossSplitBlocks(n planning.Node) (int, error) {
+func (e *OptimizationPass) insertDuplicatesAcrossSplitBlocks(n planning.Node) (int, error) {
 	if isSubqueryOrStepInvariantExpression(n) {
 		if n.ChildCount() != 1 {
 			return 0, fmt.Errorf("expected node of type %s to have exactly one child, got %d", n.NodeType(), n.ChildCount())
@@ -993,9 +994,9 @@ func (e *OptimizationPass) deduplicateAcrossSplitBlocks(n planning.Node) (int, e
 
 		child := n.Child(0)
 
-		if isDeduplicateOrDeduplicateFilter(child) {
+		if isDuplicateOrDuplicateFilter(child) {
 			// keep recursing since a further nested Subquery/StepInvariantExpression inside it may still need its own Duplicate.
-			return e.deduplicateAcrossSplitBlocks(child)
+			return e.insertDuplicatesAcrossSplitBlocks(child)
 		}
 
 		// Result type is always Vector or Scalar in practice (see planning.go's StepInvariantExpr handling).
@@ -1003,10 +1004,10 @@ func (e *OptimizationPass) deduplicateAcrossSplitBlocks(n planning.Node) (int, e
 		if resultType, err := child.ResultType(); err != nil {
 			return 0, err
 		} else if resultType != parser.ValueTypeVector && resultType != parser.ValueTypeScalar {
-			return 0, fmt.Errorf("cannot deduplicate %s node (%s) across split blocks: unexpected result type %s", n.NodeType(), n.Describe(), resultType)
+			return 0, fmt.Errorf("cannot insert a Duplicate node for %s node (%s) across split blocks: unexpected result type %s", n.NodeType(), n.Describe(), resultType)
 		}
 
-		introduced, err := e.deduplicateAcrossSplitBlocks(child)
+		introduced, err := e.insertDuplicatesAcrossSplitBlocks(child)
 		if err != nil {
 			return 0, err
 		}
@@ -1022,8 +1023,8 @@ func (e *OptimizationPass) deduplicateAcrossSplitBlocks(n planning.Node) (int, e
 	}
 
 	introduced := 0
-	for i := range n.ChildCount() {
-		count, err := e.deduplicateAcrossSplitBlocks(n.Child(i))
+	for child := range planning.ChildrenIter(n) {
+		count, err := e.insertDuplicatesAcrossSplitBlocks(child)
 		if err != nil {
 			return 0, err
 		}
@@ -1043,7 +1044,7 @@ func isSubqueryOrStepInvariantExpression(n planning.Node) bool {
 	}
 }
 
-func isDeduplicateOrDeduplicateFilter(node planning.Node) bool {
+func isDuplicateOrDuplicateFilter(node planning.Node) bool {
 	switch node.(type) {
 	case *Duplicate, *DuplicateFilter:
 		return true
