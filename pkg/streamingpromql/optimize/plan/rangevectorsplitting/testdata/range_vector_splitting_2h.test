@@ -995,3 +995,36 @@ eval instant at 24h sum_over_time((dup_filter_metric{a="1"} @ 10h)[5h:1h]) + on(
   {} 80
 
 clear
+
+# The subquery here emits unsorted series (RHS before LHS), check FunctionOverRangeVectorSplit#mergeSplitsMetadata handles that.
+load 1h
+  unsorted_merge_a{id="a"} 1 2 3 4 5
+  unsorted_merge_b{id="b"} 10 20 30 40 50
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+clear
+
+# Same as above, but with three chained "or"
+load 1h
+  unsorted_merge_3way_a{id="a"} 1 2 3 4 5
+  unsorted_merge_3way_b{id="b"} 10 20 30 40 50
+  unsorted_merge_3way_c{id="c"} 100 200 300 400 500
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+clear
