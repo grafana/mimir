@@ -4,16 +4,21 @@ package binops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestBuildMatchers(t *testing.T) {
@@ -298,4 +303,371 @@ func TestTrimOperatorsRespectMutability(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestVectorVectorBinaryOperationEvaluator_MissingSideOptions(t *testing.T) {
+	timeRange := types.NewRangeQueryTimeRange(time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+	firstStep := timeRange.IndexTime(0)
+	secondStep := timeRange.IndexTime(1)
+
+	floatPoint := func(timestamp int64) promql.FPoint {
+		return promql.FPoint{T: timestamp, F: 3}
+	}
+	histogramPoint := func(timestamp int64) promql.HPoint {
+		return promql.HPoint{
+			T: timestamp,
+			H: &histogram.FloatHistogram{Count: 2, Sum: 6},
+		}
+	}
+
+	testCases := map[string]struct {
+		op                  parser.ItemType
+		left                types.InstantVectorSeriesData
+		right               types.InstantVectorSeriesData
+		options             computeResultOptions
+		expectedFloatTimes  []int64
+		expectedHistTimes   []int64
+		expectedAnnotations int
+		expectSeparate      bool
+	}{
+		"missing left evaluates floats with nil presence": {
+			op:                 parser.MUL,
+			right:              types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			expectedFloatTimes: []int64{firstStep},
+		},
+		"missing left evaluates only absent steps": {
+			op:                 parser.MUL,
+			right:              types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep), floatPoint(secondStep)}},
+			options:            computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{4, -1}}},
+			expectedFloatTimes: []int64{secondStep},
+		},
+		"missing left suppresses a present step": {
+			op:      parser.MUL,
+			right:   types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			options: computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{4, -1}}},
+		},
+		"missing left skip mode suppresses the step": {
+			op:      parser.MUL,
+			right:   types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			options: computeResultOptions{missingLeft: missingSideOptions{mode: missingSkip}},
+		},
+		"missing left evaluates a histogram": {
+			op:                parser.MUL,
+			right:             types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			expectedHistTimes: []int64{firstStep},
+		},
+		"missing left emits an invalid type annotation": {
+			op:                  parser.ADD,
+			right:               types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			options:             computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{-1, -1}}},
+			expectedAnnotations: 1,
+		},
+		"missing left suppresses an invalid type annotation": {
+			op:      parser.ADD,
+			right:   types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			options: computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{4, -1}}},
+		},
+		"missing left keeps separate output mode": {
+			op:                 parser.MUL,
+			right:              types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			options:            computeResultOptions{missingLeft: missingSideOptions{mode: missingLeftSeparate}},
+			expectedFloatTimes: []int64{firstStep},
+			expectSeparate:     true,
+		},
+		"missing right evaluates floats with nil presence": {
+			op:                 parser.MUL,
+			left:               types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			expectedFloatTimes: []int64{firstStep},
+		},
+		"missing right evaluates only absent steps": {
+			op:                 parser.MUL,
+			left:               types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep), floatPoint(secondStep)}},
+			options:            computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{8, -1}}},
+			expectedFloatTimes: []int64{secondStep},
+		},
+		"missing right suppresses a present step": {
+			op:      parser.MUL,
+			left:    types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			options: computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{8, -1}}},
+		},
+		"missing right skip mode suppresses the step": {
+			op:      parser.MUL,
+			left:    types.InstantVectorSeriesData{Floats: []promql.FPoint{floatPoint(firstStep)}},
+			options: computeResultOptions{missingRight: missingSideOptions{mode: missingSkip}},
+		},
+		"missing right evaluates a histogram": {
+			op:                parser.MUL,
+			left:              types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			expectedHistTimes: []int64{firstStep},
+		},
+		"missing right emits an invalid type annotation": {
+			op:                  parser.ADD,
+			left:                types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			options:             computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{-1, -1}}},
+			expectedAnnotations: 1,
+		},
+		"missing right suppresses an invalid type annotation": {
+			op:      parser.ADD,
+			left:    types.InstantVectorSeriesData{Histograms: []promql.HPoint{histogramPoint(firstStep)}},
+			options: computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{8, -1}}},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			leftBefore := cloneBinaryOperationTestData(testCase.left)
+			rightBefore := cloneBinaryOperationTestData(testCase.right)
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			fillValue := 2.0
+			var fillLeft, fillRight *float64
+			if len(testCase.right.Floats)+len(testCase.right.Histograms) > 0 {
+				fillLeft = &fillValue
+			}
+			if len(testCase.left.Floats)+len(testCase.left.Histograms) > 0 {
+				fillRight = &fillValue
+			}
+
+			evaluator, err := newVectorVectorBinaryOperationEvaluator(testCase.op, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, fillLeft, fillRight)
+			require.NoError(t, err)
+
+			result, separateResult, err := evaluator.computeResult(testCase.left, testCase.right, false, false, testCase.options)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				types.PutInstantVectorSeriesData(result, memoryConsumptionTracker)
+				types.PutInstantVectorSeriesData(separateResult, memoryConsumptionTracker)
+				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+			})
+
+			actualResult := result
+			if testCase.expectSeparate {
+				require.Empty(t, result.Floats)
+				require.Empty(t, result.Histograms)
+				actualResult = separateResult
+			} else {
+				require.Empty(t, separateResult.Floats)
+				require.Empty(t, separateResult.Histograms)
+			}
+
+			require.Equal(t, testCase.expectedFloatTimes, binaryOperationFloatTimes(actualResult.Floats))
+			require.Equal(t, testCase.expectedHistTimes, binaryOperationHistogramTimes(actualResult.Histograms))
+			if len(actualResult.Histograms) > 0 {
+				inputHistogram := testCase.left.Histograms
+				if len(inputHistogram) == 0 {
+					inputHistogram = testCase.right.Histograms
+				}
+				require.Len(t, inputHistogram, 1)
+				require.NotSame(t, inputHistogram[0].H, actualResult.Histograms[0].H)
+			}
+			require.Len(t, evaluator.annotations, testCase.expectedAnnotations)
+			require.Equal(t, leftBefore, testCase.left)
+			require.Equal(t, rightBefore, testCase.right)
+		})
+	}
+}
+
+func TestVectorVectorBinaryOperationEvaluator_InvalidMissingSideOptions(t *testing.T) {
+	timeRange := types.NewRangeQueryTimeRange(time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+	fillValue := 2.0
+
+	testCases := map[string]struct {
+		left          types.InstantVectorSeriesData
+		right         types.InstantVectorSeriesData
+		options       computeResultOptions
+		expectedError string
+		expectWrapped bool
+	}{
+		"unknown missing-left mode": {
+			options:       computeResultOptions{missingLeft: missingSideOptions{mode: missingSideMode(99)}},
+			expectedError: "unknown missing-left mode 99",
+		},
+		"unknown missing-right mode": {
+			options:       computeResultOptions{missingRight: missingSideOptions{mode: missingSideMode(99)}},
+			expectedError: "unknown missing-right mode 99",
+		},
+		"separate missing-right output": {
+			options:       computeResultOptions{missingRight: missingSideOptions{mode: missingLeftSeparate}},
+			expectedError: "cannot produce separate missing-right output",
+		},
+		"short missing-left presence": {
+			options:       computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{-1}}},
+			expectedError: "missing-left presence has length 1, expected 2",
+		},
+		"short missing-right presence": {
+			options:       computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{-1}}},
+			expectedError: "missing-right presence has length 1, expected 2",
+		},
+		"empty missing-left presence": {
+			options:       computeResultOptions{missingLeft: missingSideOptions{groupPresence: []int{}}},
+			expectedError: "missing-left presence has length 0, expected 2",
+		},
+		"empty missing-right presence": {
+			options:       computeResultOptions{missingRight: missingSideOptions{groupPresence: []int{}}},
+			expectedError: "missing-right presence has length 0, expected 2",
+		},
+		"missing-left timestamp after query range": {
+			right: types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: timeRange.IndexTime(2), F: 3}}},
+			options: computeResultOptions{
+				missingLeft: missingSideOptions{groupPresence: []int{-1, -1}},
+			},
+			expectedError: "look up group presence at timestamp 120000: step index 2 is outside presence length 2",
+			expectWrapped: true,
+		},
+		"missing-right timestamp before query range": {
+			left: types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: -time.Minute.Milliseconds(), F: 3}}},
+			options: computeResultOptions{
+				missingRight: missingSideOptions{groupPresence: []int{-1, -1}},
+			},
+			expectedError: "look up group presence at timestamp -60000: step index -1 is outside presence length 2",
+			expectWrapped: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			evaluator, err := newVectorVectorBinaryOperationEvaluator(parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, &fillValue, &fillValue)
+			require.NoError(t, err)
+
+			result, separateResult, err := evaluator.computeResult(testCase.left, testCase.right, false, false, testCase.options)
+			require.ErrorContains(t, err, testCase.expectedError)
+			if testCase.expectWrapped {
+				require.Error(t, errors.Unwrap(err))
+			}
+			require.Empty(t, result.Floats)
+			require.Empty(t, result.Histograms)
+			require.Empty(t, separateResult.Floats)
+			require.Empty(t, separateResult.Histograms)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func TestVectorVectorBinaryOperationEvaluator_PooledHistogramOwnership(t *testing.T) {
+	timeRange := types.NewRangeQueryTimeRange(time.Unix(0, 0), time.Unix(60, 0), time.Minute)
+	fillValue := 2.0
+
+	testCases := map[string]struct {
+		sourceSide      string
+		options         computeResultOptions
+		expectOutput    bool
+		expectSeparate  bool
+		expectSourceNil bool
+	}{
+		"left ownership moves the histogram": {
+			sourceSide:      "left",
+			expectOutput:    true,
+			expectSourceNil: true,
+		},
+		"right ownership moves the histogram": {
+			sourceSide:      "right",
+			expectOutput:    true,
+			expectSourceNil: true,
+		},
+		"suppression returns the owned source": {
+			sourceSide: "left",
+			options: computeResultOptions{
+				missingRight: missingSideOptions{groupPresence: []int{7, -1}},
+			},
+		},
+		"separate output moves the right histogram": {
+			sourceSide:      "right",
+			options:         computeResultOptions{missingLeft: missingSideOptions{mode: missingLeftSeparate}},
+			expectOutput:    true,
+			expectSeparate:  true,
+			expectSourceNil: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			sourcePoints, err := types.HPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			sourcePoints = sourcePoints[:1]
+			originalHistogram := &histogram.FloatHistogram{Count: 2, Sum: 6}
+			sourcePoints[0] = promql.HPoint{T: timeRange.IndexTime(0), H: originalHistogram}
+
+			var left, right types.InstantVectorSeriesData
+			var fillLeft, fillRight *float64
+			var takeOwnershipOfLeft, takeOwnershipOfRight bool
+			switch testCase.sourceSide {
+			case "left":
+				left.Histograms = sourcePoints
+				fillRight = &fillValue
+				takeOwnershipOfLeft = true
+			case "right":
+				right.Histograms = sourcePoints
+				fillLeft = &fillValue
+				takeOwnershipOfRight = true
+			default:
+				require.FailNow(t, "unknown source side")
+			}
+
+			evaluator, err := newVectorVectorBinaryOperationEvaluator(parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, fillLeft, fillRight)
+			require.NoError(t, err)
+			result, separateResult, err := evaluator.computeResult(left, right, takeOwnershipOfLeft, takeOwnershipOfRight, testCase.options)
+			require.NoError(t, err)
+
+			if !testCase.expectOutput {
+				require.Empty(t, result.Histograms)
+				require.Empty(t, separateResult.Histograms)
+				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+				return
+			}
+
+			output := result
+			otherOutput := separateResult
+			if testCase.expectSeparate {
+				output = separateResult
+				otherOutput = result
+			}
+			require.Empty(t, otherOutput.Histograms)
+			require.Len(t, output.Histograms, 1)
+			require.Same(t, originalHistogram, output.Histograms[0].H)
+			if testCase.expectSourceNil {
+				require.Nil(t, sourcePoints[0].H)
+			}
+
+			types.PutInstantVectorSeriesData(result, memoryConsumptionTracker)
+			types.PutInstantVectorSeriesData(separateResult, memoryConsumptionTracker)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func cloneBinaryOperationTestData(data types.InstantVectorSeriesData) types.InstantVectorSeriesData {
+	result := types.InstantVectorSeriesData{Floats: append([]promql.FPoint(nil), data.Floats...)}
+	if data.Histograms == nil {
+		return result
+	}
+
+	result.Histograms = make([]promql.HPoint, len(data.Histograms))
+	for i, point := range data.Histograms {
+		result.Histograms[i] = promql.HPoint{T: point.T, H: point.H.Copy()}
+	}
+	return result
+}
+
+func binaryOperationFloatTimes(points []promql.FPoint) []int64 {
+	if len(points) == 0 {
+		return nil
+	}
+
+	timestamps := make([]int64, len(points))
+	for i, point := range points {
+		timestamps[i] = point.T
+	}
+	return timestamps
+}
+
+func binaryOperationHistogramTimes(points []promql.HPoint) []int64 {
+	if len(points) == 0 {
+		return nil
+	}
+
+	timestamps := make([]int64, len(points))
+	for i, point := range points {
+		timestamps[i] = point.T
+	}
+	return timestamps
 }
