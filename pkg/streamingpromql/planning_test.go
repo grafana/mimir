@@ -2136,6 +2136,348 @@ func TestDecodingInvalidPlan(t *testing.T) {
 	}
 }
 
+func TestDecodeNodesValidatesFill(t *testing.T) {
+	testCases := map[string]struct {
+		version        planning.QueryPlanVersion
+		op             core.BinaryOperation
+		card           parser.VectorMatchCardinality
+		lhsType        parser.ValueType
+		rhsType        parser.ValueType
+		on             bool
+		matchingLabels []string
+		includeLabels  []string
+		expectedError  string
+	}{
+		"one-to-one fill at V20": {
+			version: planning.QueryPlanV20,
+			op:      core.BINARY_ADD,
+			card:    parser.CardOneToOne,
+			lhsType: parser.ValueTypeVector,
+			rhsType: parser.ValueTypeVector,
+		},
+		"group_right fill at V21": {
+			version: planning.QueryPlanV21,
+			op:      core.BINARY_ADD,
+			card:    parser.CardOneToMany,
+			lhsType: parser.ValueTypeVector,
+			rhsType: parser.ValueTypeVector,
+		},
+		"group_left fill at V21": {
+			version: planning.QueryPlanV21,
+			op:      core.BINARY_ADD,
+			card:    parser.CardManyToOne,
+			lhsType: parser.ValueTypeVector,
+			rhsType: parser.ValueTypeVector,
+		},
+		"one-to-one fill below V20": {
+			version:       planning.QueryPlanV19,
+			op:            core.BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhsType:       parser.ValueTypeVector,
+			rhsType:       parser.ValueTypeVector,
+			expectedError: "query plan has version 19, but decoded node 2 requires version 20",
+		},
+		"group_right fill below V21": {
+			version:       planning.QueryPlanV20,
+			op:            core.BINARY_ADD,
+			card:          parser.CardOneToMany,
+			lhsType:       parser.ValueTypeVector,
+			rhsType:       parser.ValueTypeVector,
+			expectedError: "query plan has version 20, but decoded node 2 requires version 21",
+		},
+		"fill with on __name__": {
+			version:        planning.QueryPlanV21,
+			op:             core.BINARY_ADD,
+			card:           parser.CardOneToMany,
+			lhsType:        parser.ValueTypeVector,
+			rhsType:        parser.ValueTypeVector,
+			on:             true,
+			matchingLabels: []string{"__name__"},
+			expectedError:  "validate decoded node 2: fill does not support __name__ in on matching",
+		},
+		"fill with label in on and include": {
+			version:        planning.QueryPlanV21,
+			op:             core.BINARY_ADD,
+			card:           parser.CardManyToOne,
+			lhsType:        parser.ValueTypeVector,
+			rhsType:        parser.ValueTypeVector,
+			on:             true,
+			matchingLabels: []string{"cluster", "namespace"},
+			includeLabels:  []string{"namespace", "pod"},
+			expectedError:  `validate decoded node 2: fill label "namespace" appears in both on and include`,
+		},
+		"set fill": {
+			version:       planning.QueryPlanV21,
+			op:            core.BINARY_LOR,
+			card:          parser.CardManyToMany,
+			lhsType:       parser.ValueTypeVector,
+			rhsType:       parser.ValueTypeVector,
+			expectedError: `validate decoded node 2: binary operation "or" does not support fill`,
+		},
+		"vector-scalar fill": {
+			version:       planning.QueryPlanV21,
+			op:            core.BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhsType:       parser.ValueTypeVector,
+			rhsType:       parser.ValueTypeScalar,
+			expectedError: "validate decoded node 2: fill requires vector-vector operands, got vector-scalar",
+		},
+		"scalar-vector fill": {
+			version:       planning.QueryPlanV21,
+			op:            core.BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhsType:       parser.ValueTypeScalar,
+			rhsType:       parser.ValueTypeVector,
+			expectedError: "validate decoded node 2: fill requires vector-vector operands, got scalar-vector",
+		},
+		"scalar-scalar fill": {
+			version:       planning.QueryPlanV21,
+			op:            core.BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhsType:       parser.ValueTypeScalar,
+			rhsType:       parser.ValueTypeScalar,
+			expectedError: "validate decoded node 2: fill requires vector-vector operands, got scalar-scalar",
+		},
+	}
+
+	encodeOperand := func(valueType parser.ValueType) *planning.EncodedNode {
+		if valueType == parser.ValueTypeScalar {
+			return &planning.EncodedNode{
+				NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+				Details:  marshalDetails(&core.NumberLiteralDetails{Value: 1}),
+			}
+		}
+
+		return &planning.EncodedNode{
+			NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+			Details:  marshalDetails(&core.VectorSelectorDetails{}),
+		}
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			encoded := &planning.EncodedQueryPlan{
+				TimeRange: timeRange.Encode(),
+				Version:   testCase.version,
+				RootNode:  2,
+				Nodes: []*planning.EncodedNode{
+					encodeOperand(testCase.lhsType),
+					encodeOperand(testCase.rhsType),
+					{
+						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: testCase.op,
+							VectorMatching: &core.VectorMatching{
+								Card:           testCase.card,
+								On:             testCase.on,
+								MatchingLabels: testCase.matchingLabels,
+								Include:        testCase.includeLabels,
+								FillValues:     core.VectorMatchFillValues{LhsSet: true},
+							},
+						}),
+						Children: []int64{0, 1},
+					},
+				},
+			}
+
+			nodes, err := encoded.DecodeNodes(encoded.RootNode)
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, nodes, 1)
+		})
+	}
+}
+
+func TestDecodeNodesWithTimeRanges(t *testing.T) {
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	encoded := &planning.EncodedQueryPlan{
+		TimeRange: timeRange.Encode(),
+		Nodes: []*planning.EncodedNode{
+			{
+				NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+				Details:  marshalDetails(&core.NumberLiteralDetails{Value: 1}),
+			},
+			{
+				NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+				Details:  marshalDetails(&core.NumberLiteralDetails{Value: 2}),
+			},
+		},
+	}
+
+	secondTimeRange := timeRange
+	secondTimeRange.StartT++
+	secondTimeRange.EndT++
+	nodes, err := encoded.DecodeNodesWithTimeRanges(
+		[]int64{0, 1},
+		[]types.QueryTimeRange{timeRange, secondTimeRange},
+	)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+
+	testCases := map[string]struct {
+		nodeIndices []int64
+		timeRanges  []types.QueryTimeRange
+		expected    string
+	}{
+		"missing time range": {
+			nodeIndices: []int64{0, 1},
+			timeRanges:  []types.QueryTimeRange{timeRange},
+			expected:    "node index count 2 does not match time range count 1",
+		},
+		"extra time range": {
+			nodeIndices: []int64{0},
+			timeRanges:  []types.QueryTimeRange{timeRange, secondTimeRange},
+			expected:    "node index count 1 does not match time range count 2",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			_, err := encoded.DecodeNodesWithTimeRanges(testCase.nodeIndices, testCase.timeRanges)
+			require.EqualError(t, err, testCase.expected)
+		})
+	}
+}
+
+func TestDecodeNodesValidatesEncodedTimeRange(t *testing.T) {
+	encodedNode := &planning.EncodedNode{
+		NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+		Details:  marshalDetails(&core.NumberLiteralDetails{Value: 1}),
+	}
+
+	testCases := map[string]struct {
+		timeRange     types.EncodedQueryTimeRange
+		expectedError string
+	}{
+		"compatible zero value": {},
+		"non-instant range with zero interval": {
+			timeRange: types.EncodedQueryTimeRange{
+				StartT: 1,
+				EndT:   2,
+			},
+			expectedError: "decode query time range: non-instant query time range has a zero interval",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			encoded := &planning.EncodedQueryPlan{
+				TimeRange: testCase.timeRange,
+				Nodes:     []*planning.EncodedNode{encodedNode},
+			}
+
+			nodes, err := encoded.DecodeNodes(0)
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, nodes, 1)
+		})
+	}
+}
+
+func TestDecodeNodesRejectsZeroStepSubquery(t *testing.T) {
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	encoded := &planning.EncodedQueryPlan{
+		TimeRange: timeRange.Encode(),
+		Nodes: []*planning.EncodedNode{
+			{
+				NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+				Details:  marshalDetails(&core.NumberLiteralDetails{Value: 1}),
+			},
+			{
+				NodeType: planning.NODE_TYPE_SUBQUERY,
+				Details: marshalDetails(&core.SubqueryDetails{
+					Range: time.Minute,
+					Step:  0,
+				}),
+				Children: []int64{0},
+			},
+		},
+	}
+
+	_, err := encoded.DecodeNodes(1)
+	require.ErrorContains(t, err, "validate decoded node 1")
+	require.ErrorContains(t, err, "node *core.Subquery child time range panicked")
+}
+
+func TestDecodeNodesRejectsCyclicGraph(t *testing.T) {
+	encoded := &planning.EncodedQueryPlan{
+		Nodes: []*planning.EncodedNode{
+			{
+				NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+				Children: []int64{0, 0},
+			},
+		},
+	}
+
+	_, err := encoded.DecodeNodes(encoded.RootNode)
+	require.EqualError(t, err, "cycle detected while decoding node index 0")
+}
+
+func TestDecodeNodesBoundsDistinctMinimumVersionStates(t *testing.T) {
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	encoded := &planning.EncodedQueryPlan{
+		TimeRange: timeRange.Encode(),
+		Nodes: []*planning.EncodedNode{
+			{
+				NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+				Details:  marshalDetails(&core.NumberLiteralDetails{Value: 1}),
+			},
+			{
+				NodeType: planning.NODE_TYPE_SUBQUERY,
+				Details: marshalDetails(&core.SubqueryDetails{
+					Range: time.Minute,
+					Step:  time.Second,
+				}),
+				Children: []int64{0},
+			},
+			{
+				NodeType: planning.NODE_TYPE_SUBQUERY,
+				Details: marshalDetails(&core.SubqueryDetails{
+					Offset: time.Second,
+					Range:  time.Minute,
+					Step:   time.Second,
+				}),
+				Children: []int64{0},
+			},
+			{
+				NodeType: planning.NODE_TYPE_SUBQUERY,
+				Details: marshalDetails(&core.SubqueryDetails{
+					Offset: 2 * time.Second,
+					Range:  time.Minute,
+					Step:   time.Second,
+				}),
+				Children: []int64{0},
+			},
+			{
+				NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+				Details: marshalDetails(&core.BinaryExpressionDetails{
+					Op: core.BINARY_ADD,
+				}),
+				Children: []int64{1, 2},
+			},
+			{
+				NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+				Details: marshalDetails(&core.BinaryExpressionDetails{
+					Op: core.BINARY_ADD,
+				}),
+				Children: []int64{4, 3},
+			},
+		},
+	}
+
+	_, err := encoded.DecodeNodes(5)
+	require.EqualError(t, err, "validate decoded node 5: minimum plan version validation exceeded the 7-state limit")
+}
+
 func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string, expected string) {
 	metrics := getMetrics(t, reg, name)
 	builder := &strings.Builder{}
