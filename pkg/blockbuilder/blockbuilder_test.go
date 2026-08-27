@@ -177,6 +177,89 @@ func TestBlockBuilder(t *testing.T) {
 	}
 }
 
+// Regression test: a job spanning exactly one record must consume that record. The consumption
+// loop initialized lastConsumedOffset to startOffset (which is inclusive) and ran while
+// lastConsumedOffset < endOffset-1, so a [N, N+1) job exited before the first fetch, uploaded no
+// blocks, and was still reported to the scheduler as completed — silently losing the record.
+// Single-record jobs occur when the scheduler's time-bucketed planning strands one record of an
+// older bucket past the last job boundary, e.g. across a scheduler restart.
+func TestBlockBuilder_SingleRecordJob(t *testing.T) {
+	fetchModes := []struct {
+		name                string
+		fetchConcurrencyMax int
+	}{
+		{name: "without concurrent fetchers", fetchConcurrencyMax: 0},
+		{name: "with concurrent fetchers", fetchConcurrencyMax: 12},
+	}
+
+	for _, fm := range fetchModes {
+		t.Run(fm.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+
+				var vnet kfake.VirtualNetwork
+
+				_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic, testkafka.WithVirtualNetwork(&vnet))
+
+				kafkaClient, err := kgo.NewClient(
+					kgo.SeedBrokers(kafkaAddr),
+					kgo.Dialer(vnet.DialContext),
+					kgo.RecordPartitioner(kgo.ManualPartitioner()),
+				)
+				require.NoError(t, err)
+				t.Cleanup(kafkaClient.Close)
+
+				cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
+				cfg.Kafka.Dialer = vnet.DialContext
+				cfg.Kafka.FetchConcurrencyMax = fm.fetchConcurrencyMax
+				cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
+
+				const tenant = "1"
+				const numRecords = 10
+				var producedSamples []mimirpb.Sample
+				kafkaRecTime := time.Now().Add(-time.Hour)
+				for range numRecords {
+					samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
+					producedSamples = append(producedSamples, samples...)
+					kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
+				}
+
+				// One produceSamples call produces one record, so record offsets equal call indexes.
+				const singleRecordOffset = 5
+				scheduler := &mockSchedulerClient{}
+				scheduler.addJob(
+					schedulerpb.JobKey{Id: "single-record-job", Epoch: 1},
+					schedulerpb.JobSpec{
+						Topic:       testTopic,
+						Partition:   1,
+						StartOffset: singleRecordOffset,
+						EndOffset:   singleRecordOffset + 1,
+					},
+				)
+
+				bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+				require.NoError(t, err)
+
+				require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(context.Background(), bb))
+				})
+
+				require.Eventually(t, func() bool {
+					return scheduler.completeJobCallCount() > 0
+				}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+				expSamples := producedSamples[singleRecordOffset : singleRecordOffset+1]
+				compareQueryWithDir(t,
+					path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
+					expSamples, nil,
+					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+				)
+			})
+		})
+	}
+}
+
 func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Parallel()
 

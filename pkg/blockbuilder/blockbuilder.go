@@ -453,7 +453,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	}
 	client := r.client
 
-	lastConsumedOffset := startOffset
+	lastConsumedOffset := startOffset - 1
 	if startOffset >= endOffset {
 		level.Info(logger).Log("msg", "nothing to consume")
 		return
