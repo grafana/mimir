@@ -15,11 +15,11 @@ import (
 type lane string
 
 const (
+	lanePolicySimple = "simple"
+
 	planLane       lane = "plan"
 	compactionLane lane = "compaction"
 )
-
-const lanePolicySimple = "simple"
 
 type laneTransition struct {
 	lane lane
@@ -28,19 +28,10 @@ type laneTransition struct {
 
 // Defines how to map jobs and requests into lanes
 type lanePolicy interface {
-	// AllLanes returns every lane this policy defines. The scheduler tracks exactly these, and
-	// serves them in this order to a worker that names no job type.
-	AllLanes() []lane
-
-	// CompactionLanes returns the lanes carrying compaction jobs.
-	CompactionLanes() []lane
-
-	// LaneForJob returns the job's lane. It must always return the same lane for a job for the
-	// lifetime of the process, as different callers may re-derive it at different times.
-	LaneForJob(TrackedJob) lane
-
-	// LanesForRequest returns the lanes this worker requested.
-	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error)
+	AllLanes() []lane                                                      // All possible lanes defined by this policy.
+	CompactionLanes() []lane                                               // The lanes that carry compaction jobs.
+	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
+	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
 
 type LanePolicyConfig struct {
@@ -48,12 +39,12 @@ type LanePolicyConfig struct {
 }
 
 func (cfg *LanePolicyConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Policy, prefix+".policy", lanePolicySimple, "The lane policy the compactor scheduler should use. Valid values: "+lanePolicySimple)
+	f.StringVar(&cfg.Policy, prefix+".policy", "simple", "The lane policy the compactor scheduler should use. Valid values: "+lanePolicySimple)
 }
 
 func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
 	switch cfg.Policy {
-	case lanePolicySimple:
+	case "simple":
 		return newSimpleLanePolicy(), nil
 	default:
 		return nil, fmt.Errorf("unrecognized lane policy: %s", cfg.Policy)
