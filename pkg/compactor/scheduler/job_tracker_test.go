@@ -258,8 +258,6 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 
 type splitMerge struct{ split, merge float64 }
 
-// trackerBytesAsserter builds an assertion over every lane of a policy; lanes left out of an
-// expectation are asserted to be zero.
 func trackerBytesAsserter(t *testing.T, reg *prometheus.Registry, lanes []lane) func(string, map[lane]splitMerge) {
 	return func(msg string, want map[lane]splitMerge) {
 		t.Helper()
