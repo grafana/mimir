@@ -223,65 +223,73 @@ func (m *Map) Stats() Stats {
 	}
 }
 
+// Cleanup removes every entry whose timestamp is at or before the watermark, and returns
+// how many were removed. Groups are located with scanExpired, so groups that hold nothing
+// to remove are skipped without inspecting their slots one by one.
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
-groups:
-	for i := range m.data {
-		for j := uint32(0); j < groupSize; {
-			if m.data[i][j] == empty {
-				// There's nothing here.
-				// Hence, there's nothing in the next slots.
-				continue groups
-			}
-			if m.data[i][j] == tombstone {
-				// Already deleted, skip.
-				j++
-				continue
-			}
-			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
-				removed++
-
-				// We want to avoid creating tombstones. Every time we create a tombstone, we get closer to the rehash of the map.
-				// Rehash of the map is slow and creates garbage, slowing down the entire service.
-				if emptySlots := m.index[i].matchEmpty(); emptySlots != 0 {
-					// We target groups to be half-full, so it's likely that there are empty slots in this group so far.
-					// If there's an empty slot in this group, it means that no elements that were originally targeting this group
-					// have been written to a next group, which in turn means that we can safely move the elements in this group.
-					m.resident--
-					e := nextMatch(&emptySlots)
-					if e == j+1 {
-						// This is the last element in the group, just mark it as empty and move to the next group.
-						m.index[i][j] = empty
-						m.keys[i][j] = 0
-						m.data[i][j] = empty
-						continue groups
-					}
-
-					// There are more elements in the group, move the last element in the group to this position.
-					// Set that element position to empty.
-					m.index[i][j], m.index[i][e-1] = m.index[i][e-1], empty
-					m.keys[i][j], m.keys[i][e-1] = m.keys[i][e-1], 0
-					m.data[i][j], m.data[i][e-1] = m.data[i][e-1], empty
-
-					// Continue checking the same position again.
-					continue
-				}
-
-				// Bad luck, the group is full, just set a tombstone and keep checking.
-				m.index[i][j] = tombstone
-				m.keys[i][j] = 0
-				m.data[i][j] = tombstone
-				m.dead++
-			}
-			j++
+	lo, length := expiredRange(watermark)
+	for i := 0; i < len(m.data); {
+		hit := i + scanExpired(&m.data[i], len(m.data)-i, lo, length)
+		if hit >= len(m.data) {
+			break
 		}
+		removed += m.cleanupGroup(hit, lo, length)
+		i = hit + 1
 	}
+
 	if m.dead > m.limit/2 {
 		var lim uint64
 		if limit != nil {
 			lim = limit.Load()
 		}
 		m.rehash(m.nextSize(lim))
+	}
+	return removed
+}
+
+// cleanupGroup removes every occupied, expired slot of group i and returns how many were
+// removed.
+//
+// Slots are visited from the highest index down. Removing a slot fills the hole with the
+// last occupied slot of the group, and going downwards guarantees that this last slot is a
+// live entry: every expired slot above the one being removed has already been dealt with.
+func (m *Map) cleanupGroup(i int, lo, length uint8) int {
+	removed := 0
+	for expired := m.data[i].matchExpired(lo, length); expired != 0; {
+		j := lastMatch(&expired)
+		removed++
+
+		// We want to avoid creating tombstones. Every time we create a tombstone, we get closer to the rehash of the map.
+		// Rehash of the map is slow and creates garbage, slowing down the entire service.
+		emptySlots := m.index[i].matchEmpty()
+		if emptySlots == 0 {
+			// Bad luck, the group is full, just set a tombstone.
+			m.index[i][j] = tombstone
+			m.keys[i][j] = 0
+			m.data[i][j] = tombstone
+			m.dead++
+			continue
+		}
+
+		// We target groups to be half-full, so it's likely that there are empty slots in this group so far.
+		// If there's an empty slot in this group, it means that no elements that were originally targeting this group
+		// have been written to a next group, which in turn means that we can safely move the elements in this group.
+		m.resident--
+		e := nextMatch(&emptySlots)
+		if e == j+1 {
+			// This is the last occupied slot of the group, just mark it as empty.
+			m.index[i][j] = empty
+			m.keys[i][j] = 0
+			m.data[i][j] = empty
+			continue
+		}
+
+		// There are more elements in the group, move the last element in the group to this position.
+		// Set that element position to empty.
+		m.index[i][j], m.index[i][e-1] = m.index[i][e-1], empty
+		m.keys[i][j], m.keys[i][e-1] = m.keys[i][e-1], 0
+		m.data[i][j], m.data[i][e-1] = m.data[i][e-1], empty
 	}
 	return removed
 }
