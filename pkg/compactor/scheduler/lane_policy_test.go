@@ -185,6 +185,17 @@ func TestLanesForRequest(t *testing.T) {
 			req:      compactionUrgency(compactorschedulerpb.COMPACTION_URGENCY_DEFER),
 			expected: []lane{compactionLane},
 		},
+		"simple: both urgency lanes and planning collapse to the lanes it has": {
+			policy: newSimpleLanePolicy(),
+			req: &compactorschedulerpb.LeaseJobRequest{
+				LaneRequests: []*compactorschedulerpb.LaneRequest{
+					{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: compactorschedulerpb.COMPACTION_URGENCY_URGENT},
+					{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: compactorschedulerpb.COMPACTION_URGENCY_DEFER},
+					{JobType: compactorschedulerpb.JOB_TYPE_PLANNING},
+				},
+			},
+			expected: []lane{compactionLane, planLane},
+		},
 		// An urgency is only meaningful for compaction, so naming one elsewhere is ignored.
 		"compaction urgency: planning narrowed to an urgency is served the plan lane": {
 			policy: newUrgencyLanePolicy(testUrgencyConfig()),
@@ -195,7 +206,7 @@ func TestLanesForRequest(t *testing.T) {
 			},
 			expected: []lane{planLane},
 		},
-		"compaction urgency: a level already served by an unnarrowed request is rejected": {
+		"compaction urgency: an urgency already served by an unnarrowed request is skipped": {
 			policy: newUrgencyLanePolicy(testUrgencyConfig()),
 			req: &compactorschedulerpb.LeaseJobRequest{
 				LaneRequests: []*compactorschedulerpb.LaneRequest{
@@ -203,14 +214,14 @@ func TestLanesForRequest(t *testing.T) {
 					{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION, CompactionUrgency: compactorschedulerpb.COMPACTION_URGENCY_DEFER},
 				},
 			},
-			expectedErr: `duplicate lane in request: "compaction-defer"`,
+			expected: []lane{compactionUrgentLane, compactionDeferLane},
 		},
 		"compaction urgency: unknown job type is rejected": {
 			policy:      newUrgencyLanePolicy(testUrgencyConfig()),
 			req:         laneRequests(compactorschedulerpb.JOB_TYPE_UNKNOWN),
 			expectedErr: `unknown job type in lane request: "JOB_TYPE_UNKNOWN"`,
 		},
-		"compaction urgency: more requests than lanes is rejected": {
+		"compaction urgency: repeated requests collapse onto the lanes they name": {
 			policy: newUrgencyLanePolicy(testUrgencyConfig()),
 			req: laneRequests(
 				compactorschedulerpb.JOB_TYPE_PLANNING,
@@ -218,7 +229,7 @@ func TestLanesForRequest(t *testing.T) {
 				compactorschedulerpb.JOB_TYPE_PLANNING,
 				compactorschedulerpb.JOB_TYPE_COMPACTION,
 			),
-			expectedErr: "at most 3 lanes supported, provided 4",
+			expected: []lane{planLane, compactionUrgentLane, compactionDeferLane},
 		},
 	}
 

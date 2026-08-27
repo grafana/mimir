@@ -122,16 +122,12 @@ func (slp *simpleLanePolicy) CompactionLanes() []lane {
 
 // requestedLanes maps a lease request to scheduler lanes
 func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	numLanes := len(req.LaneRequests)
-	if numLanes == 0 {
+	if len(req.LaneRequests) == 0 {
 		// No lanes supplied, provide a default
 		return slp.AllLanes(), nil
 	}
-	if numLanes > len(slp.allLanes) {
-		return nil, fmt.Errorf("at most %d lanes supported, provided %d", len(slp.allLanes), numLanes)
-	}
 
-	lanes := make([]lane, 0, numLanes)
+	lanes := make([]lane, 0, len(slp.allLanes))
 	for _, ln := range req.LaneRequests {
 		var l lane
 		switch ln.JobType {
@@ -142,10 +138,9 @@ func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobR
 		default:
 			return nil, fmt.Errorf("unknown job type in lane request: %q", ln.JobType.String())
 		}
-		if slices.Contains(lanes, l) {
-			return nil, fmt.Errorf("duplicate lane in request: %q", ln.JobType.String())
+		if !slices.Contains(lanes, l) {
+			lanes = append(lanes, l)
 		}
-		lanes = append(lanes, l)
 	}
 	return lanes, nil
 }
@@ -194,13 +189,9 @@ func (clp *urgencyLanePolicy) CompactionLanes() []lane {
 
 // LanesForRequest serves both urgency lanes to a compaction request that names no urgency.
 func (clp *urgencyLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	numLanes := len(req.LaneRequests)
-	if numLanes == 0 {
+	if len(req.LaneRequests) == 0 {
 		// No lanes supplied, provide a default
 		return clp.AllLanes(), nil
-	}
-	if numLanes > len(clp.allLanes) {
-		return nil, fmt.Errorf("at most %d lanes supported, provided %d", len(clp.allLanes), numLanes)
 	}
 
 	lanes := make([]lane, 0, len(clp.allLanes))
@@ -222,10 +213,9 @@ func (clp *urgencyLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJob
 			return nil, fmt.Errorf("unknown job type in lane request: %q", ln.JobType.String())
 		}
 		for _, l := range requested {
-			if slices.Contains(lanes, l) {
-				return nil, fmt.Errorf("duplicate lane in request: %q", l)
+			if !slices.Contains(lanes, l) {
+				lanes = append(lanes, l)
 			}
-			lanes = append(lanes, l)
 		}
 	}
 	return lanes, nil
