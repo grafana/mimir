@@ -245,7 +245,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               * 100 > 5
             )
             and
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="true"}[%(range)s])) > 0
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[%(range)s])) > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             range: $.rateInterval('1m'),
