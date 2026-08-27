@@ -983,3 +983,15 @@ eval instant at 6h sum_over_time(max_over_time(sse_above_subquery_metric{a="1"}[
   {env="prod", a="1"} 1
 
 clear
+
+# A DuplicateFilter ends up directly under a StepInvariantExpression, shared between two split subqueries.
+load 1h
+  dup_filter_metric{a="1"} 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h sum_over_time((dup_filter_metric{a="1"} @ 10h)[5h:1h]) + on() sum(sum_over_time((dup_filter_metric @ 10h)[3h:1h]))
+  {} 80
+
+eval instant at 24h sum_over_time((dup_filter_metric{a="1"} @ 10h)[5h:1h]) + on() sum(sum_over_time((dup_filter_metric @ 10h)[3h:1h]))
+  {} 80
+
+clear

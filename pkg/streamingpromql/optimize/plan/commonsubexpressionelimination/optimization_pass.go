@@ -994,7 +994,7 @@ func (e *OptimizationPass) insertDuplicatesAcrossSplitBlocks(n planning.Node) (i
 
 		child := n.Child(0)
 
-		if isDuplicateOrDuplicateFilter(child) {
+		if isDuplicateNode(child) {
 			// keep recursing since a further nested Subquery/StepInvariantExpression inside it may still need its own Duplicate.
 			return e.insertDuplicatesAcrossSplitBlocks(child)
 		}
@@ -1038,15 +1038,6 @@ func (e *OptimizationPass) insertDuplicatesAcrossSplitBlocks(n planning.Node) (i
 func isSubqueryOrStepInvariantExpression(n planning.Node) bool {
 	switch n.(type) {
 	case *core.Subquery, *core.StepInvariantExpression:
-		return true
-	default:
-		return false
-	}
-}
-
-func isDuplicateOrDuplicateFilter(node planning.Node) bool {
-	switch node.(type) {
-	case *Duplicate, *DuplicateFilter:
 		return true
 	default:
 		return false
