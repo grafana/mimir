@@ -220,7 +220,7 @@ The [overrides-exporter](../../references/architecture/components/overrides-expo
 
 The value is the Unix timestamp of the earliest `expires_at` among that tenant's rules that share the same `id`. Rules without an `id` are grouped together under an empty `id`.
 
-The `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired` alerts fire when a tenant has at least one expired rule. Refer to [MimirBlockedQueryRuleExpired](../../manage/mimir-runbooks/#MimirBlockedQueryRuleExpired) and [MimirLimitedQueryRuleExpired](../../manage/mimir-runbooks/#MimirLimitedQueryRuleExpired).
+The `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired` **warnings** fire when a tenant has at least one expired rule. Refer to [MimirBlockedQueryRuleExpired](../../manage/mimir-runbooks/#MimirBlockedQueryRuleExpired) and [MimirLimitedQueryRuleExpired](../../manage/mimir-runbooks/#MimirLimitedQueryRuleExpired).
 The **Query blocking and rate limiting** row on the **Mimir / Queries** dashboard shows the number of expired rules per tenant.
 
 ## Observe blocked and rate limited queries
