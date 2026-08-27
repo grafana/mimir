@@ -21,25 +21,20 @@ type incompleteBytesKey struct {
 }
 
 type schedulerMetrics struct {
-	pendingJobs              *prometheus.GaugeVec
-	pendingJobsByUser        *prometheus.GaugeVec
-	pendingJobsLastEmpty     prometheus.Gauge
-	lanePendingJobsLastEmpty *prometheus.GaugeVec
-	incompleteJobsBytes      *prometheus.GaugeVec
-	activeJobs               *prometheus.GaugeVec
-	activeJobsByUser         *prometheus.GaugeVec
-	jobsCompleted            *prometheus.CounterVec
-	repeatedJobFailures      prometheus.Counter
-	lanePolicy               lanePolicy
-
-	// One gauge per series of incompleteJobsBytes, resolved once and shared across tenants.
-	incompleteBytesGauges map[incompleteBytesKey]prometheus.Gauge
-
+	pendingJobs                    *prometheus.GaugeVec
+	pendingJobsByUser              *prometheus.GaugeVec
+	pendingJobsLastEmpty           prometheus.Gauge
+	lanePendingJobsLastEmpty       *prometheus.GaugeVec
 	lanePendingJobsLastEmptyGauges map[lane]prometheus.Gauge
+	incompleteJobsBytes            *prometheus.GaugeVec
+	incompleteBytesGauges          map[incompleteBytesKey]prometheus.Gauge
+	activeJobs                     *prometheus.GaugeVec
+	activeJobsByUser               *prometheus.GaugeVec
+	jobsCompleted                  *prometheus.CounterVec
+	repeatedJobFailures            prometheus.Counter
+	lanePolicy                     lanePolicy
 }
 
-// newSchedulerMetrics labels incomplete compaction bytes by the lanes that carry compaction work,
-// so that a fleet serving one lane can be sized from its own backlog.
 func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *schedulerMetrics {
 	allLanes := lanePolicy.AllLanes()
 	compactionLanes := lanePolicy.CompactionLanes()
@@ -127,7 +122,6 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 	}
 }
 
-// incompleteBytes pairs a gauge shared across tenants with this tenant's contribution to it.
 type incompleteBytes struct {
 	gauge       prometheus.Gauge
 	contributed uint64
@@ -275,14 +269,6 @@ func (q *queueMetrics) decActive(isPlan bool) {
 	}
 }
 
-func (q *queueMetrics) bytesFor(cj *TrackedCompactionJob) *incompleteBytes {
-	compactionType := compactionTypeMerge
-	if cj.value.isSplit {
-		compactionType = compactionTypeSplit
-	}
-	return q.incompleteBytes[incompleteBytesKey{compactionType: compactionType, lane: q.laneForJob(cj)}]
-}
-
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
 	b := q.bytesFor(cj)
 	b.contributed += cj.totalBlockBytes
@@ -293,4 +279,12 @@ func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
 	b := q.bytesFor(cj)
 	b.contributed -= cj.totalBlockBytes
 	b.gauge.Sub(float64(cj.totalBlockBytes))
+}
+
+func (q *queueMetrics) bytesFor(cj *TrackedCompactionJob) *incompleteBytes {
+	compactionType := compactionTypeMerge
+	if cj.value.isSplit {
+		compactionType = compactionTypeSplit
+	}
+	return q.incompleteBytes[incompleteBytesKey{compactionType: compactionType, lane: q.laneForJob(cj)}]
 }
