@@ -50,14 +50,22 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*
 type bucketIndexReader struct {
 	block             *bucketBlock
 	postingsStrategy  postingsSelectionStrategy
+	lookupPlanner     index.LookupPlanner
+	lookupPlannerName string
 	dec               *index.Decoder
 	indexHeaderReader indexheader.Reader
 }
 
 func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
+	planner := block.lookupPlanner
+	if planner == nil {
+		planner = noopLookupPlanner{}
+	}
 	r := &bucketIndexReader{
-		block:            block,
-		postingsStrategy: postingsStrategy,
+		block:             block,
+		postingsStrategy:  postingsStrategy,
+		lookupPlanner:     planner,
+		lookupPlannerName: lookupPlannerName(planner),
 		dec: &index.Decoder{
 			LookupSymbol: func(ctx context.Context, o uint32) (string, error) {
 				return block.indexHeaderReader.LookupSymbol(ctx, o)
@@ -165,11 +173,11 @@ func (r *bucketIndexReader) cacheExpandedPostings(userID string, key indexcache.
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return
 	}
-	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, r.postingsStrategy.name(), data)
+	r.block.indexCache.StoreExpandedPostings(userID, r.block.meta.ULID, key, r.expandedPostingsCacheStrategyName(), data)
 }
 
 func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, []*labels.Matcher, bool) {
-	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key, r.postingsStrategy.name())
+	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key, r.expandedPostingsCacheStrategyName())
 	if !ok {
 		return nil, nil, false
 	}
@@ -192,14 +200,34 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 	return refs, pendingMatchers, true
 }
 
+// expandedPostingsCacheStrategyName returns a composite key component for the expanded postings cache.
+// It includes both the postings selection strategy and the lookup planner identity so that
+// different planner configurations don't collide in the cache.
+func (r *bucketIndexReader) expandedPostingsCacheStrategyName() string {
+	return r.postingsStrategy.name() + "/" + r.lookupPlannerName
+}
+
+// planIndexLookup uses the block's lookup planner to split matchers into index matchers
+// (used for posting list lookups) and scan matchers (applied after series retrieval).
+// On planner error, all matchers fall back to index lookup.
+func (r *bucketIndexReader) planIndexLookup(ctx context.Context, ms []*labels.Matcher) (indexMatchers, scanMatchers []*labels.Matcher) {
+	plan, err := r.lookupPlanner.PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), nil)
+	if err != nil {
+		return ms, nil
+	}
+	return plan.IndexMatchers(), plan.ScanMatchers()
+}
+
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
+	indexMatchers, plannerScanMatchers := r.planIndexLookup(ctx, ms)
+
+	postingGroups, err := toPostingGroups(ctx, indexMatchers, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
 	if len(postingGroups) == 0 {
-		return nil, nil, nil
+		return nil, plannerScanMatchers, nil
 	}
 
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
@@ -253,7 +281,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
-	return ps, extractLabelMatchers(omittedPostingGroups), nil
+	return ps, append(plannerScanMatchers, extractLabelMatchers(omittedPostingGroups)...), nil
 }
 
 func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ulid.ULID, selectedGroups, omittedGroups []postingGroup) {
