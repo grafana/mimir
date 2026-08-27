@@ -1,0 +1,21 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-traffic-distribution-values-rollout-operator
+  namespace: "citestns"
+  labels:
+    helm.sh/chart: rollout-operator-0.51.1
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-traffic-distribution-values
+    app.kubernetes.io/version: "v0.39.0"
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-traffic-distribution-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: test-traffic-distribution-values-rollout-operator
+
