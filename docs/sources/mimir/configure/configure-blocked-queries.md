@@ -34,6 +34,10 @@ Optional metadata can be set on a block rule. None of these change which queries
 - `expires_at` - a date/time to flag when this rule should be re-evaluated for removal. When set, the [overrides-exporter](../../references/architecture/components/overrides-exporter/) emits the `cortex_blocked_query_rule_expires_at` metric, which you can use to monitor for expired rules. Once the rule is expired it is still enforced, and **it is not automatically removed or de-activated**.
 - `id` - a string to give a rule a unique ID. It's logged every time the rule blocks a query, so you can tell which rule matched. When `expires_at` is also set, the `id` is a label on the `cortex_blocked_query_rule_expires_at` metric, where rules that share an `id` are exported as a single series keyed on the earliest `expires_at` among them.
 
+{{< admonition type="note" >}}
+The `expires_at` should be used by an operator to mark a rule for future re-consideration. The emitted metric and corresponding warnings serve as the reminder mechanism. Often when a block rule is added it is only temporarily needed. It is important that stale block rules do not accumulate or become forgotten. It is encouraged to always set an `expires_at`.
+{{< /admonition >}}
+
 Optional reference fields can be set. These have no functional impact and are for documentation / reference in the configuration file only:
 
 - `created_by` - a string to flag who requested or added this rule
