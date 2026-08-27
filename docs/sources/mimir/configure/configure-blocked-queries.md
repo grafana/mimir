@@ -15,7 +15,7 @@ Mimir provides two per-tenant mechanisms for this, and you can use both at the s
 - `blocked_queries` rejects every matching query outright.
 - `limited_queries` allows a matching query to run no more often than a configured frequency, and rejects any matching query that arrives sooner.
 
-Blocking is evaluated before rate limiting, so a query that matches both a `blocked_queries` rule and a `limited_queries` rule is reported as blocked.
+Blocking is evaluated before rate limiting, so a query that matches both a `blocked_queries` rule and a `limited_queries` rule is blocked.
 
 ## Block queries
 
@@ -161,7 +161,7 @@ If more than one rule matches a query, Mimir enforces the matching rule with the
 
 **This section is important when using a regular expression block rule or a limited query rule.**
 
-When you observe a `param_query=...` in the `query-frontend` `query stats` log line, the PromQL is what was sent by the operator. Before the blocking and/or limiting rules are applied, this query will be canonicalized. This may result in the query being transformed.
+When you observe a `param_query=...` in the `query-frontend` `query stats` log line, the PromQL is what was sent by the caller. Before the blocking and/or limiting rules are applied, this query will be canonicalized. This may result in the query being transformed.
 
 As such, **a regular expression pattern or limited query rule must be constructed to match the canonicalized version of a query**.
 
