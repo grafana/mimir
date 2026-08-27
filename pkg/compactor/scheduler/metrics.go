@@ -16,18 +16,25 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs          *prometheus.GaugeVec
-	pendingJobsByUser    *prometheus.GaugeVec
-	pendingJobsLastEmpty prometheus.Gauge
-	incompleteJobsBytes  *prometheus.GaugeVec
-	activeJobs           *prometheus.GaugeVec
-	activeJobsByUser     *prometheus.GaugeVec
-	jobsCompleted        *prometheus.CounterVec
-	repeatedJobFailures  prometheus.Counter
+	pendingJobs              *prometheus.GaugeVec
+	pendingJobsByUser        *prometheus.GaugeVec
+	pendingJobsLastEmpty     prometheus.Gauge
+	lanePendingJobsLastEmpty map[lane]prometheus.Gauge
+	incompleteJobsBytes      *prometheus.GaugeVec
+	incompleteSplitBytes     map[lane]prometheus.Gauge
+	incompleteMergeBytes     map[lane]prometheus.Gauge
+	activeJobs               *prometheus.GaugeVec
+	activeJobsByUser         *prometheus.GaugeVec
+	jobsCompleted            *prometheus.CounterVec
+	repeatedJobFailures      prometheus.Counter
+	lanePolicy               lanePolicy
 }
 
-func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
+func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *schedulerMetrics {
+	allLanes := lanePolicy.AllLanes()
+	compactionLanes := lanePolicy.CompactionLanes()
 	m := &schedulerMetrics{
+		lanePolicy: lanePolicy,
 		pendingJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_pending_jobs",
 			Help: "The number of queued pending jobs.",
@@ -43,7 +50,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
-		}, []string{"compaction_type"}),
+		}, []string{"compaction_type", "lane"}),
 		activeJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_active_jobs",
 			Help: "The number of jobs active in workers.",
@@ -61,6 +68,11 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}),
 	}
+	laneLastEmpty := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds",
+		Help: "Unix timestamp of the last time there were no pending jobs remaining in this lane.",
+	}, []string{"lane"})
+
 	// Pre-initialize job type labels so we get zeros instead of no data.
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
 	m.jobsCompleted.WithLabelValues(jobTypeCompaction)
@@ -68,8 +80,16 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 	m.pendingJobs.WithLabelValues(jobTypeCompaction)
 	m.activeJobs.WithLabelValues(jobTypePlan)
 	m.activeJobs.WithLabelValues(jobTypeCompaction)
-	m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit)
-	m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge)
+	m.lanePendingJobsLastEmpty = make(map[lane]prometheus.Gauge, len(allLanes))
+	for _, l := range allLanes {
+		m.lanePendingJobsLastEmpty[l] = laneLastEmpty.WithLabelValues(string(l))
+	}
+	m.incompleteSplitBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))
+	m.incompleteMergeBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))
+	for _, l := range compactionLanes {
+		m.incompleteSplitBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit, string(l))
+		m.incompleteMergeBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge, string(l))
+	}
 	return m
 }
 
@@ -82,8 +102,11 @@ func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMet
 			pendingCompactionJobs: s.pendingJobs.WithLabelValues(jobTypeCompaction),
 			activePlanJobs:        s.activeJobs.WithLabelValues(jobTypePlan),
 			activeCompactionJobs:  s.activeJobs.WithLabelValues(jobTypeCompaction),
-			incompleteSplitBytes:  s.incompleteJobsBytes.WithLabelValues(compactionTypeSplit),
-			incompleteMergeBytes:  s.incompleteJobsBytes.WithLabelValues(compactionTypeMerge),
+			incompleteSplitBytes:  s.incompleteSplitBytes,
+			incompleteMergeBytes:  s.incompleteMergeBytes,
+			splitBytes:            make(map[lane]uint64, len(s.incompleteSplitBytes)),
+			mergeBytes:            make(map[lane]uint64, len(s.incompleteMergeBytes)),
+			laneForJob:            s.lanePolicy.LaneForJob,
 			clear: func() {
 				s.pendingJobsByUser.DeleteLabelValues(tenant)
 				s.activeJobsByUser.DeleteLabelValues(tenant)
@@ -102,14 +125,18 @@ type trackerMetrics struct {
 // shared gauges. Must be called when a tenant is removed.
 func (m *trackerMetrics) Clear() {
 	q := m.queue
-	q.incompleteSplitBytes.Sub(float64(q.splitBytes))
-	q.incompleteMergeBytes.Sub(float64(q.mergeBytes))
+	for l, bytes := range q.splitBytes {
+		q.incompleteSplitBytes[l].Sub(float64(bytes))
+		delete(q.splitBytes, l)
+	}
+	for l, bytes := range q.mergeBytes {
+		q.incompleteMergeBytes[l].Sub(float64(bytes))
+		delete(q.mergeBytes, l)
+	}
 	q.pendingPlanJobs.Sub(float64(q.pendingPlanCount))
 	q.pendingCompactionJobs.Sub(float64(q.pendingCompactionCount))
 	q.activePlanJobs.Sub(float64(q.activePlanCount))
 	q.activeCompactionJobs.Sub(float64(q.activeCompactionCount))
-	q.splitBytes = 0
-	q.mergeBytes = 0
 	q.pendingPlanCount = 0
 	q.pendingCompactionCount = 0
 	q.activePlanCount = 0
@@ -130,13 +157,14 @@ type queueMetrics struct {
 	pendingCompactionJobs prometheus.Gauge
 	activePlanJobs        prometheus.Gauge
 	activeCompactionJobs  prometheus.Gauge
-	incompleteSplitBytes  prometheus.Gauge
-	incompleteMergeBytes  prometheus.Gauge
+	incompleteSplitBytes  map[lane]prometheus.Gauge
+	incompleteMergeBytes  map[lane]prometheus.Gauge
+	laneForJob            func(TrackedJob) lane
 
 	// This tenant's contribution to the shared gauges, tracked so Clear() can subtract exactly
 	// the right amount on tenant removal.
-	splitBytes             uint64
-	mergeBytes             uint64
+	splitBytes             map[lane]uint64
+	mergeBytes             map[lane]uint64
 	pendingPlanCount       int
 	pendingCompactionCount int
 	activePlanCount        int
@@ -238,21 +266,23 @@ func (q *queueMetrics) decActive(isPlan bool) {
 }
 
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
+	l := q.laneForJob(cj)
 	if cj.value.isSplit {
-		q.splitBytes += cj.totalBlockBytes
-		q.incompleteSplitBytes.Add(float64(cj.totalBlockBytes))
+		q.splitBytes[l] += cj.totalBlockBytes
+		q.incompleteSplitBytes[l].Add(float64(cj.totalBlockBytes))
 	} else {
-		q.mergeBytes += cj.totalBlockBytes
-		q.incompleteMergeBytes.Add(float64(cj.totalBlockBytes))
+		q.mergeBytes[l] += cj.totalBlockBytes
+		q.incompleteMergeBytes[l].Add(float64(cj.totalBlockBytes))
 	}
 }
 
 func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
+	l := q.laneForJob(cj)
 	if cj.value.isSplit {
-		q.splitBytes -= cj.totalBlockBytes
-		q.incompleteSplitBytes.Sub(float64(cj.totalBlockBytes))
+		q.splitBytes[l] -= cj.totalBlockBytes
+		q.incompleteSplitBytes[l].Sub(float64(cj.totalBlockBytes))
 	} else {
-		q.mergeBytes -= cj.totalBlockBytes
-		q.incompleteMergeBytes.Sub(float64(cj.totalBlockBytes))
+		q.mergeBytes[l] -= cj.totalBlockBytes
+		q.incompleteMergeBytes[l].Sub(float64(cj.totalBlockBytes))
 	}
 }

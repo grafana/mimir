@@ -45,6 +45,7 @@ type Rotator struct {
 	intervalsBeforeColdStartPlanning int
 	clock                            clock.Clock
 	pendingJobsLastEmpty             prometheus.Gauge
+	lanePendingJobsLastEmpty         map[lane]prometheus.Gauge
 	logger                           log.Logger
 
 	mtx            sync.RWMutex
@@ -63,7 +64,7 @@ type tenantRotationState struct {
 	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, lanePendingJobsLastEmpty map[lane]prometheus.Gauge, logger log.Logger) *Rotator {
 	laneRotations := make(map[lane]*laneRotation)
 	for _, lane := range lanePolicy.AllLanes() {
 		laneRotations[lane] = &laneRotation{rotation: list.New()}
@@ -78,6 +79,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
 		clock:                            clock.New(),
 		pendingJobsLastEmpty:             pendingJobsLastEmpty,
+		lanePendingJobsLastEmpty:         lanePendingJobsLastEmpty,
 		mtx:                              sync.RWMutex{},
 		tenantStateMap:                   make(map[string]*tenantRotationState),
 		laneRotations:                    laneRotations,
@@ -159,9 +161,7 @@ func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime t
 		}
 	}
 
-	if r.allRotationsEmpty() {
-		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
-	}
+	r.recordEmptyQueues()
 }
 
 func (r *Rotator) LeaseJob(ctx context.Context, lanes []lane) (*compactorschedulerpb.LeaseJobResponse, bool, error) {
@@ -399,16 +399,14 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			addRotationFor = append(addRotationFor, tenantLane{tenant: tenant, lane: l})
 		}
 	}
-	stayingEmpty := len(addRotationFor) == 0 && r.allRotationsEmpty()
+	if len(addRotationFor) == 0 && ctx.Err() == nil {
+		// Ensures periodic updates for the time we last saw an empty queue rather than only on transition.
+		r.recordEmptyQueues()
+	}
 	r.mtx.RUnlock()
 
 	if len(addRotationFor) == 0 || ctx.Err() != nil {
 		// No tenant needs to be moved into the rotation or we're shutting down and don't care
-		if stayingEmpty && ctx.Err() == nil {
-			// Ensures periodic updates for the time we last saw an empty queue rather than only on transition.
-			// The context check is to ensure we don't update this when mid-shutdown.
-			r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
-		}
 		return
 	}
 
@@ -419,6 +417,9 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 		if ok && tenantState.elements[tl.lane] == nil && !tenantState.tracker.isPendingEmpty(tl.lane) {
 			r.addToRotation(tl.lane, tl.tenant, tenantState)
 		}
+	}
+	if ctx.Err() == nil {
+		r.recordEmptyQueues()
 	}
 }
 
@@ -457,17 +458,22 @@ func (r *Rotator) removeFromRotation(l lane, tenantState *tenantRotationState) {
 	lr.rotation.Remove(elem)
 	delete(tenantState.elements, l)
 
-	if r.allRotationsEmpty() {
-		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
-	}
+	r.recordEmptyQueues()
 }
 
-// allRotationsEmpty reports whether no tenant has pending work in any lane. A write lock must be held in order to call this function.
-func (r *Rotator) allRotationsEmpty() bool {
-	for _, lr := range r.laneRotations {
+// recordEmptyQueues records now as the last time each empty lane, and the queue as a whole, was seen
+// empty. The rotations must be up to date, and a lock must be held, in order to call this function.
+func (r *Rotator) recordEmptyQueues() {
+	now := float64(r.clock.Now().Unix())
+	allEmpty := true
+	for l, lr := range r.laneRotations {
 		if lr.rotation.Len() > 0 {
-			return false
+			allEmpty = false
+			continue
 		}
+		r.lanePendingJobsLastEmpty[l].Set(now)
 	}
-	return true
+	if allEmpty {
+		r.pendingJobsLastEmpty.Set(now)
+	}
 }

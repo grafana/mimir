@@ -10,14 +10,15 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
-// lane is an in-memory identifier of pending work logically enqueued together
-type lane uint8
+// lane is an in-memory identifier of pending work logically enqueued together. Its value is
+// exported as a metric label, so renaming one changes existing metrics.
+type lane string
 
 const (
 	lanePolicySimple = "simple"
 
-	planLane lane = iota
-	compactionLane
+	planLane       lane = "plan"
+	compactionLane lane = "compaction"
 )
 
 type laneTransition struct {
@@ -28,6 +29,7 @@ type laneTransition struct {
 // Defines how to map jobs and requests into lanes
 type lanePolicy interface {
 	AllLanes() []lane                                                      // All possible lanes defined by this policy.
+	CompactionLanes() []lane                                               // The lanes that carry compaction jobs.
 	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
 	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
@@ -51,12 +53,14 @@ func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
 
 // simpleLanePolicy assigns a lane per job type
 type simpleLanePolicy struct {
-	allLanes []lane
+	allLanes        []lane
+	compactionLanes []lane
 }
 
 func newSimpleLanePolicy() lanePolicy {
 	return &simpleLanePolicy{
-		allLanes: []lane{planLane, compactionLane},
+		allLanes:        []lane{planLane, compactionLane},
+		compactionLanes: []lane{compactionLane},
 	}
 }
 
@@ -69,6 +73,10 @@ func (slp *simpleLanePolicy) LaneForJob(j TrackedJob) lane {
 
 func (slp *simpleLanePolicy) AllLanes() []lane {
 	return slp.allLanes
+}
+
+func (slp *simpleLanePolicy) CompactionLanes() []lane {
+	return slp.compactionLanes
 }
 
 // requestedLanes maps a lease request to scheduler lanes
