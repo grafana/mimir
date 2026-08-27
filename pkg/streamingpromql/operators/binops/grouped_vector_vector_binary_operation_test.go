@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,6 +37,34 @@ type finishedReadingCountingOperator struct {
 func (o *finishedReadingCountingOperator) FinishedReading(ctx context.Context) error {
 	o.finishedReadingCalls++
 	return o.TestOperator.FinishedReading(ctx)
+}
+
+type failingNextSeriesOperator struct {
+	*finishedReadingCountingOperator
+	failAt int
+	calls  int
+	err    error
+}
+
+type cancelAfterErrChecksContext struct {
+	context.Context
+	remainingChecks int
+}
+
+func (c *cancelAfterErrChecksContext) Err() error {
+	c.remainingChecks--
+	if c.remainingChecks <= 0 {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (o *failingNextSeriesOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	o.calls++
+	if o.calls == o.failAt {
+		return types.InstantVectorSeriesData{}, o.err
+	}
+	return o.finishedReadingCountingOperator.NextSeries(ctx)
 }
 
 func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
@@ -1758,6 +1788,153 @@ func TestGroupedVectorVectorBinaryOperation_FillsSyntheticOneSide(t *testing.T) 
 			manySeries: []labels.Labels{labels.FromStrings("group", "a")},
 			manyData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
 		},
+		"many-to-one fills only after all real many series disappear": {
+			card:      parser.CardManyToOne,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			include:   []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "2"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			oneSeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a")},
+			oneData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 1},
+				{T: secondTS, F: 2},
+				{T: thirdTS, F: 4},
+			}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "1"), floats: []promql.FPoint{{T: ts, F: 11}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "2"), floats: []promql.FPoint{{T: secondTS, F: 22}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: thirdTS, F: 7}}},
+			},
+		},
+		"one-to-many fills only after all real many series disappear": {
+			card:      parser.CardOneToMany,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			include:   []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(thirdTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "1"),
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "series", "2"),
+			},
+			manyData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 10}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 20}}},
+			},
+			oneSeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a")},
+			oneData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 1},
+				{T: secondTS, F: 2},
+				{T: thirdTS, F: 4},
+			}}},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "1"), floats: []promql.FPoint{{T: ts, F: 11}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a", "series", "2"), floats: []promql.FPoint{{T: secondTS, F: 22}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: thirdTS, F: 7}}},
+			},
+		},
+		"one-to-many merges a real output with its many carrier": {
+			card:      parser.CardOneToMany,
+			op:        parser.SUB,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			include:   []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			manySeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+			},
+			manyData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 10}}}},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+			},
+			oneData: []types.InstantVectorSeriesData{{Floats: []promql.FPoint{
+				{T: ts, F: 20},
+				{T: secondTS, F: 30},
+			}}},
+			expected: []expectedSeries{{
+				labels: labels.FromStrings("group", "a", "owner", "team-a"),
+				floats: []promql.FPoint{{T: ts, F: 10}, {T: secondTS, F: 27}},
+			}},
+		},
+		"many-to-one merges collided carriers with disjoint points": {
+			card:      parser.CardManyToOne,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			onLabels:  []string{model.MetricNameLabel},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one-a"),
+				labels.FromStrings(model.MetricNameLabel, "one-b"),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
+			},
+			expected: []expectedSeries{{
+				labels: labels.EmptyLabels(),
+				floats: []promql.FPoint{{T: ts, F: 4}, {T: secondTS, F: 5}},
+			}},
+		},
+		"many-to-one evaluates multiple one-side carrier variants": {
+			card:    parser.CardManyToOne,
+			op:      parser.ADD,
+			fill:    parser.VectorMatchFillValues{LHS: &fillThree},
+			include: []string{"owner"},
+			oneSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-b"),
+			},
+			oneData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: ts, F: 1}}},
+				{Floats: []promql.FPoint{{T: ts, F: 2}}},
+			},
+			expected: []expectedSeries{
+				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: ts, F: 4}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b"), floats: []promql.FPoint{{T: ts, F: 5}}},
+			},
+		},
+		"one-to-many multiplies a one-side histogram by the many fill": {
+			card:      parser.CardOneToMany,
+			op:        parser.MUL,
+			fill:      parser.VectorMatchFillValues{LHS: &fillTwo},
+			oneSeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "one", "group", "a")},
+			oneData: []types.InstantVectorSeriesData{{Histograms: []promql.HPoint{
+				{T: ts, H: &histogram.FloatHistogram{Count: 3, Sum: 6}},
+			}}},
+			expected: []expectedSeries{{
+				labels:    labels.FromStrings("group", "a"),
+				histogram: &histogram.FloatHistogram{Count: 6, Sum: 12},
+			}},
+		},
+		"many-to-one filters a synthetic many comparison": {
+			card:      parser.CardManyToOne,
+			op:        parser.GTR,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			oneSeries: []labels.Labels{labels.FromStrings(model.MetricNameLabel, "one", "group", "a")},
+			oneData:   []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 2}}}},
+			expected: []expectedSeries{{
+				labels: labels.FromStrings("group", "a"),
+				floats: []promql.FPoint{{T: ts, F: 3}},
+			}},
+		},
+		"one-to-many returns bool for a synthetic many comparison": {
+			card:       parser.CardOneToMany,
+			op:         parser.LSS,
+			returnBool: true,
+			fill:       parser.VectorMatchFillValues{LHS: &fillThree},
+			oneSeries:  []labels.Labels{labels.FromStrings(model.MetricNameLabel, "one", "group", "a")},
+			oneData:    []types.InstantVectorSeriesData{{Floats: []promql.FPoint{{T: ts, F: 2}}}},
+			expected: []expectedSeries{{
+				labels: labels.FromStrings("group", "a"),
+				floats: []promql.FPoint{{T: ts, F: 1}},
+			}},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -1875,6 +2052,7 @@ func TestGroupedVectorVectorBinaryOperation_FillsSyntheticOneSide(t *testing.T) 
 				}
 				types.PutInstantVectorSeriesData(actual, memoryConsumptionTracker)
 			}
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
 
 			_, err = operation.NextSeries(t.Context())
 			require.ErrorIs(t, err, types.EOS)
@@ -2111,6 +2289,9 @@ func TestGroupedVectorVectorBinaryOperation_BuildsSyntheticManySideCarriers(t *t
 			require.NoError(t, operation.FinishedReading(t.Context()))
 			require.Equal(t, 1, many.finishedReadingCalls)
 			require.Equal(t, 1, one.finishedReadingCalls)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Equal(t, 1, many.finishedReadingCalls)
+			require.Equal(t, 1, one.finishedReadingCalls)
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 			operation.Close()
 		})
@@ -2124,6 +2305,7 @@ func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *test
 	testCases := map[string]struct {
 		card          parser.VectorMatchCardinality
 		duplicateTime bool
+		fillMany      bool
 	}{
 		"many-to-one early stop": {
 			card: parser.CardManyToOne,
@@ -2138,6 +2320,14 @@ func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *test
 		"one-to-many evaluation error": {
 			card:          parser.CardOneToMany,
 			duplicateTime: true,
+		},
+		"many-to-one many carrier early stop": {
+			card:     parser.CardManyToOne,
+			fillMany: true,
+		},
+		"one-to-many many carrier early stop": {
+			card:     parser.CardOneToMany,
+			fillMany: true,
 		},
 	}
 
@@ -2181,6 +2371,10 @@ func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *test
 				left, right = one, many
 			}
 
+			fillValues := parser.VectorMatchFillValues{RHS: &fill}
+			if testCase.fillMany {
+				fillValues = parser.VectorMatchFillValues{LHS: &fill}
+			}
 			operation, err := NewGroupedVectorVectorBinaryOperation(
 				left,
 				right,
@@ -2189,7 +2383,7 @@ func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *test
 					On:             true,
 					MatchingLabels: []string{"group"},
 					Include:        []string{"owner"},
-					FillValues:     parser.VectorMatchFillValues{RHS: &fill},
+					FillValues:     fillValues,
 				},
 				parser.ADD,
 				false,
@@ -2216,11 +2410,129 @@ func TestGroupedVectorVectorBinaryOperation_FillCarrierPresenceLifecycle(t *test
 			right.ReleaseUnreadData(memoryConsumptionTracker)
 			require.NoError(t, operation.FinishedReading(t.Context()))
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
-			if !testCase.duplicateTime {
-				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
-			}
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 			require.Equal(t, 1, left.finishedReadingCalls)
 			require.Equal(t, 1, right.finishedReadingCalls)
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_OneSidePresenceChecksCancellation(t *testing.T) {
+	fill := 3.0
+	const pointCount = 4096
+	testCases := map[string]struct {
+		card            parser.VectorMatchCardinality
+		histograms      bool
+		includeSamples  bool
+		remainingChecks int
+		expectedError   string
+	}{
+		"many-to-one initialization": {
+			card:            parser.CardManyToOne,
+			remainingChecks: 3,
+			expectedError:   "initialize one-side presence: context canceled",
+		},
+		"one-to-many initialization": {
+			card:            parser.CardOneToMany,
+			remainingChecks: 3,
+			expectedError:   "initialize one-side presence: context canceled",
+		},
+		"many-to-one float scan": {
+			card:            parser.CardManyToOne,
+			includeSamples:  true,
+			remainingChecks: 7,
+			expectedError:   "update one-side float presence: context canceled",
+		},
+		"one-to-many float scan": {
+			card:            parser.CardOneToMany,
+			includeSamples:  true,
+			remainingChecks: 7,
+			expectedError:   "update one-side float presence: context canceled",
+		},
+		"many-to-one histogram scan": {
+			card:            parser.CardManyToOne,
+			histograms:      true,
+			includeSamples:  true,
+			remainingChecks: 7,
+			expectedError:   "update one-side histogram presence: context canceled",
+		},
+		"one-to-many histogram scan": {
+			card:            parser.CardOneToMany,
+			histograms:      true,
+			includeSamples:  true,
+			remainingChecks: 7,
+			expectedError:   "update one-side histogram presence: context canceled",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			oneData := types.InstantVectorSeriesData{}
+			if testCase.includeSamples && testCase.histograms {
+				points, err := types.HPointSlicePool.Get(pointCount, memoryConsumptionTracker)
+				require.NoError(t, err)
+				for pointIndex := range pointCount {
+					points = append(points, promql.HPoint{
+						T: int64(pointIndex) * time.Second.Milliseconds(),
+						H: &histogram.FloatHistogram{Count: 1, Sum: float64(pointIndex)},
+					})
+				}
+				oneData.Histograms = points
+			} else if testCase.includeSamples {
+				points, err := types.FPointSlicePool.Get(pointCount, memoryConsumptionTracker)
+				require.NoError(t, err)
+				for pointIndex := range pointCount {
+					points = append(points, promql.FPoint{T: int64(pointIndex) * time.Second.Milliseconds(), F: float64(pointIndex)})
+				}
+				oneData.Floats = points
+			}
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a", "series", "1")},
+				Data:                     []types.InstantVectorSeriesData{{}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{oneData},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{RHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time((pointCount-1)*time.Second.Milliseconds()), time.Second),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			ctx := &cancelAfterErrChecksContext{Context: t.Context(), remainingChecks: testCase.remainingChecks}
+			_, err = operation.NextSeries(ctx)
+			require.EqualError(t, err, testCase.expectedError)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.FPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.HPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 			operation.Close()
 		})
 	}
@@ -2233,6 +2545,7 @@ func TestGroupedVectorVectorBinaryOperation_RejectsInvalidPresenceTimestamps(t *
 	testCases := map[string]struct {
 		card          parser.VectorMatchCardinality
 		invalidTime   int64
+		histogram     bool
 		expectedError string
 	}{
 		"many-to-one out of range": {
@@ -2255,24 +2568,44 @@ func TestGroupedVectorVectorBinaryOperation_RejectsInvalidPresenceTimestamps(t *
 			invalidTime:   30 * time.Second.Milliseconds(),
 			expectedError: "record one-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000",
 		},
+		"many-to-one misaligned histogram": {
+			card:          parser.CardManyToOne,
+			invalidTime:   30 * time.Second.Milliseconds(),
+			histogram:     true,
+			expectedError: "record one-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000",
+		},
+		"one-to-many misaligned histogram": {
+			card:          parser.CardOneToMany,
+			invalidTime:   30 * time.Second.Milliseconds(),
+			histogram:     true,
+			expectedError: "record one-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000",
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
-			newData := func(point promql.FPoint) types.InstantVectorSeriesData {
+			newData := func() types.InstantVectorSeriesData {
+				if testCase.histogram {
+					points, err := types.HPointSlicePool.Get(1, memoryConsumptionTracker)
+					require.NoError(t, err)
+					return types.InstantVectorSeriesData{Histograms: append(points, promql.HPoint{
+						T: testCase.invalidTime,
+						H: &histogram.FloatHistogram{Count: 1, Sum: 1},
+					})}
+				}
 				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
 				require.NoError(t, err)
-				return types.InstantVectorSeriesData{Floats: append(points, point)}
+				return types.InstantVectorSeriesData{Floats: append(points, promql.FPoint{T: testCase.invalidTime, F: 20})}
 			}
 			many := &operators.TestOperator{
 				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
-				Data:                     []types.InstantVectorSeriesData{newData(promql.FPoint{T: startTS, F: 10})},
+				Data:                     []types.InstantVectorSeriesData{{}},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 			one := &operators.TestOperator{
 				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
-				Data:                     []types.InstantVectorSeriesData{newData(promql.FPoint{T: testCase.invalidTime, F: 20})},
+				Data:                     []types.InstantVectorSeriesData{newData()},
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
@@ -2305,10 +2638,708 @@ func TestGroupedVectorVectorBinaryOperation_RejectsInvalidPresenceTimestamps(t *
 			_, err = operation.NextSeries(t.Context())
 			require.EqualError(t, err, testCase.expectedError)
 			require.Error(t, errors.Unwrap(err))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.FPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.HPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
 			many.ReleaseUnreadData(memoryConsumptionTracker)
 			one.ReleaseUnreadData(memoryConsumptionTracker)
 			require.NoError(t, operation.FinishedReading(t.Context()))
 			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_RejectsInvalidManySidePresenceTimestamps(t *testing.T) {
+	fill := 3.0
+	invalidTime := 30 * time.Second.Milliseconds()
+	for name, cardinality := range map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			manyPoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			manyPoints = append(manyPoints, promql.FPoint{T: invalidTime, F: 10})
+			onePoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			onePoints = append(onePoints, promql.FPoint{T: 0, F: 20})
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a", "series", "1")},
+				Data:                     []types.InstantVectorSeriesData{{Floats: manyPoints}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{{Floats: onePoints}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(time.Minute.Milliseconds()), time.Minute),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.EqualError(t, err, "record many-side presence at timestamp 30000: timestamp 30000 is not aligned to query interval 60000")
+			require.Error(t, errors.Unwrap(err))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_RejectsOverlappingCarrierResults(t *testing.T) {
+	fill := 3.0
+	for name, cardinality := range map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			oneData := make([]types.InstantVectorSeriesData, 2)
+			for idx := range oneData {
+				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				oneData[idx].Floats = append(points, promql.FPoint{T: 0, F: float64(idx + 1)})
+			}
+			many := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+			one := &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "one-a"),
+					labels.FromStrings(model.MetricNameLabel, "one-b"),
+				},
+				Data:                     oneData,
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					On:             true,
+					MatchingLabels: []string{model.MetricNameLabel},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, 1)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.EqualError(t, err, "merge grouped output components: unexpected overlapping result point at timestamp 0")
+			require.Error(t, errors.Unwrap(err))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_MergeComponentResultsRejectsEveryOverlapType(t *testing.T) {
+	testCases := map[string]struct {
+		firstHistogram  bool
+		secondHistogram bool
+	}{
+		"float-float": {},
+		"histogram-histogram": {
+			firstHistogram:  true,
+			secondHistogram: true,
+		},
+		"float-histogram": {
+			secondHistogram: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			newData := func(asHistogram bool) types.InstantVectorSeriesData {
+				if asHistogram {
+					points, err := types.HPointSlicePool.Get(1, memoryConsumptionTracker)
+					require.NoError(t, err)
+					points = append(points, promql.HPoint{T: 0, H: &histogram.FloatHistogram{Count: 1, Sum: 1}})
+					return types.InstantVectorSeriesData{Histograms: points}
+				}
+				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				points = append(points, promql.FPoint{T: 0, F: 1})
+				return types.InstantVectorSeriesData{Floats: points}
+			}
+			operation := &GroupedVectorVectorBinaryOperation{MemoryConsumptionTracker: memoryConsumptionTracker}
+			_, err := operation.mergeComponentResults(t.Context(), []types.InstantVectorSeriesData{
+				newData(testCase.firstHistogram),
+				newData(testCase.secondHistogram),
+			})
+			require.EqualError(t, err, "merge grouped output components: unexpected overlapping result point at timestamp 0")
+			require.Error(t, errors.Unwrap(err))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_MergeComponentResultsChecksCancellation(t *testing.T) {
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+	const (
+		componentCount     = 4
+		pointsPerComponent = 4096
+	)
+	results := make([]types.InstantVectorSeriesData, componentCount)
+	for componentIndex := range results {
+		if componentIndex%2 == 0 {
+			points, err := types.FPointSlicePool.Get(pointsPerComponent, memoryConsumptionTracker)
+			require.NoError(t, err)
+			for pointIndex := range pointsPerComponent {
+				points = append(points, promql.FPoint{T: int64(pointIndex*componentCount + componentIndex), F: float64(pointIndex)})
+			}
+			results[componentIndex].Floats = points
+			continue
+		}
+		points, err := types.HPointSlicePool.Get(pointsPerComponent, memoryConsumptionTracker)
+		require.NoError(t, err)
+		for pointIndex := range pointsPerComponent {
+			points = append(points, promql.HPoint{
+				T: int64(pointIndex*componentCount + componentIndex),
+				H: &histogram.FloatHistogram{Count: 1, Sum: float64(pointIndex)},
+			})
+		}
+		results[componentIndex].Histograms = points
+	}
+	ctx := &cancelAfterErrChecksContext{Context: t.Context(), remainingChecks: 5}
+	operation := &GroupedVectorVectorBinaryOperation{MemoryConsumptionTracker: memoryConsumptionTracker}
+	_, err := operation.mergeComponentResults(ctx, results)
+	require.EqualError(t, err, "merge grouped output components: context canceled")
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestGroupedVectorVectorBinaryOperation_SuppressedManyFillEmitsNoAnnotation(t *testing.T) {
+	fill := 3.0
+	testCases := map[string]struct {
+		card                parser.VectorMatchCardinality
+		withRealMany        bool
+		expectedAnnotations int
+	}{
+		"many-to-one suppresses the annotation": {
+			card:         parser.CardManyToOne,
+			withRealMany: true,
+		},
+		"one-to-many suppresses the annotation": {
+			card:         parser.CardOneToMany,
+			withRealMany: true,
+		},
+		"many-to-one emits the annotation without real many data": {
+			card:                parser.CardManyToOne,
+			expectedAnnotations: 1,
+		},
+		"one-to-many emits the annotation without real many data": {
+			card:                parser.CardOneToMany,
+			expectedAnnotations: 1,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			many := &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker}
+			if testCase.withRealMany {
+				manyPoints, err := types.HPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				manyPoints = append(manyPoints, promql.HPoint{T: 0, H: &histogram.FloatHistogram{Count: 2, Sum: 4}})
+				many.Series = []labels.Labels{labels.FromStrings("group", "a", "series", "1")}
+				many.Data = []types.InstantVectorSeriesData{{Histograms: manyPoints}}
+			}
+			onePoints, err := types.HPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			onePoints = append(onePoints, promql.HPoint{T: 0, H: &histogram.FloatHistogram{Count: 3, Sum: 6}})
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{{Histograms: onePoints}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			outputCount := len(metadata)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			for range outputCount {
+				result, err := operation.NextSeries(t.Context())
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(result, memoryConsumptionTracker)
+			}
+			_, resultAnnotations, err := operation.Finalize(t.Context())
+			require.NoError(t, err)
+			require.Len(t, resultAnnotations, testCase.expectedAnnotations)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ManyPresenceRespectsMemoryLimit(t *testing.T) {
+	fill := 3.0
+	start := timestamp.Time(0)
+	timeRange := types.NewRangeQueryTimeRange(start, start.Add(10_999*time.Second), time.Second)
+	for name, cardinality := range map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rejectionCount := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test_grouped_many_presence_rejections_total"})
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(t.Context(), 64*1024, rejectionCount, "grouped many presence test")
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a", "series", "1")},
+				Data:                     []types.InstantVectorSeriesData{{}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{{}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				timeRange,
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.ErrorContains(t, err, "allocate many-side presence: the query exceeded the maximum allowed estimated amount of memory consumed by a single query")
+			require.Error(t, errors.Unwrap(err))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ManyPresenceChecksCancellationInSampleLoops(t *testing.T) {
+	fill := 3.0
+	const pointCount = 4096
+	testCases := map[string]struct {
+		histograms    bool
+		expectedError string
+	}{
+		"floats": {
+			expectedError: "update many-side float presence: context canceled",
+		},
+		"histograms": {
+			histograms:    true,
+			expectedError: "update many-side histogram presence: context canceled",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			manyData := types.InstantVectorSeriesData{}
+			if testCase.histograms {
+				points, err := types.HPointSlicePool.Get(pointCount, memoryConsumptionTracker)
+				require.NoError(t, err)
+				for pointIndex := range pointCount {
+					points = append(points, promql.HPoint{
+						T: int64(pointIndex) * time.Second.Milliseconds(),
+						H: &histogram.FloatHistogram{Count: 1, Sum: float64(pointIndex)},
+					})
+				}
+				manyData.Histograms = points
+			} else {
+				points, err := types.FPointSlicePool.Get(pointCount, memoryConsumptionTracker)
+				require.NoError(t, err)
+				for pointIndex := range pointCount {
+					points = append(points, promql.FPoint{T: int64(pointIndex) * time.Second.Milliseconds(), F: float64(pointIndex)})
+				}
+				manyData.Floats = points
+			}
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a", "series", "1")},
+				Data:                     []types.InstantVectorSeriesData{manyData},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{{}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				many,
+				one,
+				parser.VectorMatching{
+					Card:           parser.CardManyToOne,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time((pointCount-1)*time.Second.Milliseconds()), time.Second),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			ctx := &cancelAfterErrChecksContext{Context: t.Context(), remainingChecks: 7}
+			_, err = operation.NextSeries(ctx)
+			require.EqualError(t, err, testCase.expectedError)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.FPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.HPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ReleasesManyPresenceAfterChildError(t *testing.T) {
+	fill := 3.0
+	injectedErr := errors.New("injected child error")
+	for name, cardinality := range map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			manyPoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			manyPoints = append(manyPoints, promql.FPoint{T: 0, F: 10})
+			many := &failingNextSeriesOperator{
+				finishedReadingCountingOperator: &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+					Series: []labels.Labels{
+						labels.FromStrings("group", "a", "series", "1"),
+						labels.FromStrings("group", "a", "series", "2"),
+					},
+					Data: []types.InstantVectorSeriesData{
+						{Floats: manyPoints},
+						{},
+					},
+					MemoryConsumptionTracker: memoryConsumptionTracker,
+				}},
+				failAt: 2,
+				err:    injectedErr,
+			}
+			onePoints, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			onePoints = append(onePoints, promql.FPoint{T: 0, F: 20})
+			one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{{Floats: onePoints}},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			result, err := operation.NextSeries(t.Context())
+			require.NoError(t, err)
+			types.PutInstantVectorSeriesData(result, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.ErrorIs(t, err, injectedErr)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			many.ReleaseUnreadData(memoryConsumptionTracker)
+			one.ReleaseUnreadData(memoryConsumptionTracker)
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Equal(t, 1, many.finishedReadingCalls)
+			require.Equal(t, 1, one.finishedReadingCalls)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ReleasesManyPresenceAfterEvaluatorError(t *testing.T) {
+	fill := 3.0
+	injectedErr := errors.New("injected evaluator error")
+	for name, cardinality := range map[string]parser.VectorMatchCardinality{
+		"many-to-one": parser.CardManyToOne,
+		"one-to-many": parser.CardOneToMany,
+	} {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+			newData := func(value float64) types.InstantVectorSeriesData {
+				points, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				return types.InstantVectorSeriesData{Floats: append(points, promql.FPoint{T: 0, F: value})}
+			}
+			many := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a", "series", "1")},
+				Data:                     []types.InstantVectorSeriesData{newData(10)},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			one := &operators.TestOperator{
+				Series:                   []labels.Labels{labels.FromStrings("group", "a")},
+				Data:                     []types.InstantVectorSeriesData{newData(20)},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if cardinality == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           cardinality,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewInstantQueryTimeRange(timestamp.Time(0)),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			operation.evaluator.opFunc = func(float64, float64, *histogram.FloatHistogram, *histogram.FloatHistogram, bool, bool, types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+				return 0, nil, false, false, injectedErr
+			}
+
+			metadata, err := operation.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			_, err = operation.NextSeries(t.Context())
+			require.ErrorIs(t, err, injectedErr)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+			operation.Close()
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_CleansCurrentCollisionAfterEvaluationStops(t *testing.T) {
+	fill := 3.0
+	injectedErr := errors.New("injected carrier evaluation error")
+	testCases := map[string]struct {
+		card              parser.VectorMatchCardinality
+		cancelAfterReal   bool
+		failCarrier       bool
+		expectedError     error
+		expectedErrorText string
+	}{
+		"many-to-one cancellation after population": {
+			card:              parser.CardManyToOne,
+			cancelAfterReal:   true,
+			expectedError:     context.Canceled,
+			expectedErrorText: "evaluate grouped output: context canceled",
+		},
+		"one-to-many cancellation after population": {
+			card:              parser.CardOneToMany,
+			cancelAfterReal:   true,
+			expectedError:     context.Canceled,
+			expectedErrorText: "evaluate grouped output: context canceled",
+		},
+		"many-to-one carrier failure": {
+			card:              parser.CardManyToOne,
+			failCarrier:       true,
+			expectedError:     injectedErr,
+			expectedErrorText: "evaluate grouped output component: injected carrier evaluation error",
+		},
+		"one-to-many carrier failure": {
+			card:              parser.CardOneToMany,
+			failCarrier:       true,
+			expectedError:     injectedErr,
+			expectedErrorText: "evaluate grouped output component: injected carrier evaluation error",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			newData := func(points ...promql.FPoint) types.InstantVectorSeriesData {
+				pooled, err := types.FPointSlicePool.Get(len(points), memoryConsumptionTracker)
+				require.NoError(t, err)
+				return types.InstantVectorSeriesData{Floats: append(pooled, points...)}
+			}
+			many := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "many", "group", "a", "owner", "stale"),
+				},
+				Data:                     []types.InstantVectorSeriesData{newData(promql.FPoint{T: 0, F: 10})},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			one := &finishedReadingCountingOperator{TestOperator: &operators.TestOperator{
+				Series: []labels.Labels{
+					labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
+				},
+				Data: []types.InstantVectorSeriesData{newData(
+					promql.FPoint{T: 0, F: 20},
+					promql.FPoint{T: time.Minute.Milliseconds(), F: 30},
+				)},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}}
+			left, right := types.InstantVectorOperator(many), types.InstantVectorOperator(one)
+			if testCase.card == parser.CardOneToMany {
+				left, right = one, many
+			}
+
+			operation, err := NewGroupedVectorVectorBinaryOperation(
+				left,
+				right,
+				parser.VectorMatching{
+					Card:           testCase.card,
+					On:             true,
+					MatchingLabels: []string{"group"},
+					Include:        []string{"owner"},
+					FillValues:     parser.VectorMatchFillValues{LHS: &fill},
+				},
+				parser.ADD,
+				false,
+				memoryConsumptionTracker,
+				posrange.PositionRange{},
+				types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(time.Minute.Milliseconds()), time.Minute),
+				nil,
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			metadata, err := operation.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, 1)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			originalOpFunc := operation.evaluator.opFunc
+			calls := 0
+			operation.evaluator.opFunc = func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool, emitAnnotation types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+				calls++
+				if testCase.failCarrier && calls == 2 {
+					return 0, nil, false, false, injectedErr
+				}
+				resultFloat, resultHistogram, keep, valid, err := originalOpFunc(lF, rF, lH, rH, canMutateLeft, canMutateRight, emitAnnotation)
+				if testCase.cancelAfterReal && calls == 1 {
+					cancel()
+				}
+				return resultFloat, resultHistogram, keep, valid, err
+			}
+
+			_, err = operation.NextSeries(ctx)
+			require.EqualError(t, err, testCase.expectedErrorText)
+			require.ErrorIs(t, err, testCase.expectedError)
+			require.Len(t, operation.remainingSeries, 1)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.FPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.HPointSlices))
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.IntSlices))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.NoError(t, operation.FinishedReading(t.Context()))
+			require.Equal(t, 1, many.finishedReadingCalls)
+			require.Equal(t, 1, one.finishedReadingCalls)
+			require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 			operation.Close()
 		})
 	}
@@ -2367,7 +3398,7 @@ func TestGroupedVectorVectorBinaryOperation_CanonicalManySideIncludeValuesReject
 			require.Len(t, metadata, 1)
 			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
 			_, err = operation.NextSeries(t.Context())
-			require.ErrorIs(t, err, errMultipleMatchesOnManySide)
+			require.EqualError(t, err, errMultipleMatchesOnManySide.Error())
 			require.NoError(t, operation.FinishedReading(t.Context()))
 			operation.Close()
 		})
