@@ -16,19 +16,18 @@ const (
 )
 
 type schedulerMetrics struct {
-	pendingJobs                    *prometheus.GaugeVec
-	pendingJobsByUser              *prometheus.GaugeVec
-	pendingJobsLastEmpty           prometheus.Gauge
-	lanePendingJobsLastEmpty       *prometheus.GaugeVec
-	lanePendingJobsLastEmptyGauges map[lane]prometheus.Gauge
-	incompleteJobsBytes            *prometheus.GaugeVec
-	incompleteSplitBytes           map[lane]prometheus.Gauge
-	incompleteMergeBytes           map[lane]prometheus.Gauge
-	activeJobs                     *prometheus.GaugeVec
-	activeJobsByUser               *prometheus.GaugeVec
-	jobsCompleted                  *prometheus.CounterVec
-	repeatedJobFailures            prometheus.Counter
-	lanePolicy                     lanePolicy
+	pendingJobs              *prometheus.GaugeVec
+	pendingJobsByUser        *prometheus.GaugeVec
+	pendingJobsLastEmpty     prometheus.Gauge
+	lanePendingJobsLastEmpty map[lane]prometheus.Gauge
+	incompleteJobsBytes      *prometheus.GaugeVec
+	incompleteSplitBytes     map[lane]prometheus.Gauge
+	incompleteMergeBytes     map[lane]prometheus.Gauge
+	activeJobs               *prometheus.GaugeVec
+	activeJobsByUser         *prometheus.GaugeVec
+	jobsCompleted            *prometheus.CounterVec
+	repeatedJobFailures      prometheus.Counter
+	lanePolicy               lanePolicy
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *schedulerMetrics {
@@ -48,10 +47,6 @@ func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *sche
 			Name: "cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds",
 			Help: "Unix timestamp of the last time there were no pending jobs remaining.",
 		}),
-		lanePendingJobsLastEmpty: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds",
-			Help: "Unix timestamp of the last time there were no pending jobs remaining in this lane.",
-		}, []string{"lane"}),
 		incompleteJobsBytes: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_compactor_scheduler_incomplete_compaction_jobs_bytes",
 			Help: "The total bytes of blocks in compaction jobs that have not yet completed (pending or active).",
@@ -73,6 +68,11 @@ func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *sche
 			Help: "Total number of failures for jobs that exceeded the repeated failure threshold.",
 		}),
 	}
+	laneLastEmpty := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds",
+		Help: "Unix timestamp of the last time there were no pending jobs remaining in this lane.",
+	}, []string{"lane"})
+
 	// Pre-initialize job type labels so we get zeros instead of no data.
 	m.jobsCompleted.WithLabelValues(jobTypePlan)
 	m.jobsCompleted.WithLabelValues(jobTypeCompaction)
@@ -80,9 +80,9 @@ func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *sche
 	m.pendingJobs.WithLabelValues(jobTypeCompaction)
 	m.activeJobs.WithLabelValues(jobTypePlan)
 	m.activeJobs.WithLabelValues(jobTypeCompaction)
-	m.lanePendingJobsLastEmptyGauges = make(map[lane]prometheus.Gauge, len(allLanes))
+	m.lanePendingJobsLastEmpty = make(map[lane]prometheus.Gauge, len(allLanes))
 	for _, l := range allLanes {
-		m.lanePendingJobsLastEmptyGauges[l] = m.lanePendingJobsLastEmpty.WithLabelValues(string(l))
+		m.lanePendingJobsLastEmpty[l] = laneLastEmpty.WithLabelValues(string(l))
 	}
 	m.incompleteSplitBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))
 	m.incompleteMergeBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))

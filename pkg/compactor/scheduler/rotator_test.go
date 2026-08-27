@@ -6,8 +6,6 @@ import (
 	"container/list"
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -75,7 +73,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newTestSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clock
 
 			r.RecoverFrom(tc.jobTrackers, tc.creationTime)
@@ -87,7 +85,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 func newRotatorForTest() *Rotator {
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newTestSchedulerMetrics(reg)
-	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
+	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 }
 
 // newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
@@ -231,7 +229,7 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	clk := clock.New()
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
-	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
+	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
 	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
@@ -356,23 +354,24 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 			clk.Set(now)
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newTestSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmptyGauges, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clk
 
 			tc.action(r, clk)
 
-			const (
-				laneMetric = "cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds"
-				anyMetric  = "cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds"
-			)
-			var expected strings.Builder
-			fmt.Fprintf(&expected, "# HELP %s Unix timestamp of the last time there were no pending jobs remaining in this lane.\n# TYPE %s gauge\n", laneMetric, laneMetric)
-			for _, l := range slices.Sorted(maps.Keys(tc.expectedByLane)) {
-				fmt.Fprintf(&expected, "%s{lane=%q} %d\n", laneMetric, l, tc.expectedByLane[l])
-			}
-			fmt.Fprintf(&expected, "# HELP %s Unix timestamp of the last time there were no pending jobs remaining.\n# TYPE %s gauge\n%s %d\n", anyMetric, anyMetric, anyMetric, tc.expected)
+			expected := fmt.Sprintf(`
+				# HELP cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds Unix timestamp of the last time there were no pending jobs remaining in this lane.
+				# TYPE cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds gauge
+				cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{lane="compaction"} %d
+				cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds{lane="plan"} %d
+				# HELP cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds Unix timestamp of the last time there were no pending jobs remaining.
+				# TYPE cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge
+				cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds %d
+			`, tc.expectedByLane[compactionLane], tc.expectedByLane[planLane], tc.expected)
 
-			require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(expected.String()), laneMetric, anyMetric))
+			require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(expected),
+				"cortex_compactor_scheduler_lane_pending_jobs_last_empty_timestamp_seconds",
+				"cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds"))
 		})
 	}
 }

@@ -159,7 +159,7 @@ func newCompactorScheduler(
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
 		lanePolicy,
 		metrics.pendingJobsLastEmpty,
-		metrics.lanePendingJobsLastEmptyGauges,
+		metrics.lanePendingJobsLastEmpty,
 		logger,
 	)
 
