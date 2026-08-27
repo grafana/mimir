@@ -98,6 +98,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	hasVectorSelectorsL := len(vssL) > 0
 	vssR, matchersR := mapper.extractVectorSelectors(e.RHS)
 	hasVectorSelectorsR := len(vssR) > 0
+	if groupedFillActive(e.VectorMatching) {
+		return nil, nil
+	}
 	switch {
 	case !hasVectorSelectorsL && !hasVectorSelectorsR:
 		return nil, nil
@@ -142,6 +145,14 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	vss := append(vssL, vssR...)
 	matchers, _ := combineMatchers(newMatchersL, newMatchersR, stringSet{}, false)
 	return vss, matchers
+}
+
+func groupedFillActive(vectorMatching *parser.VectorMatching) bool {
+	if vectorMatching == nil || (vectorMatching.Card != parser.CardOneToMany && vectorMatching.Card != parser.CardManyToOne) {
+		return false
+	}
+
+	return vectorMatching.FillValues.LHS != nil || vectorMatching.FillValues.RHS != nil
 }
 
 // extractVectorSelectors returns the vector selectors found in the expression (wrapped with additional
