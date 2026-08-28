@@ -66,7 +66,7 @@ func hasBlockRelativeTimeRange(node planning.Node) bool {
 	case *MatrixSelector:
 		return !n.Anchored && !n.Smoothed && n.Offset >= 0 && n.Timestamp == nil
 	case *VectorSelector:
-		return n.Offset >= 0 && n.Timestamp == nil
+		return !n.Smoothed && n.Offset >= 0 && n.Timestamp == nil
 	case *Subquery:
 		if n.Offset < 0 || n.Timestamp != nil {
 			return false
