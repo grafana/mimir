@@ -1280,28 +1280,28 @@ func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing
 				)
 				require.NoError(t, err)
 
-				canProduceAnySeries, err := o.loadSeriesMetadata(t.Context(), nil)
+				shouldContinue, err := o.loadSeriesMetadata(t.Context(), nil)
 				require.NoError(t, err)
 
 				expectedManyCall := !emptyCase.one || fillCase.fillsOne
 				expectedContinuation := !emptyCase.many && !emptyCase.one
 				if emptyCase.many != emptyCase.one {
-					expectedContinuation = (emptyCase.many && fillCase.fillsMany) || (emptyCase.one && fillCase.fillsOne)
+					expectedContinuation = (emptyCase.many && (fillCase.fillsMany || fillCase.fillsOne)) || (emptyCase.one && fillCase.fillsOne)
 				}
 				require.True(t, one.SeriesMetadataCalled)
 				require.Equal(t, expectedManyCall, many.SeriesMetadataCalled)
-				require.Equal(t, expectedContinuation, canProduceAnySeries)
+				require.Equal(t, expectedContinuation, shouldContinue)
 				expectedManyFinishedCalls := 0
 				expectedOneFinishedCalls := 0
-				if canProduceAnySeries && emptyCase.many {
+				if shouldContinue && emptyCase.many {
 					expectedManyFinishedCalls = 1
 				}
-				if canProduceAnySeries && emptyCase.one {
+				if shouldContinue && emptyCase.one {
 					expectedOneFinishedCalls = 1
 				}
 				require.Equal(t, expectedManyFinishedCalls, many.finishedReadingCalls)
 				require.Equal(t, expectedOneFinishedCalls, one.finishedReadingCalls)
-				if canProduceAnySeries && (emptyCase.many || emptyCase.one) {
+				if shouldContinue && (emptyCase.many || emptyCase.one) {
 					metadata, _, oneUsed, _, manyUsed, _, err := o.computeOutputSeries()
 					require.NoError(t, err)
 					expectedMetadataCount := 0
@@ -1314,6 +1314,7 @@ func TestGroupedVectorVectorBinaryOperation_EmptySideMetadataWithFill(t *testing
 					types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
 					types.BoolSlicePool.Put(&oneUsed, memoryConsumptionTracker)
 					types.BoolSlicePool.Put(&manyUsed, memoryConsumptionTracker)
+					o.oneSideValidationGroups = nil
 				}
 
 				require.NoError(t, o.FinishedReading(t.Context()))
@@ -1881,22 +1882,23 @@ func TestGroupedVectorVectorBinaryOperation_FillsSyntheticOneSide(t *testing.T) 
 				floats: []promql.FPoint{{T: ts, F: 4}, {T: secondTS, F: 5}},
 			}},
 		},
-		"many-to-one evaluates multiple one-side carrier variants": {
-			card:    parser.CardManyToOne,
-			op:      parser.ADD,
-			fill:    parser.VectorMatchFillValues{LHS: &fillThree},
-			include: []string{"owner"},
+		"many-to-one evaluates intermittent one-side carrier variants": {
+			card:      parser.CardManyToOne,
+			op:        parser.ADD,
+			fill:      parser.VectorMatchFillValues{LHS: &fillThree},
+			include:   []string{"owner"},
+			timeRange: types.NewRangeQueryTimeRange(timestamp.Time(ts), timestamp.Time(secondTS), time.Minute),
 			oneSeries: []labels.Labels{
 				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-a"),
 				labels.FromStrings(model.MetricNameLabel, "one", "group", "a", "owner", "team-b"),
 			},
 			oneData: []types.InstantVectorSeriesData{
 				{Floats: []promql.FPoint{{T: ts, F: 1}}},
-				{Floats: []promql.FPoint{{T: ts, F: 2}}},
+				{Floats: []promql.FPoint{{T: secondTS, F: 2}}},
 			},
 			expected: []expectedSeries{
 				{labels: labels.FromStrings("group", "a", "owner", "team-a"), floats: []promql.FPoint{{T: ts, F: 4}}},
-				{labels: labels.FromStrings("group", "a", "owner", "team-b"), floats: []promql.FPoint{{T: ts, F: 5}}},
+				{labels: labels.FromStrings("group", "a", "owner", "team-b"), floats: []promql.FPoint{{T: secondTS, F: 5}}},
 			},
 		},
 		"one-to-many multiplies a one-side histogram by the many fill": {

@@ -56,6 +56,10 @@ type GroupedVectorVectorBinaryOperation struct {
 	leftFinishedReading     bool
 	rightFinishedReading    bool
 	manyPresenceGroups      []*oneSideMatchGroup
+	oneSideValidationGroups []*oneSideMatchGroup
+	oneSideValidationSeen   []int
+	oneSideValidationSource []int
+	oneSideValidationRound  int
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -296,6 +300,36 @@ type oneSideMatchGroup struct {
 	manySideFillCarrierCount  int
 }
 
+func (g *oneSideMatchGroup) ensureMatchGroup() {
+	if g.matchGroup != nil {
+		return
+	}
+
+	g.matchGroup = &matchGroup{
+		oneSides:     g.ordered,
+		oneSideCount: len(g.ordered),
+	}
+	for _, side := range g.ordered {
+		side.matchGroup = g.matchGroup
+	}
+}
+
+func (g *oneSideMatchGroup) latestOneSideSeriesIndex() int {
+	latest := -1
+	for _, side := range g.ordered {
+		latest = max(latest, side.latestSeriesIndex())
+	}
+	return latest
+}
+
+func (g *oneSideMatchGroup) requiresValidation() bool {
+	seriesCount := 0
+	for _, side := range g.ordered {
+		seriesCount += len(side.seriesIndices)
+	}
+	return seriesCount > 1
+}
+
 func (g *oneSideMatchGroup) releaseManyPresence(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	if g.manyPresence != nil {
 		types.IntSlicePool.Put(&g.manyPresence, memoryConsumptionTracker)
@@ -391,9 +425,9 @@ func NewGroupedVectorVectorBinaryOperation(
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
 func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
+	if shouldContinue, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
-	} else if !canProduceAnySeries {
+	} else if !shouldContinue {
 		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
@@ -406,20 +440,6 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 		return nil, err
 	}
 
-	if len(allMetadata) == 0 {
-		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
-
-		if err := g.FinishedReading(ctx); err != nil {
-			return nil, err
-		}
-
-		return nil, nil
-	}
-
-	g.sortSeries(allMetadata, allSeries)
-	g.remainingSeries = allSeries
 	g.lastOneSideSeriesIndex = lastOneSideSeriesUsedIndex
 	g.lastManySideSeriesIndex = lastManySideSeriesUsedIndex
 
@@ -440,12 +460,23 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 		g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, lastManySideSeriesUsedIndex, g.MemoryConsumptionTracker)
 	}
 
+	if len(allMetadata) == 0 {
+		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
+
+		if err := g.FinishedReading(ctx); err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	g.sortSeries(allMetadata, allSeries)
+	g.remainingSeries = allSeries
+
 	return allMetadata, nil
 }
 
-// loadSeriesMetadata loads child metadata and reports whether labels can drive output.
-// A nonempty side can drive output when the empty normalized side has a fill value.
-// Two empty sides cannot drive output.
+// loadSeriesMetadata loads child metadata and reports whether output or fill validation remains.
 func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, matchers types.Matchers) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
@@ -497,7 +528,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	if oneSideEmpty && manySideEmpty {
 		return false, nil
 	}
-	if manySideEmpty && g.fillValues.LHS == nil {
+	if manySideEmpty && g.fillValues.LHS == nil && g.fillValues.RHS == nil {
 		return false, nil
 	}
 	if oneSideEmpty {
@@ -561,6 +592,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 
 		side.seriesIndices = append(side.seriesIndices, idx)
 	}
+	for _, oneSideGroup := range oneSideGroups {
+		if len(oneSideGroup.ordered) > 1 {
+			oneSideGroup.ensureMatchGroup()
+		}
+	}
 
 	// Now iterate through all series on the "many" side and determine all the possible output series, as
 	// well as which series from the "many" side we'll actually need.
@@ -592,14 +628,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		} else {
 			oneSideGroup.relevant = true
 			oneSideGroup.latestManySideSeriesIndex = idx
-			if oneSideGroup.matchGroup == nil && (g.fillValues.RHS != nil || len(oneSideGroup.ordered) > 1) {
-				oneSideGroup.matchGroup = &matchGroup{
-					oneSides:     oneSideGroup.ordered,
-					oneSideCount: len(oneSideGroup.ordered),
-				}
-				for _, side := range oneSideGroup.ordered {
-					side.matchGroup = oneSideGroup.matchGroup
-				}
+			if g.fillValues.RHS != nil {
+				oneSideGroup.ensureMatchGroup()
 			}
 		}
 
@@ -733,6 +763,21 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 	}
 
+	var oneSideValidationGroups []*oneSideMatchGroup
+	if g.fillValues.LHS == nil && g.fillValues.RHS != nil {
+		for _, oneSideGroup := range oneSideGroups {
+			if oneSideGroup.relevant || !oneSideGroup.requiresValidation() {
+				continue
+			}
+
+			oneSideGroup.relevant = true
+			oneSideValidationGroups = append(oneSideValidationGroups, oneSideGroup)
+		}
+		sort.Slice(oneSideValidationGroups, func(i, j int) bool {
+			return oneSideValidationGroups[i].latestOneSideSeriesIndex() < oneSideValidationGroups[j].latestOneSideSeriesIndex()
+		})
+	}
+
 	// Next, go through all the "one" side groups again, and determine which of the "one" side series we'll actually need.
 	oneSideSeriesUsed, err := types.BoolSlicePool.Get(len(g.oneSideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
@@ -769,6 +814,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
+	g.oneSideValidationGroups = oneSideValidationGroups
 
 	return outputMetadata, outputSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, nil
 }
@@ -1016,6 +1062,22 @@ func outputOneSideSeriesIndex(series *groupedBinaryOperationOutputSeries) int {
 	return series.oneSide.latestSeriesIndex()
 }
 
+func outputLatestOneSideSeriesIndexForRead(series *groupedBinaryOperationOutputSeries) int {
+	latest := -1
+	if series.oneSide != nil {
+		latest = series.oneSide.latestSeriesIndex()
+	}
+	for _, carrier := range series.manySideFillCarriers {
+		latest = max(latest, carrier.oneSide.latestSeriesIndex())
+	}
+	if series.fillCarrier != nil && series.fillCarrier.matchGroup != nil {
+		for _, side := range series.fillCarrier.matchGroup.oneSides {
+			latest = max(latest, side.latestSeriesIndex())
+		}
+	}
+	return latest
+}
+
 func (s favourManySideSorter) Swap(i, j int) {
 	s.metadata[i], s.metadata[j] = s.metadata[j], s.metadata[i]
 	s.series[i], s.series[j] = s.series[j], s.series[i]
@@ -1042,6 +1104,13 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (re
 			g.releaseManyPresence()
 		}
 	}()
+	validationSeriesIndex := outputLatestOneSideSeriesIndexForRead(thisSeries)
+	if len(g.remainingSeries) == 1 {
+		validationSeriesIndex = int(^uint(0) >> 1)
+	}
+	if err := g.validateOneSideGroupsThrough(ctx, validationSeriesIndex); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
 	if thisSeries.oneSide != nil {
 		if err := g.ensureOneSidePopulated(ctx, thisSeries.oneSide); err != nil {
@@ -1383,6 +1452,142 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSideGroupPopulated(ctx con
 			return err
 		}
 	}
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideGroupsThrough(ctx context.Context, maxSeriesIndex int) error {
+	for len(g.oneSideValidationGroups) > 0 {
+		group := g.oneSideValidationGroups[0]
+		if group.latestOneSideSeriesIndex() > maxSeriesIndex {
+			return nil
+		}
+
+		if err := g.startOneSideValidationRound(ctx); err != nil {
+			g.oneSideValidationGroups = nil
+			g.releaseOneSideValidationState()
+			return fmt.Errorf("prepare unmatched one-side group validation: %w", err)
+		}
+		g.oneSideValidationGroups = g.oneSideValidationGroups[1:]
+		if err := g.validateOneSideGroup(ctx, group); err != nil {
+			g.oneSideValidationGroups = nil
+			g.releaseOneSideValidationState()
+			return fmt.Errorf("validate unmatched one-side group for fill: %w", err)
+		}
+	}
+
+	g.releaseOneSideValidationState()
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) startOneSideValidationRound(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("start one-side validation: %w", err)
+	}
+
+	if g.oneSideValidationSeen == nil {
+		var err error
+		g.oneSideValidationSeen, err = types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.oneSideValidationSeen = g.oneSideValidationSeen[:g.timeRange.StepCount]
+
+		g.oneSideValidationSource, err = types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+		if err != nil {
+			types.IntSlicePool.Put(&g.oneSideValidationSeen, g.MemoryConsumptionTracker)
+			return err
+		}
+		g.oneSideValidationSource = g.oneSideValidationSource[:g.timeRange.StepCount]
+
+		for idx := range g.oneSideValidationSeen {
+			if idx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("initialize one-side validation state: %w", err)
+				}
+			}
+			g.oneSideValidationSeen[idx] = 0
+		}
+	}
+
+	if g.oneSideValidationRound == int(^uint(0)>>1) {
+		clear(g.oneSideValidationSeen)
+		g.oneSideValidationRound = 0
+	}
+	g.oneSideValidationRound++
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) releaseOneSideValidationState() {
+	types.IntSlicePool.Put(&g.oneSideValidationSeen, g.MemoryConsumptionTracker)
+	types.IntSlicePool.Put(&g.oneSideValidationSource, g.MemoryConsumptionTracker)
+	g.oneSideValidationRound = 0
+}
+
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideGroup(ctx context.Context, group *oneSideMatchGroup) error {
+
+	for _, side := range group.ordered {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("validate one-side group: %w", err)
+		}
+
+		latestSeriesIndex := side.latestSeriesIndex()
+		data, err := g.oneSideBuffer.GetSeries(ctx, side.seriesIndices)
+		if err != nil {
+			return fmt.Errorf("read one-side group for validation: %w", err)
+		}
+		if latestSeriesIndex == g.lastOneSideSeriesIndex {
+			g.markOneSideFinishedReading()
+		}
+
+		err = g.validateOneSideData(ctx, side.seriesIndices, data)
+		putSeriesData(data, g.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) validateOneSideData(ctx context.Context, seriesIndices []int, data []types.InstantVectorSeriesData) error {
+	for dataIdx, seriesData := range data {
+		seriesIndex := seriesIndices[dataIdx]
+		for pointIdx, point := range seriesData.Floats {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("validate one-side float data: %w", err)
+				}
+			}
+			if err := g.recordOneSideValidationPresence(seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+		for pointIdx, point := range seriesData.Histograms {
+			if pointIdx&1023 == 0 {
+				if err := ctx.Err(); err != nil {
+					return fmt.Errorf("validate one-side histogram data: %w", err)
+				}
+			}
+			if err := g.recordOneSideValidationPresence(seriesIndex, point.T); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) recordOneSideValidationPresence(seriesIndex int, timestamp int64) error {
+	timestampIndex, err := g.presenceTimestampIndex(timestamp, len(g.oneSideValidationSeen))
+	if err != nil {
+		return fmt.Errorf("record one-side validation presence at timestamp %d: %w", timestamp, err)
+	}
+	if g.oneSideValidationSeen[timestampIndex] == g.oneSideValidationRound {
+		return formatConflictError(g.oneSideValidationSource[timestampIndex], seriesIndex, "duplicate series", timestamp, g.oneSideMetadata, g.oneSideHandedness(), g.VectorMatching, g.Op, g.ReturnBool)
+	}
+
+	g.oneSideValidationSeen[timestampIndex] = g.oneSideValidationRound
+	g.oneSideValidationSource[timestampIndex] = seriesIndex
 	return nil
 }
 
@@ -1743,6 +1948,13 @@ func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) e
 }
 
 func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context) error {
+	var validationErr error
+	if g.oneSideBuffer != nil {
+		validationErr = g.validateOneSideGroupsThrough(ctx, int(^uint(0)>>1))
+	}
+	g.oneSideValidationGroups = nil
+	g.releaseOneSideValidationState()
+
 	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
@@ -1763,11 +1975,9 @@ func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context
 	g.remainingSeries = nil
 	g.releaseManyPresence()
 
-	if err := g.finishLeft(ctx); err != nil {
-		return err
-	}
-
-	return g.finishRight(ctx)
+	leftErr := g.finishLeft(ctx)
+	rightErr := g.finishRight(ctx)
+	return errors.Join(validationErr, leftErr, rightErr)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) finishOneSide(ctx context.Context) error {
