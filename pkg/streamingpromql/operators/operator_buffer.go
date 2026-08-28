@@ -25,6 +25,7 @@ type InstantVectorOperatorBuffer struct {
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed          []bool
 	lastSeriesIndexUsed int
+	sourceFinished      bool
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -59,20 +60,30 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 		d, err := b.getSingleSeries(ctx, seriesIndex)
 
 		if err != nil {
+			b.releaseOutput(i)
 			return nil, err
 		}
 
 		b.output[i] = d
 	}
 
-	if b.nextIndexToRead > b.lastSeriesIndexUsed {
+	if b.nextIndexToRead > b.lastSeriesIndexUsed && !b.sourceFinished {
 		// If we're not going to read any more series, call FinishedReading on the inner operator.
+		b.sourceFinished = true
 		if err := b.source.FinishedReading(ctx); err != nil {
+			b.releaseOutput(len(seriesIndices))
 			return nil, err
 		}
 	}
 
 	return b.output, nil
+}
+
+func (b *InstantVectorOperatorBuffer) releaseOutput(count int) {
+	for idx := range count {
+		types.PutInstantVectorSeriesData(b.output[idx], b.memoryConsumptionTracker)
+		b.output[idx] = types.InstantVectorSeriesData{}
+	}
 }
 
 func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {

@@ -14,6 +14,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+type finishedReadingCountingTestOperator struct {
+	*TestOperator
+	calls int
+}
+
+func (o *finishedReadingCountingTestOperator) FinishedReading(ctx context.Context) error {
+	o.calls++
+	return o.TestOperator.FinishedReading(ctx)
+}
+
 func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) {
 	series0Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 0}}}
 	series2Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 2}}}
@@ -233,4 +243,49 @@ func TestInstantVectorOperatorBuffer_FinishedReadingReleasesBufferedData(t *test
 	// Calling FinishedReading on the buffer should release the buffered series.
 	buffer.FinishedReading()
 	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after FinishedReading, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestInstantVectorOperatorBuffer_GetSeriesReleasesPartialOutputAfterError(t *testing.T) {
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+	floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+	require.NoError(t, err)
+	floats = append(floats, promql.FPoint{T: 0, F: 1})
+
+	inner := &TestOperator{
+		Series: []labels.Labels{
+			labels.FromStrings("series", "0"),
+			labels.FromStrings("series", "1"),
+		},
+		Data: []types.InstantVectorSeriesData{{Floats: floats}},
+	}
+	buffer := NewInstantVectorOperatorBuffer(inner, nil, 1, memoryConsumptionTracker)
+
+	_, err = buffer.GetSeries(t.Context(), []int{0, 1})
+	require.ErrorIs(t, err, types.EOS)
+	buffer.FinishedReading()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestInstantVectorOperatorBuffer_CallsSourceFinishedReadingOnce(t *testing.T) {
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+	data := make([]types.InstantVectorSeriesData, 2)
+	for idx := range data {
+		floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+		require.NoError(t, err)
+		data[idx].Floats = append(floats, promql.FPoint{T: 0, F: float64(idx)})
+	}
+
+	inner := &finishedReadingCountingTestOperator{TestOperator: &TestOperator{Data: data}}
+	buffer := NewInstantVectorOperatorBuffer(inner, nil, 1, memoryConsumptionTracker)
+
+	series, err := buffer.GetSeries(t.Context(), []int{1})
+	require.NoError(t, err)
+	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
+	series, err = buffer.GetSeries(t.Context(), []int{0})
+	require.NoError(t, err)
+	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
+
+	require.Equal(t, 1, inner.calls)
+	buffer.FinishedReading()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

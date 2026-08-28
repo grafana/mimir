@@ -619,12 +619,35 @@ load 5m
   duplicate_many{key="a", pod="p1"} 1
   duplicate_one_a{key="a"} 10
   duplicate_one_b{key="a"} 20
+  unmatched_duplicate_many{key="a", pod="p1"} 1
+  unmatched_duplicate_one_a{key="b"} 10
+  unmatched_duplicate_one_b{key="b"} 20
+  unmatched_disjoint_many{key="a", pod="p1"} 1 2
+  unmatched_disjoint_one_a{key="b"} 10 _
+  unmatched_disjoint_one_b{key="b"} _ 20
+  unmatched_disjoint_one_c{key="c"} 30 _
+  unmatched_disjoint_one_d{key="c"} _ 40
 
 eval_fail instant at 0 duplicate_many + on(key) group_left fill(0) {__name__=~"duplicate_one_a|duplicate_one_b"}
   expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
 
 eval_fail instant at 0 {__name__=~"duplicate_one_a|duplicate_one_b"} + on(key) group_right fill(0) duplicate_many
   expected_fail_regexp found duplicate series for the match group .* on the left (hand-)?side of the operation
+
+eval_fail instant at 0 unmatched_duplicate_many + on(key) group_left fill_right(0) {__name__=~"unmatched_duplicate_one_a|unmatched_duplicate_one_b"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail instant at 0 {__name__=~"unmatched_duplicate_one_a|unmatched_duplicate_one_b"} + on(key) group_right fill_left(0) unmatched_duplicate_many
+  expected_fail_regexp found duplicate series for the match group .* on the left (hand-)?side of the operation
+
+eval_fail instant at 0 nonexistent + on(key) group_left fill_right(0) {__name__=~"unmatched_duplicate_one_a|unmatched_duplicate_one_b"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail instant at 0 nonexistent + on(key) group_left fill_left(0) {__name__=~"unmatched_duplicate_one_a|unmatched_duplicate_one_b"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval range from 0 to 5m step 5m unmatched_disjoint_many + on(key) group_left fill_right(0) {__name__=~"unmatched_disjoint_one_.+"}
+  {key="a", pod="p1"} 1 2
 
 # ---------- Grouped output labels and metric names ----------
 
