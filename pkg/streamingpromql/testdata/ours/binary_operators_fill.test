@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# These tests exercise the experimental one-to-one 'fill', 'fill_left' and 'fill_right' binary
-# operator modifiers. Grouped (group_left/group_right) fills are not covered here.
+# These tests exercise fill, fill_left, and fill_right binary operator modifiers.
 #
 # Semantics reference:
 # https://promlabs.com/blog/2026/03/05/filling-in-missing-series-in-binary-operator-matching/.
