@@ -107,7 +107,6 @@ func TestBlockBuilder(t *testing.T) {
 						cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
 
 						expectedSamples := make(map[string][]mimirpb.Sample, 0)
-						recsPerTenant := 0
 						var offset int64
 						kafkaRecTime := time.Now().Add(-time.Hour)
 						for range samplesPerTenant {
@@ -118,7 +117,6 @@ func TestBlockBuilder(t *testing.T) {
 								}
 								offset++
 							}
-							recsPerTenant++
 
 							kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
 						}
