@@ -24,15 +24,15 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 	ctx := context.Background()
 
 	tests := map[string]struct {
-		offsets        []*offsetTime
-		start          int64
-		resume         int64
-		end            int64
-		jobSize        time.Duration
-		endTime        time.Time
-		expectedRanges []*offsetTime
-		minScanTime    time.Time
-		msg            string
+		offsets     []*offsetTime
+		start       int64
+		resume      int64
+		end         int64
+		jobSize     time.Duration
+		endTime     time.Time
+		expected    []*offsetTime
+		minScanTime time.Time
+		msg         string
 	}{
 		"no new data": {
 			// End offset is the one that was consumed last time.
@@ -41,12 +41,12 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
 				{offset: 1999, time: time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC)},
 			},
-			resume:         2000,
-			end:            2000,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
+			resume:      2000,
+			end:         2000,
+			jobSize:     200 * time.Millisecond,
+			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
+			expected:    []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"record at or after end time is registered instead of the end offset": {
 			// A record whose timestamp is at or after endTime means the first probe finds a
@@ -61,7 +61,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     200 * time.Millisecond,
 			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 700*1000000, time.UTC)},
 			},
 		},
@@ -75,7 +75,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     200 * time.Millisecond,
 			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
 				{offset: 2001, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
 			},
@@ -84,21 +84,21 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			offsets: []*offsetTime{
 				{offset: 1999, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
 			},
-			resume:         2000,
-			end:            2000,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
+			resume:      2000,
+			end:         2000,
+			jobSize:     200 * time.Millisecond,
+			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
+			expected:    []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"empty partition: no data": {
-			offsets:        []*offsetTime{},
-			resume:         0,
-			end:            0,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 0, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
+			offsets:     []*offsetTime{},
+			resume:      0,
+			end:         0,
+			jobSize:     200 * time.Millisecond,
+			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
+			expected:    []*offsetTime{{offset: 0, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"data gaps wider than job size": {
 			offsets: []*offsetTime{
@@ -128,7 +128,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     100 * time.Millisecond,
 			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 99*1000000, time.UTC)},
 				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
 				{offset: 1013, time: time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC)},
@@ -154,7 +154,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     100 * time.Millisecond,
 			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
 				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
 				{offset: 1009, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
@@ -172,7 +172,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     100 * time.Millisecond,
 			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 150*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
 				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
@@ -185,22 +185,22 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
 				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC)},
 			},
-			resume:         1001,
-			end:            1004,
-			jobSize:        100 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			resume:      1001,
+			end:         1004,
+			jobSize:     100 * time.Millisecond,
+			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
+			expected:    []*offsetTime{},
 		},
 		"resume < start and start == end": {
-			offsets:        []*offsetTime{},
-			start:          1004,
-			resume:         1000,
-			end:            1004,
-			jobSize:        1 * time.Minute,
-			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
+			offsets:     []*offsetTime{},
+			start:       1004,
+			resume:      1000,
+			end:         1004,
+			jobSize:     1 * time.Minute,
+			endTime:     time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expected:    []*offsetTime{{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"resume < start < end": {
 			offsets: []*offsetTime{
@@ -212,20 +212,20 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     1 * time.Minute,
 			endTime:     time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC)},
 				{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)},
 			},
 		},
 		"resume == start == end": {
-			offsets:        []*offsetTime{},
-			start:          1003,
-			resume:         1003,
-			end:            1003,
-			jobSize:        1 * time.Minute,
-			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
+			offsets:     []*offsetTime{},
+			start:       1003,
+			resume:      1003,
+			end:         1003,
+			jobSize:     1 * time.Minute,
+			endTime:     time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expected:    []*offsetTime{{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"hour-based ranges when resume < start": {
 			offsets: []*offsetTime{
@@ -238,7 +238,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			jobSize:     1 * time.Hour,
 			endTime:     time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
 			minScanTime: time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{
+			expected: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
 				{offset: 3000, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
 				{offset: 10001, time: time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC)},
@@ -253,7 +253,7 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 			scanner := newOffsetScanner([]offsetStore{f}, "topic", tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
 			j, err := scanner.probeSingleClusterOffsets(ctx, 0, partitionOffsets{partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
 			assert.NoError(t, err)
-			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
+			assert.EqualValues(t, tt.expected, j, tt.msg)
 		})
 	}
 }
@@ -317,6 +317,54 @@ func TestProbeInitialPartitionOffsets(t *testing.T) {
 		_, err := newScanner(stores).probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
 		require.ErrorIs(t, err, wantErr)
 	})
+}
+
+func TestProbeInitialPartitionOffsets_ClustersEndOnDifferentTimes(t *testing.T) {
+	ctx := context.Background()
+	endTime := time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC)
+	oldRecord := endTime.Add(-90 * time.Minute)
+	lateRecord := endTime.Add(20 * time.Minute)
+
+	newCluster := func(recordTimes ...time.Time) offsetStore {
+		var vnet kfake.VirtualNetwork
+		_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
+		cli, err := kgo.NewClient(
+			kgo.SeedBrokers(kafkaAddr),
+			kgo.Dialer(vnet.DialContext),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
+		require.NoError(t, err)
+		t.Cleanup(cli.Close)
+		for _, ts := range recordTimes {
+			require.NoError(t, cli.ProduceSync(ctx, &kgo.Record{
+				Timestamp: ts, Value: []byte("v"), Topic: "ingest", Partition: 0,
+			}).FirstErr())
+		}
+		return newOffsetFinder(kadm.NewClient(cli))
+	}
+
+	// Cluster 1 also holds a record past endTime, so its first probe finds real data where
+	// cluster 0's falls back to the end offset.
+	stores := []offsetStore{
+		newCluster(oldRecord),
+		newCluster(oldRecord, lateRecord),
+	}
+	clusterOffsets := []*partitionOffsets{
+		{partition: 0, resume: 0, end: 1},
+		{partition: 0, resume: 0, end: 2},
+	}
+
+	scanner := newOffsetScanner(stores, "ingest", endTime, time.Hour, 2*time.Hour, promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+	perCluster, err := scanner.probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
+	require.NoError(t, err)
+
+	last := func(clusterID int) *offsetTime {
+		require.NotEmpty(t, perCluster[clusterID])
+		return perCluster[clusterID][len(perCluster[clusterID])-1]
+	}
+	assert.Equal(t, endTime.UnixMilli(), last(0).time.UnixMilli(), "cluster 0 should fall back to the end offset stamped at endTime")
+	assert.Equal(t, lateRecord.UnixMilli(), last(1).time.UnixMilli(), "cluster 1 should end on its record past endTime")
+	assert.NotEqual(t, last(0).time.UnixMilli(), last(1).time.UnixMilli(), "the clusters' final offsets should carry different times")
 }
 
 func TestScanProbeTimes(t *testing.T) {
