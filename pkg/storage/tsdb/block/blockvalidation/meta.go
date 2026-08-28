@@ -23,7 +23,7 @@ import (
 const MaxBlockSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 
 // MaxBlockInvalidSizeError reports that the sum of declared file sizes in a
-// block exceeded the configured maximum over overflowed int64.
+// block exceeded the configured maximum or overflowed int64.
 //
 // SizeBytes may be negative if the sum overflows int64.
 type MaxBlockInvalidSizeError struct {
@@ -40,10 +40,10 @@ func (e *MaxBlockInvalidSizeError) Error() string {
 // block-upload API.
 const uploadSource = "upload"
 
-// allowedRelPath matches the relative paths that may appear in
+// AllowedRelPath matches the relative paths that may appear in
 // meta.Thanos.Files alongside the meta.json file itself. Any other path is
 // rejected by CheckMeta.
-var allowedRelPath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var AllowedRelPath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
 // CheckMetaOptions configures CheckMeta.
 type CheckMetaOptions struct {
@@ -84,7 +84,7 @@ func CheckMeta(meta *block.Meta, opts CheckMetaOptions) error {
 		if f.RelPath == block.MetaFilename {
 			continue
 		}
-		if !allowedRelPath.MatchString(f.RelPath) {
+		if !AllowedRelPath.MatchString(f.RelPath) {
 			return fmt.Errorf("file with invalid path: %s", f.RelPath)
 		}
 		if f.SizeBytes <= 0 {

@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -47,7 +46,7 @@ const (
 	validationDirPrefix         = "upload"              // Prefix of the temporary directories created under the data directory to validate uploaded blocks.
 )
 
-var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+// var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
 // checkReady returns false and writes a 503 if the compactor is not yet running.
@@ -318,7 +317,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !rePath.MatchString(pth) {
+	if !blockvalidation.AllowedRelPath.MatchString(pth) {
 		err := httpError{statusCode: http.StatusBadRequest, message: fmt.Sprintf("invalid path: %q", pth)}
 		writeBlockUploadError(err, "failed because path is invalid", logger, w, requestID)
 		return
