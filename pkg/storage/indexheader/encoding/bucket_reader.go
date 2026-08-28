@@ -44,14 +44,14 @@ func NewBucketReader(
 	}
 }
 
-func (r *BucketReader) Read(p []byte) (n int, err error) {
-	if len(p) == 0 {
+func (r *BucketReader) Read(dst []byte) (n int, err error) {
+	if len(dst) == 0 {
 		return 0, nil
 	}
 	if r.off >= r.length {
 		return 0, io.EOF
 	}
-	toRead := len(p)
+	toRead := len(dst)
 	remaining := r.length - r.off
 	if toRead > remaining {
 		toRead = remaining
@@ -61,7 +61,7 @@ func (r *BucketReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	defer rc.Close()
-	n, err = io.ReadFull(rc, p[:toRead])
+	n, err = io.ReadFull(rc, dst[:toRead])
 	r.off += n
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		err = io.EOF
@@ -164,9 +164,7 @@ func (bbr *BucketBufReader) Skip(l int) error {
 	}
 
 	n, err := bbr.buf.Discard(l)
-	if n > 0 {
-		bbr.off += n
-	}
+	bbr.off += n
 
 	return err
 }
@@ -197,14 +195,14 @@ func (bbr *BucketBufReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (bbr *BucketBufReader) ReadInto(b []byte) error {
-	n, err := io.ReadFull(bbr.buf, b)
+func (bbr *BucketBufReader) ReadInto(dst []byte) error {
+	n, err := io.ReadFull(bbr.buf, dst)
 	if n > 0 {
 		bbr.off += n
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
 	} else if err != nil {
 		return err
 	}

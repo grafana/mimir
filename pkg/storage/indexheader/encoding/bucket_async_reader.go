@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
 	"github.com/thanos-io/objstore"
@@ -60,13 +61,13 @@ func NewBufPromise(
 	return bp
 }
 
-func (bp *BufPromise) Read(p []byte) (n int, err error) {
+func (bp *BufPromise) Read(dst []byte) (n int, err error) {
 	if err := bp.eg.Wait(); err != nil {
 		// Return any error in the underlying bucket read from the initial fill-via-Peek.
 		// A Read after a bad Peek overwrites the bucket read error with a generic short read error.
 		return 0, err
 	}
-	return bp.bufioReader.Read(p)
+	return bp.bufioReader.Read(dst)
 }
 
 func (bp *BufPromise) Buffered() (n int, err error) {
@@ -76,6 +77,26 @@ func (bp *BufPromise) Buffered() (n int, err error) {
 		return 0, err
 	}
 	return bp.bufioReader.Buffered(), nil
+}
+
+// Peek returns at most n bytes from the promise, without consuming them.
+// The byte slice points into the buffer of the promise.
+// It becomes invalid when the promise is released.
+func (bp *BufPromise) Peek(n int) ([]byte, error) {
+	if err := bp.eg.Wait(); err != nil {
+		// Return any error in the underlying bucket read from the initial fill-via-Peek.
+		return nil, err
+	}
+	return bp.bufioReader.Peek(n)
+}
+
+// Discard consumes and drops at most n bytes from the promise.
+func (bp *BufPromise) Discard(n int) (discarded int, err error) {
+	if err := bp.eg.Wait(); err != nil {
+		// Return any error in the underlying bucket read from the initial fill-via-Peek.
+		return 0, err
+	}
+	return bp.bufioReader.Discard(n)
 }
 
 // release returns the buffer of the promise to the pool.
@@ -168,14 +189,122 @@ func (bbar *BucketAsyncBufReader) ResetAt(off int) error {
 	panic("implement me")
 }
 
-func (bbar *BucketAsyncBufReader) Skip(l int) error {
-	//TODO implement me
-	panic("implement me")
+// rotateHead releases the drained head promise, starts a promise for the next chunk
+// of the data segment in the same slot, and advances the head index.
+// Peek copies its result into peekBuf, so no slice that the reader returned
+// points into the buffer of a promise. The release is safe at once.
+func (bbar *BucketAsyncBufReader) rotateHead() {
+	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
+	// we reset the buffer when we retrieve it from the pool instead.
+	bbar.bufPromises[bbar.bufIdx].release(bbar.bufioPool)
+	bufioReader := bbar.bufioPool.Get().(*bufio.Reader)
+
+	// Create a new buffer promise in the same spot in the buffer promise queue.
+	// The promise must not reach past the end of the reader.
+	// bufferedOffset is relative to the data segment.
+	// Add base to get the offset in the object.
+	bufLen := min(bbar.length-bbar.bufferedOffset, bbar.bufSize)
+	bbar.bufPromises[bbar.bufIdx] = NewBufPromise(
+		bbar.ctx, bbar.bkt, bbar.name, bbar.base+bbar.bufferedOffset, bufLen, bufioReader,
+	)
+	bbar.bufferedOffset += bufLen
+
+	// Advance current buffer queue index - modulo wraps around to the front of the slice if at end.
+	bbar.bufIdx = (bbar.bufIdx + 1) % len(bbar.bufPromises)
 }
 
+// Skip advances the cursor by l bytes in the data segment and discards those bytes.
+// Skip returns ErrInvalidSize if l is greater than the number of bytes that remain.
+func (bbar *BucketAsyncBufReader) Skip(l int) error {
+	if l > bbar.Len() {
+		return ErrInvalidSize
+	}
+
+	bytesSkipped := 0
+	// First try to complete the skip from previously-peeked bytes.
+	// If peekBuf is non-empty, those bytes were not skipped or read yet.
+	n := min(len(bbar.peekBuf), l)
+	bbar.readOffset += n
+	bytesSkipped += n
+	// Truncate the peekBuf even if we did not skip all the previously-peeked bytes.
+	// Peek interface contract says "byte slice returned becomes invalid at the next read" (which includes Skip).
+	bbar.peekBuf = bbar.peekBuf[:0]
+
+	// Move on to skip the data from promises if we have not complete the skip yet.
+	for bytesSkipped < l {
+		headPromise := bbar.bufPromises[bbar.bufIdx]
+		headPromiseBuffered, err := headPromise.Buffered()
+		if err != nil {
+			return err
+		}
+
+		toSkip := min(l-bytesSkipped, headPromiseBuffered)
+		n, err := headPromise.Discard(toSkip)
+		if err != nil {
+			return err
+		}
+		bbar.readOffset += n
+		bytesSkipped += n
+
+		headPromiseBuffered, err = headPromise.Buffered()
+		if err != nil {
+			return err
+		}
+
+		if headPromiseBuffered <= 0 {
+			bbar.rotateHead()
+		}
+	}
+
+	return nil
+}
+
+// Peek returns at most n bytes from the data segment, without consuming them.
+// Peek always copies the bytes into peekBuf for now.
+// This keeps the logic simple for rotating out exhausted buffer promises
+// in the case where a peek crosses the promise boundaries.
+// Since peekBuf is pre-allocated, this still avoids the extra slice allocation
+// which occurs when callers Read instead of Peek.
 func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	// Ensure peekBuf has capacity of n by calling Grow against the truncated slice.
+	// This should never trigger a new alloc as peekBuf is pre-allocated to larger than we need -
+	// at most it needs to hold the length of one Prometheus label or value.
+	// Length must be truncated before return in the case of a short Peek.
+	bbar.peekBuf = slices.Grow(bbar.peekBuf[:0], n)[:n]
+
+	peekableBytes := bbar.Size()
+	peekBytesWritten := 0
+	for peekBytesWritten < n && peekableBytes > 0 {
+		headPromise := bbar.bufPromises[bbar.bufIdx]
+		headPromiseBuffered, err := headPromise.Buffered()
+		if err != nil {
+			return nil, err
+		}
+
+		toRead := min(n-peekBytesWritten, headPromiseBuffered)
+		readN, err := io.ReadFull(headPromise, bbar.peekBuf[peekBytesWritten:peekBytesWritten+toRead])
+		peekBytesWritten += readN
+		peekableBytes -= readN
+		if err != nil {
+			return nil, err
+		}
+
+		headPromiseBuffered, err = headPromise.Buffered()
+		if err != nil {
+			return nil, err
+		}
+
+		if headPromiseBuffered <= 0 {
+			bbar.rotateHead()
+		}
+	}
+	// A short Peek is valid; truncate to what was actually read.
+	bbar.peekBuf = bbar.peekBuf[:peekBytesWritten]
+
+	if peekBytesWritten == 0 {
+		return nil, nil
+	}
+	return bbar.peekBuf[:peekBytesWritten], nil
 }
 
 func (bbar *BucketAsyncBufReader) Read(n int) ([]byte, error) {
@@ -189,19 +318,33 @@ func (bbar *BucketAsyncBufReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (bbar *BucketAsyncBufReader) ReadInto(b []byte) error {
-	resultBufWritten := 0
-	for resultBufWritten < len(b) {
+func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
+	// First try to satisfy the read from previously-peeked bytes.
+	dstBytesWritten := 0
+	n := copy(dst, bbar.peekBuf)
+	bbar.readOffset += n
+	dstBytesWritten += n
+
+	// Truncate the peekBuf even if we did not read all the previously-peeked bytes.
+	// Peek interface contract says "byte slice returned becomes invalid at the next read".
+	// We do not need to try to serve two subsequent reads from the peekBuf even if they fit.
+	bbar.peekBuf = bbar.peekBuf[:0]
+
+	// Move on to read from the promises if we have not satisfied the read yet.
+	for dstBytesWritten < len(dst) {
 		headPromise := bbar.bufPromises[bbar.bufIdx]
 		headPromiseBuffered, err := headPromise.Buffered()
 		if err != nil {
 			return err
 		}
 
-		toRead := min(len(b)-resultBufWritten, headPromiseBuffered)
-		n, err := io.ReadFull(headPromise, b[resultBufWritten:resultBufWritten+toRead])
+		toRead := min(len(dst)-dstBytesWritten, headPromiseBuffered)
+		n, err := io.ReadFull(headPromise, dst[dstBytesWritten:dstBytesWritten+toRead])
 		bbar.readOffset += n
-		resultBufWritten += n
+		dstBytesWritten += n
+		if err != nil {
+			return err
+		}
 
 		headPromiseBuffered, err = headPromise.Buffered()
 		if err != nil {
@@ -209,20 +352,12 @@ func (bbar *BucketAsyncBufReader) ReadInto(b []byte) error {
 		}
 
 		if headPromiseBuffered <= 0 {
-			// Rotate & replace
-			headPromise.release(bbar.bufioPool)
-			bufioReader := bbar.bufioPool.Get().(*bufio.Reader)
-			bufLen := min(bbar.length-bbar.bufferedOffset, bbar.bufSize)
-			bbar.bufPromises[bbar.bufIdx] = NewBufPromise(
-				bbar.ctx, bbar.bkt, bbar.name, bbar.bufferedOffset, bufLen, bufioReader,
-			)
-			bbar.bufIdx = (bbar.bufIdx + 1) % len(bbar.bufPromises)
-			bbar.bufferedOffset += bufLen
+			bbar.rotateHead()
 		}
 
 		// Now we can surface any error
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+			return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
 		} else if err != nil {
 			return err
 		}
@@ -230,8 +365,10 @@ func (bbar *BucketAsyncBufReader) ReadInto(b []byte) error {
 	return nil
 }
 
+// Size returns the largest number of bytes that a single Peek can return.
+// Peek assembles its result in peekBuf, so the capacity of peekBuf is the limit.
 func (bbar *BucketAsyncBufReader) Size() int {
-	return bbar.bufSize
+	return cap(bbar.peekBuf)
 }
 
 func (bbar *BucketAsyncBufReader) Len() int {
@@ -253,7 +390,7 @@ func (bbar *BucketAsyncBufReader) Buffered() int {
 func (bbar *BucketAsyncBufReader) Close() error {
 	for i, bufPromise := range bbar.bufPromises {
 		if bufPromise == nil {
-			// A rotate or an earlier Close released the promise in this slot.
+			// An earlier Close released the promise in this slot.
 			continue
 		}
 		// Note that we don't do anything to clean up the buffer before returning it to the pool here:

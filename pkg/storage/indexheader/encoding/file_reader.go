@@ -110,14 +110,14 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (f *FileReader) ReadInto(b []byte) error {
-	r, err := io.ReadFull(f.buf, b)
+func (f *FileReader) ReadInto(dst []byte) error {
+	r, err := io.ReadFull(f.buf, dst)
 	if r > 0 {
 		f.off += r
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
 	} else if err != nil {
 		return err
 	}

@@ -35,11 +35,11 @@ type BufReader interface {
 	// and the remaining bytes MUST be consumed.
 	Read(n int) ([]byte, error)
 
-	// ReadInto reads len(b) bytes from the data segment into b, consuming them.
+	// ReadInto reads len(dst) bytes from the data segment into dst, consuming them.
 	// It is NOT valid to read beyond the end of the data segment;
 	// in this case implementations MUST return a nil byte slice and an ErrInvalidSize error,
 	// and the remaining bytes MUST be consumed.
-	ReadInto(b []byte) error
+	ReadInto(dst []byte) error
 
 	// Size returns the length of the underlying buffer in bytes.
 	Size() int
