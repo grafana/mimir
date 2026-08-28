@@ -32,8 +32,12 @@ func TestSubquery_IsSplittable(t *testing.T) {
 			expr:       `sum_over_time(vector(1)[5h:1h])`,
 			splittable: true,
 		},
-		"smoothed selector nested inside the subquery": {
+		"smoothed matrix selector nested inside the subquery": {
 			expr:       `sum_over_time(rate(test_metric[3m] smoothed)[5h:1h])`,
+			splittable: false,
+		},
+		"smoothed vector selector nested inside the subquery": {
+			expr:       `sum_over_time((test_metric smoothed)[5h:1h])`,
 			splittable: false,
 		},
 		"anchored selector nested inside the subquery": {
