@@ -2422,7 +2422,7 @@ func TestDecodeNodesRejectsCyclicGraph(t *testing.T) {
 	require.EqualError(t, err, "cycle detected while decoding node index 0")
 }
 
-func TestDecodeNodesBoundsDistinctMinimumVersionStates(t *testing.T) {
+func TestDecodeNodesAcceptsSharedDAGWithDistinctEffectiveRanges(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 	encoded := &planning.EncodedQueryPlan{
 		TimeRange: timeRange.Encode(),
@@ -2474,8 +2474,9 @@ func TestDecodeNodesBoundsDistinctMinimumVersionStates(t *testing.T) {
 		},
 	}
 
-	_, err := encoded.DecodeNodes(5)
-	require.EqualError(t, err, "validate decoded node 5: minimum plan version validation exceeded the 7-state limit")
+	nodes, err := encoded.DecodeNodes(5)
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
 }
 
 func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string, expected string) {

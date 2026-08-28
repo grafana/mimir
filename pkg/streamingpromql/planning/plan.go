@@ -384,6 +384,9 @@ type minimumRequiredPlanVersionValidator struct {
 	maxStateCount int
 }
 
+// maxAdditionalMinimumVersionValidationStates supports shared ranges while bounding validation work from compact DAGs.
+const maxAdditionalMinimumVersionValidationStates = 16 * 1024
+
 func newMinimumRequiredPlanVersionValidator(maxStateCount int) *minimumRequiredPlanVersionValidator {
 	return &minimumRequiredPlanVersionValidator{
 		memo:          make(map[minimumRequiredPlanVersionMemoKey]QueryPlanVersion),
@@ -595,7 +598,12 @@ func minimumVersionValidationStateLimit(nodeCount, rootCount int) (int, error) {
 		return 0, fmt.Errorf("node count %d and root count %d overflow the state limit", nodeCount, rootCount)
 	}
 
-	return nodeCount + rootCount, nil
+	structuralStateCount := nodeCount + rootCount
+	if structuralStateCount > maxInt-maxAdditionalMinimumVersionValidationStates {
+		return maxInt, nil
+	}
+
+	return structuralStateCount + maxAdditionalMinimumVersionValidationStates, nil
 }
 
 func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
