@@ -2029,6 +2029,67 @@ func TestMetasToChunkRefs(t *testing.T) {
 	}
 }
 
+func TestOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelPostingsFiltering(t *testing.T) {
+	series := []labels.Labels{
+		labels.FromStrings("a", "1", "b", "1"),
+		labels.FromStrings("a", "1", "b", "2"),
+		labels.FromStrings("a", "2", "b", "1"),
+		labels.FromStrings("a", "3", "b", "1"),
+		labels.FromStrings("b", "1"),
+	}
+
+	testBlock := fixtures.SetupTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.Appender) {
+		appender := appenderFactory()
+		for _, s := range series {
+			_, err := appender.Append(0, s, 0, 0)
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, appender.Commit())
+	})
+	newTestBlock := testBlockToBucketBlock(test.NewTB(t), testBlock)
+
+	for shardIndex := uint64(0); shardIndex < 4; shardIndex++ {
+		t.Run(fmt.Sprintf("shard %d", shardIndex), func(t *testing.T) {
+			b := newTestBlock()
+			shard := &sharding.ShardSelector{ShardIndex: shardIndex, ShardCount: 4, ByLabels: []string{"a"}}
+			stats := newSafeQueryStats()
+			it, err := openBlockSeriesChunkRefsSetsIterator(
+				t.Context(),
+				10,
+				"",
+				b.indexReader(selectAllStrategy{}),
+				b.indexCache,
+				b.meta,
+				[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "b", "1")},
+				shard,
+				mockSeriesHasher{},
+				noChunkRefs,
+				b.meta.MinTime,
+				b.meta.MaxTime,
+				stats,
+				log.NewNopLogger(),
+				nil,
+			)
+			require.NoError(t, err)
+
+			actual := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(it))
+			require.NoError(t, it.Err())
+
+			var expected []labels.Labels
+			for _, s := range series {
+				hash, _ := s.HashForLabels(nil, "a")
+				if s.Get("b") == "1" && hash%shard.ShardCount == shard.ShardIndex {
+					expected = append(expected, s)
+				}
+			}
+			slices.SortFunc(expected, labels.Compare)
+
+			testutil.RequireEqual(t, expected, actual)
+			assert.Equal(t, len(expected), stats.export().seriesFetched)
+		})
+	}
+}
+
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {

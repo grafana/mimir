@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -774,6 +775,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
+	if shard != nil && len(shard.ByLabels) == 1 {
+		ps, err = filterPostingsBySubsetLabelShard(ctx, indexr, ps, shard, stats)
+		if err != nil {
+			return nil, errors.Wrap(err, "filter postings by subset label shard")
+		}
+	}
+
 	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
 		return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, tenantID, indexr, indexCache, blockMeta, shard, seriesHasher, strategy, minTime, maxTime, stats, psi, pendingMatchers, logger)
 	}
@@ -784,6 +792,47 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	return streamingIterators.wrapIterator(strategy, ps, batchSize, iteratorFactory), nil
+}
+
+// filterPostingsBySubsetLabelShard uses the label-value postings index to discard unowned series before loading them.
+func filterPostingsBySubsetLabelShard(ctx context.Context, indexr *bucketIndexReader, candidates []storage.SeriesRef, shard *sharding.ShardSelector, stats *safeQueryStats) ([]storage.SeriesRef, error) {
+	labelName := shard.ByLabels[0]
+	offsets, err := indexr.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "get label values")
+	}
+
+	var hashBuffer []byte
+	missingHash, hashBuffer := labels.EmptyLabels().HashForLabels(hashBuffer, labelName)
+	ownsMissing := missingHash%shard.ShardCount == shard.ShardIndex
+
+	toFetch := make([]streamindex.PostingListOffset, 0, len(offsets)/int(shard.ShardCount)+1)
+	if ownsMissing {
+		// ponytail: the missing-label shard fetches every unowned value posting; add an all-values posting fast path if profiling warrants it.
+		toFetch = make([]streamindex.PostingListOffset, 0, len(offsets))
+	}
+	for _, offset := range offsets {
+		hash, buffer := labels.FromStrings(labelName, offset.LabelValue).HashForLabels(hashBuffer, labelName)
+		hashBuffer = buffer
+		if ownsValue := hash%shard.ShardCount == shard.ShardIndex; ownsValue != ownsMissing {
+			toFetch = append(toFetch, offset)
+		}
+	}
+
+	keys := make([]labelPostingOffset, len(toFetch))
+	for i, offset := range toFetch {
+		keys[i] = labelPostingOffset{Label: labels.Label{Name: labelName, Value: offset.LabelValue}, off: offset.Off}
+	}
+	postings, err := indexr.FetchPostingsIndexV2(ctx, keys, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch label value postings")
+	}
+	values := index.Merge(ctx, postings...)
+
+	if ownsMissing {
+		return index.ExpandPostings(index.Without(index.NewListPostings(candidates), values))
+	}
+	return index.ExpandPostings(index.Intersect(index.NewListPostings(candidates), values))
 }
 
 func openBlockSeriesChunkRefsSetsIteratorFromPostings(
