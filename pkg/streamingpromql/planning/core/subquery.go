@@ -55,6 +55,30 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 }
 
 func (s *Subquery) IsSplittable() bool {
+	return hasBlockRelativeTimeRange(s.Inner)
+}
+
+// hasBlockRelativeTimeRange reports whether every selector in this subtree uses a time range relative to the split block evaluating it,
+// rather than a fixed or extended point in time: no negative offset, no `@` timestamp, and no `smoothed`/`anchored` matrix selector.
+// Splitting a subquery containing one of these can produce a cache entry that goes stale once matching data lands.
+func hasBlockRelativeTimeRange(node planning.Node) bool {
+	switch n := node.(type) {
+	case *MatrixSelector:
+		return !n.Anchored && !n.Smoothed && n.Offset >= 0 && n.Timestamp == nil
+	case *VectorSelector:
+		return n.Offset >= 0 && n.Timestamp == nil
+	case *Subquery:
+		if n.Offset < 0 || n.Timestamp != nil {
+			return false
+		}
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		if !hasBlockRelativeTimeRange(child) {
+			return false
+		}
+	}
+
 	return true
 }
 
