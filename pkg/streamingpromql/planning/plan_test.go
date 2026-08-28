@@ -280,6 +280,59 @@ func TestMinimumRequiredPlanVersionMemoizesSharedDAG(t *testing.T) {
 	})
 }
 
+func TestMinimumRequiredPlanVersionBoundsStates(t *testing.T) {
+	validator := newMinimumRequiredPlanVersionValidator(1)
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	_, err := validator.minimumRequiredPlanVersion(&testNode{}, timeRange)
+	require.NoError(t, err)
+
+	_, err = validator.minimumRequiredPlanVersion(&testNode{}, timeRange)
+	require.EqualError(t, err, "minimum plan version validation exceeded the 1-state limit")
+}
+
+func TestMinimumVersionValidationStateLimit(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	testCases := map[string]struct {
+		nodeCount     int
+		rootCount     int
+		expected      int
+		expectedError string
+	}{
+		"empty plan": {
+			expected: maxAdditionalMinimumVersionValidationStates,
+		},
+		"structural states": {
+			nodeCount: 6,
+			rootCount: 1,
+			expected:  6 + 1 + maxAdditionalMinimumVersionValidationStates,
+		},
+		"additional states saturate": {
+			nodeCount: maxInt - 1,
+			rootCount: 1,
+			expected:  maxInt,
+		},
+		"structural states overflow": {
+			nodeCount:     maxInt,
+			rootCount:     1,
+			expectedError: fmt.Sprintf("node count %d and root count 1 overflow the state limit", maxInt),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual, err := minimumVersionValidationStateLimit(testCase.nodeCount, testCase.rootCount)
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
 func TestDecodeEncodedQueryTimeRangePreservesZeroValue(t *testing.T) {
 	decoded, err := decodeEncodedQueryTimeRange(types.EncodedQueryTimeRange{})
 	require.NoError(t, err)
