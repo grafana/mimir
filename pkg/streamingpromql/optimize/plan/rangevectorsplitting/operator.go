@@ -383,21 +383,19 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				}
 				seriesToSplits = append(seriesToSplits, nil)
 			} else {
-				if seriesMetadata.DropName != mergedMetadata[mergedIdx].DropName {
-					// This shouldn't happen for range vector selectors, DropName will always be false at this point.
-					// TODO: There is a problematic edge case if subquery splitting is supported and delayed name
-					//  removal is enabled:
-					//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
-					//  Left: {__name__="foo"} + DropName=true (from rate)
-					//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
-					//  If the left is missing from some splits, we get inconsistent DropNames.
-					//  DeduplicateAndMerge will take the DropName value from the LHS, if results exist for the LHS at
-					//  any point. Otherwise the RHS DropName is used.
-					//  In the split case, if there are splits that don't have the LHS, we can get inconsistent
-					//  DropNames across splits. The splits don't know whether there were samples from the LHS or not so
-					//  cannot always reproduce the non-split behaviour.
-					return nil, nil, fmt.Errorf("series %s has conflicting DropName values across splits (split %d has %t, merged has %t)", seriesMetadata.Labels.String(), splitIdx, seriesMetadata.DropName, mergedMetadata[mergedIdx].DropName)
-				}
+				// This shouldn't happen for range vector selectors, DropName will always be false at this point.
+				// There is a problematic edge case if subquery splitting and delayed name removal are enabled:
+				//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
+				//  Left: {__name__="foo"} + DropName=true (from rate)
+				//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
+				//  If the left is missing from some splits, we get inconsistent DropNames.
+				//  DeduplicateAndMerge will take the DropName value from the LHS, if results exist for the LHS at
+				//  any point. Otherwise the RHS DropName is used.
+				//  In the split case, if there are splits that don't have the LHS, we can get inconsistent
+				//  DropNames across splits. The splits don't know whether there were samples from the LHS or not so
+				//  cannot always reproduce the non-split behaviour.
+				// We handle this by keeping the DropName value from whichever split first introduced the series,
+				// rather than erroring, even though this can differ from the non-split behaviour.
 				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Labels)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{

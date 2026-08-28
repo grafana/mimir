@@ -7,9 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -278,6 +282,63 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 
 			require.Equal(t, testutils.TrimIndent(tc.expectedPlan), plan.String())
 			require.Equal(t, tc.expectedVersion, plan.Version)
+		})
+	}
+}
+
+// TestQuerySplitting_ConflictingDropNameAcrossSplits checks that FunctionOverRangeVectorSplit#mergeSplitsMetadata doesn't error
+// when subquery splitting and delayed name removal combine to produce different DropName values for the same series across splits.
+func TestQuerySplitting_ConflictingDropNameAcrossSplits(t *testing.T) {
+	testCases := map[string]struct {
+		expr                string
+		expectedPlainMetric labels.Labels
+		expectedSplitMetric labels.Labels
+	}{
+		"count_over_time: DropSeriesName overwrites the conflict, split matches unsplit": {
+			expr:                `count_over_time((rate(drop_name_foo[1h]) or label_replace(drop_name_bar, "__name__", "drop_name_foo", "", ""))[10h:1h])`,
+			expectedPlainMetric: labels.FromStrings("env", "prod"),
+			expectedSplitMetric: labels.FromStrings("env", "prod"),
+		},
+		"last_over_time: metadata passes through unchanged, split's __name__ diverges from unsplit": {
+			expr:                `last_over_time((rate(drop_name_foo[1h]) or label_replace(drop_name_bar, "__name__", "drop_name_foo", "", ""))[10h:1h])`,
+			expectedPlainMetric: labels.FromStrings("env", "prod"),
+			expectedSplitMetric: labels.FromStrings("__name__", "drop_name_foo", "env", "prod"),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := defaultSplittingOpts()
+			limits := streamingpromql.NewStaticQueryLimitsProvider()
+			limits.EnableDelayedNameRemoval = true
+			opts.Limits = limits
+
+			_, splitEngine := setupEngineAndCacheWithOpts(t, opts)
+
+			storage := promqltest.LoadedStorage(t, `
+				load 1h
+					drop_name_foo{env="prod"} _ _ _ _ _ 1 1 1 1 1 1
+					drop_name_bar{env="prod"} 1 1 1 1 1 1 1 1 1 1 1
+			`)
+			t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+			ts := timestamp.Time(0).Add(10 * time.Hour)
+
+			splitResult, _ := runInstantQuery(t, splitEngine, storage, tc.expr, ts)
+			require.NoError(t, splitResult.Err)
+
+			plainOpts := streamingpromql.NewTestEngineOpts()
+			plainOpts.Limits = limits
+			plainPlanner, err := streamingpromql.NewQueryPlanner(plainOpts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			plainEngine, err := streamingpromql.NewEngine(plainOpts, stats.NewQueryMetrics(plainOpts.CommonOpts.Reg), plainPlanner)
+			require.NoError(t, err)
+
+			plainResult, _ := runInstantQuery(t, plainEngine, storage, tc.expr, ts)
+			require.NoError(t, plainResult.Err)
+
+			require.Equal(t, tc.expectedPlainMetric, plainResult.Value.(promql.Vector)[0].Metric)
+			require.Equal(t, tc.expectedSplitMetric, splitResult.Value.(promql.Vector)[0].Metric)
 		})
 	}
 }
