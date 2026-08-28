@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# These tests exercise the experimental one-to-one 'fill', 'fill_left' and 'fill_right' binary
-# operator modifiers. Grouped (group_left/group_right) fills are not covered here.
+# These tests exercise fill, fill_left, and fill_right binary operator modifiers.
 #
 # Semantics reference:
 # https://promlabs.com/blog/2026/03/05/filling-in-missing-series-in-binary-operator-matching/.
@@ -452,3 +451,202 @@ load 5m
 
 eval range from 0 to 20m step 5m {__name__=~"churned_a|churned_b"} + fill_right(0) missing_metric
   {label="x"} 1 _ _ _ 2
+
+# ---------- Grouped fill combinations ----------
+
+clear
+
+load 5m
+  grouped_many{key="a", pod="p1"} 10
+  grouped_many{key="a", pod="p2"} 20
+  grouped_many{key="b", pod="p3"} 30
+  grouped_one{key="a", owner="team-a"} 100
+  grouped_one{key="c", owner="team-c"} 300
+
+# group_left fill_right fills the missing one side.
+eval instant at 0 grouped_many + on(key) group_left(owner) fill_right(7) grouped_one
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 37
+
+# group_left fill_left fills the missing many side.
+eval instant at 0 grouped_many + on(key) group_left(owner) fill_left(5) grouped_one
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="c", owner="team-c"} 305
+
+# group_left fill fills both missing sides.
+eval instant at 0 grouped_many + on(key) group_left(owner) fill(0) grouped_one
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 30
+  {key="c", owner="team-c"} 300
+
+# Distinct values cover the combined modifier grammar.
+eval instant at 0 grouped_many + on(key) group_left(owner) fill_left(5) fill_right(7) grouped_one
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 37
+  {key="c", owner="team-c"} 305
+
+# group_right fill_left fills the missing many side.
+eval instant at 0 grouped_one + on(key) group_right(owner) fill_left(7) grouped_many
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="c", owner="team-c"} 307
+
+# group_right fill_right fills the missing one side.
+eval instant at 0 grouped_one + on(key) group_right(owner) fill_right(5) grouped_many
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 35
+
+# group_right fill fills both missing sides.
+eval instant at 0 grouped_one + on(key) group_right(owner) fill(0) grouped_many
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 30
+  {key="c", owner="team-c"} 300
+
+# Distinct values verify operand orientation after side normalization.
+eval instant at 0 grouped_one + on(key) group_right(owner) fill_left(7) fill_right(5) grouped_many
+  {key="a", owner="team-a", pod="p1"} 110
+  {key="a", owner="team-a", pod="p2"} 120
+  {key="b", pod="p3"} 35
+  {key="c", owner="team-c"} 307
+
+# ---------- Grouped empty sides ----------
+
+clear
+
+load 5m
+  empty_many{key="a", pod="p1"} 10
+  empty_many{key="b", pod="p2"} 20
+  empty_one{key="a"} 100
+  empty_one{key="b"} 200
+
+eval instant at 0 empty_many + on(key) group_left fill_right(3) nonexistent
+  {key="a", pod="p1"} 13
+  {key="b", pod="p2"} 23
+
+eval instant at 0 empty_many + on(key) group_left fill_left(3) nonexistent
+
+eval instant at 0 nonexistent + on(key) group_left fill_left(3) empty_one
+  {key="a"} 103
+  {key="b"} 203
+
+eval instant at 0 nonexistent + on(key) group_left fill_right(3) empty_one
+
+eval instant at 0 nonexistent + on(key) group_right fill_left(3) empty_many
+
+eval instant at 0 nonexistent + on(key) group_right fill_right(3) empty_many
+  {key="a", pod="p1"} 13
+  {key="b", pod="p2"} 23
+
+eval instant at 0 empty_one + on(key) group_right fill_right(3) nonexistent
+
+eval instant at 0 empty_one + on(key) group_right fill_left(3) nonexistent
+  {key="a"} 103
+  {key="b"} 203
+
+# ---------- Grouped intermittent range queries ----------
+
+clear
+
+load 5m
+  range_many{key="a", pod="p1"} 1 _ 3 _ 5
+  range_many{key="a", pod="p2"} _ 20 _ 40 _
+  range_many{key="b", pod="p3"} 9 _ _ 12 _
+  range_one{key="a"} _ 200 _ 400 _
+  range_one{key="c"} 1000 _ _ 4000 5000
+
+eval range from 0 to 20m step 5m range_many + on(key) group_left fill(0) range_one
+  {key="a", pod="p1"} 1 _ 3 _ 5
+  {key="a", pod="p2"} _ 220 _ 440 _
+  {key="b", pod="p3"} 9 _ _ 12 _
+  {key="c"} 1000 _ _ 4000 5000
+
+eval range from 0 to 20m step 5m range_one + on(key) group_right fill(0) range_many
+  {key="a", pod="p1"} 1 _ 3 _ 5
+  {key="a", pod="p2"} _ 220 _ 440 _
+  {key="b", pod="p3"} 9 _ _ 12 _
+  {key="c"} 1000 _ _ 4000 5000
+
+# ---------- Grouped special float values ----------
+
+eval range from 0 to 20m step 5m range_many + on(key) group_left fill(NaN) range_one
+  {key="a", pod="p1"} NaN _ NaN _ NaN
+  {key="a", pod="p2"} _ 220 _ 440 _
+  {key="b", pod="p3"} NaN _ _ NaN _
+  {key="c"} NaN _ _ NaN NaN
+
+eval range from 0 to 20m step 5m range_one + on(key) group_right fill(Inf) range_many
+  {key="a", pod="p1"} +Inf _ +Inf _ +Inf
+  {key="a", pod="p2"} _ 220 _ 440 _
+  {key="b", pod="p3"} +Inf _ _ +Inf _
+  {key="c"} +Inf _ _ +Inf +Inf
+
+eval instant at 0 range_many + on(key) group_left fill(-Inf) range_one
+  {key="a", pod="p1"} -Inf
+  {key="b", pod="p3"} -Inf
+  {key="c"} -Inf
+
+# ---------- Grouped histograms and annotations ----------
+
+clear
+
+load 5m
+  hist_many{key="a", pod="p1"} {{schema:0 sum:2 count:2}}
+  hist_many{key="b", pod="p2"} {{schema:0 sum:3 count:3}}
+  hist_one{key="a"} {{schema:0 sum:5 count:5}}
+  hist_one{key="c"} {{schema:0 sum:7 count:7}}
+
+eval instant at 0 hist_many + on(key) group_left fill_right(0) hist_one
+  {key="a", pod="p1"} {{schema:0 sum:7 count:7}}
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "+": histogram + float (1:1)
+  expect no_warn
+
+eval instant at 0 hist_one + on(key) group_right fill_left(0) hist_many
+  {key="a", pod="p1"} {{schema:0 sum:7 count:7}}
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "+": histogram + float (1:1)
+  expect no_warn
+
+# ---------- Grouped duplicate-group errors ----------
+
+clear
+
+load 5m
+  duplicate_many{key="a", pod="p1"} 1
+  duplicate_one_a{key="a"} 10
+  duplicate_one_b{key="a"} 20
+
+eval_fail instant at 0 duplicate_many + on(key) group_left fill(0) {__name__=~"duplicate_one_a|duplicate_one_b"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail instant at 0 {__name__=~"duplicate_one_a|duplicate_one_b"} + on(key) group_right fill(0) duplicate_many
+  expected_fail_regexp found duplicate series for the match group .* on the left (hand-)?side of the operation
+
+# ---------- Grouped output labels and metric names ----------
+
+clear
+
+load 5m
+  named_many{key="a", pod="p1"} 10
+  named_many{key="b", pod="p2"} 20
+  named_one{key="a", owner="team-a"} 1
+  named_one{key="c", owner="team-c"} 3
+
+eval instant at 0 named_many != on(key) group_left(owner) fill(0) named_one
+  named_many{key="a", owner="team-a", pod="p1"} 10
+  named_many{key="b", pod="p2"} 20
+  {key="c", owner="team-c"} 0
+
+eval instant at 0 named_many != bool on(key) group_left(owner) fill(0) named_one
+  {key="a", owner="team-a", pod="p1"} 1
+  {key="b", pod="p2"} 1
+  {key="c", owner="team-c"} 1
+
+eval instant at 0 named_one != on(key) group_right(owner) fill(0) named_many
+  named_many{key="a", owner="team-a", pod="p1"} 1
+  named_many{key="b", pod="p2"} 0
+  {key="c", owner="team-c"} 3
