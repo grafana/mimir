@@ -2256,3 +2256,47 @@ func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error
 func (t *versioningTestNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanVersion(t.Value), nil
 }
+
+// TestInfoQueriedTimeRangeCoversPinnedTime is a regression test for info() with a pinned range
+// selector as its first argument. The info series are looked up (with lookback) as of the pinned
+// time, but a range selector's queried time range does not include the lookback delta, so the
+// info series' lookback window must be contributed by the info data label selector. Previously it
+// was not, so the overall queried time range - which drives remote-execution data fetching - could
+// miss the info series and silently drop enrichment.
+func TestInfoQueriedTimeRangeCoversPinnedTime(t *testing.T) {
+	const (
+		pinnedMs int64 = 120_000 // metric @ 120
+		rangeMs  int64 = 60_000  // metric[1m]
+	)
+	lookbackDelta := 5 * time.Minute
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	// Evaluate well after the pinned time so the (buggy) evaluation-time info window does not
+	// happen to overlap the pinned window.
+	evalTime := timestamp.Time(0).Add(40 * time.Minute)
+	queryTimeRange := types.NewInstantQueryTimeRange(evalTime)
+
+	plan, err := planner.NewQueryPlan(context.Background(), "info(last_over_time(metric[1m] @ 120))", queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	require.NoError(t, err)
+
+	// The info series must be fetched across their lookback window as of the pinned time. The +1ms
+	// on the lower bound excludes the sample exactly one lookback delta before (see
+	// selectors.ComputeQueriedTimeRange), matching how a pinned instant selector is queried.
+	expectedMinT := timestamp.Time(pinnedMs - lookbackDelta.Milliseconds() + 1)
+	expectedMaxT := timestamp.Time(pinnedMs)
+
+	require.Equal(t, expectedMinT, queried.MinT, "queried range must reach back to cover the info series lookback window at the pinned time")
+	require.Equal(t, expectedMaxT, queried.MaxT)
+
+	// Sanity check that the range selector alone would not have covered this: its queried start is
+	// only pinnedTime-range (no lookback), so without the fix the info series before that point are
+	// missed.
+	rangeSelectorMinT := timestamp.Time(pinnedMs - rangeMs + 1)
+	require.True(t, expectedMinT.Before(rangeSelectorMinT), "test setup: info lookback window must extend before the range selector's queried start")
+}

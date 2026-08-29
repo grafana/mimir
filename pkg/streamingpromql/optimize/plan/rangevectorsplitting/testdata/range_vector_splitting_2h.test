@@ -148,6 +148,29 @@ eval instant at 6h sum_over_time(mixed_histo_sum[5h])
 
 clear
 
+# Histogram sums where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+clear
+
+load 1h
+  kahan_schema_metric{env="prod"} {{schema:2 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:1e100 buckets:[1]}} {{schema:0 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:-1e100 buckets:[1]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
+
+clear
+
 # ===== rate / increase (floats) =====
 
 load 1m
@@ -546,6 +569,41 @@ eval instant at 6h avg_over_time(avg_hist[5h])
 
 eval instant at 6h avg_over_time(avg_hist[5h])
   {env="prod"} {{schema:0 sum:25 count:25 buckets:[25]}}
+
+clear
+
+# Histogram averages where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_avg_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+clear
+
+# Histogram averages where counts near MaxFloat64 overflow.
+load 1h
+  overflow_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:2}} {{schema:0 count:1e-6 sum:0}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+clear
+
+load 1h
+  double_rounding_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
 
 clear
 

@@ -1090,6 +1090,42 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
 
+### MimirBlockedQueryRuleExpired
+
+This alert fires if at least one of a tenant's `blocked_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+blocking matching queries until it's explicitly removed from the tenant's configuration. This alert exists so that
+rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `blocked_queries` rules, and this alert fires as long as any one of them is expired.
+
+How to **investigate**:
+
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `blocked_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added. Refer to [Track expiring rules](../../configure/configure-blocked-queries/#track-expiring-rules).
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
+### MimirLimitedQueryRuleExpired
+
+This alert fires if at least one of a tenant's `limited_queries` rules has an `expires_at` set, and `expires_at` has
+passed. `id` is not required: rules that only set `expires_at` are included too.
+
+`expires_at` is purely informational: it does not cause Mimir to stop enforcing the rule. An expired rule keeps
+rate-limiting matching queries until it's explicitly removed from the tenant's configuration. This alert exists so
+that rules added for a temporary reason (for example, to mitigate an incident) aren't forgotten indefinitely.
+
+The alert identifies the affected tenant (`user` label) only, not which specific rule expired: a tenant can have
+multiple `limited_queries` rules, and this alert fires as long as any one of them is expired.
+
+How to **investigate**:
+
+- The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules for the affected tenant, to help confirm scope.
+- Check the tenant's `limited_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added. Refer to [Track expiring rules](../../configure/configure-blocked-queries/#track-expiring-rules).
+- If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
+
 ### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.
@@ -3336,7 +3372,7 @@ This error occurs when a query-frontend blocks a read request because the query 
 How it **works**:
 
 - The query-frontend implements a middleware responsible for assessing whether the query is blocked or not.
-- To configure the limit, set the block `blocked_queries` in the `limits`.
+- To configure the limit, set the block `blocked_queries` in the `limits`. Refer to [Block queries](../../configure/configure-blocked-queries/#block-queries).
 
 How to **fix** it:
 
@@ -3349,7 +3385,7 @@ This error occurs when a query-frontend blocks a read request because the query 
 How it **works**:
 
 - The query-frontend implements a middleware responsible for assessing whether the query should be limited and whether it has been run within the last allowed frequency.
-- To configure the limit, set the block `limited_queries` in the `limits`.
+- To configure the limit, set the block `limited_queries` in the `limits`. Refer to [Rate limit queries](../../configure/configure-blocked-queries/#rate-limit-queries).
 
 How to **fix** it:
 

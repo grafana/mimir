@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/types"
 	gogoStatus "github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -55,7 +54,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -2230,8 +2228,10 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			expectedErrRegex: "",
 		},
 		"error while finding blocks matching the query time range": {
-			finderErr:        errors.New("unable to find blocks"),
-			expectedErrRegex: "unable to find blocks",
+			finderErr: errors.New("unable to find blocks"),
+			// Anchored: with compartments disabled the error must reach the caller verbatim, with no read
+			// compartment prefixed to it.
+			expectedErrRegex: "^unable to find blocks$",
 		},
 		"error while getting clients to query the store-gateway": {
 			finderResult: bucketindex.Blocks{
@@ -2241,7 +2241,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			storeSetResponses: []interface{}{
 				errors.New("no client found"),
 			},
-			expectedErrRegex: "no client found",
+			expectedErrRegex: "^no client found$",
 		},
 		"a single store-gateway instance holds the required blocks": {
 			finderResult: bucketindex.Blocks{
@@ -2255,13 +2255,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1, block2),
 							ResponseHints: mockNamesResponseHints(block1, block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1, block2),
 							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
 					}: {{block1, block2}},
@@ -2282,13 +2280,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1, block2),
 							ResponseHints: mockNamesResponseHints(block1, block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1, block2),
 							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
 					}: {{block1}, {block2}},
@@ -2334,13 +2330,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -2349,13 +2343,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {{block2}},
@@ -2376,13 +2368,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -2391,13 +2381,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {{block2}},
@@ -2421,13 +2409,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -2436,13 +2422,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {{block2}},
@@ -2451,13 +2435,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block3),
 							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block3),
 							ResponseHints: mockValuesResponseHints(block3),
 						},
 					}: {{block3}},
@@ -2508,13 +2490,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -2539,13 +2519,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -2554,13 +2532,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {{block2}},
@@ -2589,13 +2565,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1, block3}},
@@ -2604,13 +2578,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
 					}: {{block2, block4}},
@@ -2622,13 +2594,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block3),
 							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block3),
 							ResponseHints: mockValuesResponseHints(block3),
 						},
 					}: {{block3, block4}},
@@ -2640,13 +2610,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{},
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block4),
 							ResponseHints: mockNamesResponseHints(block4),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{},
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block4),
 							ResponseHints: mockValuesResponseHints(block4),
 						},
 					}: {{block4}},
@@ -2705,13 +2673,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
 					}: {{block1}},
@@ -3651,35 +3617,16 @@ func mockStatsResponse(fetchedIndexBytes uint64) *storepb.SeriesResponse {
 }
 
 func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
-	hints := &hintspb.SeriesResponseHints{}
+	hints := &storepb.SeriesResponseHints{}
 	for _, id := range ids {
 		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
 	}
 
 	return &storepb.SeriesResponse{
-		Result: &storepb.SeriesResponse_Hints{
-			Hints: marshalled,
+		Result: &storepb.SeriesResponse_ResponseHints{
+			ResponseHints: hints,
 		},
 	}
-}
-
-func mockNamesHints(ids ...ulid.ULID) *types.Any {
-	hints := &hintspb.LabelNamesResponseHints{}
-	for _, id := range ids {
-		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
-	}
-
-	return marshalled
 }
 
 func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
@@ -3688,20 +3635,6 @@ func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
 		hints.AddQueriedBlock(id)
 	}
 	return hints
-}
-
-func mockValuesHints(ids ...ulid.ULID) *types.Any {
-	hints := &hintspb.LabelValuesResponseHints{}
-	for _, id := range ids {
-		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
-	}
-
-	return marshalled
 }
 
 func mockValuesResponseHints(ids ...ulid.ULID) *storepb.LabelValuesResponseHints {

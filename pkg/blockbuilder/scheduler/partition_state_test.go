@@ -954,6 +954,74 @@ func TestReplayOffsetsAtStartup(t *testing.T) {
 			expectedJobBucket: at(12, 0),
 			expectedOpen:      []openBucket{{200, 300}, {1100, 1150}},
 		},
+		"cuts a shared bucket when the clusters' final offsets have different times": {
+			// The clusters' final offsets have different times: cluster 0's is at 13:00 and
+			// cluster 1's at 13:20. Both land in the same 13:00 bucket, so the completed windows
+			// are still cut together.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(12, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(12, 7)},
+					{offset: 1150, time: at(13, 20)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1100}},
+				{0: {StartOffset: 200, EndOffset: 250}, 1: {StartOffset: 1100, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}},
+		},
+		"walks to the latest final offset when one cluster's ends in a later bucket": {
+			// Cluster 1's final record sits a whole window past cluster 0's 13:00 seed, so the walk
+			// keeps going to 14:00 and leaves that bucket open. The 14:20 offset is the exclusive
+			// end of cluster 1's earlier window, so it's already accounted for by the only job cut
+			// here and remains unconsumed at the head of the open bucket.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1150, time: at(14, 20)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 250}, 1: {StartOffset: 1000, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(14, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}},
+		},
+		"emits no ranges for a cluster whose only offset is its end-offset seed": {
+			// Cluster 0 has a single offset at 13:00 while cluster 1 has a full set ending at
+			// 13:20, so the clusters differ in both length and final time. Cluster 0's offset
+			// never opens a range, so every job carries cluster 1 alone.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(11, 7)},
+					{offset: 1150, time: at(13, 20)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{1: {StartOffset: 1000, EndOffset: 1100}},
+				{1: {StartOffset: 1100, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}},
+		},
 		"emits no job for a single end-offset seed": {
 			// A partition with no new data since last consume yields a single end-offset seed
 			// at endTime; the replay records it as the open bucket's end without cutting a job.

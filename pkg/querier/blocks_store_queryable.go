@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
@@ -48,7 +47,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -846,7 +844,7 @@ func (q *blocksStoreQuerier) targetCompartments(tenantID string, matchers []*lab
 // and returns the first error, cancelling the in-flight siblings on error.
 func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []int, fn func(ctx context.Context, c blocksStoreCompartment) error) error {
 	if len(targets) == 1 {
-		return fn(ctx, q.compartments[targets[0]])
+		return q.wrapCompartmentError(targets[0], fn(ctx, q.compartments[targets[0]]))
 	}
 
 	// fn may open store-gateway streams that are read lazily after this returns, so the context passed to
@@ -856,7 +854,7 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 	g := &errgroup.Group{}
 	for _, c := range targets {
 		g.Go(func() error {
-			if err := fn(ctx, q.compartments[c]); err != nil {
+			if err := q.wrapCompartmentError(c, fn(ctx, q.compartments[c])); err != nil {
 				cancel(err)
 				return err
 			}
@@ -864,6 +862,16 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 		})
 	}
 	return g.Wait() //nolint:govet // OK to return without cancelling ctx on success, see comment above.
+}
+
+// wrapCompartmentError annotates err with the read compartment it came from, and returns it unchanged
+// when compartments are disabled.
+func (q *blocksStoreQuerier) wrapCompartmentError(compartmentID int, err error) error {
+	if err == nil || q.router == nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "read compartment %d", compartmentID)
 }
 
 // queryCompartmentsWithConsistencyCheck runs queryWithConsistencyCheck against each targeted compartment
@@ -1264,26 +1272,8 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		myWarnings.Add(errors.New(w))
 	}
 
-	// Check both the opaque hints type and the non-opaque hints type. Store-gateways will only send
-	// a single one of these as part of a series request. We need to maintain support for either one
-	// in queriers until after store-gateways are switched to only use the non-opaque type.
 	if h := resp.GetResponseHints(); h != nil {
 		ids, err := convertBlockHintsToULIDs(h.QueriedBlocks)
-		if err != nil {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
-		}
-
-		myQueriedBlocks = append(myQueriedBlocks, ids...)
-	}
-
-	if h := resp.GetHints(); h != nil {
-		// Note that we use a different but equivalent hints type for the opaque field.
-		opaqueResHints := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(h, &opaqueResHints); err != nil {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
-		}
-
-		ids, err := convertBlockHintsToULIDsOpaque(opaqueResHints.QueriedBlocks)
 		if err != nil {
 			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 		}
@@ -1382,20 +1372,6 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 					}
 
 					myQueriedBlocks = ids
-				} else if namesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-					// Note that we use a different but equivalent hints type for the opaque field.
-					resHints := hintspb.LabelNamesResponseHints{}
-					//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-					if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
-						return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
-					}
-
-					ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
-					if err != nil {
-						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
-					}
-
-					myQueriedBlocks = ids
 				}
 
 				spanLog.DebugLog("msg", "received label names from store-gateway",
@@ -1475,20 +1451,6 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 					}
 
 					myQueriedBlocks = ids
-				} else if valuesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-					// Note that we use a different but equivalent hints type for the opaque field.
-					resHints := hintspb.LabelValuesResponseHints{}
-					//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-					if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
-						return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
-					}
-
-					ids, err := convertBlockHintsToULIDsOpaque(resHints.QueriedBlocks)
-					if err != nil {
-						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
-					}
-
-					myQueriedBlocks = ids
 				}
 
 				spanLog.DebugLog("msg", "received label values from store-gateway",
@@ -1549,24 +1511,6 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		},
 	}
 
-	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
-	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
-	// ignore the unknown non-opaque type and instead use the opaque type.
-	opaqueHints := &hintspb.SeriesRequestHints{
-		BlockMatchers: []storepb.LabelMatcher{
-			{
-				Type:  storepb.LabelMatcher_RE,
-				Name:  block.BlockIDLabel,
-				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
-			},
-		},
-	}
-
-	anyHints, err := types.MarshalAny(opaqueHints)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal series request hints")
-	}
-
 	if skipChunks {
 		// We don't do the streaming call if we are not requesting the chunks. Note that setting
 		// a batch size of 0 is ignored in newer store-gateways as the streaming code path is always
@@ -1576,11 +1520,9 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	return &storepb.SeriesRequest{
-		MinTime:  minT,
-		MaxTime:  maxT,
-		Matchers: matchers,
-		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		Hints:                    anyHints,
+		MinTime:                  minT,
+		MaxTime:                  maxT,
+		Matchers:                 matchers,
 		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
 		StreamingChunksBatchSize: streamingBatchSize,
@@ -1593,45 +1535,23 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 	if hints != nil && hints.Limit > 0 {
 		limit = int64(hints.Limit)
 	}
+
 	req := &storepb.LabelNamesRequest{
 		Start:    minT,
 		End:      maxT,
 		Matchers: matchers,
 		Limit:    limit,
-	}
-
-	// Selectively query only specific blocks.
-	requestHints := &storepb.LabelNamesRequestHints{
-		BlockMatchers: []storepb.LabelMatcher{
-			{
-				Type:  storepb.LabelMatcher_RE,
-				Name:  block.BlockIDLabel,
-				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+		RequestHints: &storepb.LabelNamesRequestHints{
+			// Selectively query only specific blocks.
+			BlockMatchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_RE,
+					Name:  block.BlockIDLabel,
+					Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+				},
 			},
 		},
 	}
-
-	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
-	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
-	// ignore the unknown non-opaque type and instead use the opaque type.
-	opaqueHints := &hintspb.LabelNamesRequestHints{
-		BlockMatchers: []storepb.LabelMatcher{
-			{
-				Type:  storepb.LabelMatcher_RE,
-				Name:  block.BlockIDLabel,
-				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
-			},
-		},
-	}
-
-	anyHints, err := types.MarshalAny(opaqueHints)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal label names request hints")
-	}
-
-	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-	req.Hints = anyHints
-	req.RequestHints = requestHints
 
 	return req, nil
 }
@@ -1648,40 +1568,16 @@ func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.UL
 		Label:    label,
 		Matchers: convertMatchersToLabelMatcher(matchers),
 		Limit:    limit,
-	}
-
-	// Selectively query only specific blocks.
-	requestHints := &storepb.LabelValuesRequestHints{
-		BlockMatchers: []storepb.LabelMatcher{
-			{
-				Type:  storepb.LabelMatcher_RE,
-				Name:  block.BlockIDLabel,
-				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+		RequestHints: &storepb.LabelValuesRequestHints{
+			BlockMatchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_RE,
+					Name:  block.BlockIDLabel,
+					Value: strings.Join(convertULIDsToString(blockIDs), "|"),
+				},
 			},
 		},
 	}
-
-	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
-	// will prefer the non-opaque type and ignore the opaque type. Older store-gateways will
-	// ignore the unknown non-opaque type and instead use the opaque type.
-	opaqueHints := &hintspb.LabelValuesRequestHints{
-		BlockMatchers: []storepb.LabelMatcher{
-			{
-				Type:  storepb.LabelMatcher_RE,
-				Name:  block.BlockIDLabel,
-				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
-			},
-		},
-	}
-
-	anyHints, err := types.MarshalAny(opaqueHints)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal label values request hints")
-	}
-
-	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-	req.Hints = anyHints
-	req.RequestHints = requestHints
 
 	return req, nil
 }
@@ -1695,21 +1591,6 @@ func convertULIDsToString(ids []ulid.ULID) []string {
 }
 
 func convertBlockHintsToULIDs(hints []storepb.Block) ([]ulid.ULID, error) {
-	res := make([]ulid.ULID, len(hints))
-
-	for idx, hint := range hints {
-		blockID, err := ulid.Parse(hint.Id)
-		if err != nil {
-			return nil, err
-		}
-
-		res[idx] = blockID
-	}
-
-	return res, nil
-}
-
-func convertBlockHintsToULIDsOpaque(hints []hintspb.Block) ([]ulid.ULID, error) {
 	res := make([]ulid.ULID, len(hints))
 
 	for idx, hint := range hints {

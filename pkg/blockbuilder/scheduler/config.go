@@ -29,7 +29,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.ConsumerGroup, "block-builder-scheduler.consumer-group", "block-builder", "The Kafka consumer group used for getting/setting commmitted offsets.")
+	f.StringVar(&cfg.ConsumerGroup, "block-builder-scheduler.consumer-group", "block-builder", "The Kafka consumer group used for getting/setting committed offsets.")
 	f.DurationVar(&cfg.SchedulingInterval, "block-builder-scheduler.scheduling-interval", 1*time.Minute, "How frequently to recompute the schedule.")
 	f.DurationVar(&cfg.JobSize, "block-builder-scheduler.job-size", 1*time.Hour, "How long jobs (and therefore blocks) should be.")
 	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 1*time.Minute, "How long to observe worker state before scheduling jobs.")
@@ -38,7 +38,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxScanAge, "block-builder-scheduler.max-scan-age", 12*time.Hour, "The oldest record age to consider when scanning for jobs.")
 	f.IntVar(&cfg.MaxJobsPerPartition, "block-builder-scheduler.max-jobs-per-partition", 1, "The maximum number of jobs that can be scheduled for a partition.")
 	f.DurationVar(&cfg.EnqueueInterval, "block-builder-scheduler.enqueue-interval", 2*time.Second, "How frequently to enqueue pending jobs.")
-	f.IntVar(&cfg.JobFailuresAllowed, "block-builder-scheduler.job-failures-allowed", 2, "The maximum number of times a job can fail before errors are emitted")
+	f.IntVar(&cfg.JobFailuresAllowed, "block-builder-scheduler.job-failures-allowed", 2, "The maximum number of times a job can fail before errors are emitted.")
 }
 
 func (cfg *Config) Validate() error {

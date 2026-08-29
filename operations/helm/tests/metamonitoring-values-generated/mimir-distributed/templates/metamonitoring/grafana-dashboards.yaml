@@ -4171,17 +4171,16 @@ data:
                    "type": "datasource"
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": ".*",
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": true,
                    "label": "cluster",
-                   "multi": true,
+                   "multi": false,
                    "name": "cluster",
                    "options": [ ],
                    "query": "label_values(cortex_build_info, cluster)",
@@ -4195,17 +4194,16 @@ data:
                    "useTags": false
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": null,
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": false,
                    "label": "namespace",
-                   "multi": true,
+                   "multi": false,
                    "name": "namespace",
                    "options": [ ],
                    "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
@@ -4434,7 +4432,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 3,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} > 0\n",
@@ -4444,6 +4442,55 @@ data:
                          }
                       ],
                       "title": "Tenants compaction progress",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 3,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
+                            "format": "time_series",
+                            "legendFormat": "Jobs",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated Compaction Jobs",
                       "type": "timeseries"
                    },
                    {
@@ -4528,7 +4575,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 3,
+                      "id": 4,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -4558,7 +4605,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 2,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -4759,7 +4806,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4863,55 +4910,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 5,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
-                            "format": "time_series",
-                            "legendFormat": "Jobs",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Estimated Compaction Jobs",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
                       "description": "### Source blocks age\nThe difference between the maximum timestamp of the block being compacted and the current time.\nA steadily increasing value indicates that the compactor cannot keep up with the produced blocks by the ingesters.\nIncrease the number of compactors when this value is consistently increasing.\n\n",
                       "fieldConfig": {
                          "defaults": {
@@ -4948,7 +4946,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_compactor_block_max_time_delta_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -5045,7 +5043,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval]))",
@@ -5095,7 +5093,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(prometheus_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -13436,6 +13434,461 @@ data:
                 "titleSize": "h6"
              },
              {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Blocked and limited queries by tenant\nRate of queries rejected per tenant because they matched a blocked_queries or limited_queries rule.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "rate"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 3
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "reqps"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "reason"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "reason"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 22,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 3,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total{$read_path_matcher, reason=~\"blocked|limited\"}[$__rate_interval]))",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Blocked and limited queries by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Expired blocked-query rules by tenant\nNumber of blocked_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "expired rules"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 23,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "count by (user) (max by (user, id) (cortex_blocked_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Expired blocked-query rules by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Expired limited-query rules by tenant\nNumber of limited_queries rules per tenant, keyed by id (rules without an id are grouped together), whose\nexpires_at has passed. This is informational only: an expired rule keeps being enforced until it is\nexplicitly removed from the tenant's configuration.\n\n",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "expired rules"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 24,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "count by (user) (max by (user, id) (cortex_limited_query_rule_expires_at{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\"}) < time())",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Expired limited-query rules by tenant",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query blocking and rate limiting",
+                "titleSize": "h6"
+             },
+             {
                 "collapse": false,
                 "height": "250px",
                 "panels": [
@@ -13464,7 +13917,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13543,7 +13996,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13622,7 +14075,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13745,7 +14198,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13832,7 +14285,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13899,7 +14352,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14009,7 +14462,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14064,7 +14517,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14131,7 +14584,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14209,7 +14662,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14306,7 +14759,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14421,7 +14874,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14483,7 +14936,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14515,7 +14968,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 35,
+                      "id": 38,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -14581,7 +15034,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14641,7 +15094,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14732,7 +15185,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14786,7 +15239,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14896,7 +15349,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14950,7 +15403,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14998,7 +15451,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15058,7 +15511,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15112,7 +15565,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15168,7 +15621,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15235,7 +15688,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15314,7 +15767,7 @@ data:
                             }
                          ]
                       },
-                      "id": 47,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15399,7 +15852,7 @@ data:
                             }
                          ]
                       },
-                      "id": 48,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15465,7 +15918,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15513,7 +15966,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15611,7 +16064,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 54,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15721,7 +16174,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15770,7 +16223,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15819,7 +16272,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 57,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -32750,7 +33203,7 @@ data:
                 },
                 "targets": [
                    {
-                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,
@@ -32759,7 +33212,7 @@ data:
                       "step": null
                    },
                    {
-                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1$2\", \"workload\", \"(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,

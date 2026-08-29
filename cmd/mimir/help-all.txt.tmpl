@@ -1186,9 +1186,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
   -compactor.first-level-compaction-ooo-wait-period duration
-    	[experimental] How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.
+    	How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction. (default 5m0s)
   -compactor.first-level-compaction-skip-future-max-time
-    	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
+    	When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data. (default true)
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
@@ -1287,6 +1287,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign
     	[experimental] Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown). (default true)
+  -compactor.scheduler-client.enable-ring-based-cleanup
+    	[experimental] Run the ring-based blocks cleaner and join the compactor ring, which is otherwise unused. Can only be disabled when -compactor.scheduler-client.enabled is true. WARNING: disabling this on every compactor stops cleanup and breaks reads cluster-wide. (default true)
   -compactor.scheduler-client.enabled
     	[experimental] Controls whether compactors should contact a scheduler to request work.
   -compactor.scheduler-client.grpc-client-config.backoff-max-period duration
@@ -2529,6 +2531,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
+  -querier.mimir-query-engine.enable-propagate-matchers
+    	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
     	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers
@@ -2803,6 +2807,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution
     	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers. (default true)
+  -query-frontend.enabled-promql-binop-fill-modifiers comma-separated-list-of-strings
+    	Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
@@ -2965,8 +2971,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.rewrite-histogram-queries
     	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
-  -query-frontend.rewrite-propagate-matchers
-    	[experimental] Set to true to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration

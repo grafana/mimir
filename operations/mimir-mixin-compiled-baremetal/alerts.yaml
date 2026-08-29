@@ -105,6 +105,36 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirBlockedQueryRuleExpired
+          annotations:
+            message: |
+                At least one blocked_queries rule for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+                still being enforced: expiry is informational only and does not disable them. Check the tenant's
+                blocked_queries configuration and remove or renew any rule that's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockedqueryruleexpired
+          expr: |
+            # min() picks the earliest expiry among the tenant's blocked_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (cluster, namespace, user) (cortex_blocked_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirLimitedQueryRuleExpired
+          annotations:
+            message: |
+                At least one limited_queries rule for tenant {{ $labels.user }} in cluster {{ $labels.cluster }}/{{ $labels.namespace }}
+                has an expires_at that already passed (earliest: {{ $value | humanizeTimestamp }}). Affected rules are
+                still being enforced: expiry is informational only and does not disable them. Check the tenant's
+                limited_queries configuration and remove or renew any rule that's no longer needed.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirlimitedqueryruleexpired
+          expr: |
+            # min() picks the earliest expiry among the tenant's limited_queries rules, so this fires as soon as
+            # any one of them has expired, and keeps firing (with a moving threshold) until they're all addressed.
+            min by (cluster, namespace, user) (cortex_limited_query_rule_expires_at) < time()
+          for: 15m
+          labels:
+            severity: warning
         - alert: MimirSchedulerQueriesStuck
           annotations:
             message: |
@@ -230,8 +260,8 @@ groups:
               or
               ( # Ingest storage timeseries
                 sum by(cluster, namespace) (
-                  max by(ingester_id, cluster, namespace) (
-                    label_replace(cortex_ingester_memory_series,
+                  max by(ingester_id, read_compartment, cluster, namespace) (
+                    label_replace(label_replace(cortex_ingester_memory_series, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"),
                       "ingester_id", "$1",
                       "instance", ".*-([0-9]+)$"
                     )
@@ -498,20 +528,20 @@ groups:
             (
               # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
               max by (cluster, namespace, rollout_group) (
-                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   unless
-                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               )
                 # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                 *
               (
-                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               )
             ) and (
               # Pick only those which are unchanging for the interval.
-              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                 ==
               0
             )
@@ -530,20 +560,20 @@ groups:
             (
               # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
               max by (cluster, namespace, rollout_group) (
-                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   unless
-                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               )
                 # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                 *
               (
-                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                   !=
-                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
               )
             ) and (
               # Pick only those which are unchanging for the interval.
-              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1$2", "statefulset", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                 ==
               0
             )
@@ -560,11 +590,11 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrolloutstuck
           expr: |
             (
-              sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+              sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 !=
-              sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+              sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
             ) and (
-              changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                 ==
               0
             )
@@ -580,11 +610,11 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirrolloutstuck
           expr: |
             (
-              sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+              sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
                 !=
-              sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+              sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))
             ) and (
-              changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"))[15m:1m])
                 ==
               0
             )
@@ -1110,22 +1140,22 @@ groups:
             severity: warning
         - alert: MimirBucketIndexNotUpdated
           annotations:
-            message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
+            message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} has not been updated since {{ $value | humanizeDuration }}.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirbucketindexnotupdated
           expr: |
-            min by(cluster, namespace, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
+            min by(cluster, namespace, user, read_compartment) (time() - (label_replace(max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))) > 2100
           for: 2m
           labels:
             severity: critical
         - alert: MimirHighVolumeLevel1BlocksQueried
           annotations:
-            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
+            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
             (
-            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
+            sum by(cluster, namespace, read_compartment) (label_replace(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
             /
-            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
+            sum by(cluster, namespace, read_compartment) (label_replace(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]), "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
             ) > 0.05
           for: 6h
           labels:
@@ -1645,10 +1675,19 @@ groups:
             severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
           annotations:
-            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
+            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} have fewer ingesters consuming than active partitions.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirfeweringestersconsumingthanactivepartitions
           expr: |
-            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (cluster, namespace) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (cluster, namespace, partition)) by (cluster, namespace)
+            max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)"))
+              >
+            (
+              count by (cluster, namespace, read_compartment) (
+                count by (cluster, namespace, read_compartment, partition) (label_replace(cortex_ingest_storage_reader_last_consumed_offset{}, "read_compartment", "$1", "job", ".*-rc-([0-9]+)"))
+              )
+                or
+              # A compartment that lost all its consumers has no series here and would drop out of the comparison, so default it to zero.
+              (max by (cluster, namespace, read_compartment) (label_replace(cortex_partition_ring_partitions{name=~"ingester-partitions(-rc-[0-9]+)?", state="Active"}, "read_compartment", "$1", "name", ".*-rc-([0-9]+)")) * 0)
+            )
           for: 15m
           labels:
             severity: critical
