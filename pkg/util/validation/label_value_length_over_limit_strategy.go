@@ -5,8 +5,6 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"reflect"
 
 	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
@@ -92,9 +90,4 @@ func (s *LabelValueLengthOverLimitStrategy) Set(text string) error {
 
 func (s LabelValueLengthOverLimitStrategy) Type() string {
 	return "labelValueLengthOverLimitStrategy"
-}
-
-// Generate implements testing/quick.Generator.
-func (LabelValueLengthOverLimitStrategy) Generate(rand *rand.Rand, _ int) reflect.Value {
-	return reflect.ValueOf(LabelValueLengthOverLimitStrategy(rand.Intn(3)))
 }
