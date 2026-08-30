@@ -71,6 +71,9 @@ func main() {
 		}
 	}
 
-	tw.Flush()
+	err = tw.Flush()
+	if err != nil {
+		log.Fatal(err)
+	}
 	os.Exit(exit)
 }
