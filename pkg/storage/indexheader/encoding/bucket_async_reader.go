@@ -210,24 +210,20 @@ func (bbar *BucketAsyncBufReader) rotateHead() {
 	bbar.bufIdx = (bbar.bufIdx + 1) % len(bbar.bufPromises)
 }
 
-// Skip advances the cursor by l bytes in the data segment and discards those bytes.
-// Skip returns ErrInvalidSize if l is greater than the number of bytes that remain.
 func (bbar *BucketAsyncBufReader) Skip(l int) error {
 	if l > bbar.Len() {
 		return ErrInvalidSize
 	}
 
-	bytesSkipped := 0
-	// First try to complete the skip from previously-peeked bytes.
-	// If peekBuf is non-empty, those bytes were not skipped or read yet.
-	n := min(len(bbar.peekBuf), l)
-	bbar.readOffset += n
-	bytesSkipped += n
-	// Truncate the peekBuf even if we did not skip all the previously-peeked bytes.
-	// Peek interface contract says "byte slice returned becomes invalid at the next read" (which includes Skip).
-	bbar.peekBuf = bbar.peekBuf[:0]
+	// Start with any previously-peeked bytes.
+	bytesSkipped := min(len(bbar.peekBuf), l)
+	bbar.readOffset += bytesSkipped
 
-	// Move on to skip the data from promises if we have not complete the skip yet.
+	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
+	bbar.peekBuf = bbar.peekBuf[bytesSkipped:]
+
+	// Move on to the promises if we have not satisfied the skip yet.
+	// Promises are consumed to discard the data and rotated if exhausted.
 	for bytesSkipped < l {
 		headPromise := bbar.bufPromises[bbar.bufIdx]
 		headPromiseBuffered, err := headPromise.Buffered()
@@ -236,12 +232,12 @@ func (bbar *BucketAsyncBufReader) Skip(l int) error {
 		}
 
 		toSkip := min(l-bytesSkipped, headPromiseBuffered)
-		n, err := headPromise.Discard(toSkip)
+		skipN, err := headPromise.Discard(toSkip)
 		if err != nil {
 			return err
 		}
-		bbar.readOffset += n
-		bytesSkipped += n
+		bbar.readOffset += skipN
+		bytesSkipped += skipN
 
 		headPromiseBuffered, err = headPromise.Buffered()
 		if err != nil {
@@ -335,13 +331,14 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 	//	return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), shortErr)
 	//}
 
-	// Start with any previously-peeked bytes
+	// Start with any previously-peeked bytes.
 	dstBytesWritten := copy(dst, bbar.peekBuf)
 	bbar.readOffset += dstBytesWritten
 	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
 	bbar.peekBuf = bbar.peekBuf[dstBytesWritten:]
 
-	// Move on to read from the promises if we have not satisfied the read yet.
+	// Move on to the promises if we have not satisfied the read yet.
+	// Promises are consumed to copy into dst and rotated if exhausted.
 	for dstBytesWritten < len(dst) {
 		headPromise := bbar.bufPromises[bbar.bufIdx]
 		headPromiseBuffered, err := headPromise.Buffered()

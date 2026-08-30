@@ -43,7 +43,7 @@ func newTestAsyncBufReaderWithData(
 	), bkt
 }
 
-func TestBucketAsyncBufReader_Peek_Peek(t *testing.T) {
+func TestBucketAsyncBufReader_Peek(t *testing.T) {
 	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
 
 	peek1, err := r.Peek(5)
@@ -67,7 +67,34 @@ func TestBucketAsyncBufReader_Peek_Peek(t *testing.T) {
 	require.Equal(t, testBucketContents[:10], peek4)
 }
 
-func TestBucketAsyncBufReader_Peak_Read(t *testing.T) {
+func TestBucketAsyncBufReader_Peek_Skip(t *testing.T) {
+	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
+
+	peek1, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], peek1)
+	require.Equal(t, 0, r.Offset())
+
+	// Skip the same bytes.
+	require.NoError(t, r.Skip(5))
+	require.Equal(t, 5, r.Offset())
+
+	// Another Peek returns the next bytes after Skip consumed previous bytes.
+	peek2, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], peek2)
+	require.Equal(t, 5, r.Offset())
+
+	// A Skip short of the peeked bytes consumes some of them.
+	require.NoError(t, r.Skip(3))
+	require.Equal(t, 8, r.Offset())
+
+	// A Skip beyond the remaining peeked bytes consumes them and more.
+	require.NoError(t, r.Skip(8))
+	require.Equal(t, 16, r.Offset())
+}
+
+func TestBucketAsyncBufReader_Peek_Read(t *testing.T) {
 	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
 
 	peek1, err := r.Peek(5)
