@@ -21,7 +21,7 @@ func newTestAsyncBufReader(t *testing.T, base, length int) (*BucketAsyncBufReade
 	bkt := newTrackingBucket(t, objectData)
 
 	return newBucketAsyncBufReader(
-		ctx, bkt, testBucketObjectName, base, length,
+		ctx, bkt, testBucketObjectName, base, length, 0,
 		&testBucketBufPool, testBufPoolSize, 4,
 	), bkt
 }
@@ -38,7 +38,7 @@ func newTestAsyncBufReaderWithData(
 	bkt := newTrackingBucket(t, objectData)
 
 	return newBucketAsyncBufReader(
-		t.Context(), bkt, testBucketObjectName, base, length,
+		t.Context(), bkt, testBucketObjectName, base, length, 0,
 		&testBucketBufPool, testBufPoolSize, maxBufCount,
 	), bkt
 }
@@ -184,6 +184,16 @@ func TestBucketAsyncBufReader_Read_ExactLength(t *testing.T) {
 	require.Equal(t, testBucketContents, b)
 	require.Equal(t, len(testBucketContents), r.Offset())
 	require.Equal(t, 0, r.Len())
+}
+
+func TestBucketAsyncBufReader_Read_BeyondEnd(t *testing.T) {
+	const sectionLen = 10
+	r, _ := newTestAsyncBufReader(t, 0, sectionLen)
+
+	b, err := r.Read(sectionLen + 1)
+	require.ErrorIs(t, err, ErrInvalidSize)
+	require.Nil(t, b)
+	require.Equal(t, sectionLen, r.Offset())
 }
 
 //func TestBucketAsyncBufReader_Peek_BeyondPeekBuffer(t *testing.T) {

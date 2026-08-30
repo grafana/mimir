@@ -81,29 +81,16 @@ func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
 }
 
 type BucketBufReader struct {
-	ctx         context.Context
-	bkt         objstore.BucketReader
-	name        string
-	base        int
-	length      int
-	off         int
-	r           *BucketReader
-	resetReader func(off int) error
-	buf         *bufio.Reader
-	// bufPool reference to return to on Close
-	bufPool *sync.Pool
-}
+	ctx    context.Context
+	bkt    objstore.BucketReader
+	name   string
+	base   int
+	length int
+	off    int
 
-func resetReaderFunc(bufReader *BucketBufReader) func(off int) error {
-	return func(off int) error {
-		r := NewBucketReader(bufReader.ctx, bufReader.bkt, bufReader.name, bufReader.base, bufReader.length)
-		_, err := r.Seek(int64(off), io.SeekStart)
-		if err != nil {
-			return err
-		}
-		bufReader.r = r
-		return nil
-	}
+	r       *BucketReader
+	buf     *bufio.Reader
+	bufPool *sync.Pool // Reference to return to on Close
 }
 
 func NewBucketBufReader(
@@ -130,7 +117,6 @@ func newBucketBufReader(
 		bufPool: bufioPool,
 	}
 
-	bufReader.resetReader = resetReaderFunc(bufReader)
 	return bufReader
 }
 
@@ -144,15 +130,17 @@ func (bbr *BucketBufReader) ResetAt(off int) error {
 	}
 
 	if dist := off - bbr.off; dist > 0 && dist < bbr.Buffered() {
-		// skip ahead by discarding the distance bytes
+		// Reset via Skip to avoid discarding all buffered bytes.
 		return bbr.Skip(dist)
 	}
 
-	if err := bbr.resetReader(off); err != nil {
+	r := NewBucketReader(bbr.ctx, bbr.bkt, bbr.name, bbr.base, bbr.length)
+	_, err := r.Seek(int64(off), io.SeekStart)
+	if err != nil {
 		return err
 	}
-
-	bbr.buf.Reset(bbr.r)
+	bbr.r = r
+	bbr.buf.Reset(r)
 	bbr.off = off
 
 	return nil
@@ -227,10 +215,9 @@ func (bbr *BucketBufReader) Buffered() int {
 }
 
 func (bbr *BucketBufReader) Close() error {
-	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-	// we reset the buffer when we retrieve it from the pool instead.
+	// No need to clean up buffer, we reset when we retrieve it from the pool
 	bbr.bufPool.Put(bbr.buf)
-	// The BucketReader does not need closed -
-	// it closes the reader generated from bkt.GetRange on each Read call.
+	// The BucketReader of a promise does not need a Close call.
+	// It closes the reader created by bkt.GetRange on each Read call.
 	return nil
 }

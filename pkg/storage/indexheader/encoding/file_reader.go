@@ -143,8 +143,7 @@ func (f *FileReader) Buffered() int {
 
 // Close cleans up the underlying resources used by this FileReader.
 func (f *FileReader) Close() error {
-	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-	// we reset the buffer when we retrieve it from the pool instead.
+	// No need to clean up buffer, we reset when we retrieve it from the pool
 	bufferPool.Put(f.buf)
 	// File handles are pooled, so we don't actually close the handle here, just return it.
 	return f.closer.Put(f.file)

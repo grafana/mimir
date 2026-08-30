@@ -19,8 +19,10 @@ type BufReader interface {
 	ResetAt(off int) error
 
 	// Skip advances the cursor by the given number of bytes in the data segment.
-	// Attempting to skip to the end of the data segment is valid.
-	// Attempting to skip _beyond_ the end of the data segment will return an error.
+	// It is valid to skip to exactly the end of the data segment.
+	// It is NOT valid to skip beyond the end of the data segment;
+	// in this case implementations MUST return an ErrInvalidSize error,
+	// but MUST NOT advance the cursor or consume any remaining bytes.
 	Skip(l int) error
 
 	// Peek returns at most the given number of bytes from the data segment, without consuming them.

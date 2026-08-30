@@ -5,6 +5,7 @@ package encoding
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"sync"
 
@@ -17,19 +18,10 @@ const (
 )
 
 type BufPromise struct {
-	//r   *BucketReader
-	eg *errgroup.Group
-	//bkt objstore.BucketReader
-
-	//ctx    context.Context
-	//name   string
-	//base   int
-	//length int
-	//off    int
-
-	//buf   []byte
 	bufioReader *bufio.Reader
-	//readN       int
+
+	cancel context.CancelCauseFunc
+	eg     *errgroup.Group
 }
 
 func NewBufPromise(
@@ -38,14 +30,18 @@ func NewBufPromise(
 	name string,
 	base int,
 	length int,
-	//buf []byte,
 	bufioReader *bufio.Reader,
 ) *BufPromise {
+	// Create handle to cancel an inflight bucket read
+	ctx, cancel := context.WithCancelCause(ctx)
 	bucketReader := NewBucketReader(ctx, bkt, name, base, length)
 	bufioReader.Reset(bucketReader)
 
+	// Propagate cancellable context to errgroup.
+	eg, _ := errgroup.WithContext(ctx)
 	bp := &BufPromise{
-		eg:          &errgroup.Group{},
+		cancel:      cancel,
+		eg:          eg,
 		bufioReader: bufioReader,
 	}
 
@@ -76,17 +72,6 @@ func (bp *BufPromise) Buffered() (n int, err error) {
 	return bp.bufioReader.Buffered(), nil
 }
 
-// Peek returns at most n bytes from the promise, without consuming them.
-// The byte slice points into the buffer of the promise.
-// It becomes invalid when the promise is released.
-func (bp *BufPromise) Peek(n int) ([]byte, error) {
-	if err := bp.eg.Wait(); err != nil {
-		// Return any error in the underlying bucket read from the initial fill-via-Peek.
-		return nil, err
-	}
-	return bp.bufioReader.Peek(n)
-}
-
 // Discard consumes and drops at most n bytes from the promise.
 func (bp *BufPromise) Discard(n int) (discarded int, err error) {
 	if err := bp.eg.Wait(); err != nil {
@@ -96,13 +81,9 @@ func (bp *BufPromise) Discard(n int) (discarded int, err error) {
 	return bp.bufioReader.Discard(n)
 }
 
-// release returns the buffer of the promise to the pool.
-// release waits for the fill, because a fill writes to the buffer.
-// A buffer in the pool belongs to the next reader that gets it.
-// The promise is not usable after release.
-func (bp *BufPromise) release(bufioPool *sync.Pool) {
-	// The error is not relevant here, because release discards the contents of the buffer.
-	_ = bp.eg.Wait()
+func (bp *BufPromise) Release(bufioPool *sync.Pool, cancelCause error) {
+	bp.cancel(cancelCause)
+	_ = bp.eg.Wait() // Ensure any write to the buffer completes.
 	bufioPool.Put(bp.bufioReader)
 	bp.bufioReader = nil
 }
@@ -115,25 +96,22 @@ type BucketAsyncBufReader struct {
 	length     int
 	readOffset int
 
-	resetReader func(off int) error
-
-	bufSize int
-
+	bufSize        int
+	peekBuf        []byte
 	bufIdx         int
 	bufPromises    []*BufPromise
 	bufferedOffset int
-
-	peekBuf []byte
-
-	// pool reference to return to on Close
-	bufioPool *sync.Pool
+	bufioPool      *sync.Pool
 }
 
 func NewBucketAsyncBufReader(
-	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
+	ctx context.Context,
+	bkt objstore.BucketReader,
+	name string, base int, length int,
+
 ) *BucketAsyncBufReader {
 	return newBucketAsyncBufReader(
-		ctx, bkt, name, base, length,
+		ctx, bkt, name, base, length, 0,
 		&bucketBufioPool, ReadBufferSize, ReadAheadFactor,
 	)
 }
@@ -144,6 +122,7 @@ func newBucketAsyncBufReader(
 	name string,
 	base int,
 	length int,
+	startOffset int,
 	bufioPool *sync.Pool,
 	bufSize int,
 	maxBufCount int,
@@ -152,8 +131,8 @@ func newBucketAsyncBufReader(
 	numBufs := min(maxBufCount, bufsForLength)
 	bufPromises := make([]*BufPromise, numBufs)
 
-	iBase := base
-	bufferedOffset := 0
+	iBase := base + startOffset
+	bufferedOffset := startOffset
 	for i := range numBufs {
 		bufioReader := bufioPool.Get().(*bufio.Reader)
 		bufLen := min(length-bufferedOffset, bufSize)
@@ -168,6 +147,7 @@ func newBucketAsyncBufReader(
 		name:           name,
 		base:           base,
 		length:         length,
+		readOffset:     startOffset,
 		bufSize:        bufSize,
 		peekBuf:        make([]byte, 0, bufSize),
 		bufPromises:    bufPromises,
@@ -177,13 +157,26 @@ func newBucketAsyncBufReader(
 }
 
 func (bbar *BucketAsyncBufReader) Reset() error {
-	//TODO implement me
-	panic("implement me")
+	return bbar.ResetAt(0)
 }
 
 func (bbar *BucketAsyncBufReader) ResetAt(off int) error {
-	//TODO implement me
-	panic("implement me")
+	if off > bbar.length {
+		return ErrInvalidSize
+	}
+
+	if dist := off - bbar.readOffset; dist > 0 && dist < bbar.Buffered() {
+		// Reset via Skip to avoid discarding all buffered bytes.
+		return bbar.Skip(dist)
+	}
+
+	bbar.Close()
+	newBbar := newBucketAsyncBufReader(
+		bbar.ctx, bbar.bkt, bbar.name, bbar.base, bbar.length, off,
+		bbar.bufioPool, bbar.bufSize, ReadAheadFactor,
+	)
+	*bbar = *newBbar
+	return nil
 }
 
 // rotateHead releases the drained head promise, starts a promise for the next chunk
@@ -191,15 +184,10 @@ func (bbar *BucketAsyncBufReader) ResetAt(off int) error {
 // Peek copies its result into peekBuf, so no slice that the reader returned
 // points into the buffer of a promise. The release is safe at once.
 func (bbar *BucketAsyncBufReader) rotateHead() {
-	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-	// we reset the buffer when we retrieve it from the pool instead.
-	bbar.bufPromises[bbar.bufIdx].release(bbar.bufioPool)
+	// No need to clean up buffer, we reset when we retrieve it from the pool
+	bbar.bufPromises[bbar.bufIdx].Release(bbar.bufioPool, nil)
 	bufioReader := bbar.bufioPool.Get().(*bufio.Reader)
 
-	// Create a new buffer promise in the same spot in the buffer promise queue.
-	// The promise must not reach past the end of the reader.
-	// bufferedOffset is relative to the data segment.
-	// Add base to get the offset in the object.
 	bufLen := min(bbar.length-bbar.bufferedOffset, bbar.bufSize)
 	bbar.bufPromises[bbar.bufIdx] = NewBufPromise(
 		bbar.ctx, bbar.bkt, bbar.name, bbar.base+bbar.bufferedOffset, bufLen, bufioReader,
@@ -220,7 +208,8 @@ func (bbar *BucketAsyncBufReader) Skip(l int) error {
 	bbar.readOffset += bytesSkipped
 
 	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
-	bbar.peekBuf = bbar.peekBuf[bytesSkipped:]
+	n := copy(bbar.peekBuf, bbar.peekBuf[bytesSkipped:])
+	bbar.peekBuf = bbar.peekBuf[:n]
 
 	// Move on to the promises if we have not satisfied the skip yet.
 	// Promises are consumed to discard the data and rotated if exhausted.
@@ -256,7 +245,7 @@ func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
 	// Clamp n to the lesser of the capacity of peekBuf or the length of the section.
 	n = min(n, cap(bbar.peekBuf), bbar.Len())
 
-	// Start with any previously-peeked bytes - Peek-after-Peek is a valid access pattern.
+	// Start with any previously-peeked bytes.
 	// Any data remaining in peekBuf is assumed to still be the valid start of a Peek.
 	// The read operations (Read/ReadInto and Skip) are required to update peekBuf
 	// to discard any previously-peeked bytes which were consumed by the read.
@@ -310,32 +299,19 @@ func (bbar *BucketAsyncBufReader) Read(n int) ([]byte, error) {
 }
 
 func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
-	// TODO consistency in error handling
-	//// A read past the end of the data segment is not valid.
-	//// The guard in Skip returns ErrInvalidSize for the same condition.
-	//// The reader contract also requires this read to consume the bytes that remain,
-	//// so move the cursor to the end before the return.
-	//// Without this guard the loop below never ends,
-	//// because a drained head promise rotates to an empty promise forever.
-	//if len(dst) > bbar.Len() {
-	//	remaining := bbar.Len()
-	//	if err := bbar.Skip(remaining); err != nil {
-	//		return err
-	//	}
-	//	// io.ReadFull reports io.EOF for no bytes and io.ErrUnexpectedEOF for a partial read.
-	//	// BucketBufReader passes that error through, so report the same error here.
-	//	shortErr := io.ErrUnexpectedEOF
-	//	if remaining == 0 {
-	//		shortErr = io.EOF
-	//	}
-	//	return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), shortErr)
-	//}
+	if len(dst) > bbar.Len() {
+		if err := bbar.Skip(bbar.Len()); err != nil {
+			return err
+		}
+		return ErrInvalidSize
+	}
 
 	// Start with any previously-peeked bytes.
 	dstBytesWritten := copy(dst, bbar.peekBuf)
 	bbar.readOffset += dstBytesWritten
 	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
-	bbar.peekBuf = bbar.peekBuf[dstBytesWritten:]
+	n := copy(bbar.peekBuf, bbar.peekBuf[dstBytesWritten:])
+	bbar.peekBuf = bbar.peekBuf[:n]
 
 	// Move on to the promises if we have not satisfied the read yet.
 	// Promises are consumed to copy into dst and rotated if exhausted.
@@ -362,14 +338,6 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 		if headPromiseBuffered <= 0 {
 			bbar.rotateHead()
 		}
-
-		// TODO consistency in error handling
-		//// Now we can surface any error
-		//if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		//	return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
-		//} else if err != nil {
-		//	return err
-		//}
 	}
 	return nil
 }
@@ -392,22 +360,18 @@ func (bbar *BucketAsyncBufReader) Buffered() int {
 	return bbar.bufferedOffset - bbar.readOffset
 }
 
-// Close releases each promise that the reader still holds,
-// and discards the data in the buffers of those promises.
-// Close is safe to call more than one time.
+// errBufPromiseReleased is the cancellation cause when release stops a fill that is still in flight.
+var errBufReaderClosed = errors.New("BufReader closed")
+
+// Close cancels all promises and releases buffers back to the pool.
 func (bbar *BucketAsyncBufReader) Close() error {
 	for i, bufPromise := range bbar.bufPromises {
-		if bufPromise == nil {
-			// An earlier Close released the promise in this slot.
-			continue
-		}
-		// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-		// we reset the buffer when we retrieve it from the pool instead.
-		bufPromise.release(bbar.bufioPool)
+		// No need to clean up buffer, we reset when we retrieve it from the pool.
+		bufPromise.Release(bbar.bufioPool, errBufReaderClosed)
 		bbar.bufPromises[i] = nil
 	}
 
 	// The BucketReader of a promise does not need a Close call.
-	// It closes the reader from bkt.GetRange in each Read call.
+	// It closes the reader created by bkt.GetRange on each Read call.
 	return nil
 }
