@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Clarify "Classic mode enabled" log message to indicate UTF-8 strict mode is disabled. #10449
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [CHANGE] Query-frontend, MQE: Matcher propagation for binary operations now works as one of the optimization passes in MQE rather than as part of the rewrite middleware, configured with `querier.mimir-query-engine.enable-propagate-matchers` instead of `query-frontend.rewrite-propagate-matchers`. #15092
 * [CHANGE] Removed the following deprecated config: `-querier.filter-queryables-enabled`, `-query-frontend.cache-samples-processed-stats`, `-ingest-storage.kafka.write-clients`, `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`, `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`. #16352

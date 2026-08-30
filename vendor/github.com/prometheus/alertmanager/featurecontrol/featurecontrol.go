@@ -154,7 +154,7 @@ func NewFlags(logger *slog.Logger, features string) (Flagger, error) {
 			logger.Warn("Experimental group key in metrics enabled")
 		case FeatureClassicMode:
 			opts = append(opts, enableClassicMode())
-			logger.Warn("Classic mode enabled")
+			logger.Warn("UTF-8 strict mode disabled; using classic mode")
 		case FeatureUTF8StrictMode:
 			opts = append(opts, enableUTF8StrictMode())
 			logger.Warn("UTF-8 strict mode enabled")
