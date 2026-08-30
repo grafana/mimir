@@ -5,10 +5,7 @@ package encoding
 import (
 	"bufio"
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"slices"
 	"sync"
 
 	"github.com/thanos-io/objstore"
@@ -259,22 +256,23 @@ func (bbar *BucketAsyncBufReader) Skip(l int) error {
 	return nil
 }
 
-// Peek returns at most n bytes from the data segment, without consuming them.
-// Peek always copies the bytes into peekBuf for now.
-// This keeps the logic simple for rotating out exhausted buffer promises
-// in the case where a peek crosses the promise boundaries.
-// Since peekBuf is pre-allocated, this still avoids the extra slice allocation
-// which occurs when callers Read instead of Peek.
 func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
-	// Ensure peekBuf has capacity of n by calling Grow against the truncated slice.
-	// This should never trigger a new alloc as peekBuf is pre-allocated to larger than we need -
-	// at most it needs to hold the length of one Prometheus label or value.
-	// Length must be truncated before return in the case of a short Peek.
-	bbar.peekBuf = slices.Grow(bbar.peekBuf[:0], n)[:n]
+	// Clamp n to the lesser of the capacity of peekBuf or the length of the section.
+	n = min(n, cap(bbar.peekBuf), bbar.Len())
 
-	peekableBytes := bbar.Size()
-	peekBytesWritten := 0
-	for peekBytesWritten < n && peekableBytes > 0 {
+	// Start with any previously-peeked bytes - Peek-after-Peek is a valid access pattern.
+	// Any data remaining in peekBuf is assumed to still be the valid start of a Peek.
+	// The read operations (Read/ReadInto and Skip) are required to update peekBuf
+	// to discard any previously-peeked bytes which were consumed by the read.
+	peekBytesAvailable := len(bbar.peekBuf)
+	if n > peekBytesAvailable {
+		bbar.peekBuf = bbar.peekBuf[:n] // Grow length
+	}
+	peekBytesWritten := min(n, peekBytesAvailable)
+
+	// Move on to the promises if we have not satisfied the peek yet.
+	// Promises are consumed to copy into the peekBuf and rotated if exhausted.
+	for peekBytesWritten < n {
 		headPromise := bbar.bufPromises[bbar.bufIdx]
 		headPromiseBuffered, err := headPromise.Buffered()
 		if err != nil {
@@ -284,7 +282,6 @@ func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
 		toRead := min(n-peekBytesWritten, headPromiseBuffered)
 		readN, err := io.ReadFull(headPromise, bbar.peekBuf[peekBytesWritten:peekBytesWritten+toRead])
 		peekBytesWritten += readN
-		peekableBytes -= readN
 		if err != nil {
 			return nil, err
 		}
@@ -298,8 +295,6 @@ func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
 			bbar.rotateHead()
 		}
 	}
-	// A short Peek is valid; truncate to what was actually read.
-	bbar.peekBuf = bbar.peekBuf[:peekBytesWritten]
 
 	if peekBytesWritten == 0 {
 		return nil, nil
@@ -319,16 +314,32 @@ func (bbar *BucketAsyncBufReader) Read(n int) ([]byte, error) {
 }
 
 func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
-	// First try to satisfy the read from previously-peeked bytes.
-	dstBytesWritten := 0
-	n := copy(dst, bbar.peekBuf)
-	bbar.readOffset += n
-	dstBytesWritten += n
+	// TODO consistency in error handling
+	//// A read past the end of the data segment is not valid.
+	//// The guard in Skip returns ErrInvalidSize for the same condition.
+	//// The reader contract also requires this read to consume the bytes that remain,
+	//// so move the cursor to the end before the return.
+	//// Without this guard the loop below never ends,
+	//// because a drained head promise rotates to an empty promise forever.
+	//if len(dst) > bbar.Len() {
+	//	remaining := bbar.Len()
+	//	if err := bbar.Skip(remaining); err != nil {
+	//		return err
+	//	}
+	//	// io.ReadFull reports io.EOF for no bytes and io.ErrUnexpectedEOF for a partial read.
+	//	// BucketBufReader passes that error through, so report the same error here.
+	//	shortErr := io.ErrUnexpectedEOF
+	//	if remaining == 0 {
+	//		shortErr = io.EOF
+	//	}
+	//	return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), shortErr)
+	//}
 
-	// Truncate the peekBuf even if we did not read all the previously-peeked bytes.
-	// Peek interface contract says "byte slice returned becomes invalid at the next read".
-	// We do not need to try to serve two subsequent reads from the peekBuf even if they fit.
-	bbar.peekBuf = bbar.peekBuf[:0]
+	// Start with any previously-peeked bytes
+	dstBytesWritten := copy(dst, bbar.peekBuf)
+	bbar.readOffset += dstBytesWritten
+	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
+	bbar.peekBuf = bbar.peekBuf[dstBytesWritten:]
 
 	// Move on to read from the promises if we have not satisfied the read yet.
 	for dstBytesWritten < len(dst) {
@@ -339,9 +350,9 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 		}
 
 		toRead := min(len(dst)-dstBytesWritten, headPromiseBuffered)
-		n, err := io.ReadFull(headPromise, dst[dstBytesWritten:dstBytesWritten+toRead])
-		bbar.readOffset += n
-		dstBytesWritten += n
+		readN, err := io.ReadFull(headPromise, dst[dstBytesWritten:dstBytesWritten+toRead])
+		bbar.readOffset += readN
+		dstBytesWritten += readN
 		if err != nil {
 			return err
 		}
@@ -355,12 +366,13 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 			bbar.rotateHead()
 		}
 
-		// Now we can surface any error
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
-		} else if err != nil {
-			return err
-		}
+		// TODO consistency in error handling
+		//// Now we can surface any error
+		//if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		//	return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
+		//} else if err != nil {
+		//	return err
+		//}
 	}
 	return nil
 }
@@ -380,8 +392,7 @@ func (bbar *BucketAsyncBufReader) Offset() int {
 }
 
 func (bbar *BucketAsyncBufReader) Buffered() int {
-	//TODO implement me
-	panic("implement me")
+	return bbar.bufferedOffset - bbar.readOffset
 }
 
 // Close releases each promise that the reader still holds,

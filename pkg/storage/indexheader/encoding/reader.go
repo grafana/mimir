@@ -24,9 +24,13 @@ type BufReader interface {
 	Skip(l int) error
 
 	// Peek returns at most the given number of bytes from the data segment, without consuming them.
-	// The byte slice returned becomes invalid at the next read.
 	// It is valid to Peek beyond the end of the data segment;
 	// in this case implementations MUST return the available bytes up to the end and a nil error.
+	// The byte slice returned becomes invalid at the next read.
+	//
+	// Peek is limited to and only must support reads up to the underlying buffer length.
+	// Caller checks Size first to see if the next read operation length fits in the underlying buffer,
+	// then a Peek-Skip pattern is used to avoid the slice allocation which must occur in Read.
 	Peek(n int) ([]byte, error)
 
 	// Read returns the given number of bytes from the data segment, consuming them.

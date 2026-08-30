@@ -43,42 +43,61 @@ func newTestAsyncBufReaderWithData(
 	), bkt
 }
 
-func TestBucketAsyncBufReader_Read_Sequential(t *testing.T) {
+func TestBucketAsyncBufReader_Peek_Peek(t *testing.T) {
 	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
 
-	b, err := r.Read(5)
+	peek1, err := r.Peek(5)
 	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:5], b)
-	require.Equal(t, 5, r.Offset())
-
-	b, err = r.Read(5)
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents[5:10], b)
-	require.Equal(t, 10, r.Offset())
-}
-
-func TestBucketAsyncBufReader_Read_ExactLength(t *testing.T) {
-	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
-
-	b, err := r.Read(len(testBucketContents))
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents, b)
-	require.Equal(t, len(testBucketContents), r.Offset())
-	require.Equal(t, 0, r.Len())
-}
-
-func TestBucketAsyncBufReader_Peek_Basic(t *testing.T) {
-	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
-
-	b, err := r.Peek(5)
-	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:5], b)
+	require.Equal(t, testBucketContents[:5], peek1)
 	require.Equal(t, 0, r.Offset(), "Peek does not consume")
 
-	// Read returns the same bytes.
-	got, err := r.Read(5)
+	// Same-size Peek returns the same bytes.
+	peek2, err := r.Peek(5)
 	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:5], got)
+	require.Equal(t, testBucketContents[:5], peek2)
+
+	// Smaller Peek returns the same starting bytes.
+	peek3, err := r.Peek(3)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:3], peek3)
+
+	// Larger Peek returns the original bytes plus more
+	peek4, err := r.Peek(10)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:10], peek4)
+}
+
+func TestBucketAsyncBufReader_Peak_Read(t *testing.T) {
+	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
+
+	peek1, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], peek1)
+	require.Equal(t, 0, r.Offset())
+
+	// Read returns the same bytes.
+	read1, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], read1)
+	require.Equal(t, 5, r.Offset())
+
+	// Another Peek returns the next bytes after Read consumed previous bytes.
+	peek2, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], peek2)
+	require.Equal(t, 5, r.Offset())
+
+	// A Read short of the peeked bytes consumes some of them.
+	read2, err := r.Read(3)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:8], read2)
+	require.Equal(t, 8, r.Offset())
+
+	// A Read beyond the remaining peeked bytes consumes them and more.
+	read3, err := r.Read(8)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[8:16], read3)
+	require.Equal(t, 16, r.Offset())
 }
 
 func TestBucketAsyncBufReader_Peek_AcrossPromiseBoundary(t *testing.T) {
@@ -114,6 +133,30 @@ func TestBucketAsyncBufReader_Peek_AtEnd(t *testing.T) {
 	b, err := r.Peek(1)
 	require.NoError(t, err)
 	require.Nil(t, b)
+}
+
+func TestBucketAsyncBufReader_Read_Sequential(t *testing.T) {
+	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
+
+	b, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], b)
+	require.Equal(t, 5, r.Offset())
+
+	b, err = r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], b)
+	require.Equal(t, 10, r.Offset())
+}
+
+func TestBucketAsyncBufReader_Read_ExactLength(t *testing.T) {
+	r, _ := newTestAsyncBufReader(t, 0, len(testBucketContents))
+
+	b, err := r.Read(len(testBucketContents))
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents, b)
+	require.Equal(t, len(testBucketContents), r.Offset())
+	require.Equal(t, 0, r.Len())
 }
 
 //func TestBucketAsyncBufReader_Peek_BeyondPeekBuffer(t *testing.T) {
