@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -48,7 +49,13 @@ func NewBufPromise(
 	bp.eg.Go(func() error {
 		// Send the fill to the background.
 		// Peek reads length bytes into the buffer, and does not consume them.
-		_, err := bp.bufioReader.Peek(length)
+		b, err := bp.bufioReader.Peek(length)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return fmt.Errorf(
+				"%w reading %d bytes at offset %d of %s (got %d bytes): %s",
+				ErrInvalidSize, length, base, name, len(b), err,
+			)
+		}
 		return err
 	})
 	return bp
