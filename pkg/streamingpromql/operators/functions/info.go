@@ -532,7 +532,10 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			return fmt.Errorf("vector cannot contain metrics with the same labelset")
 		}
 		labelSetsHashes[hash] = i
-		result, err = types.AppendSeriesMetadataFromPool(f.MemoryConsumptionTracker, result, metadata)
+		if err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(metadata.Labels); err != nil {
+			return err
+		}
+		result, err = types.SeriesMetadataSlicePool.AppendToSlice(result, f.MemoryConsumptionTracker, metadata)
 		return err
 	}
 
