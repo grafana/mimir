@@ -2263,40 +2263,48 @@ func (t *versioningTestNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (p
 // info series' lookback window must be contributed by the info data label selector. Previously it
 // was not, so the overall queried time range - which drives remote-execution data fetching - could
 // miss the info series and silently drop enrichment.
-func TestInfoQueriedTimeRangeCoversPinnedTime(t *testing.T) {
-	const (
-		pinnedMs int64 = 120_000 // metric @ 120
-		rangeMs  int64 = 60_000  // metric[1m]
-	)
+func TestInfoQueriedTimeRange(t *testing.T) {
 	lookbackDelta := 5 * time.Minute
+	// Evaluate well after any pinned time so a range pinned to a selector doesn't reach it.
+	evalTime := timestamp.Time(0).Add(40 * time.Minute)
+
+	// The +1ms on MinT excludes the sample exactly one lookback delta before (see ComputeQueriedTimeRange).
+	testCases := map[string]struct {
+		expr         string
+		expectedMinT time.Time
+		expectedMaxT time.Time
+	}{
+		// A uniform reference pins the lookup to the shared time; the range selector alone queries
+		// no lookback, so the info series' lookback window must come from the data label selector.
+		"uniform reference pins to the shared time": {
+			expr:         "info(last_over_time(metric[1m] @ 120))",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: timestamp.Time(120_000),
+		},
+		// Selectors pinned at different times aren't uniform: info series are matched per step, so
+		// the range must reach the evaluation time rather than be capped at the pinned times.
+		"non-uniform references use evaluation time": {
+			expr:         "info(metric @ 120 or other_metric @ 180)",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: evalTime,
+		},
+	}
 
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-
-	// Evaluate well after the pinned time so the (buggy) evaluation-time info window does not
-	// happen to overlap the pinned window.
-	evalTime := timestamp.Time(0).Add(40 * time.Minute)
 	queryTimeRange := types.NewInstantQueryTimeRange(evalTime)
 
-	plan, err := planner.NewQueryPlan(context.Background(), "info(last_over_time(metric[1m] @ 120))", queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
-	require.NoError(t, err)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
+			require.NoError(t, err)
 
-	queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
-	require.NoError(t, err)
+			queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
 
-	// The info series must be fetched across their lookback window as of the pinned time. The +1ms
-	// on the lower bound excludes the sample exactly one lookback delta before (see
-	// selectors.ComputeQueriedTimeRange), matching how a pinned instant selector is queried.
-	expectedMinT := timestamp.Time(pinnedMs - lookbackDelta.Milliseconds() + 1)
-	expectedMaxT := timestamp.Time(pinnedMs)
-
-	require.Equal(t, expectedMinT, queried.MinT, "queried range must reach back to cover the info series lookback window at the pinned time")
-	require.Equal(t, expectedMaxT, queried.MaxT)
-
-	// Sanity check that the range selector alone would not have covered this: its queried start is
-	// only pinnedTime-range (no lookback), so without the fix the info series before that point are
-	// missed.
-	rangeSelectorMinT := timestamp.Time(pinnedMs - rangeMs + 1)
-	require.True(t, expectedMinT.Before(rangeSelectorMinT), "test setup: info lookback window must extend before the range selector's queried start")
+			require.Equal(t, tc.expectedMinT, queried.MinT)
+			require.Equal(t, tc.expectedMaxT, queried.MaxT)
+		})
+	}
 }
