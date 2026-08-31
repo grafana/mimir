@@ -96,8 +96,17 @@ type BucketAsyncBufReader struct {
 	length     int
 	readOffset int
 
-	bufSize        int
-	peekBuf        []byte
+	bufSize int
+
+	// peekBuf holds peeked bytes until they are read or discarded.
+	// Peek is intended to return a slice of bytes without an extra allocation,
+	// but we cannot return a slice which spans two underlying promise buffers.
+	// We allocate peekBuf with a large capacity and Peek returns subslices of it.
+	// peekBuf's slice bounds slides forward through the backing array until it runs out of capacity,
+	// then it is compacted by copying remaining elements back to the start of the array.
+	peekBuf     []byte
+	peekBufBase []byte // Holds the reference to the start of the slice for compaction
+
 	bufIdx         int
 	bufPromises    []*BufPromise
 	bufferedOffset int
@@ -141,6 +150,7 @@ func newBucketAsyncBufReader(
 		bufferedOffset += bufLen
 	}
 
+	peekBufBase := make([]byte, 0, bufSize)
 	return &BucketAsyncBufReader{
 		ctx:            ctx,
 		bkt:            bkt,
@@ -149,11 +159,29 @@ func newBucketAsyncBufReader(
 		length:         length,
 		readOffset:     startOffset,
 		bufSize:        bufSize,
-		peekBuf:        make([]byte, 0, bufSize),
+		peekBufBase:    peekBufBase,
+		peekBuf:        peekBufBase[:0],
 		bufPromises:    bufPromises,
 		bufferedOffset: bufferedOffset,
 		bufioPool:      bufioPool,
 	}
+}
+
+// rotateHead releases the exhausted head promise back to the pool
+// and queues a promise to buffer the next read range in its place.
+func (bbar *BucketAsyncBufReader) rotateHead() {
+	// No need to clean up buffer, we reset when we retrieve it from the pool
+	bbar.bufPromises[bbar.bufIdx].Release(bbar.bufioPool, nil)
+	bufioReader := bbar.bufioPool.Get().(*bufio.Reader)
+
+	bufLen := min(bbar.length-bbar.bufferedOffset, bbar.bufSize)
+	bbar.bufPromises[bbar.bufIdx] = NewBufPromise(
+		bbar.ctx, bbar.bkt, bbar.name, bbar.base+bbar.bufferedOffset, bufLen, bufioReader,
+	)
+	bbar.bufferedOffset += bufLen
+
+	// Advance current buffer queue index - modulo wraps to the front of the slice.
+	bbar.bufIdx = (bbar.bufIdx + 1) % len(bbar.bufPromises)
 }
 
 func (bbar *BucketAsyncBufReader) Reset() error {
@@ -179,25 +207,6 @@ func (bbar *BucketAsyncBufReader) ResetAt(off int) error {
 	return nil
 }
 
-// rotateHead releases the drained head promise, starts a promise for the next chunk
-// of the data segment in the same slot, and advances the head index.
-// Peek copies its result into peekBuf, so no slice that the reader returned
-// points into the buffer of a promise. The release is safe at once.
-func (bbar *BucketAsyncBufReader) rotateHead() {
-	// No need to clean up buffer, we reset when we retrieve it from the pool
-	bbar.bufPromises[bbar.bufIdx].Release(bbar.bufioPool, nil)
-	bufioReader := bbar.bufioPool.Get().(*bufio.Reader)
-
-	bufLen := min(bbar.length-bbar.bufferedOffset, bbar.bufSize)
-	bbar.bufPromises[bbar.bufIdx] = NewBufPromise(
-		bbar.ctx, bbar.bkt, bbar.name, bbar.base+bbar.bufferedOffset, bufLen, bufioReader,
-	)
-	bbar.bufferedOffset += bufLen
-
-	// Advance current buffer queue index - modulo wraps around to the front of the slice if at end.
-	bbar.bufIdx = (bbar.bufIdx + 1) % len(bbar.bufPromises)
-}
-
 func (bbar *BucketAsyncBufReader) Skip(l int) error {
 	if l > bbar.Len() {
 		return ErrInvalidSize
@@ -207,9 +216,9 @@ func (bbar *BucketAsyncBufReader) Skip(l int) error {
 	bytesSkipped := min(len(bbar.peekBuf), l)
 	bbar.readOffset += bytesSkipped
 
-	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
-	n := copy(bbar.peekBuf, bbar.peekBuf[bytesSkipped:])
-	bbar.peekBuf = bbar.peekBuf[:n]
+	// Advance past the consumed bytes without moving them,
+	// so a slice returned by an earlier Peek stays valid.
+	bbar.peekBuf = bbar.peekBuf[bytesSkipped:]
 
 	// Move on to the promises if we have not satisfied the skip yet.
 	// Promises are consumed to discard the data and rotated if exhausted.
@@ -242,16 +251,20 @@ func (bbar *BucketAsyncBufReader) Skip(l int) error {
 }
 
 func (bbar *BucketAsyncBufReader) Peek(n int) ([]byte, error) {
-	// Clamp n to the lesser of the capacity of peekBuf or the length of the section.
-	n = min(n, cap(bbar.peekBuf), bbar.Len())
+	// Clamp n to the lesser of the buffer size or the length of the section.
+	n = min(n, bbar.bufSize, bbar.Len())
+	if n > cap(bbar.peekBuf) {
+		// Slide remaining peeked bytes
+		bbar.peekBuf = append(bbar.peekBufBase[:0], bbar.peekBuf...)
+	}
 
 	// Start with any previously-peeked bytes.
 	// Any data remaining in peekBuf is assumed to still be the valid start of a Peek.
-	// The read operations (Read/ReadInto and Skip) are required to update peekBuf
+	// Read/ReadInto, Reset/ResetAt, and Skip are required to update peekBuf
 	// to discard any previously-peeked bytes which were consumed by the read.
 	peekBytesAvailable := len(bbar.peekBuf)
 	if n > peekBytesAvailable {
-		bbar.peekBuf = bbar.peekBuf[:n] // Grow length
+		bbar.peekBuf = bbar.peekBuf[:n] // Grow length; will not allocate.
 	}
 	peekBytesWritten := min(n, peekBytesAvailable)
 
@@ -309,9 +322,9 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 	// Start with any previously-peeked bytes.
 	dstBytesWritten := copy(dst, bbar.peekBuf)
 	bbar.readOffset += dstBytesWritten
-	// Slide any unconsumed bytes from peekBuf to the beginning of the slice and truncate.
-	n := copy(bbar.peekBuf, bbar.peekBuf[dstBytesWritten:])
-	bbar.peekBuf = bbar.peekBuf[:n]
+	// Advance past the consumed bytes without moving the
+	// so a slice returned by an earlier Peek stays valid.
+	bbar.peekBuf = bbar.peekBuf[dstBytesWritten:]
 
 	// Move on to the promises if we have not satisfied the read yet.
 	// Promises are consumed to copy into dst and rotated if exhausted.
@@ -342,10 +355,10 @@ func (bbar *BucketAsyncBufReader) ReadInto(dst []byte) error {
 	return nil
 }
 
-// Size returns the largest number of bytes that a single Peek can return.
-// Peek assembles its result in peekBuf, so the capacity of peekBuf is the limit.
 func (bbar *BucketAsyncBufReader) Size() int {
-	return cap(bbar.peekBuf)
+	// Reported capacity of peekBuf changes as its referenced window slides,
+	// but we will compact to make use of its full underlying allocated size if needed.
+	return bbar.bufSize
 }
 
 func (bbar *BucketAsyncBufReader) Len() int {

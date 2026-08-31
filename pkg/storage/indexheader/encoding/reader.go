@@ -28,7 +28,11 @@ type BufReader interface {
 	// Peek returns at most the given number of bytes from the data segment, without consuming them.
 	// It is valid to Peek beyond the end of the data segment;
 	// in this case implementations MUST return the available bytes up to the end and a nil error.
-	// The byte slice returned becomes invalid at the next read.
+	//
+	// The byte slice returned MUST remain valid for one subsequent Skip of the returned byte length;
+	// callers use a Peek-Skip pattern in place of Read to avoid a slice allocation.
+	// It is NOT valid to read the returned byte slice after any subsequent read operation:
+	// Peek, Read, ReadInto, Reset, ResetAt, and Skip.
 	//
 	// Peek is limited to and only must support reads up to the underlying buffer length.
 	// Caller checks Size first to see if the next read operation length fits in the underlying buffer,
