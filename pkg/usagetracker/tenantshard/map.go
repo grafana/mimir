@@ -20,6 +20,11 @@ const (
 
 	// NumShards is the number of shards used by the tracker store per tenant.
 	NumShards = 16
+
+	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
+	maxAvgGroupLoad = groupSize / 2
+	// last is the last element in the group, just to make the code more readable
+	last = groupSize - 1
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -40,8 +45,11 @@ type Map struct {
 	data  []data
 
 	resident uint32
-	dead     uint32
 	limit    uint32
+
+	// spilled is the number of groups that (may) have spilled to the next one.
+	// i.e. their last slot is empty (either by data or by a spillmark)
+	spilled uint32
 
 	// rehashes is only counted for testing purposes.
 	rehashes uint32
@@ -70,8 +78,9 @@ const (
 
 	// empty is an index or data mark for an empty slot.
 	empty = 0b0000_0000
-	// tombstone is an index or data mark for a deleted slot.
-	tombstone = 0b0000_0001
+	// spillmark is an index or data mark for a deleted last group slot
+	// that indicates that group may have spilled to the next one.
+	spillmark = 0b0000_0001
 )
 
 type prefix uint8
@@ -93,21 +102,14 @@ func New(sz uint32) (m *Map) {
 // Series is incremented if it's not nil and it's below limit, unless track is false.
 // If track is false, then the value is only updated if it's greater than the current value.
 func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64, track bool) (created, rejected bool) {
-	if m.resident >= m.limit {
-		var lim uint64
-		if limit != nil {
-			lim = limit.Load()
-		}
-		m.rehash(m.nextSize(lim))
-	}
-
 	if value >= 0xfe {
-		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & tombstone).
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & spillmark).
 		panic("value is too large")
 	}
 
 	pfx, sfx := splitHash(key)
-	i := probeStart(sfx, len(m.index))
+	ps := probeStart(sfx, len(m.index))
+	i := ps
 	for { // inlined find loop
 		matches := m.index[i].match(pfx)
 		for matches != 0 {
@@ -120,9 +122,32 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 				return false, false
 			}
 		}
-		// |key| is not in group |i|,
+		// |key| is not in group |i|
+		// stop probing if last element is empty (not busy and not a spillmark)
+		if m.index[i][last] == empty {
+			break
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			i = 0
+		}
+	}
+
+	// Check whether a rehash is needed
+	if m.resident >= m.limit || m.spilled > m.maxSpilledGroups() {
+		var lim uint64
+		if limit != nil {
+			lim = limit.Load()
+		}
+		m.rehash(m.nextSize(lim))
+		// probe start may have changed if the number of groups has changed
+		ps = probeStart(sfx, len(m.index))
+	}
+
+	i = ps
+	for {
 		// stop probing if we see an empty slot
-		matches = m.index[i].matchEmpty()
+		matches := m.index[i].matchEmptyOrSpillmark()
 		if matches != 0 { // insert
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
@@ -144,21 +169,31 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 
 func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bitset) {
 	s := nextMatch(&matches)
+
+	wasSpillmark := m.index[i][s] == spillmark
 	m.index[i][s] = pfx
 	m.keys[i][s] = key
 	m.data[i][s] = entry
 	m.resident++
+
+	if s != last {
+		return
+	}
+	if !wasSpillmark {
+		return
+	}
+	m.spilled++
 }
 
 // Load inserts |key| and |value| into the map without checking if it already exists.
 // No limits are checked, and series count should be incremented by the caller.
 func (m *Map) Load(key uint64, value clock.Minutes) {
-	if m.resident >= m.limit {
+	if m.resident >= m.limit || m.spilled > m.maxSpilledGroups() {
 		m.rehash(m.nextSize(0))
 	}
 
 	if value >= 0xfe {
-		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & tombstone).
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & spillmark).
 		panic("value is too large")
 	}
 
@@ -175,7 +210,7 @@ func (m *Map) load(key uint64, entry xorData) {
 	looped := false
 	for {
 		// Find an empty slot and insert without checking if it already exists.
-		matches := m.index[i].matchEmpty()
+		matches := m.index[i].matchEmptyOrSpillmark()
 		if matches != 0 { // insert
 			m.insert(key, pfx, entry, i, matches)
 			return
@@ -193,15 +228,15 @@ func (m *Map) load(key uint64, entry xorData) {
 
 // Count returns the number of alive elements in the Map.
 func (m *Map) Count() int {
-	return int(m.resident - m.dead)
+	return int(m.resident)
 }
 
 // Stats is a point-in-time snapshot of a Map's internal counters, used for debugging.
 type Stats struct {
-	// Resident is the number of resident elements, including dead ones (tombstones).
+	// Resident is the number of resident elements, including dead ones (spillmarks).
 	Resident uint32 `json:"resident"`
-	// Dead is the number of dead elements (tombstones).
-	Dead uint32 `json:"dead"`
+	// Spilled is the number of groups that spilled to the next one(s).
+	Spilled uint32 `json:"spilled"`
 	// Limit is the resident count that triggers a rehash when reached.
 	Limit uint32 `json:"limit"`
 	// Length is the number of groups, i.e. the (identical) length of the index, keys and data arrays.
@@ -216,7 +251,7 @@ func (m *Map) Stats() Stats {
 	defer m.Unlock()
 	return Stats{
 		Resident: m.resident,
-		Dead:     m.dead,
+		Spilled:  m.spilled,
 		Limit:    m.limit,
 		Length:   len(m.index),
 		Rehashes: m.rehashes,
@@ -225,58 +260,46 @@ func (m *Map) Stats() Stats {
 
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
-groups:
 	for i := range m.data {
-		for j := uint32(0); j < groupSize; {
+		for j := uint32(0); j < groupSize; j++ {
+			// TODO check only non-empty slots
 			if m.data[i][j] == empty {
 				// There's nothing here.
-				// Hence, there's nothing in the next slots.
-				continue groups
+				continue
 			}
-			if m.data[i][j] == tombstone {
+			if m.data[i][j] == spillmark {
 				// Already deleted, skip.
-				j++
+				// TODO: We only put spillmarks on last slot, so we could actually do continue groups.
 				continue
 			}
 			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
 				removed++
+				m.resident--
 
-				// We want to avoid creating tombstones. Every time we create a tombstone, we get closer to the rehash of the map.
-				// Rehash of the map is slow and creates garbage, slowing down the entire service.
-				if emptySlots := m.index[i].matchEmpty(); emptySlots != 0 {
-					// We target groups to be half-full, so it's likely that there are empty slots in this group so far.
-					// If there's an empty slot in this group, it means that no elements that were originally targeting this group
-					// have been written to a next group, which in turn means that we can safely move the elements in this group.
-					m.resident--
-					e := nextMatch(&emptySlots)
-					if e == j+1 {
-						// This is the last element in the group, just mark it as empty and move to the next group.
-						m.index[i][j] = empty
-						m.keys[i][j] = 0
-						m.data[i][j] = empty
-						continue groups
-					}
-
-					// There are more elements in the group, move the last element in the group to this position.
-					// Set that element position to empty.
-					m.index[i][j], m.index[i][e-1] = m.index[i][e-1], empty
-					m.keys[i][j], m.keys[i][e-1] = m.keys[i][e-1], 0
-					m.data[i][j], m.data[i][e-1] = m.data[i][e-1], empty
-
-					// Continue checking the same position again.
-					continue
+				if j == last {
+					// This is the last element, if it was previously set,
+					// then group may have spilled to the next one.
+					// We need to keep that signal, so we leave a spillmark here.
+					m.data[i][j] = spillmark
+					// We need to leave spillmark in the data because that's what iterator uses.
+					m.index[i][j] = spillmark
+					// We don't need to touch the keys, because nobody will read them if index/data is a spillmark.
+					// Keys are groups of uint64 that utilize an entire cache line, better to avoid touching them.
+				} else {
+					// This is not the last element, so just mark it as empty.
+					m.data[i][j] = empty
+					m.index[i][j] = empty
 				}
-
-				// Bad luck, the group is full, just set a tombstone and keep checking.
-				m.index[i][j] = tombstone
-				m.keys[i][j] = 0
-				m.data[i][j] = tombstone
-				m.dead++
 			}
-			j++
 		}
 	}
-	if m.dead > m.limit/2 {
+	// FIXME: rehash trigger is different now.
+	// Try tweaking this.
+	// We rehash if half of the groups have spilled.
+	// We target groups to be half/full (see groupSize/maxAvgGroupLoad)
+	// There's a risk of this becoming a continuous rehash if it happens that
+	// 50% of groups are completely full and 50% of the groups are completely empty
+	if m.spilled > m.maxSpilledGroups() {
 		var lim uint64
 		if limit != nil {
 			lim = limit.Load()
@@ -284,6 +307,14 @@ groups:
 		m.rehash(m.nextSize(lim))
 	}
 	return removed
+}
+
+// maxSpilledGroups returns the maximum number of groups we allow to be spilled.
+// We allow groups to be half full, so the worst case is half of the groups full and half of them completely empty
+// In order to prevent a rehash cycle in that case, we allow one more group to spill before requiring a rehash.
+// Note that allowing more spilled groups impacts the Put/Load performance as more buckets need to be checked.
+func (m *Map) maxSpilledGroups() uint32 {
+	return uint32(len(m.index))*groupSize/maxAvgGroupLoad + 1
 }
 
 // EnsureCapacity ensure that the map has enough capacity to store |n| elements.
@@ -300,7 +331,7 @@ func (m *Map) EnsureCapacity(n uint32) {
 // limit=0 means no limit (used by Load): grows by resident*1.25.
 func (m *Map) nextSize(limit uint64) uint32 {
 	perShard := limit / NumShards
-	alive := uint64(m.resident - m.dead)
+	alive := uint64(m.resident)
 	target := alive * 5 / 4
 	// Only let the limit influence growth when it represents a real constraint.
 	if perShard > target && perShard <= math.MaxUint32 {
@@ -323,11 +354,12 @@ func (m *Map) rehash(n uint32) {
 	m.keys = make([]keys, n)
 	m.data = make([]data, n)
 	m.limit = n * maxAvgGroupLoad
-	m.resident, m.dead = 0, 0
+	m.resident, m.spilled = 0, 0
 	for g := range indices {
+		// TODO: benchmark performance if we only process the non-empty items.
 		for s := range indices[g] {
 			c := indices[g][s]
-			if c != empty && c != tombstone {
+			if c != empty && c != spillmark {
 				m.load(ks[g][s], datas[g][s])
 			}
 		}
@@ -389,7 +421,7 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 
 		for i, g := range *dataClone {
 			for j, entry := range g {
-				if entry == empty || entry == tombstone {
+				if entry == empty || entry == spillmark {
 					// There's nothing here.
 					continue
 				}

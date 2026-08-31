@@ -12,8 +12,6 @@ import (
 
 const (
 	groupSize = 8
-	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
-	maxAvgGroupLoad = 4
 
 	loBits uint64 = 0x0101010101010101
 	hiBits uint64 = 0x8080808080808080
@@ -32,8 +30,9 @@ func (m *index) match(p prefix) bitset {
 	return findZeroBytes(castUint64(m) ^ (loBits * uint64(p)))
 }
 
-func (m *index) matchEmpty() bitset {
-	return findZeroBytes(castUint64(m))
+func (m *index) matchEmptyOrSpillmark() bitset {
+	// TODO: see if we can optimize this, this likely overlaps with findZeroBytes logic.
+	return findZeroBytes(castUint64(m) & (^loBits))
 }
 
 // nextMatch clears and returns the index corresponding to the next set bit in

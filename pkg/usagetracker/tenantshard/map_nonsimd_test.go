@@ -19,7 +19,7 @@ func TestFindZeroBytes(t *testing.T) {
 	require.Equal(t, bitset(0x8080808080808080), findZeroBytes(castUint64(&index{0, 0, 0, 0, 0, 0, 0, 0})))
 	require.Equal(t, bitset(0x8000000000000080), findZeroBytes(castUint64(&index{0, 11, 12, 13, 14, 15, 16, 0})))
 	// Tombstones are a special case that also count as zero bytes.
-	require.Equal(t, bitset(0x0000000000000000), findZeroBytes(castUint64(&index{tombstone, tombstone, tombstone, tombstone, tombstone, tombstone, tombstone, tombstone})))
+	require.Equal(t, bitset(0x0000000000000000), findZeroBytes(castUint64(&index{spillmark, spillmark, spillmark, spillmark, spillmark, spillmark, spillmark, spillmark})))
 }
 
 func TestNextMatch(t *testing.T) {

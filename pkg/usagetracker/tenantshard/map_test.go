@@ -23,7 +23,7 @@ func TestMapStats(t *testing.T) {
 
 	s := m.Stats()
 	require.Equal(t, uint32(0), s.Resident)
-	require.Equal(t, uint32(0), s.Dead)
+	require.Equal(t, uint32(0), s.Spilled)
 	require.Equal(t, uint32(0), s.Rehashes)
 	require.Greater(t, s.Length, 0)
 	// The limit is always the number of groups times the target average group load.
@@ -39,7 +39,7 @@ func TestMapStats(t *testing.T) {
 	s = m.Stats()
 	require.Equal(t, uint32(inserted), s.Resident)
 	require.Equal(t, inserted, m.Count())
-	require.Equal(t, uint32(0), s.Dead)
+	require.Equal(t, uint32(0), s.Spilled)
 	// Inserting 50 elements into a map that started with capacity for 8 must have triggered rehashes.
 	require.Greater(t, s.Rehashes, uint32(0))
 	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
@@ -131,7 +131,7 @@ func TestNextSize(t *testing.T) {
 		}
 		resident := m.resident
 		require.True(t, resident > 0)
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 
 		got := m.nextSize(0)
 		expected := numGroups(resident * 5 / 4)
@@ -166,8 +166,8 @@ func TestNextSize(t *testing.T) {
 			m.Load(i, 1)
 		}
 		m.Cleanup(1, nil)
-		require.True(t, m.dead >= m.resident/2)
-		alive := m.resident - m.dead
+		require.True(t, m.spilled >= m.resident/2)
+		alive := m.resident - m.spilled
 		got := m.nextSize(0)
 		require.True(t, got >= numGroups(uint32(alive)))
 	})
@@ -220,7 +220,7 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(100, nil)
 		require.Equal(t, 0, removed)
 		require.Equal(t, 0, m.Count())
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 		require.Zero(t, m.resident)
 	})
 
@@ -233,7 +233,7 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(10, nil) // watermark=10 is before all entries
 		require.Equal(t, 0, removed)
 		require.Equal(t, 3, m.Count())
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 		require.Equal(t, uint32(3), m.resident)
 	})
 
@@ -289,9 +289,9 @@ func TestMapCleanup(t *testing.T) {
 		require.Equal(t, 2, m.Count())
 	})
 
-	t.Run("tombstone avoidance with empty slots in group", func(t *testing.T) {
+	t.Run("spillmark avoidance with empty slots in group", func(t *testing.T) {
 		// With maxAvgGroupLoad=4 and groupSize=8, a small map will have groups
-		// that are partially full, so cleanup should avoid tombstones.
+		// that are partially full, so cleanup should avoid spillmarks.
 		m := New(4) // 1 group, limit=4
 		m.Load(1, 10)
 		m.Load(2, 50)
@@ -299,11 +299,11 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(10, nil) // expire key=1
 		require.Equal(t, 1, removed)
 		require.Equal(t, 1, m.Count())
-		require.Zero(t, m.dead, "should not create tombstones when group has empty slots")
+		require.Zero(t, m.spilled, "should not create spillmarks when group has empty slots")
 		require.Equal(t, uint32(1), m.resident)
 	})
 
-	t.Run("tombstone created when group is full", func(t *testing.T) {
+	t.Run("element expiring at the beginning of a full group becomes empty again", func(t *testing.T) {
 		// Force a full group by directly populating all 8 slots.
 		m := New(1) // 1 group
 		// Fill all groupSize slots directly.
@@ -317,10 +317,38 @@ func TestMapCleanup(t *testing.T) {
 			}
 			m.resident++
 		}
+		// We have spilled one group.
+		m.spilled++
 
 		removed := m.Cleanup(10, nil) // expire entry at slot 0
 		require.Equal(t, 1, removed)
-		require.Equal(t, uint32(1), m.dead, "should create tombstone when group is full")
+		require.Zero(t, m.rehashes, "Should not have been rehashed")
+		require.Equal(t, prefix(empty), m.index[0][0])
+		require.Equal(t, xorData(empty), m.data[0][0])
+	})
+
+	t.Run("spillmark created when last group element is expired", func(t *testing.T) {
+		// Force a full group by directly populating all 8 slots.
+		m := New(1) // 1 group
+		// Fill all groupSize slots directly.
+		for j := uint32(0); j < groupSize; j++ {
+			m.index[0][j] = prefix(j + prefixOffset)
+			m.keys[0][j] = uint64(j + 1)
+			if j == last {
+				m.data[0][j] = xor(10) // will expire
+			} else {
+				m.data[0][j] = xor(50) // won't expire
+			}
+			m.resident++
+		}
+		// We have spilled one group.
+		m.spilled++
+
+		removed := m.Cleanup(10, nil) // expire entry at slot 0
+		require.Equal(t, 1, removed)
+		require.Zero(t, m.rehashes, "Should not have been rehashed")
+		require.Equal(t, prefix(spillmark), m.index[0][last], "Last element in the group should be a spillmark after cleanup of a group with full last element")
+		require.Equal(t, xorData(spillmark), m.data[0][last], "Last element in the group should be a spillmark after cleanup of a group with full last element")
 	})
 
 	t.Run("expire last element clears to empty", func(t *testing.T) {
@@ -338,47 +366,13 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(10, nil)
 		require.Equal(t, 1, removed)
 		require.Equal(t, uint32(1), m.resident)
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 		// Slot 1 should be empty now.
 		require.Equal(t, prefix(empty), m.index[0][1])
 		require.Equal(t, xorData(empty), m.data[0][1])
 		// Slot 0 should still have its data.
 		require.Equal(t, prefix(prefixOffset+10), m.index[0][0])
 		require.Equal(t, uint64(100), m.keys[0][0])
-	})
-
-	t.Run("expire non-last element swaps with last", func(t *testing.T) {
-		// Set up a group with 3 elements: slots [0], [1], [2] occupied.
-		// Expire element at slot [0]. The last element ([2]) should be swapped into [0].
-		m := New(1)
-		m.index[0][0] = prefix(prefixOffset + 10)
-		m.keys[0][0] = 100
-		m.data[0][0] = xor(10) // will expire
-
-		m.index[0][1] = prefix(prefixOffset + 20)
-		m.keys[0][1] = 200
-		m.data[0][1] = xor(50) // won't expire
-
-		m.index[0][2] = prefix(prefixOffset + 30)
-		m.keys[0][2] = 300
-		m.data[0][2] = xor(50) // won't expire
-		m.resident = 3
-
-		removed := m.Cleanup(10, nil)
-		require.Equal(t, 1, removed)
-		require.Equal(t, uint32(2), m.resident)
-		require.Zero(t, m.dead)
-
-		// Element from slot [2] should now be in slot [0].
-		require.Equal(t, prefix(prefixOffset+30), m.index[0][0])
-		require.Equal(t, uint64(300), m.keys[0][0])
-		require.Equal(t, xor(50), m.data[0][0])
-		// Slot [1] unchanged.
-		require.Equal(t, prefix(prefixOffset+20), m.index[0][1])
-		require.Equal(t, uint64(200), m.keys[0][1])
-		// Slot [2] should be empty.
-		require.Equal(t, prefix(empty), m.index[0][2])
-		require.Equal(t, xorData(empty), m.data[0][2])
 	})
 
 	t.Run("multiple expirations in same group with shifts", func(t *testing.T) {
@@ -408,7 +402,7 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(10, nil)
 		require.Equal(t, 2, removed)
 		require.Equal(t, uint32(2), m.resident)
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 		require.Equal(t, 2, m.Count())
 	})
 
@@ -430,18 +424,18 @@ func TestMapCleanup(t *testing.T) {
 		removed := m.Cleanup(10, nil)
 		require.Equal(t, 3, removed)
 		require.Zero(t, m.resident)
-		require.Zero(t, m.dead)
+		require.Zero(t, m.spilled)
 		require.Equal(t, 0, m.Count())
 	})
 
-	t.Run("cleanup skips existing tombstones", func(t *testing.T) {
-		// Set up a group with a tombstone followed by a live entry.
+	t.Run("cleanup skips existing spillmarks", func(t *testing.T) {
+		// Set up a group with a spillmark followed by a live entry.
 		m := New(1)
-		// Slot [0]: tombstone (pre-existing)
-		m.index[0][0] = tombstone
+		// Slot [0]: spillmark (pre-existing)
+		m.index[0][0] = spillmark
 		m.keys[0][0] = 0
-		m.data[0][0] = tombstone
-		m.dead = 1
+		m.data[0][0] = spillmark
+		m.spilled = 1
 		m.resident = 2 // 1 dead + 1 alive
 
 		// Slot [1]: live entry
@@ -451,31 +445,12 @@ func TestMapCleanup(t *testing.T) {
 
 		removed := m.Cleanup(10, nil) // watermark=10, entry at slot[1] has value 50 (won't expire)
 		require.Equal(t, 0, removed)
-		require.Equal(t, uint32(1), m.dead, "pre-existing tombstone should remain")
+		require.Equal(t, uint32(1), m.spilled, "pre-existing spillmark should remain")
 		require.Equal(t, uint32(200), uint32(m.keys[0][1]), "live entry should be untouched")
 	})
 
-	t.Run("rehash triggered when too many tombstones", func(t *testing.T) {
-		// Create a map with many full groups, then expire entries to create tombstones.
-		m := New(groupSize * 4) // 4 groups minimum
-		// Fill all slots in multiple groups to force tombstone creation.
-		for g := 0; g < len(m.index); g++ {
-			for j := uint32(0); j < groupSize; j++ {
-				m.index[g][j] = prefix(j + prefixOffset)
-				m.keys[g][j] = uint64(g*int(groupSize) + int(j) + 1)
-				m.data[g][j] = xor(10) // all will expire
-				m.resident++
-			}
-		}
-
-		rehashBefore := m.rehashes
-		m.Cleanup(10, nil) // all entries expire, full groups → tombstones
-		// dead should exceed limit/2, triggering a rehash.
-		require.Greater(t, m.rehashes, rehashBefore, "should trigger rehash when too many tombstones")
-	})
-
-	t.Run("tombstone avoidance reduces rehashes", func(t *testing.T) {
-		// When groups are not full, cleanup avoids tombstones and thus avoids rehashing.
+	t.Run("spillmark avoidance reduces rehashes", func(t *testing.T) {
+		// When groups are not full, cleanup avoids spillmarks and thus avoids rehashing.
 		// Use randomized keys and a very large capacity to ensure no group is full.
 		r := rand.New(rand.NewSource(42))
 		m := New(1000)
@@ -484,8 +459,8 @@ func TestMapCleanup(t *testing.T) {
 		}
 		rehashBefore := m.rehashes
 		m.Cleanup(10, nil)
-		require.Equal(t, rehashBefore, m.rehashes, "should not rehash when tombstones are avoided")
-		require.Zero(t, m.dead)
+		require.Equal(t, rehashBefore, m.rehashes, "should not rehash when spillmarks are avoided")
+		require.Zero(t, m.spilled)
 	})
 
 	t.Run("count and items consistent after cleanup", func(t *testing.T) {
@@ -557,7 +532,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Cleanup(10, limit)
 		if m.rehashes > rehashBefore {
 			// After rehash, map should be clean.
-			require.Zero(t, m.dead)
+			require.Zero(t, m.spilled)
 		}
 	})
 
@@ -677,4 +652,59 @@ func BenchmarkMapTrackCleanupGarbage(b *testing.B) {
 		m.Cleanup(clock.ToMinutes(now.Add(-3*time.Minute)), nil)
 	}
 	b.Logf("Rehashes: %d, rehashes per iteration %.2f", m.rehashes, float64(m.rehashes)/float64(b.N))
+}
+
+func TestIndexMatchEmptyOrSpillmark(t *testing.T) {
+	t.Run("all empty", func(t *testing.T) {
+		var idx index
+		set := idx.matchEmptyOrSpillmark()
+		for i := 0; i < groupSize; i++ {
+			require.Equal(t, uint32(i), nextMatch(&set))
+		}
+	})
+	t.Run("first busy", func(t *testing.T) {
+		var idx index
+		idx[0] = prefix(42)
+		busy := map[uint32]bool{0: true}
+		set := idx.matchEmptyOrSpillmark()
+		for i := uint32(0); i < groupSize; i++ {
+			if busy[i] {
+				continue
+			}
+			require.Equal(t, i, nextMatch(&set))
+		}
+	})
+	t.Run("alternative", func(t *testing.T) {
+		var idx index
+		idx[0] = prefix(42)
+		idx[2] = prefix(43)
+		idx[4] = prefix(44)
+		idx[5] = prefix(44)
+		busy := map[uint32]bool{0: true, 2: true, 4: true, 5: true}
+		set := idx.matchEmptyOrSpillmark()
+		for i := uint32(0); i < groupSize; i++ {
+			if busy[i] {
+				continue
+			}
+			require.Equal(t, i, nextMatch(&set))
+		}
+	})
+	t.Run("full", func(t *testing.T) {
+		var idx index
+		for i := 0; i < groupSize; i++ {
+			idx[i] = prefix(2 + i)
+		}
+		set := idx.matchEmptyOrSpillmark()
+		require.Zero(t, set)
+	})
+	t.Run("last is a spillmark", func(t *testing.T) {
+		var idx index
+		for i := 0; i < groupSize; i++ {
+			idx[i] = prefix(2 + i)
+		}
+		idx[last] = spillmark
+		set := idx.matchEmptyOrSpillmark()
+		require.NotZero(t, set)
+		require.Equal(t, uint32(last), nextMatch(&set))
+	})
 }

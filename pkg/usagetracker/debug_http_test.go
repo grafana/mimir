@@ -71,7 +71,7 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 		InstanceID: "usage-tracker-zone-a-0",
 		Partition:  7,
 		Shards: []ShardStats{
-			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
+			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Spilled: 1, Limit: 32, Length: 8, Rehashes: 2}},
 		},
 	}))
 	out := buf.String()
@@ -97,7 +97,7 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 		Partition:  7,
 		Tenant:     "user-a",
 		Shards: []ShardStats{
-			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
+			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Spilled: 1, Limit: 32, Length: 8, Rehashes: 2}},
 		},
 	}))
 	out = buf.String()
