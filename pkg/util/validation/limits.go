@@ -1451,6 +1451,18 @@ func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
 	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
 }
 
+// FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
+// -ingester.float-chunk-encoding limit, which is never empty: tsdb.DB.ApplyConfig() reads an empty
+// chunk encoding as "keep the encoding resolved at startup", so a tenant that clears the limit has
+// to be handed DefaultFloatChunkEncodingValue explicitly to fall back to it.
+func (o *Overrides) FloatChunkEncodingValue(userID string) string {
+	value := o.getOverridesForUser(userID).FloatChunkEncoding
+	if _, ok := floatChunkEncodings[value]; ok {
+		return value
+	}
+	return DefaultFloatChunkEncodingValue
+}
+
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {
 	return o.getOverridesForUser(userID).MaxExemplarsPerSeriesPerRequest
 }

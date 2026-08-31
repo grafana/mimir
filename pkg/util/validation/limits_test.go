@@ -3123,6 +3123,20 @@ func TestParseFloatChunkEncoding(t *testing.T) {
 	}
 }
 
+func TestOverrides_FloatChunkEncodingValue(t *testing.T) {
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+		tenantLimits["user2"] = &Limits{FloatChunkEncoding: ""}
+		tenantLimits["user3"] = &Limits{FloatChunkEncoding: "nope"}
+	})
+
+	assert.Equal(t, "xor2", overrides.FloatChunkEncodingValue("user1"))
+
+	// Never the empty string: ApplyConfig() would read it as "keep the startup encoding".
+	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user2"))
+	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user3"))
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }
