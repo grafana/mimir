@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -93,13 +94,38 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
-	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
 )
 
 const (
 	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
 )
+
+// DefaultFloatChunkEncodingValue is the value of the -ingester.float-chunk-encoding limit used when the
+// limit is unset, or holds a value this version does not support.
+const DefaultFloatChunkEncodingValue = promcfg.FloatChunkEncodingXOR
+
+// floatChunkEncodings maps every value the -ingester.float-chunk-encoding limit accepts to the chunk
+// encoding it selects.
+var floatChunkEncodings = map[string]chunkenc.Encoding{
+	DefaultFloatChunkEncodingValue: chunkenc.EncXOR,
+	promcfg.FloatChunkEncodingXOR2: chunkenc.EncXOR2,
+}
+
+// FloatChunkEncodingValues holds the values the -ingester.float-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var FloatChunkEncodingValues = slices.Sorted(maps.Keys(floatChunkEncodings))
+
+// ParseFloatChunkEncoding returns the chunk encoding selected by the given value of the
+// -ingester.float-chunk-encoding limit. A value the limit does not accept, the empty string
+// included, selects the encoding of DefaultFloatChunkEncodingValue.
+func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
+	if enc, ok := floatChunkEncodings[value]; ok {
+		return enc
+	}
+	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -418,7 +444,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
-	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", "xor", "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.")
+	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -733,9 +759,7 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	switch l.FloatChunkEncoding {
-	case "", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2:
-	default:
+	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
 	}
 
@@ -1422,12 +1446,9 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
-// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+// FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
-	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
-		return chunkenc.EncXOR2
-	}
-	return chunkenc.EncXOR
+	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {

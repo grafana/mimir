@@ -162,8 +162,11 @@ func newTestSchedulerExecutor(t *testing.T, cfg Config, client compactorschedule
 
 func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Bucket, cfgProvider ConfigProvider) *MultitenantCompactor {
 	t.Helper()
-	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
+	c, tsdbCompactor, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
 	c.bucketClient = bkt
+	// These tests don't start the service, so the dependencies normally built by starting() have to
+	// be installed by hand.
+	c.blocksCompactorProvider = func(string) Compactor { return tsdbCompactor }
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 	return c
 }
@@ -911,9 +914,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
 			c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
 
-			compactor, planner, err := splitAndMergeCompactorFactory(context.Background(), cfg, log.NewNopLogger(), prometheus.NewRegistry())
+			compactor, planner, err := splitAndMergeCompactorFactory(t.Context(), cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
 			require.NoError(t, err)
-			c.blocksCompactor = compactor
+			c.blocksCompactorProvider = compactor
 			c.blocksPlanner = planner
 
 			blockIDBytes := make([][]byte, len(setup.blockIDsToCompact))
