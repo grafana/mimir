@@ -273,6 +273,7 @@ The following features are currently experimental:
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
+  - Including a `Retry-After` header on HTTP 429 and 503 responses: all flags beginning with `-query-frontend.retry-after-header`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
