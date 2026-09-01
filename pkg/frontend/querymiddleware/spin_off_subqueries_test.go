@@ -16,12 +16,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -66,6 +68,15 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 			query: `max_over_time(
 							rate(metric_counter[1m])
 						[2h:1m]
+					)`,
+			expectedSpunOffSubqueries: 1,
+		},
+		// A subquery whose range is not an integer multiple of the step; TestSubquerySpinOffChildTimeRange
+		// covers the resulting grid boundaries deterministically.
+		"subquery avg, range not a multiple of step": {
+			query: `avg_over_time(
+							rate(metric_counter[1m])
+						[2h1m:2m]
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
@@ -403,5 +414,65 @@ func TestSpinOffSubqueries_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 			require.ErrorContains(t, err, errRequestNoQuery.Error())
 			require.Nil(t, resp)
 		})
+	})
+}
+
+// TestSubquerySpinOff_MatchesNativeEvaluation asserts that spinning off a subquery produces the same
+// result as evaluating it natively (without spin-off), for both the Prometheus engine and MQE, and
+// that the two engines agree natively. It covers a subquery range that is not an integer multiple of
+// its step, evaluated at a step-aligned time so the range boundary is exercised deterministically.
+func TestSubquerySpinOff_MatchesNativeEvaluation(t *testing.T) {
+	const queryTimeMS = int64(85200_000) // Aligned to the 2m subquery step.
+	// Monotonic gauge every 30s covering the whole subquery window, so the value at the last grid point
+	// (the top of the subquery range) affects max_over_time. sum(metric) is a naturally-complex
+	// subquery, so it is spun off without needing the simple-subqueries option.
+	store := promqltest.LoadedStorage(t, "load 30s\n  metric 0+7x3000")
+	req := &PrometheusInstantQueryRequest{
+		path:      "/query",
+		time:      queryTimeMS,
+		queryExpr: parseQuery(t, `max_over_time(sum(metric)[79780s:2m])`),
+	}
+
+	native := func(t *testing.T, eng promql.QueryEngine) *PrometheusResponse {
+		res, err := (&downstreamHandler{engine: eng, queryable: store}).Do(context.Background(), req)
+		require.NoError(t, err)
+		prom, ok := res.GetPrometheusResponse()
+		require.True(t, ok)
+		require.NotEmpty(t, prom.Data.Result)
+		return prom
+	}
+	spunOffResult := func(t *testing.T, eng promql.QueryEngine) *PrometheusResponse {
+		downstream := &downstreamHandler{engine: eng, queryable: store}
+		spunOff := false
+		rangeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+				spunOff = true
+				return next.Do(ctx, r)
+			})
+		})
+		mw := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, prometheus.NewPedanticRegistry(), rangeMiddleware, defaultStepFunc, subqueryspinoff.Options{})
+		res, err := mw.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.NoError(t, err)
+		require.True(t, spunOff, "the subquery should have been spun off")
+		prom, ok := res.GetPrometheusResponse()
+		require.True(t, ok)
+		return prom
+	}
+
+	_, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
+	_, mqeEngine := newEngineForTesting(t, querier.MimirEngine)
+
+	promNative := native(t, promEngine)
+	mqeNative := native(t, mqeEngine)
+
+	// The Prometheus engine and MQE must agree on the native (non-spun-off) subquery evaluation.
+	approximatelyEquals(t, promNative, mqeNative)
+
+	// The spun-off result must match each engine's native evaluation.
+	t.Run("engine=prometheus", func(t *testing.T) {
+		approximatelyEquals(t, promNative, spunOffResult(t, promEngine))
+	})
+	t.Run("engine=mimir", func(t *testing.T) {
+		approximatelyEquals(t, mqeNative, spunOffResult(t, mqeEngine))
 	})
 }
