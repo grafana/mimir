@@ -73,6 +73,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -113,7 +114,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.RetryConfig.MaxBackoff = 5 * time.Second
 			},
 			initLimits: func(_ *validation.Limits) {},
-			expected:   errMinBackoffAboveMaxBackoff,
+			expected:   retryafter.ErrMinBackoffAboveMaxBackoff,
 		},
 	}
 
