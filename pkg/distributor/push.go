@@ -7,10 +7,7 @@ package distributor
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"math"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -49,40 +47,12 @@ var (
 // Returns the uncompressed body size and any error encountered.
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (uncompressedBodySize int, err error)
 
-var (
-	errNonPositiveMinBackoffDuration = errors.New("min-backoff should be greater than or equal to 1s")
-	errNonPositiveMaxBackoffDuration = errors.New("max-backoff should be greater than or equal to 1s")
-)
-
 const (
 	SkipLabelNameValidationHeader  = "X-Mimir-SkipLabelNameValidation"
 	SkipLabelCountValidationHeader = "X-Mimir-SkipLabelCountValidation"
 
 	statusClientClosedRequest = 499
 )
-
-type RetryConfig struct {
-	Enabled    bool          `yaml:"enabled" category:"advanced"`
-	MinBackoff time.Duration `yaml:"min_backoff" category:"advanced"`
-	MaxBackoff time.Duration `yaml:"max_backoff" category:"advanced"`
-}
-
-// RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
-	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
-	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
-}
-
-func (cfg *RetryConfig) Validate() error {
-	if cfg.MinBackoff < time.Second {
-		return errNonPositiveMinBackoffDuration
-	}
-	if cfg.MaxBackoff < time.Second {
-		return errNonPositiveMaxBackoffDuration
-	}
-	return nil
-}
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -92,7 +62,7 @@ func Handler(
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
-	retryCfg RetryConfig,
+	retryCfg retryafter.Config,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	logger log.Logger,
@@ -150,7 +120,7 @@ func handler(
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
-	retryCfg RetryConfig,
+	retryCfg retryafter.Config,
 	push PushFunc,
 	logger log.Logger,
 	parser parserFunc,
@@ -344,29 +314,6 @@ func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemp
 	prs.(*promRemote.WriteResponseStats).Exemplars += exemplars
 }
 
-func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
-	const jitterFactor = 0.5
-
-	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
-	// If retry-attempt is not valid, set it to default 1
-	if err != nil || retryAttempt < 1 {
-		retryAttempt = 1
-	}
-
-	delaySeconds := minBackoff.Seconds() * math.Pow(2.0, float64(retryAttempt-1))
-	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
-	if jitterAmount := int64(delaySeconds * jitterFactor); jitterAmount > 0 {
-		// The random jitter can be negative too, so we generate a 2x greater the random number and subtract the jitter.
-		randomJitter := float64(rand.Int63n(jitterAmount*2+1) - jitterAmount)
-		delaySeconds += randomJitter
-	}
-	// Jitter might have pushed the delaySeconds over maxBackoff or minBackoff, so we need to clamp it again.
-	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
-	delaySeconds = max(minBackoff.Seconds(), delaySeconds)
-
-	return strconv.FormatInt(int64(delaySeconds), 10)
-}
-
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, an
 // http.StatusInternalServerError is returned.
@@ -395,22 +342,25 @@ func addSuccessHeaders(w http.ResponseWriter, delay time.Duration) {
 	}
 }
 
-func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
+// isRetryableStatusCode reports whether responseCode should carry a Retry-After header: 429 or any 5xx.
+func isRetryableStatusCode(responseCode int) bool {
+	return responseCode == http.StatusTooManyRequests || responseCode/100 == 5
+}
+
+func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg retryafter.Config) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
 	}
 
-	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
-		if retryCfg.Enabled {
-			retryAttemptHeader := r.Header.Get("Retry-Attempt")
-			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.MinBackoff, retryCfg.MaxBackoff)
-			w.Header().Set("Retry-After", retrySeconds)
-			sp := trace.SpanFromContext(r.Context())
-			sp.SetAttributes(
-				attribute.String("retry-after", retrySeconds),
-				attribute.String("retry-attempt", retryAttemptHeader),
-			)
-		}
+	if retryCfg.Enabled && isRetryableStatusCode(responseCode) {
+		retryAttemptHeader := r.Header.Get("Retry-Attempt")
+		retrySeconds := retryCfg.Seconds(retryAttemptHeader)
+		w.Header().Set("Retry-After", retrySeconds)
+		sp := trace.SpanFromContext(r.Context())
+		sp.SetAttributes(
+			attribute.String("retry-after", retrySeconds),
+			attribute.String("retry-attempt", retryAttemptHeader),
+		)
 	}
 }
