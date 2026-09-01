@@ -64,6 +64,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -268,8 +269,8 @@ type KeepIdentifyingOTelResourceAttributesConfig interface {
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
-	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
-	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
+	RetryConfig     retryafter.Config `yaml:"retry_after_header"`
+	HATrackerConfig HATrackerConfig   `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
@@ -369,7 +370,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
-	cfg.RetryConfig.RegisterFlags(f)
+	cfg.RetryConfig.RegisterFlagsWithPrefix("distributor.retry-after-header.", f, true, "429/5xx errors")
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
 	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
