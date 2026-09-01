@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -448,10 +450,17 @@ func TestTripperware_Metrics(t *testing.T) {
 
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", jsonMimeType)
-				_, err := w.Write([]byte("{}"))
-				require.NoError(t, err)
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/read" {
+					w.Header().Set("Content-Type", jsonMimeType)
+					_, err := w.Write([]byte("{}"))
+					require.NoError(t, err)
+				} else {
+					w.Header().Set("Content-Type", "application/x-protobuf")
+					w.Header().Set("Content-Encoding", "snappy")
+					_, err := w.Write(snappy.Encode(nil, []byte("")))
+					require.NoError(t, err)
+				}
 			}),
 		),
 	)
@@ -799,7 +808,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 		},
 		"request with matchers": {
 			makeRequest: func() *http.Request {
-				return makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest())
+				return makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest(prompb.ReadRequest_SAMPLES))
 			},
 			limits: mockLimits{},
 		},
@@ -827,8 +836,9 @@ func TestTripperware_RemoteRead(t *testing.T) {
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", jsonMimeType)
-				_, err := w.Write([]byte("{}"))
+				w.Header().Set("Content-Type", "application/x-protobuf")
+				w.Header().Set("Content-Encoding", "snappy")
+				_, err := w.Write(snappy.Encode(nil, []byte("")))
 				require.NoError(t, err)
 			}),
 		),
@@ -899,43 +909,59 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		tenantID      = "user-1"
 	)
 
+	makeEmptyJsonResp := func() *http.Response {
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		}
+	}
+
 	tests := map[string]struct {
-		makeRequest func() *http.Request
+		makeRequest  func() *http.Request
+		makeResponse func() *http.Response
 	}{
 		"range query": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", queryRangePathSuffix+"?start=1536673680&end=1536716880&step=120&query=up", nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"instant query": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", instantQueryPathSuffix+"?time=1536673680&query=up", nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"cardinality label names": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", cardinalityLabelNamesPathSuffix, nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"cardinality label values": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix+"?label_names[]=foo", nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"cardinality active series": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", cardinalityActiveSeriesPathSuffix, nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"cardinality active native histograms": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", cardinalityActiveNativeHistogramMetricsPathSuffix, nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"label names": {
 			makeRequest: func() *http.Request {
 				return httptest.NewRequest("GET", labelNamesPathSuffix, nil)
 			},
+			makeResponse: makeEmptyJsonResp,
 		},
 		"remote read": {
 			makeRequest: func() *http.Request {
@@ -948,6 +974,16 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 						},
 					},
 				})
+			},
+			makeResponse: func() *http.Response {
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader(snappy.Encode(nil, []byte("")))),
+					Header: http.Header{
+						"Content-Type":     []string{"application/x-protobuf"},
+						"Content-Encoding": []string{"snappy"},
+					},
+				}
 			},
 		},
 	}
@@ -1018,12 +1054,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 
 					tripper := tw(RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						downstreamReq = req
-
-						return &http.Response{
-							StatusCode: 200,
-							Body:       io.NopCloser(strings.NewReader("{}")),
-							Header:     http.Header{"Content-Type": []string{"application/json"}},
-						}, nil
+						return testData.makeResponse(), nil
 					}))
 
 					// Send an HTTP request through the roundtripper.
