@@ -476,3 +476,39 @@ func TestSubquerySpinOff_MatchesNativeEvaluation(t *testing.T) {
 		approximatelyEquals(t, mqeNative, spunOffResult(t, mqeEngine))
 	})
 }
+
+func TestSubquerySpinOffChildTimeRange(t *testing.T) {
+	const step = 2 * time.Minute
+	stepMS := step.Milliseconds()
+
+	cases := map[string]struct {
+		queryTimeMS int64
+		queryRange  time.Duration
+		offset      time.Duration
+	}{
+		// Cover multiple/non-multiple ranges, an aligned query time, and an offset.
+		"range not a multiple of step":  {queryTimeMS: 1787054732769, queryRange: 79780 * time.Second},
+		"range a multiple of step":      {queryTimeMS: 1787054732769, queryRange: 79680 * time.Second},
+		"query time aligned to step":    {queryTimeMS: 1787054640000, queryRange: 79780 * time.Second},
+		"range not a multiple + offset": {queryTimeMS: 1787054732769, queryRange: 79780 * time.Second, offset: 5 * time.Minute},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			start, end, ok := subquerySpinOffChildTimeRange(c.queryTimeMS, c.queryRange, step, c.offset)
+			require.True(t, ok)
+
+			offMS := c.offset.Milliseconds()
+			// The last step is the largest step-aligned timestamp <= queryTime-offset (the subquery
+			// range is right-closed at the top).
+			require.Equal(t, ((c.queryTimeMS-offMS)/stepMS)*stepMS, end, "last step (right-closed at queryTime-offset)")
+
+			// The first step is the smallest step-aligned timestamp strictly after queryTime-offset-range
+			// (the subquery range is left-open at the bottom).
+			lower := c.queryTimeMS - offMS - c.queryRange.Milliseconds()
+			require.Zero(t, start%stepMS, "start must be step-aligned")
+			require.Greater(t, start, lower, "start must be strictly after queryTime-offset-range")
+			require.LessOrEqual(t, start-stepMS, lower, "start must be the first step after that bound")
+		})
+	}
+}
