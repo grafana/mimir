@@ -2969,6 +2969,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.results-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -query-frontend.retry-after-header.enabled
+    	[experimental] Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
+  -query-frontend.retry-after-header.max-backoff duration
+    	[experimental] Maximum duration of the Retry-After HTTP header in responses to 429 and 503 errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 1m36s)
+  -query-frontend.retry-after-header.min-backoff duration
+    	[experimental] Minimum duration of the Retry-After HTTP header in responses to 429 and 503 errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 6s)
   -query-frontend.rewrite-histogram-queries
     	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
   -query-frontend.scheduler-address string

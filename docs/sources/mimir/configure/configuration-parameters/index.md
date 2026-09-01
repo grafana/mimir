@@ -2323,6 +2323,28 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.active-series-write-timeout
 [active_series_write_timeout: <duration> | default = 5m]
 
+retry_after_header:
+  # (experimental) Enables inclusion of the Retry-After header in the response:
+  # true includes it for client retry guidance, false omits it.
+  # CLI flag: -query-frontend.retry-after-header.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the Retry-After HTTP header in responses
+  # to 429 and 503 errors. Must be greater than or equal to 1s. Backoff is
+  # calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of
+  # 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP
+  # header.
+  # CLI flag: -query-frontend.retry-after-header.min-backoff
+  [min_backoff: <duration> | default = 6s]
+
+  # (experimental) Maximum duration of the Retry-After HTTP header in responses
+  # to 429 and 503 errors. Must be greater than or equal to 1s. Backoff is
+  # calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of
+  # 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP
+  # header.
+  # CLI flag: -query-frontend.retry-after-header.max-backoff
+  [max_backoff: <duration> | default = 1m36s]
+
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and
