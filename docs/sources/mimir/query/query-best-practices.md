@@ -67,3 +67,9 @@ Recording rules are useful for the following types of queries:
 Recording rules are most beneficial for queries with results that you frequently evaluate. If you use a recording rule for a query and don't frequently evaluate its results, it could lead to unnecessary computation and data storage.
 
 For more information about recording rules, refer to [Defining recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) in the Prometheus documentation.
+
+## Handle rate limiting
+
+Mimir rejects a query with HTTP status 429 (Too Many Requests) when your tenant has too many outstanding queries, or when a query exceeds a configured rate limit. For more information about query rate limits, refer to [Rate limit queries](../../configure/configure-blocked-queries/#rate-limit-queries).
+
+If you enable `-query-frontend.retry-after-header.enabled`, these 429 responses include a `Retry-After` header, in seconds. Wait at least that long before you retry the query, rather than retrying immediately or applying your own backoff.
