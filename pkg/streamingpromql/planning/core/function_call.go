@@ -77,13 +77,12 @@ func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer 
 	}
 
 	if f.Function == functions.FUNCTION_INFO && len(f.Args) == 2 {
-		// Propagate the @/offset modifiers of the first selector in the first argument to the
-		// data label selector, mirroring Prometheus's infoSelectHints, so that info series are
-		// selected at the same (shifted) time as the samples they enrich. This is derived from
-		// the plan here rather than in the operator factory because operators do not support
-		// generic child traversal, so nested selectors would not be reachable there.
+		// Pin the data label selector to the first argument's @/offset (mirroring Prometheus's
+		// infoSelectHints), but only when the vector paths share one reference; otherwise leave the
+		// per-step default. Done here, not in the operator factory, where nested selectors aren't
+		// reachable.
 		if dataLabelSelector, ok := children[1].(*functions.DataLabelSelector); ok {
-			if ts, offset, found := infoSelectTimestampAndOffset(f.Args[0]); found {
+			if ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0]); uniform {
 				dataLabelSelector.Selector.Timestamp = TimestampFromTime(ts)
 				dataLabelSelector.Selector.Offset = offset.Milliseconds()
 			}
@@ -133,10 +132,13 @@ func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, loo
 }
 
 // infoSeriesQueriedTimeRange returns the time range over which the info function selects its info
-// series, using the @ timestamp and offset derived from the first argument. When the first argument
-// has no such reference, this matches the data label selector's own evaluation-time range.
+// series. Like MaterializeFunctionCall, it pins to the first argument's @/offset only when the
+// vector paths share one reference, so the advertised range matches the operator's fetch.
 func (f *FunctionCall) infoSeriesQueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	ts, offset, _ := infoSelectTimestampAndOffset(f.Args[0])
+	ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0])
+	if !uniform {
+		ts, offset = nil, 0
+	}
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(ts), 0, offset.Milliseconds(), lookbackDelta, false, false)
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
 }

@@ -32,7 +32,7 @@
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
-* [BUGFIX] MQE: Propagate an `@` modifier or offset from the `info` function's first argument to its info series matchers, matching Prometheus. #16220
+* [BUGFIX] MQE: Propagate an `@` modifier or offset from the `info` function's first argument to its info series matchers, matching Prometheus. #16220 #16497
 * [BUGFIX] MQE: Fix an issue where series were joined in binary operations using the wrong labels when `group_left()`/`group_right()` were used in combination with `ignoring()`. This bug manifested as valid queries returning an error `grouping labels must ensure unique matches`. #16387
 * [BUGFIX] MQE: Fix queries and rules containing a subquery whose range is shorter than its step (e.g. `foo[10m:3d]`) failing with `last bucket must not be before first bucket`. #16442
 * [BUGFIX] MQE: Fix `avg_over_time()` over native histograms losing precision when experimental range vector splitting is enabled. The Kahan compensation of each split range was discarded instead of being carried over to the other split ranges. #16472
