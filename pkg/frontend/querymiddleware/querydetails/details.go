@@ -65,3 +65,34 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 	}
 	return o.(*QueryDetails)
 }
+
+func (d *QueryDetails) Merge(other *QueryDetails) {
+	if d == nil || other == nil {
+		return
+	}
+
+	d.QuerierStats.Merge(other.QuerierStats)
+	if !other.Start.IsZero() && (d.Start.IsZero() || other.Start.Before(d.Start)) {
+		d.Start = other.Start
+	}
+	if !other.End.IsZero() && (d.End.IsZero() || other.End.After(d.End)) {
+		d.End = other.End
+	}
+	if !other.MinT.IsZero() && (d.MinT.IsZero() || other.MinT.Before(d.MinT)) {
+		d.MinT = other.MinT
+	}
+	if !other.MaxT.IsZero() && (d.MaxT.IsZero() || other.MaxT.After(d.MaxT)) {
+		d.MaxT = other.MaxT
+	}
+	if d.LookbackDelta < other.LookbackDelta {
+		d.LookbackDelta = other.LookbackDelta
+	}
+
+	d.ResultsCacheMissBytes += other.ResultsCacheMissBytes
+	d.ResultsCacheMissCount += other.ResultsCacheMissCount
+	d.ResultsCacheHitBytes += other.ResultsCacheHitBytes
+	d.ResultsCacheHitCount += other.ResultsCacheHitCount
+	d.ResultsCacheSetCount += other.ResultsCacheSetCount
+	d.ResponseSeriesCount += other.ResponseSeriesCount
+	d.ResponseSamplesCount += other.ResponseSamplesCount
+}

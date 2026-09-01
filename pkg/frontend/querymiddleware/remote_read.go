@@ -11,9 +11,15 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -25,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // To keep logs and error messages in sync, we define the following keys:
@@ -41,13 +48,95 @@ type remoteReadRoundTripper struct {
 	next http.RoundTripper
 
 	middleware MetricsQueryMiddleware
+	limits     LimitedParallelismLimits
 }
 
-func NewRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewRemoteReadRoundTripper(next http.RoundTripper, limits LimitedParallelismLimits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return &remoteReadRoundTripper{
 		next:       next,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),
+		limits:     limits,
 	}
+}
+
+func errorFromUpstreamResponse(resp *http.Response) error {
+	body, err := readResponseBody(resp)
+	if err != nil {
+		return err
+	}
+
+	return httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+		Code:    int32(resp.StatusCode),
+		Body:    body,
+		Headers: httpgrpc.FromHeader(resp.Header),
+	})
+}
+
+type jobResult struct {
+	resp Response
+	err  error
+}
+
+func collectOrCleanupResponses(
+	ctx context.Context,
+	queryCount int,
+	runJob func(ctx context.Context, queryIdx int) (Response, error),
+) ([]Response, error) {
+
+	succeeded := false
+	responses := make([]Response, queryCount)
+	ctx, cancel := context.WithCancelCause(ctx)
+
+	defer func() {
+		if succeeded {
+			return
+		}
+
+		cancel(nil)
+		for _, resp := range responses {
+			if resp != nil {
+				resp.Close()
+			}
+		}
+	}()
+
+	wrappedF := func(jobCtx context.Context, queryIdx int) error {
+		resultChan := make(chan jobResult)
+		go func() {
+			// We purposefully don't use `jobCtx` context, because it's cancelled
+			// when all queries returned, but we may not have read the body when
+			// processing a "streamed" response.
+			queryCtx := ctx
+			queryResp, err := runJob(queryCtx, queryIdx)
+
+			resultChan <- jobResult{
+				resp: queryResp,
+				err:  err,
+			}
+		}()
+
+		select {
+		case <-jobCtx.Done():
+			go func() {
+				result := <-resultChan
+				if result.resp != nil {
+					result.resp.Close()
+				}
+			}()
+			return jobCtx.Err()
+		case result := <-resultChan:
+			responses[queryIdx] = result.resp
+			return result.err
+		}
+	}
+
+	if err := concurrency.ForEachJob(ctx, queryCount, 0, wrappedF); err != nil {
+		cancel(err)
+		return nil, err
+	}
+
+	succeeded = true
+	return responses, nil
 }
 
 func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -55,73 +144,295 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		return r.next.RoundTrip(req)
 	}
 
-	// Parse the request body consuming it! From now on we can't call the next http.RoundTrigger without
-	// replacing the Body.
+	rtCtx := req.Context()
+	defer req.Body.Close()
+
+	tenantIDs, err := tenant.TenantIDs(req.Context())
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	// Limit the number of parallel sub-requests according to the MaxQueryParallelism tenant setting.
+	maxParallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, r.limits.MaxQueryParallelism)
+	if maxParallelism <= 0 {
+		maxParallelism = 1
+	}
+
 	remoteReadReq, err := unmarshalRemoteReadRequest(req.Context(), req.Body, int(req.ContentLength))
 	if err != nil {
 		return nil, err
 	}
 
-	// Run each query through the middlewares.
-	queries := remoteReadReq.GetQueries()
-
-	for i, query := range queries {
-		// Parse the original query.
-		origQueryReq, err := remoteReadToMetricsQueryRequest(req.URL.Path, query)
-		if err != nil {
-			return nil, err
-		}
-
-		// Run the query through the middlewares.
-		var updatedQueryReq *remoteReadQueryRequest
-		handler := r.middleware.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
-			var ok bool
-
-			// The middlewares are used only for validation, but some middlewares may manipulate
-			// the request to enforce some limits (e.g. time range limit). For this reason, we
-			// capture the final request in case it was manipulated.
-			if updatedQueryReq, ok = req.(*remoteReadQueryRequest); !ok {
-				// This should never happen.
-				return nil, errors.New("unexpected logic bug: remote read roundtripper received an unexpected data type")
-			}
-
-			return nil, nil
-		}))
-
-		_, err = handler.Do(req.Context(), origQueryReq)
-		if err != nil {
-			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, origQueryReq.GetQuery()))
-		}
-
-		// The query may have been manipulated. We always replace it (if it wasn't manipulated, then
-		// we're just overwriting it with the same exact ref).
-		//
-		// NOTE: updatedQueryReq may be nil if a middleware interrupted the middlewares execution without
-		//       returning an error. It could happen in middlewares returning an empty response under some
-		//       conditions. In such case, since we don't have a way to return an empty response for the
-		//       selected query, we simply keep the original one and let it pass-through the downstream.
-		if updatedQueryReq != nil {
-			queries[i] = updatedQueryReq.query
-		}
-	}
-
-	// At this point the queries may have been manipulated by the middlewares. We marshal the remote request again
-	// in order to inject the manipulated queries. We always do it, even if the queries haven't been manipulated by
-	// middlewares, so that we always exercise this code.
-	remoteReadReq.Queries = queries
-
-	// Marshal the (maybe modified) remote read request and replace the request body.
-	encodedData, err := marshalRemoteReadRequest(remoteReadReq)
+	// Because all the requests run concurrently and hitting potentially different servers,
+	// we ensure that they will all return the same response type.
+	respType, err := remote.NegotiateResponseType(remoteReadReq.AcceptedResponseTypes)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Body = io.NopCloser(bytes.NewBuffer(encodedData))
-	req.Header.Set("Content-Length", strconv.Itoa(len(encodedData)))
-	req.Header.Set("Content-Encoding", "snappy")
-	req.ContentLength = int64(len(encodedData))
+	acceptedResponseTypes := []prompb.ReadRequest_ResponseType{respType}
+	queries := remoteReadReq.GetQueries()
 
-	return r.next.RoundTrip(req)
+	handler := r.middleware.Wrap(HandlerFunc(func(ctx context.Context, metricsReq MetricsQueryRequest) (Response, error) {
+		updatedQueryReq, ok := metricsReq.(*remoteReadQueryRequest)
+		if !ok {
+			// This should never happen.
+			return nil, errors.New("unexpected logic bug: remote read roundtripper received an unexpected data type")
+		}
+
+		newReadReq := &prompb.ReadRequest{
+			Queries:               []*prompb.Query{updatedQueryReq.query},
+			AcceptedResponseTypes: acceptedResponseTypes,
+		}
+
+		encodedData, err := marshalRemoteReadRequest(newReadReq)
+		if err != nil {
+			return nil, err
+		}
+
+		ctx, cancel := context.WithCancelCause(ctx)
+		streamingResponse := false
+		defer func() {
+			if !streamingResponse {
+				cancel(nil)
+			}
+		}()
+
+		newReq := req.Clone(ctx)
+		newReq.Body = io.NopCloser(bytes.NewBuffer(encodedData))
+		newReq.ContentLength = int64(len(encodedData))
+		newReq.Header.Set("Content-Encoding", "snappy")
+
+		resp, err := r.next.RoundTrip(newReq)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			if !streamingResponse {
+				resp.Body.Close()
+			}
+		}()
+
+		if resp.StatusCode/100 != 2 {
+			return nil, errorFromUpstreamResponse(resp)
+		}
+
+		contentType := resp.Header.Get("Content-Type")
+		switch {
+		case strings.HasPrefix(contentType, "application/x-protobuf"):
+			return r.handleSampledResponse(resp)
+		case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
+			streamingResponse = true
+			return r.handleStreamedResponse(resp, cancel)
+		default:
+			return nil, apierror.Newf(apierror.TypeInternal, "unsupported content-type %s", contentType)
+		}
+	}))
+
+	// `QueryDetails` isn't multi-thread safe, so we collect them individually
+	// and merge them after.
+	// parentDetails := querydetails.QueryDetailsFromContext(rtCtx)
+	// partialDetails := make([]*querydetails.QueryDetails, len(queries))
+
+	responses, err := collectOrCleanupResponses(rtCtx, len(queries), func(queryCtx context.Context, queryIdx int) (Response, error) {
+		query := queries[queryIdx]
+
+		rrReq, err := remoteReadToMetricsQueryRequest(req.URL.Path, query)
+		if err != nil {
+			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d)", matchersLogKey, queryIdx))
+		}
+
+		queryResp, err := handler.Do(queryCtx, rrReq)
+		if err != nil {
+			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, queryIdx, rrReq.GetQuery()))
+		}
+
+		return queryResp, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	closeResp := true
+	defer func() {
+		if !closeResp {
+			return
+		}
+
+		for _, resp := range responses {
+			resp.Close()
+		}
+	}()
+
+	// for _, details := range partialDetails {
+	// 	if details != nil {
+	// 		parentDetails.Merge(details)
+	// 	}
+	// }
+
+	switch acceptedResponseTypes[0] {
+	case prompb.ReadRequest_SAMPLES:
+		buffer, err := mergeSampleResponses(responses)
+		if err != nil {
+			return nil, err
+		}
+
+		httpResp := &http.Response{
+			StatusCode:    200,
+			Status:        http.StatusText(http.StatusOK),
+			Body:          io.NopCloser(buffer),
+			ContentLength: int64(buffer.Len()),
+			Header: http.Header{
+				"Content-Type":     []string{"application/x-protobuf"},
+				"Content-Encoding": []string{"snappy"},
+			},
+		}
+
+		return httpResp, nil
+	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
+		closeResp = false
+		reader, err := mergeStreamedResponses(responses)
+		if err != nil {
+			return nil, err
+		}
+
+		resp := &http.Response{
+			StatusCode:    200,
+			Status:        http.StatusText(http.StatusOK),
+			Body:          reader,
+			ContentLength: -1,
+			Header: http.Header{
+				"Content-Type": []string{"application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"},
+			},
+		}
+		return resp, nil
+	default:
+		return nil, apierror.Newf(apierror.TypeInternal, "unknown response type %v", acceptedResponseTypes[0])
+	}
+}
+
+func (r *remoteReadRoundTripper) handleSampledResponse(resp *http.Response) (Response, error) {
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err = snappy.Decode(nil, data)
+	if err != nil {
+		return nil, err
+	}
+
+	var readResp prompb.ReadResponse
+	if err = proto.Unmarshal(data, &readResp); err != nil {
+		return nil, err
+	}
+
+	if len(readResp.Results) == 0 {
+		return &remoteReadSampledResponse{Result: &prompb.QueryResult{}}, nil
+	} else if len(readResp.Results) != 1 {
+		return nil, fmt.Errorf("expected 1 result, got %d", len(readResp.Results))
+	}
+
+	return &remoteReadSampledResponse{Result: readResp.Results[0]}, nil
+}
+
+func (r *remoteReadRoundTripper) handleStreamedResponse(resp *http.Response, cancel context.CancelCauseFunc) (Response, error) {
+	reader := &streamedChunkReader{
+		reader: remote.NewChunkedReader(resp.Body, config.DefaultChunkedReadLimit, nil),
+		cancel: cancel,
+		closer: resp.Body.(io.Closer),
+	}
+	retResp := &remoteReadStreamedResponse{
+		reader: reader,
+	}
+
+	return retResp, nil
+}
+
+func mergeSampleResponses(responses []Response) (*bytes.Buffer, error) {
+	rrResp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(responses)),
+	}
+
+	for idx, resp := range responses {
+		switch value := resp.(type) {
+		case *remoteReadSampledResponse:
+			rrResp.Results[idx] = value.Result
+		case *PrometheusResponse:
+			// This is mostly there to handle the current state of the limits middleware
+			// that return an "empty prometheus response" when outside the configured
+			// limits. We still need to put a "query result" in the results, but we
+			// can put whatever we want.
+			rrResp.Results[idx] = &prompb.QueryResult{}
+		default:
+			return nil, fmt.Errorf("unsupported response type %T", resp)
+		}
+	}
+
+	data, err := rrResp.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewBuffer(snappy.Encode(nil, data)), nil
+}
+
+type mergedStreamedBody struct {
+	*io.PipeReader
+	reader *MergeChunkedReader
+}
+
+func (b *mergedStreamedBody) Close() error {
+	return errors.Join(
+		b.PipeReader.Close(),
+		b.reader.Close(),
+	)
+}
+
+func mergeStreamedResponses(responses []Response) (io.ReadCloser, error) {
+	readers := make([]*streamedChunkReader, len(responses))
+	for idx, resp := range responses {
+		switch value := resp.(type) {
+		case *remoteReadStreamedResponse:
+			readers[idx] = value.reader
+		case *PrometheusResponse:
+			value.Close()
+			readers[idx] = newEmptyStreamedChunkReader()
+		default:
+			return nil, fmt.Errorf("unsupported response type %T", resp)
+		}
+	}
+
+	pr, pw := io.Pipe()
+	chunkReader := NewMergeChunkedReader(readers...)
+	go func() {
+		defer chunkReader.Close()
+
+		chunkWriter := remote.NewChunkedWriter(pw, nil)
+		for {
+			var chunk prompb.ChunkedReadResponse
+			queryIdx, err := chunkReader.NextProto(&chunk)
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				break
+			}
+			chunk.QueryIndex = int64(queryIdx)
+			data, err := proto.Marshal(&chunk)
+			if err != nil {
+				_ = pw.CloseWithError(err)
+				break
+			}
+			if _, err = chunkWriter.Write(data); err != nil {
+				_ = pw.CloseWithError(err)
+				break
+			}
+		}
+	}()
+
+	return &mergedStreamedBody{pr, chunkReader}, nil
 }
 
 // ParseRemoteReadRequestValuesWithoutConsumingBody parses a remote read request
@@ -380,4 +691,59 @@ func cloneRemoteReadQuery(orig *prompb.Query) (*prompb.Query, error) {
 	}
 
 	return cloned, nil
+}
+
+type remoteReadStreamedResponse struct {
+	reader *streamedChunkReader
+}
+
+func (r *remoteReadStreamedResponse) GetHeaders() []*PrometheusHeader {
+	return nil
+}
+
+func (r *remoteReadStreamedResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+
+func (r *remoteReadStreamedResponse) Close() {
+	_ = r.reader.Close()
+}
+
+func (r *remoteReadStreamedResponse) Reset() {
+	panic("no implemented")
+}
+
+func (r *remoteReadStreamedResponse) String() string {
+	panic("no implemented")
+}
+
+func (r *remoteReadStreamedResponse) ProtoMessage() {
+	panic("no implemented")
+}
+
+type remoteReadSampledResponse struct {
+	Result *prompb.QueryResult
+}
+
+func (r *remoteReadSampledResponse) GetHeaders() []*PrometheusHeader {
+	return nil
+}
+
+func (r *remoteReadSampledResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+
+func (r *remoteReadSampledResponse) Close() {
+}
+
+func (r *remoteReadSampledResponse) Reset() {
+	panic("no implemented")
+}
+
+func (r *remoteReadSampledResponse) String() string {
+	panic("no implemented")
+}
+
+func (r *remoteReadSampledResponse) ProtoMessage() {
+	panic("no implemented")
 }
