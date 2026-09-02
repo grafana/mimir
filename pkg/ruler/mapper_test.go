@@ -6,11 +6,16 @@
 package ruler
 
 import (
+	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/spf13/afero"
@@ -568,7 +573,7 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		loader := NewFSLoader(fs)
+		loader := NewFSLoader(fs, false, nil, nil)
 		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
@@ -584,7 +589,7 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, files, 2)
 		require.NoError(t, err)
 
-		loader := NewFSLoader(fs)
+		loader := NewFSLoader(fs, false, nil, nil)
 		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
@@ -604,7 +609,7 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, files, 2)
 		require.NoError(t, err)
 
-		loader := NewFSLoader(fs)
+		loader := NewFSLoader(fs, false, nil, nil)
 		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
@@ -621,6 +626,194 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, loadedUser2File2.Groups, 1)
 		require.Equal(t, "rulegroup_one", loadedUser2File2.Groups[0].Name)
 	})
+}
+
+func newTestCacheCounters() (prometheus.Counter, prometheus.Counter) {
+	reg := prometheus.NewPedanticRegistry()
+	hits := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: "test_rule_file_parse_cache_hits_total"})
+	misses := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: "test_rule_file_parse_cache_misses_total"})
+	return hits, misses
+}
+
+func Test_FSLoader_ParseCache(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+
+	t.Run("cache hit returns an equal, distinct result and increments hits", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		hits, misses := newTestCacheCounters()
+		loader := NewFSLoader(fs, true, hits, misses)
+
+		first, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+
+		second, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 1.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+		require.Equal(t, first, second)
+		require.NotSame(t, first, second, "a cache hit must return a defensive copy, not the cached instance")
+	})
+
+	t.Run("cache misses again after the file content changes", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		hits, misses := newTestCacheCounters()
+		loader := NewFSLoader(fs, true, hits, misses)
+
+		_, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+
+		_, _, err = m.MapRules(testUser1, updatedRuleSet)
+		require.NoError(t, err)
+
+		loaded, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Len(t, loaded.Groups, 3)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+	})
+
+	t.Run("cache is scoped per file path", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, twoFilesRuleSet)
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+
+		hits, misses := newTestCacheCounters()
+		loader := NewFSLoader(fs, true, hits, misses)
+
+		_, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		_, errs = loader.Load(files[1], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+
+		_, errs = loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 1.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+	})
+
+	t.Run("cache misses when parsing options differ", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		hits, misses := newTestCacheCounters()
+		loader := NewFSLoader(fs, true, hits, misses)
+
+		_, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		_, errs = loader.Load(files[0], false, model.UTF8Validation)
+		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 2.0, testutil.ToFloat64(misses))
+	})
+
+	t.Run("cache disabled behaves like today and never hits", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		loader := NewFSLoader(fs, false, nil, nil)
+		first, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		second, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, first, second)
+		require.NotSame(t, first, second)
+	})
+
+	t.Run("two loaders don't share cache state", func(t *testing.T) {
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		_, files, err := m.MapRules(testUser1, initialRuleSet)
+		require.NoError(t, err)
+
+		hitsA, missesA := newTestCacheCounters()
+		loaderA := NewFSLoader(fs, true, hitsA, missesA)
+		_, errs := loaderA.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+
+		hitsB, missesB := newTestCacheCounters()
+		loaderB := NewFSLoader(fs, true, hitsB, missesB)
+		_, errs = loaderB.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(hitsB))
+		require.Equal(t, 1.0, testutil.ToFloat64(missesB))
+	})
+}
+
+// BenchmarkFSLoader_Load simulates the steady-state case the parse cache
+// targets: a tenant's namespace file that hasn't changed being reloaded on
+// every rule sync. cache_enabled=false takes the same code path as before
+// this cache existed (every Load call re-runs rulefmt.Parse); cache_enabled=true
+// exercises the new cache-hit path.
+func BenchmarkFSLoader_Load(b *testing.B) {
+	l := util_log.MakeLeveledLogger(io.Discard, "info")
+	fs := afero.NewMemMapFs()
+	m := &mapper{Path: "/rules", FS: fs, logger: l}
+
+	const numGroups = 20
+	const rulesPerGroup = 5
+	groups := make([]rulefmt.RuleGroup, numGroups)
+	for i := range groups {
+		rules := make([]rulefmt.Rule, rulesPerGroup)
+		for j := range rules {
+			rules[j] = rulefmt.Rule{
+				Record: fmt.Sprintf("rule_%d_%d", i, j),
+				Expr:   fmt.Sprintf("sum(rate(some_metric_%d_%d[5m]))", i, j),
+				Labels: map[string]string{"team": "observability"},
+			}
+		}
+		groups[i] = rulefmt.RuleGroup{Name: fmt.Sprintf("group_%d", i), Rules: rules}
+	}
+
+	_, files, err := m.MapRules("bench_user", map[string][]rulefmt.RuleGroup{"namespace": groups})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for _, cacheEnabled := range []bool{false, true} {
+		b.Run(fmt.Sprintf("cache_enabled=%v", cacheEnabled), func(b *testing.B) {
+			var hits, misses prometheus.Counter
+			if cacheEnabled {
+				hits, misses = newTestCacheCounters()
+			}
+			loader := NewFSLoader(fs, cacheEnabled, hits, misses)
+			// Warm up so the steady-state (already-parsed-once) case is measured.
+			if _, errs := loader.Load(files[0], false, model.LegacyValidation); len(errs) > 0 {
+				b.Fatal(errs)
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, errs := loader.Load(files[0], false, model.LegacyValidation); len(errs) > 0 {
+					b.Fatal(errs)
+				}
+			}
+		})
+	}
 }
 
 func requireFileExists(t *testing.T, fs afero.Fs, path string) {
