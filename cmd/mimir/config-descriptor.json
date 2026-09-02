@@ -17755,6 +17755,17 @@
           "fieldFlag": "ruler.rule-evaluation-write-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "rule_file_parse_caching_enabled",
+          "required": false,
+          "desc": "Cache the result of parsing rule files on disk, keyed by exact file content, to avoid re-parsing unchanged rule files belonging to the same tenant on every rule sync. Internal performance optimization, no effect on rule evaluation behavior.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.rule-file-parse-caching-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
