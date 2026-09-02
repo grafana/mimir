@@ -242,6 +242,23 @@ alertmanager_config: |
 `,
 		},
 		{
+			name: "Should return error if global HTTP username_file is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      basic_auth:
+        username_file: /secrets
+        password: something
+
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errUsernameFileNotAllowed),
+		},
+		{
 			name: "Should return error if global HTTP password_file is set",
 			cfg: `
 alertmanager_config: |
@@ -287,6 +304,23 @@ alertmanager_config: |
     - name: default-receiver
 `,
 			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if global HTTP header files is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+        http_headers:
+            "Cache-Control":
+                files:
+                    - /secrets
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errHTTPHeaderFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if global HTTP proxy_url is set",
@@ -413,6 +447,24 @@ alertmanager_config: |
 			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should return error if receiver's HTTP username_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+            basic_auth:
+              username_file: /secrets
+              password: "something"
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errUsernameFileNotAllowed),
+		},
+		{
 			name: "Should return error if receiver's HTTP password_file is set",
 			cfg: `
 alertmanager_config: |
@@ -461,6 +513,25 @@ alertmanager_config: |
     receiver: 'default-receiver'
 `,
 			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if receiver's HTTP header files is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      webhook_configs:
+        - url: http://localhost
+          http_config:
+              http_headers:
+                  "Cache-Control":
+                      files:
+                          - /secrets
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errHTTPHeaderFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if receiver's HTTP proxy_url is set",
@@ -1094,7 +1165,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		input    interface{}
 		expected error
 	}{
-		"*HTTPClientConfig": {
+		"*HTTPClientConfig.BasicAuth.PasswordFile": {
 			input: &commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
 					PasswordFile: "/secrets",
@@ -1102,13 +1173,53 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errPasswordFileNotAllowed,
 		},
-		"HTTPClientConfig": {
+		"HTTPClientConfig.BasicAuth.PasswordFile": {
 			input: commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
 					PasswordFile: "/secrets",
 				},
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"*HTTPClientConfig.BasicAuth.UsernameFile": {
+			input: &commoncfg.HTTPClientConfig{
+				BasicAuth: &commoncfg.BasicAuth{
+					UsernameFile: "/secrets",
+				},
+			},
+			expected: errUsernameFileNotAllowed,
+		},
+		"HTTPClientConfig.BasicAuth.UsernameFile": {
+			input: commoncfg.HTTPClientConfig{
+				BasicAuth: &commoncfg.BasicAuth{
+					UsernameFile: "/secrets",
+				},
+			},
+			expected: errUsernameFileNotAllowed,
+		},
+		"*HTTPClientConfig.HTTPHeaders.Files": {
+			input: &commoncfg.HTTPClientConfig{
+				HTTPHeaders: &commoncfg.Headers{
+					Headers: map[string]commoncfg.Header{
+						"Cache-Control": {
+							Files: []string{"/secret"},
+						},
+					},
+				},
+			},
+			expected: errHTTPHeaderFileNotAllowed,
+		},
+		"HTTPClientConfig.HTTPHeaders.Files": {
+			input: commoncfg.HTTPClientConfig{
+				HTTPHeaders: &commoncfg.Headers{
+					Headers: map[string]commoncfg.Header{
+						"Cache-Control": {
+							Files: []string{"/secret"},
+						},
+					},
+				},
+			},
+			expected: errHTTPHeaderFileNotAllowed,
 		},
 		"*TLSConfig": {
 			input: &commoncfg.TLSConfig{
@@ -1173,6 +1284,18 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				AuthPasswordFile: "/file",
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"*SlackConfig.APIURLFile": {
+			input: &config.SlackConfig{
+				APIURLFile: "/file",
+			},
+			expected: errSlackAPIURLFileNotAllowed,
+		},
+		"SlackConfig.APIURLFile": {
+			input: config.SlackConfig{
+				APIURLFile: "/file",
+			},
+			expected: errSlackAPIURLFileNotAllowed,
 		},
 		"*MSTeams.HTTPConfig": {
 			input: &config.MSTeamsConfig{

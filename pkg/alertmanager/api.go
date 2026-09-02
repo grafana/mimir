@@ -44,6 +44,7 @@ const (
 )
 
 var (
+	errUsernameFileNotAllowed            = errors.New("setting username_file is not allowed")
 	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
 	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
 	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
@@ -56,8 +57,9 @@ var (
 	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
 	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
 	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
-	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file is not allowed")
+	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file or global telegram_bot_token_file is not allowed")
 	errWebhookURLFileNotAllowed          = errors.New("setting Webhook url_file is not allowed")
+	errHTTPHeaderFileNotAllowed          = errors.New("setting http_headers.*.files is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -454,6 +456,9 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 // validateReceiverHTTPConfig validates the HTTP config and returns an error if it contains
 // settings not allowed by Mimir.
 func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
+	if cfg.BasicAuth != nil && cfg.BasicAuth.UsernameFile != "" {
+		return errUsernameFileNotAllowed
+	}
 	if cfg.BasicAuth != nil && cfg.BasicAuth.PasswordFile != "" {
 		return errPasswordFileNotAllowed
 	}
@@ -475,6 +480,14 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 			return errProxyFromEnvironmentURLNotAllowed
 		}
 	}
+	if cfg.HTTPHeaders != nil && cfg.HTTPHeaders.Headers != nil {
+		for _, v := range cfg.HTTPHeaders.Headers {
+			if len(v.Files) > 0 {
+				return errHTTPHeaderFileNotAllowed
+			}
+		}
+	}
+
 	// We allow setting proxy config (cfg.ProxyConfig), because Mimir's "firewall" protects those calls.
 	return validateReceiverTLSConfig(cfg.TLSConfig)
 }
@@ -520,7 +533,6 @@ func validateEmailConfig(cfg config.EmailConfig) error {
 	if cfg.AuthPasswordFile != "" {
 		return errPasswordFileNotAllowed
 	}
-
 	return nil
 }
 
