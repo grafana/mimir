@@ -46,7 +46,7 @@ const (
 var (
 	errUsernameFileNotAllowed            = errors.New("setting username_file is not allowed")
 	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
-	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
+	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file or client_certificate_key_file is not allowed")
 	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
 	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
 	errTLSConfigNotAllowed               = errors.New("setting TLS ca_file, cert_file, key_file, ca, cert or key is not allowed")
@@ -57,7 +57,7 @@ var (
 	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
 	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
 	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
-	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file or global telegram_bot_token_file is not allowed")
+	errTelegramFileNotAllowed            = errors.New("setting Telegram bot_token_file, chat_id_file or global telegram_bot_token_file, telegram_chat_id_file is not allowed")
 	errWebhookURLFileNotAllowed          = errors.New("setting Webhook url_file is not allowed")
 	errHTTPHeaderFileNotAllowed          = errors.New("setting http_headers.*.files is not allowed")
 )
@@ -602,7 +602,7 @@ func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
 // settings not allowed by Mimir.
 func validateTelegramConfig(cfg config.TelegramConfig) error {
 	if cfg.BotTokenFile != "" {
-		return errTelegramBotTokenFileNotAllowed
+		return errTelegramFileNotAllowed
 	}
 	return nil
 }

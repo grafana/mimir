@@ -785,7 +785,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errTelegramBotTokenFileNotAllowed, "error validating Alertmanager config"),
+			err: errors.Wrap(errTelegramFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
 			name: "should return error if Webhook url_file is set",
@@ -1221,6 +1221,22 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errHTTPHeaderFileNotAllowed,
 		},
+		"*HTTPClientConfig.OAuth2.ClientSecretFile": {
+			input: &commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientSecretFile: "/file",
+				},
+			},
+			expected: errOAuth2SecretFileNotAllowed,
+		},
+		"HTTPClientConfig.OAuth2.ClientSecretFile": {
+			input: commoncfg.HTTPClientConfig{
+				OAuth2: &commoncfg.OAuth2{
+					ClientSecretFile: "/file",
+				},
+			},
+			expected: errOAuth2SecretFileNotAllowed,
+		},
 		"*TLSConfig": {
 			input: &commoncfg.TLSConfig{
 				CertFile: "/cert",
@@ -1324,6 +1340,18 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
+		},
+		"*TelegramConfig.BotTokenFile": {
+			input: &config.TelegramConfig{
+				BotTokenFile: "/file",
+			},
+			expected: errTelegramFileNotAllowed,
+		},
+		"TelegramConfig.BotTokenFile": {
+			input: config.TelegramConfig{
+				BotTokenFile: "/file",
+			},
+			expected: errTelegramFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{
