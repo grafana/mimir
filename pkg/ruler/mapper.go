@@ -256,7 +256,8 @@ func (f *FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool,
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
 	if len(errs) == 0 && f.cacheEnabled {
-		f.storeCache(file, b, ignoreUnknownFields, nameValidationScheme, rgs)
+		// Cache a copy, not rgs itself: its SourceTenants field is mutated in place by the caller.
+		f.storeCache(file, b, ignoreUnknownFields, nameValidationScheme, copyRuleGroups(rgs))
 	}
 	return rgs, errs
 }
@@ -287,11 +288,7 @@ func (f *FSLoader) storeCache(path string, rawBytes []byte, ignoreUnknownFields 
 	}
 }
 
-// copyRuleGroups returns a deep copy of rgs, so that a cache hit never hands
-// out a reference into the cached value. This matters because the caller
-// (rules.Manager.LoadGroups) stores at least one field, SourceTenants, by
-// reference into the resulting rules.Group without copying it, and would
-// otherwise alias the cached slice for the lifetime of that group.
+// copyRuleGroups returns a deep copy of rgs.
 func copyRuleGroups(rgs *rulefmt.RuleGroups) *rulefmt.RuleGroups {
 	if rgs == nil {
 		return nil
@@ -300,6 +297,10 @@ func copyRuleGroups(rgs *rulefmt.RuleGroups) *rulefmt.RuleGroups {
 		Groups: make([]rulefmt.RuleGroup, len(rgs.Groups)),
 	}
 	for i, g := range rgs.Groups {
+		//nolint:staticcheck // We want to intentionally access a deprecated field, to copy it if the caller set it.
+		g.EvaluationDelay = cloneDuration(g.EvaluationDelay)
+		g.QueryOffset = cloneDuration(g.QueryOffset)
+		g.Labels = maps.Clone(g.Labels)
 		g.SourceTenants = slices.Clone(g.SourceTenants)
 		g.Rules = make([]rulefmt.Rule, len(rgs.Groups[i].Rules))
 		for j, r := range rgs.Groups[i].Rules {
@@ -310,6 +311,15 @@ func copyRuleGroups(rgs *rulefmt.RuleGroups) *rulefmt.RuleGroups {
 		out.Groups[i] = g
 	}
 	return out
+}
+
+// cloneDuration returns a copy of d, or nil if d is nil.
+func cloneDuration(d *model.Duration) *model.Duration {
+	if d == nil {
+		return nil
+	}
+	clone := *d
+	return &clone
 }
 
 // cleanRuleGroupExprs returns a copy of groups with leading/trailing whitespace
