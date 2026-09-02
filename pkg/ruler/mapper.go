@@ -256,7 +256,8 @@ func (f *FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool,
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
 	if len(errs) == 0 && f.cacheEnabled {
-		f.storeCache(file, b, ignoreUnknownFields, nameValidationScheme, rgs)
+		// Cache a copy, not rgs itself: its SourceTenants field is mutated in place by the caller.
+		f.storeCache(file, b, ignoreUnknownFields, nameValidationScheme, copyRuleGroups(rgs))
 	}
 	return rgs, errs
 }
@@ -287,11 +288,7 @@ func (f *FSLoader) storeCache(path string, rawBytes []byte, ignoreUnknownFields 
 	}
 }
 
-// copyRuleGroups returns a deep copy of rgs, so that a cache hit never hands
-// out a reference into the cached value. This matters because the caller
-// (rules.Manager.LoadGroups) stores at least one field, SourceTenants, by
-// reference into the resulting rules.Group without copying it, and would
-// otherwise alias the cached slice for the lifetime of that group.
+// copyRuleGroups returns a deep copy of rgs.
 func copyRuleGroups(rgs *rulefmt.RuleGroups) *rulefmt.RuleGroups {
 	if rgs == nil {
 		return nil

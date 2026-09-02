@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -673,6 +674,8 @@ func Test_FSLoader_ParseCache(t *testing.T) {
 
 		_, errs := loader.Load(files[0], false, model.LegacyValidation)
 		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
 
 		_, _, err = m.MapRules(testUser1, updatedRuleSet)
 		require.NoError(t, err)
@@ -697,6 +700,9 @@ func Test_FSLoader_ParseCache(t *testing.T) {
 
 		_, errs := loader.Load(files[0], false, model.LegacyValidation)
 		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+
 		_, errs = loader.Load(files[1], false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.Equal(t, 0.0, testutil.ToFloat64(hits))
@@ -720,6 +726,9 @@ func Test_FSLoader_ParseCache(t *testing.T) {
 
 		_, errs := loader.Load(files[0], false, model.LegacyValidation)
 		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+
 		_, errs = loader.Load(files[0], false, model.UTF8Validation)
 		require.Empty(t, errs)
 		require.Equal(t, 0.0, testutil.ToFloat64(hits))
@@ -742,6 +751,49 @@ func Test_FSLoader_ParseCache(t *testing.T) {
 		require.NotSame(t, first, second)
 	})
 
+	t.Run("mutating a cache-miss result doesn't corrupt a later cache hit", func(t *testing.T) {
+		// Regression test: LoadGroups keeps SourceTenants aliased by reference
+		// (it isn't copied like Labels/Annotations are), and federated rule
+		// evaluation later sorts that slice in place. The cache must never
+		// hand out a value that shares memory with what it stores internally.
+		setupRuleSets()
+		fs := afero.NewMemMapFs()
+		m := &mapper{Path: "/rules", FS: fs, logger: l}
+		ruleConfigs := map[string][]rulefmt.RuleGroup{
+			"file /one": {
+				{
+					Name:          "federated_group",
+					SourceTenants: []string{"tenant-b", "tenant-a"},
+					Rules: []rulefmt.Rule{
+						{Record: "example_rule", Expr: "example_expr"},
+					},
+				},
+			},
+		}
+		_, files, err := m.MapRules(testUser1, ruleConfigs)
+		require.NoError(t, err)
+
+		hits, misses := newTestCacheCounters()
+		loader := NewFSLoader(fs, true, hits, misses)
+
+		missResult, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+
+		// Simulate what tenant.NormalizeTenantIDs does in place during
+		// federated rule evaluation on the caller's copy of SourceTenants.
+		slices.Sort(missResult.Groups[0].SourceTenants)
+		require.Equal(t, []string{"tenant-a", "tenant-b"}, missResult.Groups[0].SourceTenants)
+
+		hitResult, errs := loader.Load(files[0], false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.Equal(t, 1.0, testutil.ToFloat64(hits))
+		require.Equal(t, 1.0, testutil.ToFloat64(misses))
+		require.Equal(t, []string{"tenant-b", "tenant-a"}, hitResult.Groups[0].SourceTenants,
+			"the cached entry must be unaffected by mutating a previously returned result")
+	})
+
 	t.Run("two loaders don't share cache state", func(t *testing.T) {
 		setupRuleSets()
 		fs := afero.NewMemMapFs()
@@ -753,6 +805,8 @@ func Test_FSLoader_ParseCache(t *testing.T) {
 		loaderA := NewFSLoader(fs, true, hitsA, missesA)
 		_, errs := loaderA.Load(files[0], false, model.LegacyValidation)
 		require.Empty(t, errs)
+		require.Equal(t, 0.0, testutil.ToFloat64(hitsA))
+		require.Equal(t, 1.0, testutil.ToFloat64(missesA))
 
 		hitsB, missesB := newTestCacheCounters()
 		loaderB := NewFSLoader(fs, true, hitsB, missesB)
