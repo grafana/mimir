@@ -185,10 +185,29 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
 //
-// If cacheEnabled is set, it caches the parsed result of each file, keyed by
-// the file's exact byte content (and the parsing options passed to Load), so
-// that a file that hasn't changed since the last Load call skips
-// rulefmt.Parse entirely.
+// If cacheEnabled is set, it caches the parsed result of each file.
+// The cache key is the file's exact byte content plus the parsing options passed to Load.
+// A file that hasn't changed since the last Load call skips rulefmt.Parse entirely.
+//
+// The cache holds two generations, cur and prev, to bound memory.
+// This avoids needing an external signal for when a file is removed or renamed.
+// rules.Manager.LoadGroups calls Load at most once per path per Update pass.
+// manager.Update holds its own lock. Passes for one tenant never interleave.
+// A path already present in cur means a new pass has started.
+// Load then rotates the generations: prev = cur, cur = a new empty map.
+//
+// A hit in prev gets promoted into cur.
+// This keeps a stable file triggering rotation on every later pass.
+// Without promotion, a stable file would fall out of the cache after a single pass.
+//
+// A path that stops being loaded ages out within two passes.
+// Its entry moves into prev on the next rotation.
+// It is dropped for good when prev is next overwritten.
+// This bounds the cache at roughly 2x the live file count, regardless of how many distinct paths a tenant has ever used.
+//
+// Known gap: this needs at least one stable path across two consecutive passes to trigger a rotation.
+// A tenant whose entire namespace set changes to new paths on every single pass never triggers one.
+// That is considered acceptable. It requires zero stable namespaces ever, not just occasional renames.
 type FSLoader struct {
 	fs     afero.Fs
 	parser parser.Parser
@@ -198,8 +217,8 @@ type FSLoader struct {
 	cacheHits    prometheus.Counter
 	cacheMisses  prometheus.Counter
 
-	mu    sync.Mutex
-	cache map[string]cachedRuleGroups
+	mu        sync.Mutex
+	cur, prev map[string]cachedRuleGroups
 }
 
 type cachedRuleGroups struct {
@@ -222,7 +241,7 @@ func NewFSLoader(fs afero.Fs, cacheEnabled bool, cacheHits, cacheMisses promethe
 		cacheMisses:  cacheMisses,
 	}
 	if cacheEnabled {
-		loader.cache = make(map[string]cachedRuleGroups)
+		loader.cur = make(map[string]cachedRuleGroups)
 	}
 	return loader
 }
@@ -266,13 +285,20 @@ func (f *FSLoader) lookupCache(path string, rawBytes []byte, ignoreUnknownFields
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	entry, ok := f.cache[path]
+	if _, ok := f.cur[path]; ok {
+		f.prev = f.cur
+		f.cur = make(map[string]cachedRuleGroups)
+	}
+
+	entry, ok := f.prev[path]
 	if !ok ||
 		entry.ignoreUnknownFields != ignoreUnknownFields ||
 		entry.nameValidationScheme != nameValidationScheme ||
 		!bytes.Equal(entry.rawBytes, rawBytes) {
 		return nil, false
 	}
+
+	f.cur[path] = entry
 	return copyRuleGroups(entry.parsed), true
 }
 
@@ -280,7 +306,7 @@ func (f *FSLoader) storeCache(path string, rawBytes []byte, ignoreUnknownFields 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.cache[path] = cachedRuleGroups{
+	f.cur[path] = cachedRuleGroups{
 		rawBytes:             rawBytes,
 		ignoreUnknownFields:  ignoreUnknownFields,
 		nameValidationScheme: nameValidationScheme,
