@@ -870,6 +870,55 @@ func BenchmarkFSLoader_Load(b *testing.B) {
 	}
 }
 
+func Test_FSLoader_ParseCache_EvictsRemovedNamespaces(t *testing.T) {
+	// Regression test for unbounded growth: a removed or renamed namespace's
+	// cache entry must not live forever. It should age out within two more
+	// passes of the tenant's remaining (stable) namespace, via generation
+	// rotation, not accumulate for as long as the FSLoader exists.
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	fs := afero.NewMemMapFs()
+	m := &mapper{Path: "/rules", FS: fs, logger: l}
+
+	hits, misses := newTestCacheCounters()
+	loader := NewFSLoader(fs, true, hits, misses)
+
+	loadAll := func(files []string) {
+		for _, f := range files {
+			_, errs := loader.Load(f, false, model.LegacyValidation)
+			require.Empty(t, errs)
+		}
+	}
+
+	// Pass 1: two namespaces.
+	_, files, err := m.MapRules(testUser1, twoFilesRuleSet)
+	require.NoError(t, err)
+	require.Len(t, files, 2)
+	loadAll(files)
+	require.Len(t, loader.cur, 2)
+	require.Empty(t, loader.prev)
+
+	// Pass 2: same two namespaces, unchanged -- triggers the first rotation.
+	loadAll(files)
+	require.Len(t, loader.cur, 2)
+	require.Len(t, loader.prev, 2)
+
+	// Pass 3: one namespace is removed. The survivor's rotation moves the
+	// removed namespace's stale entry into prev, where it lingers once more.
+	_, remainingFiles, err := m.MapRules(testUser1, twoFilesDeletedRuleSet)
+	require.NoError(t, err)
+	require.Len(t, remainingFiles, 1)
+	loadAll(remainingFiles)
+	require.Len(t, loader.cur, 1)
+	require.Len(t, loader.prev, 2, "the removed namespace's entry should still be in prev for one more pass")
+
+	// Pass 4: the next rotation overwrites prev, dropping the removed
+	// namespace's entry for good.
+	loadAll(remainingFiles)
+	require.Len(t, loader.cur, 1)
+	require.Len(t, loader.prev, 1, "the removed namespace's entry must be gone after a second rotation")
+}
+
 func requireFileExists(t *testing.T, fs afero.Fs, path string) {
 	t.Helper()
 
