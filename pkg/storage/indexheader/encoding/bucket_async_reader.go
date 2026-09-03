@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ReadAheadFactor = 4
+	ReadAheadFactor = 2
 )
 
 type BufPromise struct {
