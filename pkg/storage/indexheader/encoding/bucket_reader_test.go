@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"sync"
 	"testing"
 
@@ -278,12 +279,12 @@ func TestBucketBufReader_GetRangeCalls_Buffering(t *testing.T) {
 		_, err := r.Read(1)
 		require.NoError(t, err)
 	}
-	require.Len(t, bkt.calls, 1)
+	require.Len(t, bkt.rangeCalls(), 1)
 
 	// Buffer depleted; next read operation triggers another bufio fill and GetRange call.
 	_, err := r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Len(t, bkt.rangeCalls(), 2)
 }
 
 func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
@@ -291,13 +292,13 @@ func TestBucketBufReader_GetRangeCalls_ResetRefetches(t *testing.T) {
 
 	_, err := r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 1)
+	require.Len(t, bkt.rangeCalls(), 1)
 
 	// After Reset the buffer is discarded; the next read must refetch from the bucket.
 	require.NoError(t, r.Reset())
 	_, err = r.Read(1)
 	require.NoError(t, err)
-	require.Len(t, bkt.calls, 2)
+	require.Len(t, bkt.rangeCalls(), 2)
 }
 
 func TestBucketBufReader_Read_GetRangeError(t *testing.T) {
@@ -317,8 +318,12 @@ func TestBucketBufReader_ReadInto_GetRangeError(t *testing.T) {
 }
 
 // trackingBucket wraps an InstrumentedBucketReader and records every GetRange call.
+// The read-ahead reader fills its buffer promises from several goroutines at the same time,
+// so the mutex protects the record of the calls.
 type trackingBucket struct {
 	objstore.InstrumentedBucketReader
+
+	mtx   sync.Mutex
 	calls []rangeCall
 }
 
@@ -328,8 +333,17 @@ type rangeCall struct {
 }
 
 func (b *trackingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.mtx.Lock()
 	b.calls = append(b.calls, rangeCall{off, length})
+	b.mtx.Unlock()
 	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+// rangeCalls returns a copy of the recorded GetRange calls.
+func (b *trackingBucket) rangeCalls() []rangeCall {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return slices.Clone(b.calls)
 }
 
 func newTrackingBucket(t *testing.T, objectData []byte) *trackingBucket {

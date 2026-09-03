@@ -19,14 +19,24 @@ type BufReader interface {
 	ResetAt(off int) error
 
 	// Skip advances the cursor by the given number of bytes in the data segment.
-	// Attempting to skip to the end of the data segment is valid.
-	// Attempting to skip _beyond_ the end of the data segment will return an error.
+	// It is valid to skip to exactly the end of the data segment.
+	// It is NOT valid to skip beyond the end of the data segment;
+	// in this case implementations MUST return an ErrInvalidSize error,
+	// but MUST NOT advance the cursor or consume any remaining bytes.
 	Skip(l int) error
 
 	// Peek returns at most the given number of bytes from the data segment, without consuming them.
-	// The byte slice returned becomes invalid at the next read.
 	// It is valid to Peek beyond the end of the data segment;
 	// in this case implementations MUST return the available bytes up to the end and a nil error.
+	//
+	// The byte slice returned MUST remain valid for one subsequent Skip of the returned byte length;
+	// callers use a Peek-Skip pattern in place of Read to avoid a slice allocation.
+	// It is NOT valid to read the returned byte slice after any subsequent read operation:
+	// Peek, Read, ReadInto, Reset, ResetAt, and Skip.
+	//
+	// Peek is limited to and only must support reads up to the underlying buffer length.
+	// Caller checks Size first to see if the next read operation length fits in the underlying buffer,
+	// then a Peek-Skip pattern is used to avoid the slice allocation which must occur in Read.
 	Peek(n int) ([]byte, error)
 
 	// Read returns the given number of bytes from the data segment, consuming them.
@@ -35,11 +45,11 @@ type BufReader interface {
 	// and the remaining bytes MUST be consumed.
 	Read(n int) ([]byte, error)
 
-	// ReadInto reads len(b) bytes from the data segment into b, consuming them.
+	// ReadInto reads len(dst) bytes from the data segment into dst, consuming them.
 	// It is NOT valid to read beyond the end of the data segment;
 	// in this case implementations MUST return a nil byte slice and an ErrInvalidSize error,
 	// and the remaining bytes MUST be consumed.
-	ReadInto(b []byte) error
+	ReadInto(dst []byte) error
 
 	// Size returns the length of the underlying buffer in bytes.
 	Size() int

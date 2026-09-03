@@ -110,14 +110,14 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (f *FileReader) ReadInto(b []byte) error {
-	r, err := io.ReadFull(f.buf, b)
+func (f *FileReader) ReadInto(dst []byte) error {
+	r, err := io.ReadFull(f.buf, dst)
 	if r > 0 {
 		f.off += r
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
 	} else if err != nil {
 		return err
 	}
@@ -143,8 +143,7 @@ func (f *FileReader) Buffered() int {
 
 // Close cleans up the underlying resources used by this FileReader.
 func (f *FileReader) Close() error {
-	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-	// we reset the buffer when we retrieve it from the pool instead.
+	// No need to clean up buffer, we reset when we retrieve it from the pool
 	bufferPool.Put(f.buf)
 	// File handles are pooled, so we don't actually close the handle here, just return it.
 	return f.closer.Put(f.file)

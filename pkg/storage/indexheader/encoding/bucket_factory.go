@@ -88,7 +88,9 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(ctx context.Context, offset in
 
 	bufferLength := numLenBytes + contentLength + crc32.Size
 
-	bufReader := NewBucketBufReader(ctx, bf.bkt, bf.objectPath, offset, bufferLength)
+	//bufReader := NewBucketBufReader(ctx, bf.bkt, bf.objectPath, offset, bufferLength)
+	bufReader := NewBucketAsyncBufReader(ctx, bf.bkt, bf.objectPath, offset, bufferLength)
+
 	// bufReader is expected start at base offset + 4 after consuming length bytes
 	err = bufReader.Skip(numLenBytes)
 	if err != nil {
@@ -128,7 +130,7 @@ func (bf *BucketDecbufFactory) NewDecbufInSection(ctx context.Context, tableOffs
 	if sectionLength <= 0 {
 		return Decbuf{E: fmt.Errorf("section length must be greater than 0")}
 	}
-	bufReader := NewBucketBufReader(
+	bufReader := NewBucketAsyncBufReader(
 		ctx,
 		bf.bkt,
 		bf.objectPath,
@@ -151,7 +153,7 @@ func (bf *BucketDecbufFactory) NewRawDecbuf(ctx context.Context) Decbuf {
 		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
 	}
 	// Create reader from full file range
-	r := NewBucketBufReader(
+	r := NewBucketAsyncBufReader(
 		ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
 	)
 	d := Decbuf{r: r}

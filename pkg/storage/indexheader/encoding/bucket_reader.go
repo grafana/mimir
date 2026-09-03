@@ -13,6 +13,16 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
+const (
+	ReadBufferSize = 1 << 20 // 1 MiB
+)
+
+var bucketBufioPool = sync.Pool{
+	New: func() any {
+		return bufio.NewReaderSize(nil, ReadBufferSize)
+	},
+}
+
 type BucketReader struct {
 	ctx    context.Context
 	bkt    objstore.BucketReader
@@ -34,14 +44,14 @@ func NewBucketReader(
 	}
 }
 
-func (r *BucketReader) Read(p []byte) (n int, err error) {
-	if len(p) == 0 {
+func (r *BucketReader) Read(dst []byte) (n int, err error) {
+	if len(dst) == 0 {
 		return 0, nil
 	}
 	if r.off >= r.length {
 		return 0, io.EOF
 	}
-	toRead := len(p)
+	toRead := len(dst)
 	remaining := r.length - r.off
 	if toRead > remaining {
 		toRead = remaining
@@ -51,7 +61,7 @@ func (r *BucketReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	defer rc.Close()
-	n, err = io.ReadFull(rc, p[:toRead])
+	n, err = io.ReadFull(rc, dst[:toRead])
 	r.off += n
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		err = io.EOF
@@ -70,44 +80,23 @@ func (r *BucketReader) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
-var bucketBufPool = sync.Pool{
-	New: func() any {
-		// 1MiB buffer chosen as starting point;
-		// we could make this configurable and benchmark.
-		return bufio.NewReaderSize(nil, 1<<20)
-	},
-}
-
 type BucketBufReader struct {
-	ctx         context.Context
-	bkt         objstore.BucketReader
-	name        string
-	base        int
-	length      int
-	off         int
-	r           *BucketReader
-	resetReader func(off int) error
-	buf         *bufio.Reader
-	// Hold a reference to the pool for returning on Close - allows tests to use different pool.
-	bufPool *sync.Pool
-}
+	ctx    context.Context
+	bkt    objstore.BucketReader
+	name   string
+	base   int
+	length int
+	off    int
 
-func resetReaderFunc(bufReader *BucketBufReader) func(off int) error {
-	return func(off int) error {
-		r := NewBucketReader(bufReader.ctx, bufReader.bkt, bufReader.name, bufReader.base, bufReader.length)
-		_, err := r.Seek(int64(off), io.SeekStart)
-		if err != nil {
-			return err
-		}
-		bufReader.r = r
-		return nil
-	}
+	r       *BucketReader
+	buf     *bufio.Reader
+	bufPool *sync.Pool // Reference to return to on Close
 }
 
 func NewBucketBufReader(
 	ctx context.Context, bkt objstore.BucketReader, name string, base int, length int,
 ) *BucketBufReader {
-	return newBucketBufReader(ctx, &bucketBufPool, bkt, name, base, length)
+	return newBucketBufReader(ctx, &bucketBufioPool, bkt, name, base, length)
 }
 
 func newBucketBufReader(
@@ -128,7 +117,6 @@ func newBucketBufReader(
 		bufPool: bufioPool,
 	}
 
-	bufReader.resetReader = resetReaderFunc(bufReader)
 	return bufReader
 }
 
@@ -142,15 +130,17 @@ func (bbr *BucketBufReader) ResetAt(off int) error {
 	}
 
 	if dist := off - bbr.off; dist > 0 && dist < bbr.Buffered() {
-		// skip ahead by discarding the distance bytes
+		// Reset via Skip to avoid discarding all buffered bytes.
 		return bbr.Skip(dist)
 	}
 
-	if err := bbr.resetReader(off); err != nil {
+	r := NewBucketReader(bbr.ctx, bbr.bkt, bbr.name, bbr.base, bbr.length)
+	_, err := r.Seek(int64(off), io.SeekStart)
+	if err != nil {
 		return err
 	}
-
-	bbr.buf.Reset(bbr.r)
+	bbr.r = r
+	bbr.buf.Reset(r)
 	bbr.off = off
 
 	return nil
@@ -162,9 +152,7 @@ func (bbr *BucketBufReader) Skip(l int) error {
 	}
 
 	n, err := bbr.buf.Discard(l)
-	if n > 0 {
-		bbr.off += n
-	}
+	bbr.off += n
 
 	return err
 }
@@ -195,14 +183,14 @@ func (bbr *BucketBufReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-func (bbr *BucketBufReader) ReadInto(b []byte) error {
-	n, err := io.ReadFull(bbr.buf, b)
+func (bbr *BucketBufReader) ReadInto(dst []byte) error {
+	n, err := io.ReadFull(bbr.buf, dst)
 	if n > 0 {
 		bbr.off += n
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(dst), err)
 	} else if err != nil {
 		return err
 	}
@@ -227,10 +215,9 @@ func (bbr *BucketBufReader) Buffered() int {
 }
 
 func (bbr *BucketBufReader) Close() error {
-	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
-	// we reset the buffer when we retrieve it from the pool instead.
+	// No need to clean up buffer, we reset when we retrieve it from the pool
 	bbr.bufPool.Put(bbr.buf)
-	// The BucketReader does not need closed -
-	// it closes the reader generated from bkt.GetRange on each Read call.
+	// The BucketReader of a promise does not need a Close call.
+	// It closes the reader created by bkt.GetRange on each Read call.
 	return nil
 }
