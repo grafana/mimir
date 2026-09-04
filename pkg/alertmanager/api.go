@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/alertmanager/config"
 	discord "github.com/prometheus/alertmanager/notify/discord"
+	incidentio "github.com/prometheus/alertmanager/notify/incidentio"
 	msteams "github.com/prometheus/alertmanager/notify/msteams"
 	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/alertmanager/template"
@@ -47,20 +48,22 @@ const (
 )
 
 var (
-	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
-	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
-	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
-	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
-	errTLSConfigNotAllowed               = errors.New("setting TLS ca_file, cert_file, key_file, ca, cert or key is not allowed")
-	errSlackAPIURLFileNotAllowed         = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
-	errVictorOpsAPIKeyFileNotAllowed     = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
-	errOpsGenieAPIKeyFileFileNotAllowed  = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
-	errPagerDutyServiceKeyFileNotAllowed = errors.New("setting PagerDuty service_key_file is not allowed")
-	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
-	errPushoverUserKeyFileNotAllowed     = errors.New("setting Pushover user_key_file is not allowed")
-	errPushoverTokenFileNotAllowed       = errors.New("setting Pushover token_file is not allowed")
-	errTelegramBotTokenFileNotAllowed    = errors.New("setting Telegram bot_token_file is not allowed")
-	errWebhookURLFileNotAllowed          = errors.New("setting Webhook url_file is not allowed")
+	errPasswordFileNotAllowed                   = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
+	errOAuth2SecretFileNotAllowed               = errors.New("setting OAuth2 client_secret_file is not allowed")
+	errProxyURLNotAllowed                       = errors.New("setting proxy_url is not allowed")
+	errProxyFromEnvironmentURLNotAllowed        = errors.New("setting proxy_from_environment is not allowed")
+	errTLSConfigNotAllowed                      = errors.New("setting TLS ca_file, cert_file, key_file, ca, cert or key is not allowed")
+	errSlackAPIURLFileNotAllowed                = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
+	errVictorOpsAPIKeyFileNotAllowed            = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
+	errOpsGenieAPIKeyFileFileNotAllowed         = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
+	errPagerDutyServiceKeyFileNotAllowed        = errors.New("setting PagerDuty service_key_file is not allowed")
+	errPagerDutyRoutingKeyFileNotAllowed        = errors.New("setting PagerDuty routing_key_file is not allowed")
+	errPushoverUserKeyFileNotAllowed            = errors.New("setting Pushover user_key_file is not allowed")
+	errPushoverTokenFileNotAllowed              = errors.New("setting Pushover token_file is not allowed")
+	errTelegramBotTokenFileNotAllowed           = errors.New("setting Telegram bot_token_file is not allowed")
+	errWebhookURLFileNotAllowed                 = errors.New("setting Webhook url_file is not allowed")
+	errIncidentioURLFileNotAllowed              = errors.New("setting incident.io url_file is not allowed")
+	errIncidentioAlertSourceTokenFileNotAllowed = errors.New("setting incident.io alert_source_token_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -414,6 +417,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validateWebhookConfig(v.Interface().(webhook.WebhookConfig)); err != nil {
 			return err
 		}
+
+	case reflect.TypeOf(incidentio.IncidentioConfig{}):
+		if err := validateIncidentioConfig(v.Interface().(incidentio.IncidentioConfig)); err != nil {
+			return err
+		}
 	}
 
 	// If the input config is a struct, recursively iterate on all fields.
@@ -618,6 +626,18 @@ func validateTelegramConfig(cfg config.TelegramConfig) error {
 func validateWebhookConfig(cfg webhook.WebhookConfig) error {
 	if cfg.URLFile != "" {
 		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
+// validateIncidentioConfig validates the incident.io config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateIncidentioConfig(cfg incidentio.IncidentioConfig) error {
+	if cfg.URLFile != "" {
+		return errIncidentioURLFileNotAllowed
+	}
+	if cfg.AlertSourceTokenFile != "" {
+		return errIncidentioAlertSourceTokenFileNotAllowed
 	}
 	return nil
 }
