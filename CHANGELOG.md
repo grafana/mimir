@@ -20,6 +20,7 @@
 * [ENHANCEMENT] Store-gateway: added a `route` label to the `cortex_bucket_store_series_request_stage_duration_seconds` metric to match the `route` label of `cortex_request_duration_seconds`. #16374
 * [ENHANCEMENT] Store-gateway: Add `force_attempt_http2` option to block storage client config to enable HTTP/2. #16385, #16422
 * [ENHANCEMENT] Validation: Add an optional `reason` field to `limited_queries` rules, aligning them with `blocked_queries`. When set, the reason is included in the client-facing error and the query-frontend's `"query limited"` log line. #16407
+* [ENHANCEMENT] Storage: Allow common subpath patterns containing slashes, hyphens, and underscores in storage prefixes while rejecting overlapping parent and child prefixes. #16479
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.scheduler-client.enable-ring-based-cleanup` option, which when disabled stops a scheduler-mode compactor from running the ring-based background blocks cleaner. #16457
 * [ENHANCEMENT] Block-builder-scheduler: Add `cortex_blockbuilder_scheduler_end_offset_probe_failed_total`, counting failures to list a cluster's end offsets, and `cortex_blockbuilder_scheduler_startup_jobs_skipped_total`, counting observed jobs that startup recovery could not import. #16134
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292

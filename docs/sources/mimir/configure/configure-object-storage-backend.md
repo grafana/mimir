@@ -48,7 +48,7 @@ When using the common configuration, make [`blocks_storage`](../configuration-pa
 
 {{< /admonition >}}
 
-Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the Alertmanager or ruler store uses.
+Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and a storage prefix that overlaps the Alertmanager or ruler storage prefix.
 
 Find examples of setting up the different object stores below:
 
