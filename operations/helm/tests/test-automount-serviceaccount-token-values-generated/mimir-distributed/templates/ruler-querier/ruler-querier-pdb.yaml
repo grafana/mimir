@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/templates/ruler-querier/ruler-querier-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-automount-serviceaccount-token-values-mimir-ruler-querier
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-automount-serviceaccount-token-values
+    app.kubernetes.io/component: ruler-querier
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-automount-serviceaccount-token-values
+      app.kubernetes.io/component: ruler-querier
+  maxUnavailable: 1
+

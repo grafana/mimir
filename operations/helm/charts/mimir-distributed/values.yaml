@@ -76,6 +76,14 @@ global:
   # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}
 
+  # -- Whether to mount a Kubernetes service account token into pods directly managed by this chart.
+  # Leave unset for the Kubernetes default, which mounts a token into every pod. Set to false to mount one only
+  # where it is needed, as the CIS Kubernetes Benchmark recommends. Components that authenticate to Vault with the
+  # token keep it. Each component also has its own 'automountServiceAccountToken', which takes precedence.
+  # For more details, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-service-account-token-automounting/
+  # scope: alertmanager, chunks-cache, compactor, continuous-test, distributor, gateway, index-cache, ingester, kafka, metadata-cache, minio make-bucket job, overrides-exporter, querier, query-frontend, query-scheduler, results-cache, ruler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, smoke-test, store-gateway
+  automountServiceAccountToken: null
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
@@ -97,6 +105,13 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
 externalConfigVersion: "0"
+
+# -- Whether an external configuration authenticates Mimir to HashiCorp Vault with the pod's service account
+# token, that is 'vault.enabled' with 'vault.auth.type: kubernetes'. The chart cannot inspect a configuration it
+# does not generate, so set this to keep the token on components running Mimir when
+# 'automountServiceAccountToken' is false. Only read when 'useExternalConfig' is true. Leave false if the
+# configuration passes the token inline, or reads it from a path you mount yourself.
+externalConfigVaultKubernetesAuth: false
 
 # --Vault Agent config to mount secrets to TLS configurable components. This requires Vault and Vault Agent to already be running.
 vaultAgent:
@@ -535,6 +550,9 @@ alertmanager:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for alertmanager pods.
+  automountServiceAccountToken: null
+
   # -- Pod Disruption Budget for alertmanager, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
@@ -858,6 +876,9 @@ distributor:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for distributor pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -964,6 +985,9 @@ ingester:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- Override for whether service account token is mounted for ingester pods.
+  automountServiceAccountToken: null
 
   # -- The name of the PriorityClass for ingester pods
   priorityClassName: null
@@ -1246,6 +1270,10 @@ overrides_exporter:
 
   podLabels: {}
   podAnnotations: {}
+
+  # -- Override for whether service account token is mounted for overrides-exporter pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -1389,6 +1417,9 @@ ruler:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for ruler pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -1515,6 +1546,9 @@ ruler_querier:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for ruler-querier pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -1636,6 +1670,9 @@ ruler_query_frontend:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for ruler-query-frontend pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -1727,6 +1764,9 @@ ruler_query_scheduler:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- Override for whether service account token is mounted for ruler-query-scheduler pods.
+  automountServiceAccountToken: null
 
   # Pod Disruption Budget
   podDisruptionBudget:
@@ -1868,6 +1908,9 @@ querier:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for querier pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -1993,6 +2036,9 @@ query_frontend:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for query-frontend pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -2087,6 +2133,9 @@ query_scheduler:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- Override for whether service account token is mounted for query-scheduler pods.
+  automountServiceAccountToken: null
 
   # Pod Disruption Budget
   podDisruptionBudget:
@@ -2191,6 +2240,9 @@ store_gateway:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- Override for whether service account token is mounted for store-gateway pods.
+  automountServiceAccountToken: null
 
   # -- Management policy for store-gateway pods
   # New variable introduced with Helm chart version 5.1.0. For backwards compatibility it is set to `OrderedReady`
@@ -2470,6 +2522,9 @@ compactor:
   # Pod Annotations
   podAnnotations: {}
 
+  # -- Override for whether service account token is mounted for compactor pods.
+  automountServiceAccountToken: null
+
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
@@ -2699,6 +2754,8 @@ chunks-cache:
   podLabels: {}
   # -- Annotations for chunks-cache pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for chunks-cache pods.
+  automountServiceAccountToken: null
   # -- Management policy for chunks-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the chunks-cache to shutdown before it is killed
@@ -2812,6 +2869,8 @@ index-cache:
   podLabels: {}
   # -- Annotations for index-cache pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for index-cache pods.
+  automountServiceAccountToken: null
   # -- Management policy for index-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the index-cache to shutdown before it is killed
@@ -2925,6 +2984,8 @@ metadata-cache:
   podLabels: {}
   # -- Annotations for metadata-cache pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for metadata-cache pods.
+  automountServiceAccountToken: null
   # -- Management policy for metadata-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the metadata-cache to shutdown before it is killed
@@ -3038,6 +3099,8 @@ results-cache:
   podLabels: {}
   # -- Annotations for results-cache pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for results-cache pods.
+  automountServiceAccountToken: null
   # -- Management policy for results-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the results-cache to shutdown before it is killed
@@ -3198,6 +3261,8 @@ kafka:
   podLabels: {}
   # -- Annotations for Kafka pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for Kafka pods.
+  automountServiceAccountToken: null
   # -- Security context for Kafka pods
   securityContext:
     fsGroup: 1001
@@ -3293,6 +3358,8 @@ gateway:
   podLabels: {}
   # -- Annotations Deployment Pods
   podAnnotations: {}
+  # -- Override for whether service account token is mounted for gateway pods.
+  automountServiceAccountToken: null
   # -- PodDisruptionBudget https://kubernetes.io/docs/tasks/run-application/configure-pdb/
   podDisruptionBudget:
     maxUnavailable: 1
@@ -3966,6 +4033,8 @@ smoke_test:
   resources: {}
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
+  # -- Override for whether service account token is mounted for smoke-test pods.
+  automountServiceAccountToken: null
   dnsConfig: {}
 
 # -- Settings for mimir-continuous-test.
@@ -4036,6 +4105,8 @@ continuous_test:
   nodeSelector: {}
   # -- The name of the PriorityClass for continuous test pods
   priorityClassName: null
+  # -- Override for whether service account token is mounted for continuous test pods.
+  automountServiceAccountToken: null
   # -- Kubernetes resource requests and limits for continuous test
   resources:
     limits:
