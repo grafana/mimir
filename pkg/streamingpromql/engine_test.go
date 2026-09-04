@@ -6112,7 +6112,7 @@ func TestNarrowSelectorsThroughUngroupedAggregation(t *testing.T) {
 		ctx := t.Context()
 		q, err := engine.NewInstantQuery(ctx, queryable, nil, expression, timestamp.Time(0).Add(5*time.Minute))
 		require.NoError(t, err)
-		defer q.Close()
+		t.Cleanup(q.Close)
 
 		result := q.Exec(ctx)
 		require.NoError(t, result.Err)
