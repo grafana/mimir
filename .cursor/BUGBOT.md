@@ -6,32 +6,34 @@ Mimir vendors the Antithesis Go SDK (`github.com/antithesishq/antithesis-sdk-go/
 `default-no-op` mode. The assertions compile to empty functions unless the binary is built with
 the `enable_antithesis_sdk` build tag, so they are inert in released builds.
 
-Look for two kinds of opportunity in a pull request:
+### Rule 1: bug-only paths
 
-1. **Properties that should hold.** New code usually relies on some invariant the author has in
-   their head but never wrote down: a value that must always be within a range, an ordering that
-   must always be respected, a state the system should be able to reach at least once. These are
-   what Antithesis explores hardest, and the repo has none of them today, so raising these is the
-   priority. Suggest `Always`, `AlwaysOrUnreachable`, or `Sometimes`.
-2. **Bug-only paths.** A branch reachable only because of a bug, typically one that already ends
-   in an error saying "this is a bug", a `panic`, or a "this should never happen" warning log.
-   Suggest `Unreachable`.
+If a changed non-test `.go` file under `pkg/` or `cmd/` adds a line matching
+`/panic\(|this is a bug|should never happen/`, and the enclosing function contains no line matching
+`/assert\.(Unreachable|AlwaysOrUnreachable|Always|Sometimes|Reachable)\(/`, then:
 
-How to raise it:
+- Add a non-blocking Bug titled "Consider an Antithesis assertion"
+- Body: "This branch is reachable only because of a bug, so Antithesis can watch for it. Consider
+  `assert.Unreachable(\"<short message>\", map[string]any{...})` immediately before the existing
+  panic, error return, or warning log; it augments that handling rather than replacing it. Optional
+  instrumentation, not a defect, so feel free to decline."
 
-- Post a separate inline comment on each place worth instrumenting, anchored to those lines, the
-  way a human reviewer would. Every one of them is a non-blocking suggestion: never report a
-  missing assertion as a bug, and never request changes over it. The author is free to decline
-  any or all of them.
-- Do not stay silent just because the pull request already adds an Antithesis assertion somewhere.
-  Still point out every remaining candidate of either kind, whether an unstated property or an
-  uninstrumented bug-only path, and still say so when a different assertion from the SDK would fit
-  a case better than the one that was used.
-- A path reachable through normal operation, invalid user input, or an unavailable dependency is
-  an ordinary error, not a bug. Never suggest `Unreachable` there. It may still carry a property
-  worth asserting, so consider the first category instead of staying silent.
-- Only consider non-test Go files under `pkg/` and `cmd/`. Ignore `_test.go` files, `vendor/`,
-  `integration/`, `tools/`, `operations/`, and generated code.
+### Rule 2: properties that should hold
+
+If a changed non-test `.go` file under `pkg/` or `cmd/` establishes an invariant that the diff never
+states as an assertion — a bound, a capacity, an ordering, a monotonic counter, or a state the
+system should be able to reach at least once — then:
+
+- Add a non-blocking Bug titled "Consider an Antithesis assertion"
+- Body: name the invariant, recommend `Always`, `AlwaysOrUnreachable`, or `Sometimes` from the table
+  below, sketch the call, and close with the same "optional, feel free to decline" note.
+
+Both rules: add one Bug per location, anchored to those lines. Judge each candidate on its own, so
+an assertion added elsewhere in the pull request is no reason to stay quiet about the rest. Never
+request changes and never block a pull request over either rule. Ignore `_test.go` files, `vendor/`,
+`integration/`, `tools/`, `operations/`, and generated code. A path reachable through normal
+operation, invalid user input, or an unavailable dependency is an ordinary error rather than a bug,
+so never apply rule 1 there, though it may still carry a property worth rule 2.
 
 Which assertion type to suggest:
 
