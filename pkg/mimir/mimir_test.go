@@ -292,6 +292,62 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	}
 }
 
+// TestMimirServerShutdownWhileModuleIsStarting asserts that a shutdown signal received
+// before all modules finished starting is not reported as a failure. Cancelling the start
+// context leaves those modules in Failed state, which must not be mistaken for a crash.
+func TestMimirServerShutdownWhileModuleIsStarting(t *testing.T) {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	cfg.Target = []string{Querier}
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
+
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	// Register a module that never finishes starting and make the target depend on it,
+	// so the signal below is guaranteed to arrive while startup is still in progress.
+	starting := make(chan struct{})
+	c.ModuleManager.RegisterModule("test-blocking-module", func() (services.Service, error) {
+		return services.NewBasicService(func(ctx context.Context) error {
+			close(starting)
+			<-ctx.Done()
+			return ctx.Err()
+		}, nil, nil), nil
+	})
+	require.NoError(t, c.ModuleManager.AddDependency(Querier, "test-blocking-module"))
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	select {
+	case <-starting:
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "test module didn't reach starting state in time")
+	}
+
+	proc, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+
+	// Mimir reacts on SIGINT and does shutdown.
+	require.NoError(t, proc.Signal(syscall.SIGINT))
+
+	select {
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "Mimir didn't stop in time")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
 func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 	// This test checks that our /metrics endpoint handler supports metric filtering through the usage of name[] query param.
 	// This is added to prometheus/client_golang in https://github.com/prometheus/client_golang/pull/1925,
