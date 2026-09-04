@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Fix zone-aware migration replica calculation: use `migration.replicas` throughout the migration phase regardless of `writePath` status to prevent unintended downscaling. #15780
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
 * [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
