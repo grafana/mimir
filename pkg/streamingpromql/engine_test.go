@@ -6082,3 +6082,50 @@ func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestNarrowSelectorsThroughUngroupedAggregation verifies narrowing preserves labels removed by an outer aggregation.
+func TestNarrowSelectorsThroughUngroupedAggregation(t *testing.T) {
+	const expression = `sum(max by (cluster, namespace) (some_metric)) - sum(max by (cluster, namespace) (some_metric offset 1m))`
+
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{cluster="one", namespace="first"}  1+1x5
+			some_metric{cluster="two", namespace="second"} 10+2x5
+	`)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	newMimirEngine := func(t *testing.T, narrowSelectorsEnabled bool) promql.QueryEngine {
+		opts := NewTestEngineOpts()
+		opts.EagerLoadSelectors = false
+		planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		if narrowSelectorsEnabled {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+
+		engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		return engine
+	}
+
+	exec := func(t *testing.T, engine promql.QueryEngine, queryable storage.Queryable) *promql.Result {
+		ctx := t.Context()
+		q, err := engine.NewInstantQuery(ctx, queryable, nil, expression, timestamp.Time(0).Add(5*time.Minute))
+		require.NoError(t, err)
+		defer q.Close()
+
+		result := q.Exec(ctx)
+		require.NoError(t, result.Err)
+		return result
+	}
+
+	prometheusResult := exec(t, promql.NewEngine(NewTestEngineOpts().CommonOpts), store)
+	require.NotEmpty(t, prometheusResult.Value.(promql.Vector))
+
+	lazyStore := lazyquery.NewLazyQueryable(store)
+	withoutPass := exec(t, newMimirEngine(t, false), lazyStore)
+	mqetest.RequireEqualResults(t, expression, prometheusResult, withoutPass, false)
+
+	withPass := exec(t, newMimirEngine(t, true), lazyStore)
+	mqetest.RequireEqualResults(t, expression, prometheusResult, withPass, false)
+}
