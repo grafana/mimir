@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
@@ -119,15 +120,15 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var actualDownstreamCalls int
+			var actualDownstreamCalls atomic.Int64
 			roundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				actualDownstreamCalls++
+				actualDownstreamCalls.Add(1)
 				return downstream.RoundTrip(r)
 			})
 
-			actualMiddleWareCalls := 0
+			var actualMiddleWareCalls atomic.Int64
 			middleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-				actualMiddleWareCalls++
+				actualMiddleWareCalls.Add(1)
 				return tc.handler(next)
 			})
 			rr := NewRemoteReadRoundTripper(roundTripper, middleware)
@@ -149,8 +150,8 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectDownstreamCalled, actualDownstreamCalls)
-			require.Equal(t, tc.expectMiddlewareCalled, actualMiddleWareCalls)
+			require.EqualValues(t, tc.expectDownstreamCalled, actualDownstreamCalls.Load())
+			require.EqualValues(t, tc.expectMiddlewareCalled, actualMiddleWareCalls.Load())
 		})
 	}
 }
