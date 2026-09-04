@@ -184,29 +184,34 @@ func (n *NarrowSelectorsOptimizationPass) hintsForIgnoring(ctx context.Context, 
 	return true
 }
 
-// includeFromLHS walks the LHS subtree of a binary expression looking for an
-// aggregation with a "by" clause. If found, it returns the grouping labels
-// (filtered by created labels) as candidate Include hints. It recurses through
-// nested binary expressions (following their LHS) so that chains like
-// "sum by (region) (X) / (sum(Y) + sum(Z))" still find the aggregation.
+// includeFromLHS returns grouping labels only when they statically describe the complete LHS output.
 func includeFromLHS(node planning.Node, created map[string]struct{}) []string {
 	switch e := node.(type) {
 	case *core.AggregateExpression:
-		if !e.Without && len(e.Grouping) > 0 {
-			return filterLabels(e.Grouping, created)
+		// Without aggregations derive output labels from their input, so this helper treats them as traversal boundaries.
+		if e.Without {
+			return nil
 		}
-	case *core.BinaryExpression:
-		return includeFromLHS(e.LHS, created)
+
+		// Ungrouped aggregations and by () produce label-free output, so nested labels cannot describe their output.
+		if len(e.Grouping) == 0 {
+			return nil
+		}
+
+		// An explicit by clause fixes the output labels, so its grouping labels provide safe Include hints.
+		// Filtering removes synthesized labels because raw storage series do not contain them.
+		return filterLabels(e.Grouping, created)
+	case *core.DeduplicateAndMerge:
+		// Only these explicit wrappers permit recursion because each preserves its input label set.
+		return includeFromLHS(e.Inner, created)
+	case *core.StepInvariantExpression:
+		return includeFromLHS(e.Inner, created)
+	case *core.UnaryExpression:
+		return includeFromLHS(e.Inner, created)
 	}
 
-	// If the current node isn't a binary expression or aggregation, look at
-	// children to find a suitable aggregation (e.g. through a function call wrapper).
-	for child := range planning.ChildrenIter(node) {
-		if include := includeFromLHS(child, created); len(include) > 0 {
-			return include
-		}
-	}
-
+	// All other nodes stop traversal because their label preservation is not proven.
+	// Binary expressions and function calls can remove or synthesize labels, so nested labels might not describe their output.
 	return nil
 }
 
