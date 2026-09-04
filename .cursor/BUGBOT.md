@@ -6,7 +6,8 @@ Mimir vendors the Antithesis Go SDK (`github.com/antithesishq/antithesis-sdk-go/
 `default-no-op` mode. The assertions compile to empty functions unless the binary is built with
 the `enable_antithesis_sdk` build tag, so they are inert in released builds.
 
-Look for two kinds of opportunity in a pull request:
+When a pull request adds Go code in either of the situations below, add a non-blocking Bug titled
+"Consider an Antithesis assertion":
 
 1. **Properties that should hold.** New code usually relies on some invariant the author has in
    their head but never wrote down: a value that must always be within a range, an ordering that
@@ -19,10 +20,12 @@ Look for two kinds of opportunity in a pull request:
 
 How to raise it:
 
-- Post a separate inline comment on each place worth instrumenting, anchored to those lines, the
-  way a human reviewer would. Every one of them is a non-blocking suggestion: never report a
-  missing assertion as a bug, and never request changes over it. The author is free to decline
-  any or all of them.
+- Add one non-blocking Bug per place worth instrumenting, anchored to those lines, the way a human
+  reviewer would comment.
+- In the body, name the property or the bug-only path, recommend an assertion type from the table
+  below, and sketch the call in a line or two.
+- Say in the body that the suggestion is optional. Never request changes over it and never let it
+  block the pull request. The author is free to decline any or all of them.
 - Do not stay silent just because the pull request already adds an Antithesis assertion somewhere.
   Still point out every remaining candidate of either kind, whether an unstated property or an
   uninstrumented bug-only path, and still say so when a different assertion from the SDK would fit
