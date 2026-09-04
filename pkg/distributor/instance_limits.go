@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/dskit/runtimeconfig/mapstructure"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
@@ -50,4 +51,23 @@ func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
 	}
 	type plain InstanceLimits // type indirection to make sure we don't go into recursive loop
 	return value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
+}
+
+// UnmarshalMapstructure implements [mapstructure.Unmarshaler].
+func (l *InstanceLimits) UnmarshalMapstructure(input any) error {
+	if defaultInstanceLimits != nil {
+		*l = *defaultInstanceLimits
+	}
+	type plain InstanceLimits // type indirection to avoid a recursive loop
+	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:      (*plain)(l),
+		TagName:     "yaml",
+		ErrorUnused: true,
+		ZeroFields:  false,
+		MatchName:   func(mapKey, fieldName string) bool { return mapKey == fieldName },
+	})
+	if err != nil {
+		return err
+	}
+	return dec.Decode(input)
 }

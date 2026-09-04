@@ -714,6 +714,7 @@ github.com/grafana/dskit/ring
 github.com/grafana/dskit/ring/client
 github.com/grafana/dskit/ring/shard
 github.com/grafana/dskit/runtimeconfig
+github.com/grafana/dskit/runtimeconfig/mapstructure
 github.com/grafana/dskit/runutil
 github.com/grafana/dskit/server
 github.com/grafana/dskit/servicediscovery

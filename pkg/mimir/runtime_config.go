@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,34 @@ import (
 var (
 	errMultipleDocuments = errors.New("the provided runtime configuration contains multiple documents")
 )
+
+const (
+	// runtimeConfigLoaderMap decodes runtime configuration files directly from
+	// their merged map representation using mapstructure.
+	runtimeConfigLoaderMap = "map"
+	// runtimeConfigLoaderYAML decodes runtime configuration files by round-tripping
+	// them through YAML.
+	runtimeConfigLoaderYAML = "yaml"
+)
+
+// RuntimeConfigConfig wraps dskit's runtimeconfig.Config with a Mimir-specific,
+// experimental Loader selector that controls how runtime configuration files
+// are decoded. NewRuntimeManager translates the selector into the appropriate
+// dskit loader (Config.MapLoader or Config.Loader).
+type RuntimeConfigConfig struct {
+	runtimeconfig.Config `yaml:",inline"`
+
+	// Loader selects how runtime configuration files are decoded. Valid values
+	// are runtimeConfigLoaderMap and runtimeConfigLoaderYAML.
+	Loader string `yaml:"loader" category:"experimental"`
+}
+
+// RegisterFlags registers the underlying runtimeconfig.Config flags plus the
+// Mimir-specific loader selector.
+func (c *RuntimeConfigConfig) RegisterFlags(f *flag.FlagSet) {
+	c.Config.RegisterFlags(f)
+	f.StringVar(&c.Loader, "runtime-config.loader", runtimeConfigLoaderYAML, fmt.Sprintf("Method used to decode the runtime configuration files. Supported values are: %q (decode directly using mapstructure) and %q (decode by round-tripping through YAML).", runtimeConfigLoaderMap, runtimeConfigLoaderYAML))
+}
 
 // runtimeConfigValues are values that can be reloaded from configuration file while Mimir is running.
 // Reloading is done by runtime_config.Manager, which also keeps the currently loaded config.
@@ -87,18 +116,40 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 		return nil, errMultipleDocuments
 	}
 
-	if l.validate != nil {
-		for tenantID, limits := range overrides.TenantLimits {
-			if limits == nil {
-				continue
-			}
-			if err := l.validate(limits); err != nil {
-				return nil, fmt.Errorf("tenant %q: %w", tenantID, err)
-			}
-		}
+	if err := l.validateAll(overrides); err != nil {
+		return nil, err
 	}
 
 	return overrides, nil
+}
+
+func (l *runtimeConfigLoader) loadFromMap(m map[string]interface{}) (interface{}, error) {
+	overrides := &runtimeConfigValues{}
+
+	if err := validation.DecodeLimitsMap(m, overrides); err != nil {
+		return nil, err
+	}
+
+	if err := l.validateAll(overrides); err != nil {
+		return nil, err
+	}
+
+	return overrides, nil
+}
+
+func (l *runtimeConfigLoader) validateAll(overrides *runtimeConfigValues) error {
+	if l.validate == nil {
+		return nil
+	}
+	for tenantID, limits := range overrides.TenantLimits {
+		if limits == nil {
+			continue
+		}
+		if err := l.validate(limits); err != nil {
+			return fmt.Errorf("tenant %q: %w", tenantID, err)
+		}
+	}
+	return nil
 }
 
 func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-chan kv.MultiRuntimeConfig {
@@ -206,11 +257,18 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 // cfg is initialized as necessary, before being passed to runtimeconfig.New.
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
-	cfg.RuntimeConfig.Loader = loader.load
+	switch cfg.RuntimeConfig.Loader {
+	case runtimeConfigLoaderMap:
+		cfg.RuntimeConfig.Config.MapLoader = loader.loadFromMap
+	case runtimeConfigLoaderYAML, "":
+		cfg.RuntimeConfig.Config.Loader = loader.load
+	default:
+		return nil, fmt.Errorf("invalid runtime config loader %q: supported values are %q and %q", cfg.RuntimeConfig.Loader, runtimeConfigLoaderMap, runtimeConfigLoaderYAML)
+	}
 
 	// Make sure to set default limits before we start loading configuration into memory.
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Distributor.DefaultLimits)
-	return runtimeconfig.New(cfg.RuntimeConfig, name, reg, logger)
+	return runtimeconfig.New(cfg.RuntimeConfig.Config, name, reg, logger)
 }

@@ -144,7 +144,7 @@ type Config struct {
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
 	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
 	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
-	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
+	RuntimeConfig       RuntimeConfigConfig                        `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
