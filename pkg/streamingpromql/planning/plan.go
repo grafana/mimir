@@ -104,7 +104,10 @@ const QueryPlanV19 = QueryPlanVersion(19)
 // incorrect results.
 const QueryPlanV20 = QueryPlanVersion(20)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV20
+// QueryPlanV21 introduces grouped fill support for binary expressions.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node
@@ -366,14 +369,55 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 
 // MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
 func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
-	maxVersion, err := node.MinimumRequiredPlanVersion(timeRange)
+	validator := newMinimumRequiredPlanVersionValidator(-1)
+	return validator.minimumRequiredPlanVersion(node, timeRange)
+}
+
+type minimumRequiredPlanVersionMemoKey struct {
+	node      Node
+	timeRange types.QueryTimeRange
+}
+
+type minimumRequiredPlanVersionValidator struct {
+	memo          map[minimumRequiredPlanVersionMemoKey]QueryPlanVersion
+	states        map[minimumRequiredPlanVersionMemoKey]struct{}
+	maxStateCount int
+}
+
+// maxAdditionalMinimumVersionValidationStates supports shared ranges while bounding validation work from compact DAGs.
+const maxAdditionalMinimumVersionValidationStates = 16 * 1024
+
+func newMinimumRequiredPlanVersionValidator(maxStateCount int) *minimumRequiredPlanVersionValidator {
+	return &minimumRequiredPlanVersionValidator{
+		memo:          make(map[minimumRequiredPlanVersionMemoKey]QueryPlanVersion),
+		states:        make(map[minimumRequiredPlanVersionMemoKey]struct{}),
+		maxStateCount: maxStateCount,
+	}
+}
+
+func (v *minimumRequiredPlanVersionValidator) minimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
+	key := minimumRequiredPlanVersionMemoKey{node: node, timeRange: timeRange}
+	if version, exists := v.memo[key]; exists {
+		return version, nil
+	}
+	if _, exists := v.states[key]; !exists {
+		if v.maxStateCount >= 0 && len(v.states) >= v.maxStateCount {
+			return 0, fmt.Errorf("minimum plan version validation exceeded the %d-state limit", v.maxStateCount)
+		}
+		v.states[key] = struct{}{}
+	}
+
+	maxVersion, err := callMinimumRequiredPlanVersion(node, timeRange)
 	if err != nil {
 		return 0, err
 	}
 
-	childTimeRange := node.ChildrenTimeRange(timeRange)
+	childTimeRange, err := callChildrenTimeRange(node, timeRange)
+	if err != nil {
+		return 0, err
+	}
 	for child := range ChildrenIter(node) {
-		childVersion, err := MinimumRequiredPlanVersion(child, childTimeRange)
+		childVersion, err := v.minimumRequiredPlanVersion(child, childTimeRange)
 		if err != nil {
 			return 0, err
 		}
@@ -381,7 +425,28 @@ func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (Quer
 		maxVersion = max(maxVersion, childVersion)
 	}
 
+	v.memo[key] = maxVersion
 	return maxVersion, nil
+}
+
+func callMinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (version QueryPlanVersion, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("node %T minimum plan version panicked: %v", node, recovered)
+		}
+	}()
+
+	return node.MinimumRequiredPlanVersion(timeRange)
+}
+
+func callChildrenTimeRange(node Node, timeRange types.QueryTimeRange) (childTimeRange types.QueryTimeRange, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("node %T child time range panicked: %v", node, recovered)
+		}
+	}()
+
+	return node.ChildrenTimeRange(timeRange), nil
 }
 
 type queryPlanEncoder struct {
@@ -455,22 +520,90 @@ func NodeTypeName(n Node) string {
 
 // DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
 func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
+	return p.decodeNodes(nodeIndices, nil, true)
+}
+
+// DecodeNodesWithTimeRanges decodes each node with its effective query time range.
+// It reuses version checks across shared subgraphs.
+func (p *EncodedQueryPlan) DecodeNodesWithTimeRanges(nodeIndices []int64, timeRanges []types.QueryTimeRange) ([]Node, error) {
+	if len(nodeIndices) != len(timeRanges) {
+		return nil, fmt.Errorf("node index count %d does not match time range count %d", len(nodeIndices), len(timeRanges))
+	}
+	return p.decodeNodes(nodeIndices, timeRanges, false)
+}
+
+func (p *EncodedQueryPlan) decodeNodes(nodeIndices []int64, timeRanges []types.QueryTimeRange, useEncodedTimeRange bool) ([]Node, error) {
 	if p.Version > MaximumSupportedQueryPlanVersion {
 		return nil, apierror.Newf(apierror.TypeNotAcceptable, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
+	maxValidationStates, err := minimumVersionValidationStateLimit(len(p.Nodes), len(nodeIndices))
+	if err != nil {
+		return nil, fmt.Errorf("calculate minimum plan version validation state limit: %w", err)
+	}
+
 	decoder := newQueryPlanDecoder(p.Nodes)
+	validator := newMinimumRequiredPlanVersionValidator(maxValidationStates)
+	var encodedTimeRange types.QueryTimeRange
+	encodedTimeRangeDecoded := false
 
 	nodes := make([]Node, 0, len(nodeIndices))
-	for _, idx := range nodeIndices {
+	for i, idx := range nodeIndices {
 		n, err := decoder.decodeNode(idx)
 		if err != nil {
 			return nil, err
 		}
+
+		var timeRange types.QueryTimeRange
+		if useEncodedTimeRange {
+			if !encodedTimeRangeDecoded {
+				encodedTimeRange, err = decodeEncodedQueryTimeRange(p.TimeRange)
+				if err != nil {
+					return nil, fmt.Errorf("decode query time range: %w", err)
+				}
+				encodedTimeRangeDecoded = true
+			}
+			timeRange = encodedTimeRange
+		} else {
+			timeRange = timeRanges[i]
+		}
+		minimumVersion, err := validator.minimumRequiredPlanVersion(n, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("validate decoded node %d: %w", idx, err)
+		}
+		if p.Version < minimumVersion {
+			return nil, apierror.Newf(apierror.TypeNotAcceptable, "query plan has version %v, but decoded node %v requires version %v", p.Version, idx, minimumVersion)
+		}
+
 		nodes = append(nodes, n)
 	}
 
 	return nodes, nil
+}
+
+func decodeEncodedQueryTimeRange(encoded types.EncodedQueryTimeRange) (types.QueryTimeRange, error) {
+	if encoded == (types.EncodedQueryTimeRange{}) {
+		return types.QueryTimeRange{}, nil
+	}
+	if !encoded.IsInstant && encoded.IntervalMilliseconds == 0 {
+		return types.QueryTimeRange{}, errors.New("non-instant query time range has a zero interval")
+	}
+
+	return encoded.Decode(), nil
+}
+
+func minimumVersionValidationStateLimit(nodeCount, rootCount int) (int, error) {
+	maxInt := int(^uint(0) >> 1)
+	if nodeCount > maxInt-rootCount {
+		return 0, fmt.Errorf("node count %d and root count %d overflow the state limit", nodeCount, rootCount)
+	}
+
+	structuralStateCount := nodeCount + rootCount
+	if structuralStateCount > maxInt-maxAdditionalMinimumVersionValidationStates {
+		return maxInt, nil
+	}
+
+	return structuralStateCount + maxAdditionalMinimumVersionValidationStates, nil
 }
 
 func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
@@ -485,12 +618,14 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 type queryPlanDecoder struct {
 	encodedNodes []*EncodedNode
 	nodes        []Node
+	decoding     []bool
 }
 
 func newQueryPlanDecoder(encodedNodes []*EncodedNode) *queryPlanDecoder {
 	return &queryPlanDecoder{
 		encodedNodes: encodedNodes,
 		nodes:        make([]Node, len(encodedNodes)),
+		decoding:     make([]bool, len(encodedNodes)), // ignoreunpooledslice: Plan decoding runs before query memory tracking becomes available.
 	}
 }
 
@@ -502,6 +637,13 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 	if d.nodes[idx] != nil {
 		return d.nodes[idx], nil
 	}
+	if d.decoding[idx] {
+		return nil, fmt.Errorf("cycle detected while decoding node index %d", idx)
+	}
+	d.decoding[idx] = true
+	defer func() {
+		d.decoding[idx] = false
+	}()
 
 	encodedNode := d.encodedNodes[idx]
 	children := make([]Node, 0, len(encodedNode.Children))
