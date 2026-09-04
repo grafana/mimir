@@ -42,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -502,7 +503,7 @@ func TestValidateLabels(t *testing.T) {
 						}
 					}
 
-					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, retryafter.Config{},
 						d.PushWithMiddlewares,
 						nil, log.NewNopLogger(),
 					)
@@ -788,7 +789,7 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			logged.Clear()
 
-			handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+			handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, retryafter.Config{},
 				d.PushWithMiddlewares,
 				nil, log.NewLogfmtLogger(&logged),
 			)

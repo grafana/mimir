@@ -566,6 +566,8 @@
   "query-frontend.max-body-size": 10485760,
   "query-frontend.query-stats-enabled": true,
   "query-frontend.active-series-write-timeout": 300000000000,
+  "query-frontend.retry-after-header.min-backoff": 6000000000,
+  "query-frontend.retry-after-header.max-backoff": 96000000000,
   "query-frontend.scheduler-address": "",
   "query-frontend.scheduler-dns-lookup-period": 10000000000,
   "query-frontend.scheduler-worker-concurrency": 5,
