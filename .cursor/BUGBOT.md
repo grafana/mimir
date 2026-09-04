@@ -20,13 +20,23 @@ If a changed non-test `.go` file under `pkg/` or `cmd/` adds a line matching
 
 ### Rule 2: properties that should hold
 
-If a changed non-test `.go` file under `pkg/` or `cmd/` establishes an invariant that the diff never
-states as an assertion — a bound, a capacity, an ordering, a monotonic counter, or a state the
-system should be able to reach at least once — then:
+If a changed non-test `.go` file under `pkg/` or `cmd/` states a property that the code never
+verifies, and the enclosing function contains no line matching
+`/assert\.(Unreachable|AlwaysOrUnreachable|Always|Sometimes|Reachable)\(/`, then:
 
 - Add a non-blocking Bug titled "Consider an Antithesis assertion"
-- Body: name the invariant, recommend `Always`, `AlwaysOrUnreachable`, or `Sometimes` from the table
-  below, sketch the call, and close with the same "optional, feel free to decline" note.
+- Body: "<the property, in one sentence>. Consider `assert.Always(cond, \"<short message>\",
+  map[string]any{...})` where the property is established. Use `AlwaysOrUnreachable` instead if a
+  request timeout or a cancelled context can skip that line, or `Sometimes` if this is a state the
+  system should merely reach at least once. Optional instrumentation, not a defect, so feel free to
+  decline."
+
+A property is stated when the diff adds either of these, and nothing in the code checks it:
+
+- A comment matching `/assumes|invariant|caller must|must always|must never|guaranteed to/`, which
+  records an expectation in prose only.
+- A value the surrounding code then relies on without verifying: a `len(`/`cap(` relationship, a
+  bound or clamp, an ordering, or a counter that only ever increases.
 
 Both rules: add one Bug per location, anchored to those lines. Judge each candidate on its own, so
 an assertion added elsewhere in the pull request is no reason to stay quiet about the rest. Never
