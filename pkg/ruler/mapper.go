@@ -9,14 +9,17 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -181,40 +184,155 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 }
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
+//
+// If cacheEnabled is set, it caches the parsed result of each file.
+// The cache key is the file's exact byte content plus the parsing options passed to Load.
+// A file that hasn't changed since the last Load call skips rulefmt.Parse entirely.
+//
+// The cache holds two generations, cur and prev, to bound memory.
+// This avoids needing an external signal for when a file is removed or renamed.
+// rules.Manager.LoadGroups calls Load at most once per path per Update pass.
+// manager.Update holds its own lock. Passes for one tenant never interleave.
+// A path already present in cur means a new pass has started.
+// Load then rotates the generations: prev = cur, cur = a new empty map.
+//
+// A hit in prev gets promoted into cur.
+// This keeps a stable file triggering rotation on every later pass.
+// Without promotion, a stable file would fall out of the cache after a single pass.
+//
+// A path that stops being loaded ages out within two passes.
+// Its entry moves into prev on the next rotation.
+// It is dropped for good when prev is next overwritten.
+// This bounds the cache at roughly 2x the live file count, regardless of how many distinct paths a tenant has ever used.
+//
+// Known gap: this needs at least one stable path across two consecutive passes to trigger a rotation.
+// A tenant whose entire namespace set changes to new paths on every single pass never triggers one.
+// That is considered acceptable. It requires zero stable namespaces ever, not just occasional renames.
 type FSLoader struct {
 	fs     afero.Fs
 	parser parser.Parser
 	logger *slog.Logger
+
+	cacheEnabled bool
+	cacheHits    prometheus.Counter
+	cacheMisses  prometheus.Counter
+
+	mu        sync.Mutex
+	cur, prev map[string]cachedRuleGroups
 }
 
-func NewFSLoader(fs afero.Fs) FSLoader {
-	return FSLoader{
-		fs:     fs,
-		parser: promqlext.NewPromQLParser(),
-		logger: promslog.NewNopLogger(),
+type cachedRuleGroups struct {
+	rawBytes             []byte
+	ignoreUnknownFields  bool
+	nameValidationScheme model.ValidationScheme
+	parsed               *rulefmt.RuleGroups
+}
+
+// NewFSLoader returns a GroupLoader that reads rule files from fs. When
+// cacheEnabled is true, cacheHits and cacheMisses must be non-nil and are
+// incremented on every Load call.
+func NewFSLoader(fs afero.Fs, cacheEnabled bool, cacheHits, cacheMisses prometheus.Counter) *FSLoader {
+	loader := &FSLoader{
+		fs:           fs,
+		parser:       promqlext.NewPromQLParser(),
+		logger:       promslog.NewNopLogger(),
+		cacheEnabled: cacheEnabled,
+		cacheHits:    cacheHits,
+		cacheMisses:  cacheMisses,
 	}
+	if cacheEnabled {
+		loader.cur = make(map[string]cachedRuleGroups)
+	}
+	return loader
 }
 
-func (f FSLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+func (f *FSLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
 	return f.parseFile(f.fs, identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
-func (f FSLoader) Parse(query string) (parser.Expr, error) {
+func (f *FSLoader) Parse(query string) (parser.Expr, error) {
 	return f.parser.ParseExpr(query)
 }
 
 // parseFile reads and parses rules from a file.
 // Duplicate of Prometheus' rulefmt.ParseFile, but injects the FS.
-func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+func (f *FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
 	b, err := afero.ReadFile(fs, file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
+
+	if f.cacheEnabled {
+		if rgs, ok := f.lookupCache(file, b, ignoreUnknownFields, nameValidationScheme); ok {
+			f.cacheHits.Inc()
+			return rgs, nil
+		}
+		f.cacheMisses.Inc()
+	}
+
 	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser, f.logger)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
+	if len(errs) == 0 && f.cacheEnabled {
+		// Cache a copy, not rgs itself: its SourceTenants field is mutated in place by the caller.
+		f.storeCache(file, b, ignoreUnknownFields, nameValidationScheme, copyRuleGroups(rgs))
+	}
 	return rgs, errs
+}
+
+func (f *FSLoader) lookupCache(path string, rawBytes []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, ok := f.cur[path]; ok {
+		f.prev = f.cur
+		f.cur = make(map[string]cachedRuleGroups)
+	}
+
+	entry, ok := f.prev[path]
+	if !ok ||
+		entry.ignoreUnknownFields != ignoreUnknownFields ||
+		entry.nameValidationScheme != nameValidationScheme ||
+		!bytes.Equal(entry.rawBytes, rawBytes) {
+		return nil, false
+	}
+
+	f.cur[path] = entry
+	return copyRuleGroups(entry.parsed), true
+}
+
+func (f *FSLoader) storeCache(path string, rawBytes []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, rgs *rulefmt.RuleGroups) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.cur[path] = cachedRuleGroups{
+		rawBytes:             rawBytes,
+		ignoreUnknownFields:  ignoreUnknownFields,
+		nameValidationScheme: nameValidationScheme,
+		parsed:               rgs,
+	}
+}
+
+// copyRuleGroups returns a deep copy of rgs.
+func copyRuleGroups(rgs *rulefmt.RuleGroups) *rulefmt.RuleGroups {
+	if rgs == nil {
+		return nil
+	}
+	out := &rulefmt.RuleGroups{
+		Groups: make([]rulefmt.RuleGroup, len(rgs.Groups)),
+	}
+	for i, g := range rgs.Groups {
+		g.SourceTenants = slices.Clone(g.SourceTenants)
+		g.Rules = make([]rulefmt.Rule, len(rgs.Groups[i].Rules))
+		for j, r := range rgs.Groups[i].Rules {
+			r.Labels = maps.Clone(r.Labels)
+			r.Annotations = maps.Clone(r.Annotations)
+			g.Rules[j] = r
+		}
+		out.Groups[i] = g
+	}
+	return out
 }
 
 // cleanRuleGroupExprs returns a copy of groups with leading/trailing whitespace

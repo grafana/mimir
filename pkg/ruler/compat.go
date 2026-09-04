@@ -463,12 +463,29 @@ func DefaultTenantManagerFactory(
 			Help: "Number of queries that did not fetch any series by ruler.",
 		}, []string{"user"})
 	}
+	var ruleFileParseCacheHits *prometheus.CounterVec
+	var ruleFileParseCacheMisses *prometheus.CounterVec
+	if cfg.RuleFileParseCachingEnabled {
+		ruleFileParseCacheHits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_rule_file_parse_cache_hits_total",
+			Help: "Total number of rule file parses served from the parse cache instead of re-parsing.",
+		}, []string{"user"})
+		ruleFileParseCacheMisses = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_rule_file_parse_cache_misses_total",
+			Help: "Total number of rule file parses that were not served from the cache.",
+		}, []string{"user"})
+	}
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter
 		var zeroFetchedSeriesCount prometheus.Counter
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
+		}
+		var cacheHits, cacheMisses prometheus.Counter
+		if cfg.RuleFileParseCachingEnabled {
+			cacheHits = ruleFileParseCacheHits.WithLabelValues(userID)
+			cacheMisses = ruleFileParseCacheMisses.WithLabelValues(userID)
 		}
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
@@ -502,7 +519,7 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
-			GroupLoader:                NewFSLoader(rulesFS),
+			GroupLoader:                NewFSLoader(rulesFS, cfg.RuleFileParseCachingEnabled, cacheHits, cacheMisses),
 			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer

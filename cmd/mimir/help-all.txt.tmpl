@@ -3683,6 +3683,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-evaluation-write-enabled
     	[experimental] Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false. (default true)
+  -ruler.rule-file-parse-caching-enabled
+    	[experimental] Cache the result of parsing rule files on disk, keyed by exact file content, to avoid re-parsing unchanged rule files belonging to the same tenant on every rule sync. Internal performance optimization, no effect on rule evaluation behavior.
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.sync-rules-on-changes-enabled
