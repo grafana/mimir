@@ -1401,6 +1401,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
   -compactor.scheduler-client.update-min-backoff duration
     	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
+  -compactor.skip-elapsed-intermediate-block-ranges
+    	[experimental] When enabled, the compactor merges blocks directly into a larger compaction range rather than compacting into an intermediate range when the time period covered has elapsed.
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int

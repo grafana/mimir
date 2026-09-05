@@ -96,22 +96,23 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges                      mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency             int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	BlockHealthValidationConcurrency int                     `yaml:"block_health_validation_concurrency" category:"experimental"`
-	MetaSyncConcurrency              int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DataDir                          string                  `yaml:"data_dir"`
-	CompactionInterval               time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries                int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency            int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod             time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
-	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time"`
-	CleanupInterval                  time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency               int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay                    time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay               time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime                time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges                        mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	SkipElapsedIntermediateBlockRanges bool                    `yaml:"skip_elapsed_intermediate_block_ranges" category:"experimental"`
+	BlockSyncConcurrency               int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	BlockHealthValidationConcurrency   int                     `yaml:"block_health_validation_concurrency" category:"experimental"`
+	MetaSyncConcurrency                int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir                            string                  `yaml:"data_dir"`
+	CompactionInterval                 time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries                  int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency              int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod               time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionOOOWaitPeriod            time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
+	CompactionSkipFutureMaxTime        bool                    `yaml:"first_level_compaction_skip_future_max_time"`
+	CleanupInterval                    time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency                 int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay                      time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay                 time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime                  time.Duration           `yaml:"max_compaction_time" category:"advanced"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -163,6 +164,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
+	f.BoolVar(&cfg.SkipElapsedIntermediateBlockRanges, "compactor.skip-elapsed-intermediate-block-ranges", false, "When enabled, the compactor merges blocks directly into a larger compaction range rather than compacting into an intermediate range when the time period covered has elapsed.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.BlockHealthValidationConcurrency, "compactor.block-health-validation-concurrency", 0, "Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from the long term storage.")
@@ -599,15 +601,16 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 		// Create the blocks cleaner (service).
 		c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-			DeletionDelay:                 c.compactorCfg.DeletionDelay,
-			CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-			CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
-			TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
-			DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
-			GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
-			UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
-			CompactionBlockRanges:         c.compactorCfg.BlockRanges,
-			EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
+			DeletionDelay:                      c.compactorCfg.DeletionDelay,
+			CleanupInterval:                    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+			CleanupConcurrency:                 c.compactorCfg.CleanupConcurrency,
+			TenantCleanupDelay:                 c.compactorCfg.TenantCleanupDelay,
+			DeleteBlocksConcurrency:            defaultDeleteBlocksConcurrency,
+			GetDeletionMarkersConcurrency:      defaultGetDeletionMarkersConcurrency,
+			UpdateBlocksConcurrency:            c.compactorCfg.UpdateBlocksConcurrency,
+			CompactionBlockRanges:              c.compactorCfg.BlockRanges,
+			SkipElapsedIntermediateBlockRanges: c.compactorCfg.SkipElapsedIntermediateBlockRanges,
+			EstimateCompactionJobs:             !c.compactorCfg.SchedulerClientConfig.Enabled,
 		}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 		// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.

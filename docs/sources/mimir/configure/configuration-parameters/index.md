@@ -6684,6 +6684,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
+# (experimental) When enabled, the compactor merges blocks directly into a
+# larger compaction range rather than compacting into an intermediate range when
+# the time period covered has elapsed.
+# CLI flag: -compactor.skip-elapsed-intermediate-block-ranges
+[skip_elapsed_intermediate_block_ranges: <boolean> | default = false]
+
 # (advanced) Number of goroutines to use when downloading blocks for compaction
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency

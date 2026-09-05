@@ -13351,6 +13351,17 @@
         },
         {
           "kind": "field",
+          "name": "skip_elapsed_intermediate_block_ranges",
+          "required": false,
+          "desc": "When enabled, the compactor merges blocks directly into a larger compaction range rather than compacting into an intermediate range when the time period covered has elapsed.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.skip-elapsed-intermediate-block-ranges",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "block_sync_concurrency",
           "required": false,
           "desc": "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.",
