@@ -1908,7 +1908,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
   -ingester.float-chunk-encoding string
-    	[experimental] Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'. (default "xor")
+    	[experimental] Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2. (default "xor")
   -ingester.ignore-ooo-exemplars
     	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string

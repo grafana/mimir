@@ -12511,49 +12511,72 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
 }
 
+// TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
+// in both directions. Both directions already worked; this guards the normalisation in
+// applyTSDBSettings() that clearing the limit depends on.
 func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
-	userID := "user1"
-	tenantOverride := new(TenantLimitsMock)
-	tenantOverride.On("ByUserID", userID).Return(nil)
+	tests := map[string]struct {
+		initialLimit   string
+		updatedLimit   string
+		expectedBefore chunk.Encoding
+		expectedAfter  chunk.Encoding
+	}{
+		"enabling XOR2": {
+			initialLimit: "", updatedLimit: "xor2",
+			expectedBefore: chunk.PrometheusXorChunk, expectedAfter: chunk.PrometheusXor2Chunk,
+		},
+		"clearing the limit falls back to XOR": {
+			initialLimit: "xor2", updatedLimit: "",
+			expectedBefore: chunk.PrometheusXor2Chunk, expectedAfter: chunk.PrometheusXorChunk,
+		},
+	}
 
-	limits := defaultLimitsTestConfig()
-	override := validation.NewOverrides(limits, tenantOverride)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			userID := "user1"
+			tenantOverride := new(TenantLimitsMock)
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: testData.initialLimit})
 
-	cfg := defaultIngesterTestConfig(t)
-	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
-	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
+			override := validation.NewOverrides(defaultLimitsTestConfig(), tenantOverride)
 
-	ctx := user.InjectOrgID(context.Background(), userID)
+			cfg := defaultIngesterTestConfig(t)
+			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
 
-	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_before"}}},
-		[]mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
-		nil, nil, mimirpb.API,
-	))
-	require.NoError(t, err)
+			ctx := user.InjectOrgID(context.Background(), userID)
 
-	chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
-	require.Len(t, chunks, 1)
-	assert.Equal(t, int32(chunk.PrometheusXorChunk), chunks[0].Encoding)
+			// This push opens the tenant's TSDB, seeding its startup encoding from the limit.
+			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_before"}}},
+				[]mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
+				nil, nil, mimirpb.API,
+			))
+			require.NoError(t, err)
 
-	// Enable XOR2 at runtime.
-	tenantOverride.ExpectedCalls = nil
-	tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: "xor2"})
-	<-time.After(1500 * time.Millisecond)
+			chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
 
-	// A new series always starts a fresh chunk, which will use the updated XOR2 setting.
-	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_after"}}},
-		[]mimirpb.Sample{{TimestampMs: 2000, Value: 2}},
-		nil, nil, mimirpb.API,
-	))
-	require.NoError(t, err)
+			// Change the limit at runtime.
+			tenantOverride.ExpectedCalls = nil
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: testData.updatedLimit})
+			<-time.After(1500 * time.Millisecond)
 
-	chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
-	require.Len(t, chunks, 1)
-	assert.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+			// A new series always starts a fresh chunk, which will use the updated setting.
+			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_after"}}},
+				[]mimirpb.Sample{{TimestampMs: 2000, Value: 2}},
+				nil, nil, mimirpb.API,
+			))
+			require.NoError(t, err)
+
+			chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
+		})
+	}
 }
 
 func queryXOR2Chunks(ctx context.Context, t *testing.T, i *Ingester) []client.Chunk {

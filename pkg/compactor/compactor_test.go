@@ -1884,8 +1884,8 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 		return bucketClient, nil
 	}
 
-	blocksCompactorFactory := func(context.Context, Config, log.Logger, prometheus.Registerer) (Compactor, Planner, error) {
-		return tsdbCompactor, tsdbPlanner, nil
+	blocksCompactorFactory := func(context.Context, Config, ConfigProvider, log.Logger, prometheus.Registerer) (BlocksCompactorProvider, Planner, error) {
+		return func(string) Compactor { return tsdbCompactor }, tsdbPlanner, nil
 	}
 
 	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)

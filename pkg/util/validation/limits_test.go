@@ -1659,6 +1659,16 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should pass if float_chunk_encoding is empty": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.FloatChunkEncoding = ""
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
 				cfg := Limits{}
@@ -3068,17 +3078,63 @@ func TestMergeLimits(t *testing.T) {
 }
 
 func TestOverrides_FloatChunkEncoding(t *testing.T) {
-	t.Run("default is xor", func(t *testing.T) {
-		overrides := MockOverrides(nil)
-		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user1"))
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
 	})
-	t.Run("per-tenant override to xor2", func(t *testing.T) {
-		overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
-			tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+
+	assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
+
+	// A tenant without an override gets the default encoding.
+	assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+}
+
+func TestFloatChunkEncodingValues(t *testing.T) {
+	assert.Equal(t, []string{"xor", "xor2"}, FloatChunkEncodingValues)
+
+	seen := map[chunkenc.Encoding]string{}
+	for _, value := range FloatChunkEncodingValues {
+		limits := Limits{}
+		flagext.DefaultValues(&limits)
+		limits.FloatChunkEncoding = value
+		assert.NoError(t, limits.Validate(), "value %s", value)
+
+		enc := ParseFloatChunkEncoding(value)
+		assert.NotContains(t, seen, enc, "values %s and %s both select %s", seen[enc], value, enc)
+		seen[enc] = value
+	}
+}
+
+func TestParseFloatChunkEncoding(t *testing.T) {
+	tests := map[string]struct {
+		value    string
+		expected chunkenc.Encoding
+	}{
+		"empty selects the default": {value: "", expected: chunkenc.EncXOR},
+		"xor":                       {value: "xor", expected: chunkenc.EncXOR},
+		"xor2":                      {value: "xor2", expected: chunkenc.EncXOR2},
+		"uppercase is not accepted": {value: "XOR2", expected: chunkenc.EncXOR},
+		"histogram is not a float chunk encoding": {value: "histogram", expected: chunkenc.EncXOR},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, testData.expected, ParseFloatChunkEncoding(testData.value))
 		})
-		assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
-		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+	}
+}
+
+func TestOverrides_FloatChunkEncodingValue(t *testing.T) {
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+		tenantLimits["user2"] = &Limits{FloatChunkEncoding: ""}
+		tenantLimits["user3"] = &Limits{FloatChunkEncoding: "nope"}
 	})
+
+	assert.Equal(t, "xor2", overrides.FloatChunkEncodingValue("user1"))
+
+	// Never the empty string: ApplyConfig() would read it as "keep the startup encoding".
+	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user2"))
+	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user3"))
 }
 
 func boolPtr(b bool) *bool {

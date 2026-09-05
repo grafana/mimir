@@ -444,6 +444,14 @@ cortex_limits_defaults{limit_name="float_chunk_encoding"} 4
 	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
 }
 
+// TestFloatChunkEncodingMetricValue asserts the numeric values the metric reports, which are a
+// contract with dashboards. An encoding added to the limit without a value here reports as xor.
+func TestFloatChunkEncodingMetricValue(t *testing.T) {
+	assert.Equal(t, float64(4), floatChunkEncodingMetricValue(&validation.Limits{FloatChunkEncoding: "xor"}))
+	assert.Equal(t, float64(7), floatChunkEncodingMetricValue(&validation.Limits{FloatChunkEncoding: "xor2"}))
+	assert.Len(t, validation.FloatChunkEncodingValues, 2, "an encoding was added to the limit, give it a metric value")
+}
+
 func TestConfig_Validate_floatChunkEncoding(t *testing.T) {
 	// float_chunk_encoding is a string limit, but it is exportable through a dedicated getter.
 	cfg := Config{EnabledMetrics: []string{floatChunkEncoding}}
