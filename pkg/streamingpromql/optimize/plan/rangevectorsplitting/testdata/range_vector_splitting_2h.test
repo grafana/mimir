@@ -798,3 +798,233 @@ eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
   {env="prod"} 12
 
 clear
+
+# ===== subqueries =====
+
+load 1h
+  subquery_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+clear
+
+load 1h
+  subquery_metric_mod{env="prod"} 1 2 3 4 5 6 7
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+clear
+
+# A subquery whose own inner expression is itself a subquery.
+
+load 1h
+  nested_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+clear
+
+# A subquery nested inside another subquery, with a step that doesn't line up with the split interval.
+load 1h
+  nested_metric2{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+clear
+
+# Same shape, but with a step equal to the split interval.
+load 1h
+  nested_metric3{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+clear
+
+# query with subset selector elimination
+load 1h
+  sse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+  sse_subquery_metric{env="prod", code="err"} 100 200 300 400 500 600 700 800 900 1000
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
+
+clear
+
+# count_over_time( sum_over_time( min_over_time(hour_collision_metric[2h]) [20h:2h] ) [5h:12h] )
+#
+#  S1, outer subquery:  sum_over_time(S2)                        [5h:12h]  range 5h,  step 12h
+#  S2, inner subquery:  min_over_time(hour_collision_metric[2h]) [20h:2h]  range 20h, step 2h
+#
+#      19h        20h                                 24h
+#      |-- Head --|----- Block1 + Block2, 2 steps -----|
+#        (~1h)     (20h->22h step, then 22h->24h step)
+#
+# S1 12h step aligns Head end (19h59m59.999s) and Block1+Block2 end (23h59m59.999s) to
+# the same instant, 24h. That shared instant becomes S2's own reference point, so S2 computes the identical 10-step
+# window regardless of which piece asked. Head range has zero steps of its own, so it never actually reads through this path,
+# but materialization happens regardless of that, so the same S2 operator still gets materialized for Head as for Block1+Block2.
+# To mitigate this, rvs wraps S2's own child (not S2 itself) in a Duplicate node.
+load 1h
+  hour_collision_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time(min_over_time(hour_collision_metric[2h])[20h:2h])[5h:12h])
+  {env="prod"} 1
+
+eval instant at 24h count_over_time(sum_over_time(min_over_time(hour_collision_metric[2h])[20h:2h])[5h:12h])
+  {env="prod"} 1
+
+clear
+
+# Different split blocks share the same step-invariant expression (eg. from the @ modifier).
+load 1h
+  step_invariant_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time(step_invariant_metric[2h] @ 10h)[5h:3h])
+  {env="prod"} 2
+
+eval instant at 24h count_over_time(sum_over_time(step_invariant_metric[2h] @ 10h)[5h:3h])
+  {env="prod"} 2
+
+# @ applied directly to the selector feeding the subquery, with no function call in between.
+eval instant at 24h count_over_time((step_invariant_metric @ 10h)[5h:3h])
+  {env="prod"} 2
+
+eval instant at 24h count_over_time((step_invariant_metric @ 10h)[5h:3h])
+  {env="prod"} 2
+
+# Step-invariant expression nested two levels deep, inside a subquery nested inside another split subquery.
+eval instant at 24h count_over_time(sum_over_time(avg_over_time(step_invariant_metric[1h] @ 10h)[3h:30m])[5h:12h])
+  {env="prod"} 1
+
+eval instant at 24h count_over_time(sum_over_time(avg_over_time(step_invariant_metric[1h] @ 10h)[3h:30m])[5h:12h])
+  {env="prod"} 1
+
+clear
+
+# vector(1) is step-invariant without an @ modifier
+load 1h
+  vector_binop_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h sum_over_time((vector(1) + on() vector_binop_metric)[5h:1h])
+  {} 120
+
+eval instant at 24h sum_over_time((vector(1) + on() vector_binop_metric)[5h:1h])
+  {} 120
+
+clear
+
+# shared, split subquery deduplicated by common subexpression elimination
+load 1h
+  cse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+clear
+
+# Binary operation over a shared, step-invariant subquery: CSE sharing and split-block sharing together.
+load 1h
+  cse_stepinvariant_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h]) / count_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h])
+  {env="prod", code="ok"} 4
+
+eval instant at 6h sum_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h]) / count_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h])
+  {env="prod", code="ok"} 4
+
+clear
+
+load 1h
+  sse_above_subquery_metric{env="prod", a="1"} 1 2 3 4 5 6 7 8 9 10
+  sse_above_subquery_metric{env="prod", a="2"} 100 200 300 400 500 600 700 800 900 1000
+
+eval instant at 6h sum_over_time(max_over_time(sse_above_subquery_metric{a="1"}[1h])[5h:1h]) / sum_over_time(max_over_time(sse_above_subquery_metric[1h])[5h:1h])
+  {env="prod", a="1"} 1
+
+eval instant at 6h sum_over_time(max_over_time(sse_above_subquery_metric{a="1"}[1h])[5h:1h]) / sum_over_time(max_over_time(sse_above_subquery_metric[1h])[5h:1h])
+  {env="prod", a="1"} 1
+
+clear
+
+# A DuplicateFilter ends up directly under a Subquery, shared between two split subqueries.
+load 1h
+  dup_filter_metric{a="1"} 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time((dup_filter_metric{a="1"})[20h:2h])[5h:12h]) + on() sum(sum_over_time((dup_filter_metric)[20h:2h]))
+  {} 151
+
+eval instant at 24h count_over_time(sum_over_time((dup_filter_metric{a="1"})[20h:2h])[5h:12h]) + on() sum(sum_over_time((dup_filter_metric)[20h:2h]))
+  {} 151
+
+clear
+
+# The subquery here emits unsorted series (RHS before LHS), check FunctionOverRangeVectorSplit#mergeSplitsMetadata handles that.
+load 1h
+  unsorted_merge_a{id="a"} 1 2 3 4 5
+  unsorted_merge_b{id="b"} 10 20 30 40 50
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+clear
+
+# Same as above, but with three chained "or"
+load 1h
+  unsorted_merge_3way_a{id="a"} 1 2 3 4 5
+  unsorted_merge_3way_b{id="b"} 10 20 30 40 50
+  unsorted_merge_3way_c{id="c"} 100 200 300 400 500
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+clear
