@@ -76,6 +76,7 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Document architecture for the block-builder and block-builder-scheduler components. #16454
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
 * [ENHANCEMENT] Clarify that `/ingester/prepare-partition-downscale` is only available in the ingest storage architecture and `/ingester/prepare-instance-ring-downscale` only in the classic architecture. #16469
 * [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
