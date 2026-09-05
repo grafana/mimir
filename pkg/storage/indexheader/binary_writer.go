@@ -31,6 +31,10 @@ const (
 	// BinaryFormatV1 represents first version of index-header file.
 	BinaryFormatV1 = 1
 
+	// BinaryFormatV2 represents the second version of the index-header file,
+	// which contains only the symbols table.
+	BinaryFormatV2 = 2
+
 	indexTOCLen  = 6*8 + crc32.Size
 	BinaryTOCLen = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
 	// HeaderLen represents number of bytes reserved of index header for header.
@@ -69,7 +73,7 @@ type BinaryTOC struct {
 }
 
 // WriteBinary build index-header file from the pieces of index in object storage.
-func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string) (err error) {
+func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string, writeV2 bool) (err error) {
 	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
@@ -79,7 +83,7 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	// Buffer for copying and encbuffers.
 	// This also will control the size of file writer buffer.
 	buf := make([]byte, 32*1024)
-	bw, err := newBinaryWriter(tmpFilename, buf)
+	bw, err := newBinaryWriter(tmpFilename, buf, writeV2)
 	if err != nil {
 		return errors.Wrap(err, "new binary index header writer")
 	}
@@ -101,12 +105,14 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "flush")
 	}
 
-	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
-		return err
-	}
+	if !writeV2 {
+		if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+			return err
+		}
 
-	if err := bw.f.Flush(); err != nil {
-		return errors.Wrap(err, "flush")
+		if err := bw.f.Flush(); err != nil {
+			return errors.Wrap(err, "flush")
+		}
 	}
 
 	if err := bw.WriteTOC(); err != nil {
@@ -243,7 +249,7 @@ type binaryWriter struct {
 	crc32 hash.Hash
 }
 
-func newBinaryWriter(fn string, buf []byte) (w *binaryWriter, err error) {
+func newBinaryWriter(fn string, buf []byte, writeV2 bool) (w *binaryWriter, err error) {
 	df, err := fileutil.OpenDir(filepath.Dir(fn))
 	if err != nil {
 		return nil, err
@@ -274,7 +280,11 @@ func newBinaryWriter(fn string, buf []byte) (w *binaryWriter, err error) {
 
 	w.buf.Reset()
 	w.buf.PutBE32(MagicIndex)
-	w.buf.PutByte(BinaryFormatV1)
+	if writeV2 {
+		w.buf.PutByte(BinaryFormatV2)
+	} else {
+		w.buf.PutByte(BinaryFormatV1)
+	}
 
 	return w, w.f.Write(w.buf.Get())
 }
