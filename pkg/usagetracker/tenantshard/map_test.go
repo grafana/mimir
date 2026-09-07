@@ -179,6 +179,33 @@ func TestMaxSpilledGroups(t *testing.T) {
 	}
 }
 
+func TestSpillTriggeredRehashCompacts(t *testing.T) {
+	// A spill rehash has to re-pack at the same size, not resize: the groups that spill are dead
+	// slots left behind by Cleanup, so growing would waste memory and shrinking would fight the
+	// growth path. Build the state directly, because spilled only crosses the threshold after
+	// accumulating over several track and cleanup rounds.
+	m := New(groupSize * 2)
+	groups := uint32(len(m.index))
+	for g := range m.index {
+		m.index[g][last] = spillmark
+		m.data[g][last] = spillmark
+	}
+	m.spilled = groups
+	require.Greater(t, m.spilled, m.maxSpilledGroups(), "the test setup must cross the spill threshold")
+	require.Less(t, m.resident, m.limit, "the growth trigger must not fire instead")
+
+	before := m.Stats()
+	created, rejected := m.Put(1, 10, nil, nil, false)
+	require.True(t, created)
+	require.False(t, rejected)
+
+	after := m.Stats()
+	require.Equal(t, before.Length, after.Length, "a spill rehash must keep the same number of groups")
+	require.Equal(t, before.Rehashes+1, after.Rehashes)
+	require.Zero(t, after.Spilled, "re-packing must drop the spillmarks")
+	require.Equal(t, 1, m.Count())
+}
+
 func TestLimitAwareGrowth(t *testing.T) {
 	const perShard uint64 = 1000
 	m := New(uint32(perShard))

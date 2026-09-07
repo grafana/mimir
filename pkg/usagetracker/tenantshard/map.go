@@ -131,10 +131,17 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 		if i >= uint32(len(m.index)) {
 			i = 0
 		}
+		if i == ps {
+			// We're back where we started: every group has its last slot taken, so |key| is not
+			// in the map. Stop probing, the check below is going to make room for it.
+			break
+		}
 	}
 
 	// Check whether a rehash is needed
-	if m.resident >= m.limit || m.spilled > m.maxSpilledGroups() {
+	switch {
+	case m.resident >= m.limit:
+		// We ran out of capacity, so grow.
 		var lim uint64
 		if limit != nil {
 			lim = limit.Load()
@@ -142,6 +149,11 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 		m.rehash(m.nextSize(lim))
 		// probe start may have changed if the number of groups has changed
 		ps = probeStart(sfx, len(m.index))
+	case m.spilled > m.maxSpilledGroups():
+		// Too many groups spill into the next one, so probing has to walk too far.
+		// We have capacity, we just need to re-pack at the same size: that drops the spillmarks
+		// that Cleanup left behind. The number of groups does not change, so probe start still holds.
+		m.rehash(uint32(len(m.index)))
 	}
 
 	i = ps
@@ -184,8 +196,12 @@ func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bi
 // Load inserts |key| and |value| into the map without checking if it already exists.
 // No limits are checked, and series count should be incremented by the caller.
 func (m *Map) Load(key uint64, value clock.Minutes) {
-	if m.resident >= m.limit || m.spilled > m.maxSpilledGroups() {
+	switch {
+	case m.resident >= m.limit:
 		m.rehash(m.nextSize(0))
+	case m.spilled > m.maxSpilledGroups():
+		// See the note in Put: this re-packs at the same size to drop spillmarks.
+		m.rehash(uint32(len(m.index)))
 	}
 
 	if value >= 0xfe {
