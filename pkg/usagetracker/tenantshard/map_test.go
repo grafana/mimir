@@ -722,10 +722,9 @@ func TestMatchOccupied(t *testing.T) {
 		}
 		idx[last] = spillmark
 		set := idx.matchOccupied()
-		for i := 0; i < groupSize; i++ {
+		for i := 0; i < last; i++ {
 			require.NotZero(t, set)
 			require.Equal(t, uint32(i), nextMatch(&set))
-
 		}
 		require.Zero(t, set)
 	})

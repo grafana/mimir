@@ -285,19 +285,6 @@ func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 			}
 		}
 	}
-	// FIXME: rehash trigger is different now.
-	// Try tweaking this.
-	// We rehash if half of the groups have spilled.
-	// We target groups to be half/full (see groupSize/maxAvgGroupLoad)
-	// There's a risk of this becoming a continuous rehash if it happens that
-	// 50% of groups are completely full and 50% of the groups are completely empty
-	if m.spilled > m.maxSpilledGroups() {
-		var lim uint64
-		if limit != nil {
-			lim = limit.Load()
-		}
-		m.rehash(m.nextSize(lim))
-	}
 	return removed
 }
 

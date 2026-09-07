@@ -41,7 +41,7 @@ func (m *index) matchEmptyOrSpillmark() bitset {
 
 // matchOccupied matches slots that are not empty or spillmarks
 func (m *index) matchOccupied() bitset {
-	return m.matchEmpty() ^ bitset(hiBits)
+	return m.matchEmptyOrSpillmark() ^ bitset(hiBits)
 }
 
 // nextMatch clears and returns the index corresponding to the next set bit in
