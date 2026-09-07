@@ -176,12 +176,8 @@ func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bi
 	m.data[i][s] = entry
 	m.resident++
 
-	if s != last {
-		return
-	}
-	if !wasSpillmark {
+	if s == last && !wasSpillmark {
 		m.spilled++
-		return
 	}
 }
 
