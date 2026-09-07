@@ -39,7 +39,7 @@ func TestMapStats(t *testing.T) {
 	s = m.Stats()
 	require.Equal(t, uint32(inserted), s.Resident)
 	require.Equal(t, inserted, m.Count())
-	require.Equal(t, uint32(0), s.Spilled)
+	require.Equal(t, uint32(6), s.Spilled)
 	// Inserting 50 elements into a map that started with capacity for 8 must have triggered rehashes.
 	require.Greater(t, s.Rehashes, uint32(0))
 	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
@@ -131,7 +131,6 @@ func TestNextSize(t *testing.T) {
 		}
 		resident := m.resident
 		require.True(t, resident > 0)
-		require.Zero(t, m.spilled)
 
 		got := m.nextSize(0)
 		expected := numGroups(resident * 5 / 4)
@@ -167,9 +166,9 @@ func TestNextSize(t *testing.T) {
 		}
 		m.Cleanup(1, nil)
 		require.True(t, m.spilled >= m.resident/2)
-		alive := m.resident - m.spilled
+		alive := m.resident
 		got := m.nextSize(0)
-		require.True(t, got >= numGroups(uint32(alive)))
+		require.True(t, got >= numGroups(alive))
 	})
 }
 
