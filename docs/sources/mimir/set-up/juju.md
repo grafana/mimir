@@ -1,8 +1,10 @@
     ---
+
 description: Learn how to deploy Mimir with Juju.
 menuTitle: Deploy with Juju
 title: Deploy Mimir with Juju
 weight: 20
+
 ---
 
 # Deploy Mimir with Juju
