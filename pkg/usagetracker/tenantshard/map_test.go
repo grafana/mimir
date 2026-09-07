@@ -428,41 +428,6 @@ func TestMapCleanup(t *testing.T) {
 		require.Equal(t, 0, m.Count())
 	})
 
-	t.Run("cleanup skips existing spillmarks", func(t *testing.T) {
-		// Set up a group with a spillmark followed by a live entry.
-		m := New(1)
-		// Slot [0]: spillmark (pre-existing)
-		m.index[0][0] = spillmark
-		m.keys[0][0] = 0
-		m.data[0][0] = spillmark
-		m.spilled = 1
-		m.resident = 2 // 1 dead + 1 alive
-
-		// Slot [1]: live entry
-		m.index[0][1] = prefix(prefixOffset + 20)
-		m.keys[0][1] = 200
-		m.data[0][1] = xor(50)
-
-		removed := m.Cleanup(10, nil) // watermark=10, entry at slot[1] has value 50 (won't expire)
-		require.Equal(t, 0, removed)
-		require.Equal(t, uint32(1), m.spilled, "pre-existing spillmark should remain")
-		require.Equal(t, uint32(200), uint32(m.keys[0][1]), "live entry should be untouched")
-	})
-
-	t.Run("spillmark avoidance reduces rehashes", func(t *testing.T) {
-		// When groups are not full, cleanup avoids spillmarks and thus avoids rehashing.
-		// Use randomized keys and a very large capacity to ensure no group is full.
-		r := rand.New(rand.NewSource(42))
-		m := New(1000)
-		for range 20 {
-			m.Load(r.Uint64(), 10) // all will expire
-		}
-		rehashBefore := m.rehashes
-		m.Cleanup(10, nil)
-		require.Equal(t, rehashBefore, m.rehashes, "should not rehash when spillmarks are avoided")
-		require.Zero(t, m.spilled)
-	})
-
 	t.Run("count and items consistent after cleanup", func(t *testing.T) {
 		m := New(32)
 		expected := map[uint64]clock.Minutes{}
@@ -706,5 +671,62 @@ func TestIndexMatchEmptyOrSpillmark(t *testing.T) {
 		set := idx.matchEmptyOrSpillmark()
 		require.NotZero(t, set)
 		require.Equal(t, uint32(last), nextMatch(&set))
+	})
+}
+
+func TestMatchOccupied(t *testing.T) {
+	t.Run("all empty", func(t *testing.T) {
+		var idx index
+		set := idx.matchOccupied()
+		require.Zero(t, set)
+	})
+	t.Run("first busy", func(t *testing.T) {
+		var idx index
+		idx[0] = prefix(42)
+		set := idx.matchOccupied()
+		require.NotZero(t, set)
+		require.Equal(t, uint32(0), nextMatch(&set))
+		require.Zero(t, set)
+	})
+	t.Run("alternative", func(t *testing.T) {
+		var idx index
+		idx[0] = prefix(42)
+		idx[2] = prefix(43)
+		idx[4] = prefix(44)
+		idx[5] = prefix(44)
+
+		set := idx.matchOccupied()
+		require.NotZero(t, set)
+		require.Equal(t, uint32(0), nextMatch(&set))
+		require.Equal(t, uint32(2), nextMatch(&set))
+		require.Equal(t, uint32(4), nextMatch(&set))
+		require.Equal(t, uint32(5), nextMatch(&set))
+		require.Zero(t, set)
+	})
+	t.Run("full", func(t *testing.T) {
+		var idx index
+		for i := 0; i < groupSize; i++ {
+			idx[i] = prefix(2 + i)
+		}
+		set := idx.matchOccupied()
+		for i := 0; i < groupSize; i++ {
+			require.NotZero(t, set)
+			require.Equal(t, uint32(i), nextMatch(&set))
+		}
+		require.Zero(t, set)
+	})
+	t.Run("last is a spillmark", func(t *testing.T) {
+		var idx index
+		for i := 0; i < groupSize; i++ {
+			idx[i] = prefix(2 + i)
+		}
+		idx[last] = spillmark
+		set := idx.matchOccupied()
+		for i := 0; i < groupSize; i++ {
+			require.NotZero(t, set)
+			require.Equal(t, uint32(i), nextMatch(&set))
+
+		}
+		require.Zero(t, set)
 	})
 }

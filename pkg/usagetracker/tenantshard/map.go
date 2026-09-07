@@ -261,17 +261,9 @@ func (m *Map) Stats() Stats {
 func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 	removed := 0
 	for i := range m.data {
-		for j := uint32(0); j < groupSize; j++ {
-			// TODO check only non-empty slots
-			if m.data[i][j] == empty {
-				// There's nothing here.
-				continue
-			}
-			if m.data[i][j] == spillmark {
-				// Already deleted, skip.
-				// TODO: We only put spillmarks on last slot, so we could actually do continue groups.
-				continue
-			}
+		occupied := m.index[i].matchOccupied()
+		for occupied != 0 {
+			j := nextMatch(&occupied)
 			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
 				removed++
 				m.resident--
@@ -356,12 +348,10 @@ func (m *Map) rehash(n uint32) {
 	m.limit = n * maxAvgGroupLoad
 	m.resident, m.spilled = 0, 0
 	for g := range indices {
-		// TODO: benchmark performance if we only process the non-empty items.
-		for s := range indices[g] {
-			c := indices[g][s]
-			if c != empty && c != spillmark {
-				m.load(ks[g][s], datas[g][s])
-			}
+		occupied := indices[g].matchOccupied()
+		for occupied != 0 {
+			s := nextMatch(&occupied)
+			m.load(ks[g][s], datas[g][s])
 		}
 	}
 }

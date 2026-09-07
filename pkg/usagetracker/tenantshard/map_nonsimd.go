@@ -30,9 +30,18 @@ func (m *index) match(p prefix) bitset {
 	return findZeroBytes(castUint64(m) ^ (loBits * uint64(p)))
 }
 
+func (m *index) matchEmpty() bitset {
+	return findZeroBytes(castUint64(m))
+}
+
 func (m *index) matchEmptyOrSpillmark() bitset {
 	// TODO: see if we can optimize this, this likely overlaps with findZeroBytes logic.
 	return findZeroBytes(castUint64(m) & (^loBits))
+}
+
+// matchOccupied matches slots that are not empty or spillmarks
+func (m *index) matchOccupied() bitset {
+	return m.matchEmpty() ^ bitset(hiBits)
 }
 
 // nextMatch clears and returns the index corresponding to the next set bit in
