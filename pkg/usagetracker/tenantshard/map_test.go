@@ -39,7 +39,8 @@ func TestMapStats(t *testing.T) {
 	s = m.Stats()
 	require.Equal(t, uint32(inserted), s.Resident)
 	require.Equal(t, inserted, m.Count())
-	require.Equal(t, uint32(6), s.Spilled)
+	// Spilled counts groups whose last slot is occupied, which depends on the layout, so only the bound is stable.
+	require.LessOrEqual(t, s.Spilled, uint32(s.Length))
 	// Inserting 50 elements into a map that started with capacity for 8 must have triggered rehashes.
 	require.Greater(t, s.Rehashes, uint32(0))
 	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
@@ -158,18 +159,24 @@ func TestNextSize(t *testing.T) {
 		expected := numGroups(m.resident * 5 / 4)
 		require.Equal(t, expected, got)
 	})
+}
 
-	t.Run("compaction with many dead entries does not grow", func(t *testing.T) {
-		m := New(200)
-		for i := uint64(0); i < 200; i++ {
-			m.Load(i, 1)
-		}
-		m.Cleanup(1, nil)
-		require.True(t, m.spilled >= m.resident/2)
-		alive := m.resident
-		got := m.nextSize(0)
-		require.True(t, got >= numGroups(alive))
-	})
+func TestMaxSpilledGroups(t *testing.T) {
+	for _, size := range []uint32{1, 8, 100, 1000, 10000} {
+		t.Run(fmt.Sprintf("size %d", size), func(t *testing.T) {
+			m := New(size)
+			groups := uint32(len(m.index))
+
+			// A rehash packs entries at maxAvgGroupLoad per group, so at most limit/groupSize groups
+			// can be full right afterwards. The threshold has to sit above that, otherwise a
+			// compaction would immediately trigger another one.
+			require.Greater(t, m.maxSpilledGroups(), m.limit/groupSize)
+
+			// It also has to stay within reach: only a group can spill, so a threshold above the
+			// number of groups would never be crossed.
+			require.LessOrEqual(t, m.maxSpilledGroups(), groups)
+		})
+	}
 }
 
 func TestLimitAwareGrowth(t *testing.T) {
@@ -480,24 +487,102 @@ func TestMapCleanup(t *testing.T) {
 		}
 	})
 
-	t.Run("cleanup with limit triggers limit-aware rehash", func(t *testing.T) {
-		// Fill groups completely, expire everything, pass a limit.
+	t.Run("cleanup never resizes the map", func(t *testing.T) {
+		// Cleanup frees slots for reuse, but it never rehashes: a shard that grew once keeps
+		// its size until the service restarts. See the note on Cleanup.
+		m := New(200)
+		for i := uint64(0); i < 200; i++ {
+			m.Load(i, 10)
+		}
+		before := m.Stats()
+
+		require.Equal(t, 200, m.Cleanup(10, atomic.NewUint64(1000)))
+		require.Zero(t, m.Count())
+
+		after := m.Stats()
+		require.Equal(t, before.Length, after.Length)
+		require.Equal(t, before.Rehashes, after.Rehashes)
+	})
+
+	// fullGroupWithExpiredLastSlot fills the first group completely with sequential keys, all of
+	// which probe from group 0, and then expires only the entry in the last slot. The spillmark it
+	// leaves behind then sits next to an occupied slot, which is the layout that actually
+	// distinguishes a correct scan from a broken one: a spillmark that follows an empty slot is
+	// reported as empty by the byte tricks anyway, so it hides the difference.
+	fullGroupWithExpiredLastSlot := func(t *testing.T) (*Map, map[uint64]clock.Minutes) {
+		t.Helper()
 		m := New(groupSize * 2)
-		for g := 0; g < len(m.index); g++ {
+		survivors := map[uint64]clock.Minutes{}
+		for i := uint64(0); i < groupSize; i++ {
+			val := clock.Minutes(50)
+			if i == groupSize-1 {
+				val = 10 // expires below, and lands in the last slot of the group
+			} else {
+				survivors[i] = val
+			}
+			m.Load(i, val)
+		}
+		require.Equal(t, uint32(1), m.spilled, "the first group must be full")
+
+		require.Equal(t, 1, m.Cleanup(10, nil))
+		require.Equal(t, prefix(spillmark), m.index[0][last])
+		require.NotEqual(t, prefix(empty), m.index[0][last-1], "the slot before the spillmark must stay occupied")
+		return m, survivors
+	}
+
+	t.Run("repeated cleanup at the same watermark is a no-op", func(t *testing.T) {
+		// A spillmark decodes to a clock value that reads as long expired, so a scan that mistakes
+		// one for a live entry removes it again on every pass, underflowing the resident counter.
+		m, survivors := fullGroupWithExpiredLastSlot(t)
+		count, resident, spilled := m.Count(), m.resident, m.spilled
+
+		for range 3 {
+			require.Zero(t, m.Cleanup(10, nil))
+			require.Equal(t, count, m.Count())
+			require.Equal(t, resident, m.resident)
+			require.Equal(t, spilled, m.spilled)
+			require.Equal(t, survivors, itemsMap(t, m))
+		}
+	})
+
+	t.Run("rehash after cleanup does not resurrect expired entries", func(t *testing.T) {
+		// Cleanup leaves the keys of removed entries in place on purpose, because writing them
+		// costs a cache line per removal. A rehash must skip those slots instead of reloading them.
+		m, survivors := fullGroupWithExpiredLastSlot(t)
+
+		m.rehash(uint32(len(m.index)))
+
+		require.Equal(t, len(survivors), m.Count())
+		require.Equal(t, survivors, itemsMap(t, m))
+	})
+
+	t.Run("spilled accounting", func(t *testing.T) {
+		m := New(groupSize * 2)
+		groups := uint32(len(m.index))
+
+		// Nothing is full yet, so nothing has spilled.
+		require.Zero(t, m.Stats().Spilled)
+
+		// Sequential keys all probe from group 0, so groups fill up one after another.
+		for g := uint32(0); g < groups; g++ {
 			for j := uint32(0); j < groupSize; j++ {
-				m.index[g][j] = prefix(j + prefixOffset)
-				m.keys[g][j] = uint64(g*int(groupSize) + int(j) + 1)
-				m.data[g][j] = xor(10)
-				m.resident++
+				m.Load(uint64(g*groupSize+j), 10)
+			}
+			require.Equal(t, g+1, m.Stats().Spilled, "every full group spills into the next one")
+		}
+
+		// Cleanup replaces the last slot of a full group with a spillmark, which keeps the group
+		// spilling: probing must still walk past it.
+		require.Equal(t, int(groups*groupSize), m.Cleanup(10, nil))
+		require.Equal(t, groups, m.Stats().Spilled)
+
+		// Writing over a spillmark does not add a new spill either.
+		for g := uint32(0); g < groups; g++ {
+			for j := uint32(0); j < groupSize; j++ {
+				m.Load(uint64(g*groupSize+j), 20)
 			}
 		}
-		limit := atomic.NewUint64(1000)
-		rehashBefore := m.rehashes
-		m.Cleanup(10, limit)
-		if m.rehashes > rehashBefore {
-			// After rehash, map should be clean.
-			require.Zero(t, m.spilled)
-		}
+		require.Equal(t, groups, m.Stats().Spilled)
 	})
 
 	t.Run("large scale correctness", func(t *testing.T) {
