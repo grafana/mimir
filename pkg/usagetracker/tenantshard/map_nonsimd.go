@@ -30,16 +30,17 @@ func (m *index) match(p prefix) bitset {
 	return findZeroBytes(castUint64(m) ^ (loBits * uint64(p)))
 }
 
-func (m *index) matchEmpty() bitset {
-	return findZeroBytes(castUint64(m))
-}
-
+// matchEmptyOrSpillmark searches the given index for slots that hold no data, i.e. that are either
+// empty or hold a spillmark. Clearing the low bit of every byte maps both marks to zero.
+// Note that this cannot be written on top of a plain zero-byte search: findZeroBytes reports a byte
+// that holds 1 as zero when a borrow reaches it from a zero byte below, so a spillmark that follows
+// an empty slot would be indistinguishable from an occupied one.
 func (m *index) matchEmptyOrSpillmark() bitset {
 	// TODO: see if we can optimize this, this likely overlaps with findZeroBytes logic.
 	return findZeroBytes(castUint64(m) & (^loBits))
 }
 
-// matchOccupied matches slots that are not empty or spillmarks
+// matchOccupied matches the slots that hold data, i.e. neither empty nor spillmarks.
 func (m *index) matchOccupied() bitset {
 	return m.matchEmptyOrSpillmark() ^ bitset(hiBits)
 }
