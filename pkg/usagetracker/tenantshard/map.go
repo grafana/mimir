@@ -180,9 +180,9 @@ func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bi
 		return
 	}
 	if !wasSpillmark {
+		m.spilled++
 		return
 	}
-	m.spilled++
 }
 
 // Load inserts |key| and |value| into the map without checking if it already exists.
@@ -293,7 +293,7 @@ func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 // In order to prevent a rehash cycle in that case, we allow one more group to spill before requiring a rehash.
 // Note that allowing more spilled groups impacts the Put/Load performance as more buckets need to be checked.
 func (m *Map) maxSpilledGroups() uint32 {
-	return uint32(len(m.index))*groupSize/maxAvgGroupLoad + 1
+	return uint32(len(m.index))*maxAvgGroupLoad/groupSize + 1
 }
 
 // EnsureCapacity ensure that the map has enough capacity to store |n| elements.
