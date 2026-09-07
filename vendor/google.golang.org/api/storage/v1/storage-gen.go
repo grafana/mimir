@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -1611,6 +1611,9 @@ type Buckets struct {
 	// sets. Provide this value in a subsequent request to return the next page of
 	// results.
 	NextPageToken string `json:"nextPageToken,omitempty"`
+	// Unreachable: The list of bucket resource names that could not be reached
+	// during the listing operation.
+	Unreachable []string `json:"unreachable,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
@@ -1729,6 +1732,8 @@ func (s Channel) MarshalJSON() ([]byte, error) {
 
 // ComposeRequest: A Compose request.
 type ComposeRequest struct {
+	// DeleteSourceObjects: If true, the source objects will be deleted.
+	DeleteSourceObjects bool `json:"deleteSourceObjects,omitempty"`
 	// Destination: Properties of the resulting object.
 	Destination *Object `json:"destination,omitempty"`
 	// Kind: The kind of item this is.
@@ -1736,15 +1741,15 @@ type ComposeRequest struct {
 	// SourceObjects: The list of source objects that will be concatenated into a
 	// single object.
 	SourceObjects []*ComposeRequestSourceObjects `json:"sourceObjects,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "Destination") to
+	// ForceSendFields is a list of field names (e.g. "DeleteSourceObjects") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Destination") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "DeleteSourceObjects") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -2874,6 +2879,10 @@ type RelocateBucketRequest struct {
 	// DestinationCustomPlacementConfig: The bucket's new custom placement
 	// configuration if relocating to a Custom Dual Region.
 	DestinationCustomPlacementConfig *RelocateBucketRequestDestinationCustomPlacementConfig `json:"destinationCustomPlacementConfig,omitempty"`
+	// DestinationKmsKeyName: Resource name of a Cloud KMS key, of the form
+	// projects/my-project/locations/global/keyRings/my-kr/cryptoKeys/my-key. If
+	// set, is used to encrypt all objects in the destination bucket.
+	DestinationKmsKeyName string `json:"destinationKmsKeyName,omitempty"`
 	// DestinationLocation: The new location the bucket will be relocated to.
 	DestinationLocation string `json:"destinationLocation,omitempty"`
 	// ValidateOnly: If true, validate the operation, but do not actually relocate
@@ -5220,6 +5229,14 @@ func (c *BucketsListCall) Prefix(prefix string) *BucketsListCall {
 //	"noAcl" - Omit owner, acl and defaultObjectAcl properties.
 func (c *BucketsListCall) Projection(projection string) *BucketsListCall {
 	c.urlParams_.Set("projection", projection)
+	return c
+}
+
+// ReturnPartialSuccess sets the optional parameter "returnPartialSuccess": If
+// true, return a list of bucket resource names for buckets that are in
+// unreachable locations.
+func (c *BucketsListCall) ReturnPartialSuccess(returnPartialSuccess bool) *BucketsListCall {
+	c.urlParams_.Set("returnPartialSuccess", fmt.Sprint(returnPartialSuccess))
 	return c
 }
 
