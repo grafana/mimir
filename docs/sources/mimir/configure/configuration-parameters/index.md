@@ -4296,6 +4296,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.watch-prefix-buffer-size
 [watch_prefix_buffer_size: <int> | default = 128]
 
+# (experimental) Minimum delay between CAS retries after a version mismatch. 0
+# disables the delay.
+# CLI flag: -memberlist.cas-retry-min-backoff
+[cas_retry_min_backoff: <duration> | default = 0s]
+
+# (experimental) Maximum delay between CAS retries after a version mismatch.
+# Only takes effect if cas-retry-min-backoff is also set.
+# CLI flag: -memberlist.cas-retry-max-backoff
+[cas_retry_max_backoff: <duration> | default = 10s]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
