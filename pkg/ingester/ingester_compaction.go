@@ -630,6 +630,23 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
+		// Ownership can flip back to this ingester after a series was queued as
+		// non-owned, but before the owned-series service's own ticker notices and
+		// reconciles pendingNonOwnedRefs — this loop runs on a separate schedule
+		// with no guarantee it runs after that reconciliation. Re-running
+		// computeOwnedSeries() here catches that: series that are owned again get
+		// removed from pendingNonOwnedRefs before takePendingNonOwnedRefs can evict
+		// them below. We reuse the ranges already cached on this userTSDB rather
+		// than asking the ring for fresh ones — that's the owned-series service's
+		// job — so this is a no-op when ownership hasn't actually changed.
+		db.pendingNonOwnedRefsMtx.Lock()
+		hasPendingNonOwnedRefs := len(db.pendingNonOwnedRefs) > 0
+		db.pendingNonOwnedRefsMtx.Unlock()
+
+		if hasPendingNonOwnedRefs {
+			db.recomputeOwnedSeries(db.ownedSeriesState().shardSize, "early compaction pre-eviction re-check", i.logger)
+		}
+
 		now := time.Now()
 
 		// Fast path: threshold gate is satisfied and min grace period has elapsed.

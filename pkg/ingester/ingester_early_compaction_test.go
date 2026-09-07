@@ -1697,6 +1697,106 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")
 }
 
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotEvictSeriesReownedBeforeGracePeriodButNotReconciled
+// covers a race seen in production during a rapid partition-count change: a
+// series is queued as non-owned, ownership flips back before the owned-series
+// service's own ticker gets a chance to reconcile pendingNonOwnedRefs, and a
+// fresh sample lands for the series in the meantime. Before the fix,
+// compactBlocksDueToNonOwnedSeries trusted the stale queue entry and evicted
+// the series -- fresh sample included -- once the grace period elapsed, with
+// no re-check of current ownership. This test proves the fix's pre-eviction
+// re-check catches that: the series survives in the head.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotEvictSeriesReownedBeforeGracePeriodButNotReconciled(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	// A long min grace period that no real-time elapse can cross during the test; max grace
+	// period is disabled so only the min-grace path is exercised, exactly as in
+	// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod above.
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = time.Hour
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
+
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	ownedLabels, reshardedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
+
+	for _, lbls := range []labels.Labels{ownedLabels, reshardedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// A partition-count change puts reshardedLabels outside the owned range, so
+	// recomputeOwnedSeries queues it as pending non-owned.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "ring changed", log.NewNopLogger()))
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned right after the resize")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, 1, "the resharded series should be queued as pending non-owned")
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// Ownership flips back, but we deliberately skip recomputeOwnedSeries here --
+	// simulating the reconciling tick not having run yet.
+	db.ownedTokenRanges = ring.TokenRanges{0, math.MaxUint32}
+
+	// A fresh write lands for reshardedLabels, as it legitimately would now that
+	// it's owned again.
+	t3 := t2 + 1
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels:  reshardedLabels,
+		Samples: []util_test.Sample{{TS: t3, Val: 3.0}},
+	}}))
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "the fresh write should still be visible in the head before eviction runs")
+
+	// Backdate the pending entry so its grace period has elapsed.
+	backdated := time.Now().Add(-2 * time.Hour)
+	db.pendingNonOwnedRefsMtx.Lock()
+	for r := range db.pendingNonOwnedRefs {
+		db.pendingNonOwnedRefs[r] = backdated
+	}
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// Run eviction. The fix's pre-check reconciles reshardedLabels out of the
+	// queue first, so it isn't evicted -- both series, including the fresh
+	// sample, survive.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+
+	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced: the presently-owned series must not be evicted")
+	require.Equal(t, uint64(2), db.Head().NumSeries(),
+		"the presently-owned, just-written series must survive in the head")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Empty(t, db.pendingNonOwnedRefs, "the re-owned series must be reconciled out of pendingNonOwnedRefs")
+	db.pendingNonOwnedRefsMtx.Unlock()
+}
+
 // TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes verifies
 // that pending non-owned refs are evicted based on their individual grace periods.
 //
