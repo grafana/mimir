@@ -21673,6 +21673,28 @@
         },
         {
           "kind": "field",
+          "name": "cas_retry_min_backoff",
+          "required": false,
+          "desc": "Minimum delay between CAS retries after a version mismatch. 0 disables the delay.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "memberlist.cas-retry-min-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cas_retry_max_backoff",
+          "required": false,
+          "desc": "Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "memberlist.cas-retry-max-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "bind_addr",
           "required": false,
           "desc": "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0",

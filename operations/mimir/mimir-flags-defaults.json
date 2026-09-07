@@ -1532,6 +1532,8 @@
   "memberlist.broadcast-timeout-for-local-updates-on-shutdown": 10000000000,
   "memberlist.message-history-buffer-bytes": 0,
   "memberlist.watch-prefix-buffer-size": 128,
+  "memberlist.cas-retry-min-backoff": 0,
+  "memberlist.cas-retry-max-backoff": 10000000000,
   "memberlist.bind-addr": [],
   "memberlist.bind-port": 7946,
   "memberlist.packet-dial-timeout": 500000000,
