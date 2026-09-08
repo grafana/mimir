@@ -15,10 +15,79 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+// TestQuerySplitting_SubqueryNestedAnnotationsAreAttributedPerBlock checks that a warning from a function
+// nested inside a split Subquery is attributed to the blocks that caused it.
+func TestQuerySplitting_SubqueryNestedAnnotationsAreAttributedPerBlock(t *testing.T) {
+	const mixedTypesWarning = "mix of histograms and floats"
+	const mixedTypesLoad = `
+		load 1h
+			warn_metric{env="prod"} 1 2 3 4 5 {{schema:0 sum:100 count:10 buckets:[10]}} 7 8 9 {{schema:0 sum:100 count:10 buckets:[10]}} 11 12 13 14 15
+	`
+	expectWarning := map[int64]bool{
+		4*hourInMs - 1:  false,
+		6*hourInMs - 1:  false,
+		8*hourInMs - 1:  true,
+		10*hourInMs - 1: false,
+		12*hourInMs - 1: true,
+		14*hourInMs - 1: false,
+	}
+	testCases := map[string]string{
+		"subquery":             `count_over_time(sum_over_time(warn_metric[2h])[14h:2h])`,
+		"subquery of subquery": `count_over_time(sum_over_time(avg_over_time(warn_metric[1h])[2h:1h])[14h:2h])`,
+		"subquery with CSE":    `count_over_time(sum_over_time(warn_metric[2h])[14h:2h]) + stddev_over_time(sum_over_time(warn_metric[2h])[14h:2h])`,
+	}
+
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedEntries := len(expectWarning)
+
+			testCache, mimirEngine := setupEngineAndCache(t)
+
+			promStorage := promqltest.LoadedStorage(t, mixedTypesLoad)
+			t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+			baseT := timestamp.Time(0)
+			ts := baseT.Add(14 * time.Hour)
+
+			uncachedResult, _, _ := executeQuery(t, mimirEngine, promStorage, expr, ts)
+			require.NoError(t, uncachedResult.Err)
+			require.Len(t, uncachedResult.Warnings.AsErrors(), 1)
+			require.Contains(t, uncachedResult.Warnings.AsErrors()[0].Error(), mixedTypesWarning)
+			verifyCacheStats(t, testCache, expectedEntries, 0, expectedEntries)
+
+			require.Len(t, testCache.Entries, expectedEntries)
+			for _, data := range testCache.Entries {
+				var entry cache.CachedSeries
+				require.NoError(t, entry.Unmarshal(data.Value))
+				annos := entry.Annotations.Decode()
+
+				blockMustWarn, ok := expectWarning[entry.End]
+				require.True(t, ok, "unexpected block ending at %d", entry.End)
+				if blockMustWarn {
+					require.Len(t, annos, 1, "block ending at %d should carry the warning", entry.End)
+					for msg := range annos {
+						require.Contains(t, msg, mixedTypesWarning)
+					}
+				} else {
+					require.Empty(t, annos, "block ending at %d must be clean", entry.End)
+				}
+			}
+
+			cachedResult, _, _ := executeQuery(t, mimirEngine, promStorage, expr, ts)
+			require.NoError(t, cachedResult.Err)
+			require.Equal(t, uncachedResult.Value, cachedResult.Value)
+			require.Len(t, cachedResult.Warnings.AsErrors(), 1)
+			require.Contains(t, cachedResult.Warnings.AsErrors()[0].Error(), mixedTypesWarning)
+			verifyCacheStats(t, testCache, expectedEntries*2, expectedEntries, expectedEntries)
+		})
+	}
+}
 
 func TestSubquery_IsSplittable(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())

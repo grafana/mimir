@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/go-kit/log"
@@ -185,6 +186,10 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
+	// Subquery's operator can't attribute annotations from its nested content to a specific combined range,
+	// so do not combine ranges for Subquery split targets, each uncached range gets its own split instead.
+	innerIsSubquery := containsSubquery(m.innerNode)
+
 	flushCurrentUncachedRanges := func() error {
 		if len(currentUncachedRanges) == 0 {
 			return nil
@@ -218,7 +223,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 		thisRangeLength := splitRange.End - splitRange.Start
 
-		if len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
+		if !innerIsSubquery && len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		} else {
 			if err := flushCurrentUncachedRanges(); err != nil {
@@ -754,6 +759,10 @@ type UncachedSplit[T any] struct {
 	rangeSeriesMetadata [][]int // metadata idx per range idx
 	stats               []*types.OperatorEvaluationStats
 
+	// operatorAnnotations holds annotations from operator.Finalize(), eg. from a nested function inside a
+	// split subquery. Unlike rangeAnnotations, these apply to the whole group, not one range specifically.
+	operatorAnnotations annotations.Annotations
+
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
 	localToMergedIdx      []int
@@ -890,6 +899,11 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvalu
 
 	defer combinedStatsForAllRanges.Close()
 
+	// Clone before merging rangeAnnotations in below: Annotations.Merge mutates its receiver in place, and we
+	// need operatorAnnotations to hold only what operator.Finalize() itself returned.
+	p.operatorAnnotations = make(annotations.Annotations, len(combinedAnnos))
+	maps.Copy(p.operatorAnnotations, combinedAnnos)
+
 	for _, annos := range p.rangeAnnotations {
 		if len(*annos) > 0 {
 			combinedAnnos.Merge(*annos)
@@ -920,6 +934,13 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
 		}
 
+		// Include operatorAnnotations (eg. from a nested function inside a split subquery) alongside this
+		// range's own annotations: operator spans every range in this group, so these aren't attributable to
+		// this range specifically, but omitting them would mean a cache hit on this range silently loses them.
+		rangeAnnotations := make(annotations.Annotations, len(*p.rangeAnnotations[rangeIdx])+len(p.operatorAnnotations))
+		rangeAnnotations.Merge(*p.rangeAnnotations[rangeIdx])
+		rangeAnnotations.Merge(p.operatorAnnotations)
+
 		if err := p.parent.cache.Set(
 			ctx,
 			p.parent.FuncId,
@@ -927,7 +948,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			seriesMetadata,
-			querierpb.EncodeAnnotations(*p.rangeAnnotations[rangeIdx], ""),
+			querierpb.EncodeAnnotations(rangeAnnotations, ""),
 			p.rangeResults[rangeIdx],
 			p.stats[rangeIdx].Encode(),
 			len(p.seriesMetadata),
