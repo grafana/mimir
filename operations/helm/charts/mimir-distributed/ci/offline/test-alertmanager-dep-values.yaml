@@ -1,0 +1,19 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+alertmanager:
+  priorityClassName: alertmanager-priority
+  # ensure Deployment is used, not default StatefulSet
+  statefulSet:
+    enabled: false
+  # work around defaults: "spec.strategy.rollingUpdate.maxUnavailable set to 1, but 0 is required"
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# Reduce scope:
+minio:
+  enabled: false
+rollout_operator:
+  enabled: false
