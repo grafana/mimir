@@ -1061,3 +1061,18 @@ eval instant at 8h count_over_time(sum_over_time(avg_over_time(subquery_warn_met
   {env="prod"} 3
 
 clear
+
+# A fixed-time subquery whose range contains exactly one aligned step: splitting produces zero-step
+# fragments for this, which shoudn't trigger sort warning.
+load 1h
+  subquery_sort_warning_metric{series="a"} 0 1 2 3 4 5 6 7 8 9 10 11 12
+
+eval instant at 12h7m sum_over_time((sort_desc(subquery_sort_warning_metric))[3h:3h] @ 12h)
+  expect no_warn
+  {series="a"} 12
+
+eval instant at 12h7m sum_over_time((sort_desc(subquery_sort_warning_metric))[3h:3h] @ 12h)
+  expect no_warn
+  {series="a"} 12
+
+clear
