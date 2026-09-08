@@ -172,10 +172,9 @@ func (a *iteratorAdapter) AtT() int64 {
 	return a.curr.Timestamps[a.curr.Index]
 }
 
-// AtST is currently not implemented.
-// TODO(krajorama): implement ST (start timestamp).
+// AtST returns the start timestamp for the current sample, or 0 if it is unknown.
 func (a *iteratorAdapter) AtST() int64 {
-	return 0
+	return a.curr.AtST()
 }
 
 // Err implements chunkenc.Iterator.

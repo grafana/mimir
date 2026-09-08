@@ -195,6 +195,8 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			nextBatch(valueType)
 		}
 
+		b.StartTimestamps[b.Index] = batch.AtST()
+
 		switch valueType {
 		case chunkenc.ValFloat:
 			b.Timestamps[b.Index], b.Values[b.Index] = batch.At()

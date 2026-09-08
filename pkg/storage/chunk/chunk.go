@@ -93,11 +93,13 @@ type Iterator interface {
 // 1 to 128.
 const BatchSize = 12
 
-// Batches are sorted sets of (timestamp, value) pairs, where all values are of the same type (i.e. floats/histograms).
+// Batches are sorted sets of (start timestamp, timestamp, value) tuples, where all values are of the same type
+// (i.e. floats/histograms). A start timestamp of 0 means it is unknown or absent.
 //
 // Batch is intended to be small, and passed by value!
 type Batch struct {
-	Timestamps [BatchSize]int64
+	Timestamps      [BatchSize]int64
+	StartTimestamps [BatchSize]int64
 	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
 	// If ValueType is chunkenc.ValHistogram or chunkenc.ValFloatHistogram, it is used to store the iteratorID the
 	// pointer value at the same index comes from. The iteratorID is required to ensure the counter reset is calculated
@@ -128,6 +130,12 @@ func (b *Batch) Next() {
 
 func (b *Batch) AtTime() int64 {
 	return b.Timestamps[b.Index]
+}
+
+// AtST returns the start timestamp for the current sample. A value of 0 means
+// that the start timestamp is unknown or absent.
+func (b *Batch) AtST() int64 {
+	return b.StartTimestamps[b.Index]
 }
 
 func (b *Batch) At() (int64, float64) {

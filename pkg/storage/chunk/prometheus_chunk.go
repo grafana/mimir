@@ -333,6 +333,7 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 	j := 0
 	for j < size {
 		populate(j)
+		batch.StartTimestamps[j] = p.it.AtST()
 		j++
 		if j < size {
 			vt := p.it.Next()
