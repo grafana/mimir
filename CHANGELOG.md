@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] HTTPRoute: Add support k8s Gateway API HTTPRoute #14439
+
 ### Grafana Mimir
 
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
