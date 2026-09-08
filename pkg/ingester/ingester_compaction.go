@@ -630,21 +630,24 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
-		// Ownership can flip back to this ingester after a series was queued as
-		// non-owned, but before the owned-series service's own ticker notices and
-		// reconciles pendingNonOwnedRefs — this loop runs on a separate schedule
-		// with no guarantee it runs after that reconciliation. Re-running
-		// computeOwnedSeries() here catches that: series that are owned again get
-		// removed from pendingNonOwnedRefs before takePendingNonOwnedRefs can evict
-		// them below. We reuse the ranges already cached on this userTSDB rather
-		// than asking the ring for fresh ones — that's the owned-series service's
-		// job — so this is a no-op when ownership hasn't actually changed.
-		db.pendingNonOwnedRefsMtx.Lock()
-		hasPendingNonOwnedRefs := len(db.pendingNonOwnedRefs) > 0
-		db.pendingNonOwnedRefsMtx.Unlock()
+		// A series queued as non-owned can become owned again before the owned-series
+		// service's own ticker reconciles pendingNonOwnedRefs, since that ticker runs
+		// on its own schedule. Re-checking against the cached ownedTokenRanges won't
+		// catch this: the cache is only ever updated by updateTenant, which reconciles
+		// pendingNonOwnedRefs in that same call, so re-scanning a stale cache just
+		// repeats the same stale answer. Calling updateTenant here instead re-fetches
+		// current ranges from the ring, so a series owned again is removed from
+		// pendingNonOwnedRefs before takePendingNonOwnedRefs can evict it below.
+		// updateTenant short-circuits when ranges haven't changed, so this is cheap
+		// unless there's an actual discrepancy to reconcile.
+		if i.ownedSeriesService != nil {
+			db.pendingNonOwnedRefsMtx.Lock()
+			hasPendingNonOwnedRefs := len(db.pendingNonOwnedRefs) > 0
+			db.pendingNonOwnedRefsMtx.Unlock()
 
-		if hasPendingNonOwnedRefs {
-			db.recomputeOwnedSeries(db.ownedSeriesState().shardSize, "early compaction pre-eviction re-check", i.logger)
+			if hasPendingNonOwnedRefs {
+				i.ownedSeriesService.updateTenant(userID, db, true)
+			}
 		}
 
 		now := time.Now()
