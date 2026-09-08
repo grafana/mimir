@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/go-kit/log"
@@ -901,8 +900,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvalu
 
 	// Clone before merging rangeAnnotations in below: Annotations.Merge mutates its receiver in place, and we
 	// need operatorAnnotations to hold only what operator.Finalize() itself returned.
-	p.operatorAnnotations = make(annotations.Annotations, len(combinedAnnos))
-	maps.Copy(p.operatorAnnotations, combinedAnnos)
+	p.operatorAnnotations = types.CloneAnnotations(combinedAnnos)
 
 	for _, annos := range p.rangeAnnotations {
 		if len(*annos) > 0 {
