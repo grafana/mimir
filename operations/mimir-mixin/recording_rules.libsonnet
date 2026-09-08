@@ -119,6 +119,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
             record: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
             expr: _config.mimir_scaling_rules[_config.deployment_type].actual_replicas_count % _config,
           },
+        ] + (
+          if _config.compartments_enabled then [
+            {
+              // Add bare component totals for namespace-wide scaling rules.
+              record: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
+              expr: |||
+                sum by (%(alert_aggregation_labels)s, deployment) (
+                  label_replace(
+                    sum by (%(alert_aggregation_labels)s, deployment_without_compartment) (
+                      label_replace(
+                        %(actual_replicas)s{deployment=~".*-(?:rc|wc)-[0-9]+"},
+                        "deployment_without_compartment", "$1", "deployment", "(.*)-(?:rc|wc)-[0-9]+"
+                      )
+                    ),
+                    "deployment", "$1", "deployment_without_compartment", "(.*)"
+                  )
+                )
+                # Avoid duplicates during migration. actual_replicas includes this rule's previous output.
+                unless
+                %(actual_replicas_source)s
+              ||| % (_config {
+                       actual_replicas: '%(alert_aggregation_rule_prefix)s_deployment:actual_replicas:count' % _config,
+                       actual_replicas_source: _config.mimir_scaling_rules[_config.deployment_type].actual_replicas_count % _config,
+                     }),
+            },
+          ] else []
+        ) + [
           {
             // Distributors should be able to deal with 240k samples/s.
             record: '%(alert_aggregation_rule_prefix)s_deployment_reason:required_replicas:count' % _config,

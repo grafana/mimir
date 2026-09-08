@@ -4,11 +4,16 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -163,6 +168,16 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
+
+	// Fill modifiers prevent matcher propagation that removes required series.
+	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down`,
+	`up + fill_right(0) down{foo="bar"}`: `up + fill_right(0) down{foo="bar"}`,
+	// fill_left preserves all right-side series because each series can produce output.
+	`up + fill_left(0) down{foo="bar"}`: `up{foo="bar"} + fill_left(0) down{foo="bar"}`,
+	`up{foo="bar"} + fill_left(0) down`: `up{foo="bar"} + fill_left(0) down`,
+	// fill preserves both sides because every series can produce output.
+	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
+	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
@@ -183,19 +198,31 @@ func TestPropagateMatchers(t *testing.T) {
 			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
-			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
-
-			optimizer := ast.NewPropagateMatchersMapper()
-			outputExpr, err := optimizer.Map(ctx, inputExpr)
-			require.NoError(t, err)
+			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+				return ast.NewPropagateMatchers(reg)
+			})
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
-			require.Equal(t, input != expected, optimizer.HasChanged())
+			expectedChanged := 0
+			if input != expected {
+				expectedChanged = 1
+			}
+			checkPropagateMatchersMetrics(t, reg, 1, expectedChanged)
 		})
 	}
+}
+
+func checkPropagateMatchersMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
+	const metricNameTotal = "cortex_mimir_query_engine_propagate_matchers_attempted_total"
+	const metricNameChanged = "cortex_mimir_query_engine_propagate_matchers_rewritten_total"
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.
+# TYPE %[1]v counter
+%[1]v %[2]v
+# HELP %[3]v Total number of queries where the optimization pass has rewritten the query by propagating matchers.
+# TYPE %[3]v counter
+%[3]v %[4]v
+`, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
 }
 
 // TestPropagateMatchersWithData tests that the rewritten query produces the same results as the original one on sample data.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -74,6 +75,18 @@ func (b *BinaryExpression) Describe() string {
 			}
 
 			builder.WriteRune(')')
+		}
+
+		fv := b.VectorMatching.FillValues
+		if fv.LhsSet && fv.RhsSet && (fv.Lhs == fv.Rhs || (math.IsNaN(fv.Lhs) && math.IsNaN(fv.Rhs))) {
+			fmt.Fprintf(builder, " fill (%v)", fv.Lhs)
+		} else {
+			if fv.LhsSet {
+				fmt.Fprintf(builder, " fill_left (%v)", fv.Lhs)
+			}
+			if fv.RhsSet {
+				fmt.Fprintf(builder, " fill_right (%v)", fv.Rhs)
+			}
 		}
 	}
 
@@ -298,5 +311,11 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if vm := b.GetVectorMatching(); vm != nil && (vm.FillValues.LhsSet || vm.FillValues.RhsSet) {
+		// Queriers that do not understand QueryPlanV20 would silently ignore the fill modifier
+		// and produce incorrect results.
+		return planning.QueryPlanV20, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }

@@ -77,6 +77,11 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
+		// Prometheus validates every right-side match group when any fill modifier is active.
+		if e.VectorMatching.FillValues.LhsSet || e.VectorMatching.FillValues.RhsSet {
+			return true, nil
+		}
+
 		// Labels created by label_replace or label_join anywhere within this binary
 		// expression's subtree. We must not generate matchers for these labels because they
 		// don't exist on the raw series fetched from storage.

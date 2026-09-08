@@ -5,6 +5,7 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -1000,6 +1001,10 @@ func equivalentNodes(a, b planning.Node, aSelector, bSelector planning.Node) boo
 		return true
 	}
 
+	if !binaryExpressionFillValuesHaveSameBits(a, b) {
+		return false
+	}
+
 	if !a.EquivalentToIgnoringHintsAndChildren(b) {
 		return false
 	}
@@ -1018,6 +1023,23 @@ func equivalentNodes(a, b planning.Node, aSelector, bSelector planning.Node) boo
 	}
 
 	return true
+}
+
+func binaryExpressionFillValuesHaveSameBits(a, b planning.Node) bool {
+	aBinary, aOK := a.(*core.BinaryExpression)
+	bBinary, bOK := b.(*core.BinaryExpression)
+	if !aOK || !bOK || aBinary.VectorMatching == nil || bBinary.VectorMatching == nil {
+		return true
+	}
+
+	aFill := aBinary.VectorMatching.FillValues
+	bFill := bBinary.VectorMatching.FillValues
+
+	if aFill.LhsSet && bFill.LhsSet && math.Float64bits(aFill.Lhs) != math.Float64bits(bFill.Lhs) {
+		return false
+	}
+
+	return !aFill.RhsSet || !bFill.RhsSet || math.Float64bits(aFill.Rhs) == math.Float64bits(bFill.Rhs)
 }
 
 type SelectorRelationship int

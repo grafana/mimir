@@ -445,6 +445,10 @@ This API endpoint is usually used by scale down automations.
 GET,POST,DELETE /ingester/prepare-partition-downscale
 ```
 
+{{< admonition type="note" >}}
+This endpoint is only available in ingest storage architecture. In classic architecture, use [Prepare instance ring downscale](#prepare-instance-ring-downscale) instead. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
 This endpoint prepares the ingester's partition for downscaling by setting it to the `INACTIVE` state.
 
 A `GET` call to this endpoint returns a timestamp of when the partition was switched to the `INACTIVE` state, or 0, if the partition is not in the `INACTIVE` state.
@@ -453,7 +457,7 @@ A `POST` call switches this ingester's partition to the `INACTIVE` state, if it 
 
 A `DELETE` call sets the partition back from the `INACTIVE` to the `ACTIVE` state.
 
-If the ingester is not configured to use ingest-storage, any call to this endpoint fails.
+If the ingester is not configured to use ingest-storage, any call to this endpoint fails with `405 Method Not Allowed`.
 
 This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 
@@ -463,6 +467,10 @@ This API endpoint is usually used by scale down automation, e.g. rollout-operato
 GET,POST,DELETE /ingester/prepare-instance-ring-downscale
 ```
 
+{{< admonition type="note" >}}
+This endpoint is only available in classic architecture. In ingest storage architecture, use [Prepare partition downscale](#prepare-partition-downscale) instead. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
 This endpoint prepares the ingester for downscaling by setting it to read-only mode.
 
 A `GET` call to this endpoint returns a timestamp of when the ingester was switched to read-only mode, or 0, if the ingester is not in read-only mode.
@@ -471,7 +479,7 @@ A `POST` call switches this ingester's partition to read-only mode, if it isn't 
 
 A `DELETE` call sets the ingester back to read-write mode.
 
-If the ingester is configured to use ingest-storage, any call to this endpoint fails.
+If the ingester is configured to use ingest-storage, any call to this endpoint fails with `405 Method Not Allowed`.
 
 This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 

@@ -56,11 +56,11 @@
   store_gateway_zone_a_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneABackupEnabled, numCompartments, function(c) $.store_gateway_zone_a_backup_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_a_caching_configs['compartment_%d' % c]),
   store_gateway_zone_b_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBBackupEnabled, numCompartments, function(c) $.store_gateway_zone_b_backup_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_b_caching_configs['compartment_%d' % c]),
 
-  newStoreGatewayCompartmentStatefulSet(zone, compartmentIdx, container, nodeAffinityMatchers=[], multiAZ=false)::
+  newStoreGatewayCompartmentStatefulSet(zone, compartmentIdx, container, dataDiskClass, nodeAffinityMatchers=[], multiAZ=false)::
     local name = 'store-gateway-zone-%s-rc-%d' % [zone, compartmentIdx];
     local compartmentIdxStr = std.toString(compartmentIdx);
     local rolloutGroup = 'store-gateway-rc-%d' % compartmentIdx;
-    $.newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers, rolloutGroup) +
+    $.newStoreGatewayZoneStatefulSet(zone, container, dataDiskClass, nodeAffinityMatchers, rolloutGroup) +
     statefulSet.mixin.metadata.withName(name) +
     statefulSet.mixin.spec.withServiceName(name) +
     // Label identifying the read compartment.
@@ -95,11 +95,11 @@
 
   // StatefulSets. The per-compartment autoscaling (ScaledObjects, prepare-downscale, removeReplicasFromSpec) is
   // layered on top in store-gateway-autoscaling.libsonnet, mirroring the non-compartment store-gateway.
-  store_gateway_zone_a_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('a', c, $.store_gateway_zone_a_containers['compartment_%d' % c], $.store_gateway_zone_a_node_affinity_matchers, isZoneAMultiAZ)),
-  store_gateway_zone_b_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('b', c, $.store_gateway_zone_b_containers['compartment_%d' % c], $.store_gateway_zone_b_node_affinity_matchers, isZoneBMultiAZ)),
-  store_gateway_zone_c_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('c', c, $.store_gateway_zone_c_containers['compartment_%d' % c], $.store_gateway_zone_c_node_affinity_matchers, isZoneCMultiAZ)),
-  store_gateway_zone_a_backup_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneABackupEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('a-backup', c, $.store_gateway_zone_a_backup_containers['compartment_%d' % c], $.store_gateway_zone_a_backup_node_affinity_matchers, isZoneABackupMultiAZ)),
-  store_gateway_zone_b_backup_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBBackupEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('b-backup', c, $.store_gateway_zone_b_backup_containers['compartment_%d' % c], $.store_gateway_zone_b_backup_node_affinity_matchers, isZoneBBackupMultiAZ)),
+  store_gateway_zone_a_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('a', c, $.store_gateway_zone_a_containers['compartment_%d' % c], $._config.store_gateway_zone_a_data_disk_class, $.store_gateway_zone_a_node_affinity_matchers, isZoneAMultiAZ)),
+  store_gateway_zone_b_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('b', c, $.store_gateway_zone_b_containers['compartment_%d' % c], $._config.store_gateway_zone_b_data_disk_class, $.store_gateway_zone_b_node_affinity_matchers, isZoneBMultiAZ)),
+  store_gateway_zone_c_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('c', c, $.store_gateway_zone_c_containers['compartment_%d' % c], $._config.store_gateway_zone_c_data_disk_class, $.store_gateway_zone_c_node_affinity_matchers, isZoneCMultiAZ)),
+  store_gateway_zone_a_backup_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneABackupEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('a-backup', c, $.store_gateway_zone_a_backup_containers['compartment_%d' % c], $._config.store_gateway_zone_a_backup_data_disk_class, $.store_gateway_zone_a_backup_node_affinity_matchers, isZoneABackupMultiAZ)),
+  store_gateway_zone_b_backup_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBBackupEnabled, numCompartments, function(c) $.newStoreGatewayCompartmentStatefulSet('b-backup', c, $.store_gateway_zone_b_backup_containers['compartment_%d' % c], $._config.store_gateway_zone_b_backup_data_disk_class, $.store_gateway_zone_b_backup_node_affinity_matchers, isZoneBBackupMultiAZ)),
 
   // Services.
   store_gateway_zone_a_services: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.newStoreGatewayZoneService($.store_gateway_zone_a_statefulsets['compartment_%d' % c])),

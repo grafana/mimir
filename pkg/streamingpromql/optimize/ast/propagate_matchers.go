@@ -7,12 +7,48 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
+
+// PropagateMatchers optimizes queries by propagating matchers across binary operations.
+type PropagateMatchers struct {
+	propagateMatchersAttempts prometheus.Counter
+	propagateMatchersRewrites prometheus.Counter
+}
+
+func NewPropagateMatchers(reg prometheus.Registerer) *PropagateMatchers {
+	return &PropagateMatchers{
+		propagateMatchersAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.",
+		}),
+		propagateMatchersRewrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_rewritten_total",
+			Help: "Total number of queries where the optimization pass has rewritten the query by propagating matchers.",
+		}),
+	}
+}
+
+func (p *PropagateMatchers) Name() string {
+	return "Propagate matchers"
+}
+
+func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
+	p.propagateMatchersAttempts.Inc()
+	mapper := NewPropagateMatchersMapper()
+	newExpr, err := mapper.Map(ctx, expr)
+	if mapper.HasChanged() {
+		p.propagateMatchersRewrites.Inc()
+	}
+	return newExpr, err
+}
 
 // NewPropagateMatchersMapper optimizes queries by propagating matchers across binary operations.
 func NewPropagateMatchersMapper() *astmapper.ASTExprMapperWithState {
@@ -77,6 +113,10 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
 		// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
 		newMatchersL = make([]*labels.Matcher, 0)
+	} else if e.VectorMatching.FillValues.RHS != nil {
+		// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
+		// produces output. RHS matchers must not narrow the LHS.
+		newMatchersL = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
@@ -86,11 +126,17 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
-	for _, vsR := range vssR {
-		if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
-			vsR.vs.LabelMatchers = newLabelMatchers
-			mapper.changed = true
+	var newMatchersR []*labels.Matcher
+	if e.VectorMatching.FillValues.LHS != nil || e.VectorMatching.FillValues.RHS != nil {
+		// Prometheus validates every right-side match group when any fill modifier is active.
+		newMatchersR = make([]*labels.Matcher, 0)
+	} else {
+		newMatchersR = mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
+		for _, vsR := range vssR {
+			if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
+				vsR.vs.LabelMatchers = newLabelMatchers
+				mapper.changed = true
+			}
 		}
 	}
 	vss := append(vssL, vssR...)

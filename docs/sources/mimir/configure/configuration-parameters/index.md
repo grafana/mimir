@@ -2133,6 +2133,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
+  # (experimental) Enable propagating label matchers across binary expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = false]
+
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
@@ -2444,11 +2448,6 @@ results_cache:
 # efficient order of execution.
 # CLI flag: -query-frontend.rewrite-histogram-queries
 [rewrite_histogram_queries: <boolean> | default = false]
-
-# (experimental) Set to true to enable rewriting queries to propagate label
-# matchers across binary expressions.
-# CLI flag: -query-frontend.rewrite-propagate-matchers
-[rewrite_propagate_matchers: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
@@ -4297,6 +4296,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.watch-prefix-buffer-size
 [watch_prefix_buffer_size: <int> | default = 128]
 
+# (experimental) Minimum delay between CAS retries after a version mismatch. 0
+# disables the delay.
+# CLI flag: -memberlist.cas-retry-min-backoff
+[cas_retry_min_backoff: <duration> | default = 0s]
+
+# (experimental) Maximum delay between CAS retries after a version mismatch.
+# Only takes effect if cas-retry-min-backoff is also set.
+# CLI flag: -memberlist.cas-retry-max-backoff
+[cas_retry_max_backoff: <duration> | default = 10s]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
@@ -5040,6 +5049,13 @@ blocked_requests:
 # 'all' to enable all experimental modifiers.
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
+
+# Enable certain experimental PromQL binary operation fill modifiers (fill,
+# fill_left, fill_right), which are subject to being changed or removed at any
+# time, on a per-tenant basis. Defaults to empty which means all fill modifiers
+# are disabled. Set to 'all' to enable all fill modifiers.
+# CLI flag: -query-frontend.enabled-promql-binop-fill-modifiers
+[enabled_promql_binop_fill_modifiers: <string> | default = ""]
 
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works

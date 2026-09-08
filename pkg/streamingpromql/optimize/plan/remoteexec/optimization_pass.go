@@ -5,7 +5,6 @@ package remoteexec
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // OptimizationPass identifies subplans of the provided query plan that can be executed remotely.
@@ -46,11 +46,9 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// query and must have remote execution applied to it independently: if its subtree is sharded, each
 	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
 	// instant query) runs on the query-frontend.
-	if evaluationRoots, err := collectEvaluationRoots(plan.Root); err != nil {
-		return nil, err
-	} else if len(evaluationRoots) > 0 {
+	if evaluationRoots := collectEvaluationRoots(plan.Root, plan.Parameters.TimeRange); len(evaluationRoots) > 0 {
 		for _, evaluationRoot := range evaluationRoots {
-			if err := o.wrapEvaluationRoot(evaluationRoot, groups, len(evaluationRoots) > 1); err != nil {
+			if err := o.wrapEvaluationRoot(evaluationRoot.root, groups, len(evaluationRoots) > 1, maximumSupportedQueryPlanVersion, evaluationRoot.timeRange); err != nil {
 				return nil, err
 			}
 		}
@@ -58,15 +56,15 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
-	if err := o.wrapPlanRoot(plan, groups); err != nil {
+	if err := o.wrapPlanRoot(plan, groups, maximumSupportedQueryPlanVersion); err != nil {
 		return nil, err
 	}
 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, groups remoteExecutionGroupSet) error {
-	newRoot, err := o.applyToRootNode(plan.Root, groups, false)
+func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, groups remoteExecutionGroupSet, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) error {
+	newRoot, err := o.applyToRootNodeForVersion(plan.Root, groups, false, maximumSupportedQueryPlanVersion, plan.Parameters.TimeRange)
 	if err != nil {
 		return err
 	}
@@ -77,13 +75,55 @@ func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, groups remoteE
 
 // wrapEvaluationRoot applies remote execution to a single EvaluationRoot's subtree, mirroring the
 // behaviour applied to the whole plan when there are no EvaluationRoot markers.
-func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, groups remoteExecutionGroupSet, haveMultipleRoots bool) error {
-	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, groups, haveMultipleRoots)
+func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, groups remoteExecutionGroupSet, haveMultipleRoots bool, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, timeRange types.QueryTimeRange) error {
+	newRoot, err := o.applyToRootNodeForVersion(evaluationRoot.Inner, groups, haveMultipleRoots, maximumSupportedQueryPlanVersion, timeRange)
 	if err != nil {
 		return err
 	}
 
 	evaluationRoot.Inner = newRoot
+	return nil
+}
+
+func (o *OptimizationPass) applyToRootNodeForVersion(root planning.Node, groups remoteExecutionGroupSet, eagerLoad bool, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, timeRange types.QueryTimeRange) (planning.Node, error) {
+	requiredVersion, err := planning.MinimumRequiredPlanVersion(root, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("determine the minimum plan version for remote execution: %w", err)
+	}
+
+	if requiredVersion <= maximumSupportedQueryPlanVersion {
+		return o.applyToRootNode(root, groups, eagerLoad)
+	}
+
+	if err := o.wrapCompatibleDescendants(root, groups, eagerLoad, maximumSupportedQueryPlanVersion, timeRange); err != nil {
+		return nil, err
+	}
+
+	return root, nil
+}
+
+func (o *OptimizationPass) wrapCompatibleDescendants(node planning.Node, groups remoteExecutionGroupSet, eagerLoad bool, maximumSupportedQueryPlanVersion planning.QueryPlanVersion, timeRange types.QueryTimeRange) error {
+	childTimeRange := node.ChildrenTimeRange(timeRange)
+	childEagerLoad := eagerLoad || isSplittingNode(node) || isShardingConcatNode(node)
+
+	for idx := 0; idx < node.ChildCount(); idx++ {
+		child := node.Child(idx)
+		if _, alreadyRemote := child.(*RemoteExecutionConsumer); alreadyRemote {
+			continue
+		}
+		if !optimize.InspectSelectors(child).HasSelectors {
+			continue
+		}
+
+		wrappedChild, err := o.applyToRootNodeForVersion(child, groups, childEagerLoad, maximumSupportedQueryPlanVersion, childTimeRange)
+		if err != nil {
+			return fmt.Errorf("place a compatible remote execution subtree: %w", err)
+		}
+		if err := node.ReplaceChild(idx, wrappedChild); err != nil {
+			return fmt.Errorf("replace a compatible remote execution subtree: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -135,30 +175,36 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExec
 }
 
 // collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
-func collectEvaluationRoots(node planning.Node) ([]*core.EvaluationRoot, error) {
-	var uniqueRoots []*core.EvaluationRoot
+type evaluationRootWithTimeRange struct {
+	root      *core.EvaluationRoot
+	timeRange types.QueryTimeRange
+}
 
-	err := optimize.Walk(node, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+func collectEvaluationRoots(node planning.Node, timeRange types.QueryTimeRange) []evaluationRootWithTimeRange {
+	seen := map[*core.EvaluationRoot]struct{}{}
+	var roots []evaluationRootWithTimeRange
+
+	var collect func(planning.Node, types.QueryTimeRange)
+	collect = func(node planning.Node, timeRange types.QueryTimeRange) {
 		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
-			// We might see the same root multiple times if the entire root is a duplicate expression.
-			// We don't expect there to be many EvaluationRoots, so we search a slice (rather than use a map).
-			// This keeps the return order consistent, which keeps behaviour predictable and makes tests simpler.
-			if !slices.Contains(uniqueRoots, evaluationRoot) {
-				uniqueRoots = append(uniqueRoots, evaluationRoot)
+			if _, exists := seen[evaluationRoot]; !exists {
+				seen[evaluationRoot] = struct{}{}
+				roots = append(roots, evaluationRootWithTimeRange{
+					root:      evaluationRoot,
+					timeRange: evaluationRoot.ChildrenTimeRange(timeRange),
+				})
 			}
-
-			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
-			return false, nil
+			return
 		}
 
-		return true, nil
-	}))
-
-	if err != nil {
-		return nil, err
+		childTimeRange := node.ChildrenTimeRange(timeRange)
+		for child := range planning.ChildrenIter(node) {
+			collect(child, childTimeRange)
+		}
 	}
 
-	return uniqueRoots, nil
+	collect(node, timeRange)
+	return roots
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {
@@ -303,4 +349,9 @@ func isSplittingOrCachingNode(n planning.Node) bool {
 func isSplittingNode(n planning.Node) bool {
 	_, isTimeRangeSplit := n.(*splitandcache.TimeRangeSplit)
 	return isTimeRangeSplit
+}
+
+func isShardingConcatNode(n planning.Node) bool {
+	functionCall, ok := n.(*core.FunctionCall)
+	return ok && functionCall.Function == functions.FUNCTION_SHARDING_CONCAT
 }
