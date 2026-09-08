@@ -1770,7 +1770,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotEvictSeriesReownedBe
 	// own tick -- so it fetches those ranges, updates the cache, and queues reshardedLabels as
 	// pending non-owned.
 	strategy := installFakeOwnedSeriesRingStrategy(t, ingester, ring.TokenRanges{0, minHash}, 0)
-	require.True(t, ingester.ownedSeriesService.updateTenant(userID, db, true))
+	updated, err := ingester.ownedSeriesService.updateTenant(userID, db, true)
+	require.NoError(t, err)
+	require.True(t, updated)
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned right after the resize")
 
 	db.pendingNonOwnedRefsMtx.Lock()
@@ -1812,6 +1814,90 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotEvictSeriesReownedBe
 
 	db.pendingNonOwnedRefsMtx.Lock()
 	require.Empty(t, db.pendingNonOwnedRefs, "the re-owned series must be reconciled out of pendingNonOwnedRefs")
+	db.pendingNonOwnedRefsMtx.Unlock()
+}
+
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldSkipEvictionWhenRingLookupFails covers a
+// ring lookup failing during the pre-eviction re-check: updateTenant returns without
+// reconciling pendingNonOwnedRefs, so compactBlocksDueToNonOwnedSeries cannot trust the queue is
+// up to date and must not evict from it, since a series that's owned again could be sitting in
+// there unreconciled.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldSkipEvictionWhenRingLookupFails(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = time.Hour
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
+
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	ownedLabels, reshardedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
+
+	for _, lbls := range []labels.Labels{ownedLabels, reshardedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
+
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// A partition-count change puts reshardedLabels outside the owned range; queue it as
+	// pending non-owned via a successful updateTenant call, exactly as the owned-series
+	// service's own tick would.
+	strategy := installFakeOwnedSeriesRingStrategy(t, ingester, ring.TokenRanges{0, minHash}, 0)
+	updated, err := ingester.ownedSeriesService.updateTenant(userID, db, true)
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, 1, "the resharded series should be queued as pending non-owned")
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// The ring lookup starts failing, simulating the same instability that's likely to
+	// accompany a ring change in the first place.
+	strategy.setErr(fmt.Errorf("simulated ring lookup failure"))
+
+	// Backdate the pending entry so its grace period has elapsed.
+	backdated := time.Now().Add(-2 * time.Hour)
+	db.pendingNonOwnedRefsMtx.Lock()
+	for r := range db.pendingNonOwnedRefs {
+		db.pendingNonOwnedRefs[r] = backdated
+	}
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// Run eviction. The fix's pre-check sees updateTenant fail and skips eviction for this
+	// tenant entirely, rather than consuming the unreconciled queue.
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+
+	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the ring lookup keeps failing")
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "no series should be evicted while the ring lookup keeps failing")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, 1, "the pending ref is left untouched, neither reconciled nor evicted, until the ring lookup succeeds again")
 	db.pendingNonOwnedRefsMtx.Unlock()
 }
 
@@ -1962,6 +2048,7 @@ type fakeOwnedSeriesRingStrategy struct {
 	mu     sync.Mutex
 	ranges ring.TokenRanges
 	shard  int
+	err    error
 }
 
 func (f *fakeOwnedSeriesRingStrategy) checkRingForChanges() (bool, error) { return true, nil }
@@ -1975,6 +2062,9 @@ func (f *fakeOwnedSeriesRingStrategy) shardSizeForUser(_ string) int {
 func (f *fakeOwnedSeriesRingStrategy) tokenRangesForUser(_ string, _ int) (ring.TokenRanges, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.ranges, nil
 }
 
@@ -1986,6 +2076,14 @@ func (f *fakeOwnedSeriesRingStrategy) setRanges(ranges ring.TokenRanges) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ranges = ranges
+}
+
+// setErr makes tokenRangesForUser fail with err until cleared with setErr(nil), simulating a
+// ring lookup failure.
+func (f *fakeOwnedSeriesRingStrategy) setErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
 }
 
 // installFakeOwnedSeriesRingStrategy stops the ingester's real owned-series service, which would

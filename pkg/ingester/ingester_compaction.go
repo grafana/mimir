@@ -646,7 +646,15 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			db.pendingNonOwnedRefsMtx.Unlock()
 
 			if hasPendingNonOwnedRefs {
-				i.ownedSeriesService.updateTenant(userID, db, true)
+				if _, err := i.ownedSeriesService.updateTenant(userID, db, true); err != nil {
+					// The ring lookup failed, so pendingNonOwnedRefs was NOT reconciled this
+					// round: it may still contain refs that are owned again. Ring lookups are
+					// especially likely to fail during the same ring instability that causes
+					// ownership to flip in the first place, so skip eviction for this tenant
+					// rather than risk evicting a currently-owned series. updateTenant already
+					// scheduled a retry for the next tick.
+					continue
+				}
 			}
 		}
 
