@@ -1029,6 +1029,17 @@ eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b
 
 clear
 
+load 1h
+  shared_split_unsplit_metric{env="prod"} 1 1 3 3
+
+eval instant at 3h59m59s999ms sum_over_time(shared_split_unsplit_metric[4h:1h]) + stddev_over_time(shared_split_unsplit_metric[4h:1h])
+  {env="prod"} 9
+
+eval instant at 3h59m59s999ms sum_over_time(shared_split_unsplit_metric[4h:1h]) + stddev_over_time(shared_split_unsplit_metric[4h:1h])
+  {env="prod"} 9
+
+clear
+
 # Warning from inside a subquery should be preserved.
 load 1h
   subquery_warn_metric{env="prod"} 1 2 3 4 5 {{schema:0 sum:100 count:10 buckets:[10]}} 7 8

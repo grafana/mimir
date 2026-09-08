@@ -144,7 +144,7 @@ func TestSubquery_IsSplittable(t *testing.T) {
 
 // TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks checks that insertDuplicatesAcrossSplitBlocks (see commonsubexpressionelimination/optimization_pass.go)
 // wraps exactly the nodes it needs to in a Duplicate node. core.Subquery or core.StepInvariantExpression nested
-// below a split target's own child, at any depth, but not the split target's own child itself.
+// below a split target's own child, at any depth.
 func TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -153,85 +153,91 @@ func TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks(t *testing.T) {
 		expr         string
 		expectedPlan string
 	}{
-		"no nested subquery or step-invariant expression: nothing is wrapped": {
+		"no nested subquery or step-invariant expression": {
 			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: sum_over_time(...)
 						- Subquery: [5h0m0s:1h0m0s]
-							- FunctionCall: max_over_time(...)
-								- MatrixSelector: {__name__="test_metric"}[10m0s]
+							- Duplicate
+								- FunctionCall: max_over_time(...)
+									- MatrixSelector: {__name__="test_metric"}[10m0s]
 			`,
 		},
-		"subquery nested one level below the split target: only the nested subquery's own child is wrapped": {
+		"subquery nested one level below the split target": {
 			expr: `count_over_time(sum_over_time(min_over_time(test_metric[2h])[20h:2h])[5h:12h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: count_over_time(...)
 						- Subquery: [5h0m0s:12h0m0s]
-							- FunctionCall: sum_over_time(...)
-								- Subquery: [20h0m0s:2h0m0s]
-									- Duplicate
-										- FunctionCall: min_over_time(...)
-											- MatrixSelector: {__name__="test_metric"}[2h0m0s]
+							- Duplicate
+								- FunctionCall: sum_over_time(...)
+									- Subquery: [20h0m0s:2h0m0s]
+										- Duplicate
+											- FunctionCall: min_over_time(...)
+												- MatrixSelector: {__name__="test_metric"}[2h0m0s]
 			`,
 		},
-		"binary expression with a constant nested below the split target: the whole expression is wrapped": {
+		"binary expression with a constant nested below the split target": {
 			expr: `count_over_time(sum_over_time((test_metric / 2)[3h:1h])[5h:12h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: count_over_time(...)
 						- Subquery: [5h0m0s:12h0m0s]
-							- FunctionCall: sum_over_time(...)
-								- Subquery: [3h0m0s:1h0m0s]
-									- Duplicate
-										- DeduplicateAndMerge
-											- BinaryExpression: LHS / RHS
-												- LHS: VectorSelector: {__name__="test_metric"}
-												- RHS: NumberLiteral: 2
+							- Duplicate
+								- FunctionCall: sum_over_time(...)
+									- Subquery: [3h0m0s:1h0m0s]
+										- Duplicate
+											- DeduplicateAndMerge
+												- BinaryExpression: LHS / RHS
+													- LHS: VectorSelector: {__name__="test_metric"}
+													- RHS: NumberLiteral: 2
 			`,
 		},
-		"subquery nested two levels below the split target: every nested level's own child is wrapped": {
+		"subquery nested two levels below the split target: every level's own child is wrapped": {
 			expr: `count_over_time(sum_over_time(avg_over_time(min_over_time(test_metric[1h])[3h:30m])[10h:1h])[5h:12h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: count_over_time(...)
 						- Subquery: [5h0m0s:12h0m0s]
-							- FunctionCall: sum_over_time(...)
-								- Subquery: [10h0m0s:1h0m0s]
-									- Duplicate
-										- FunctionCall: avg_over_time(...)
-											- Subquery: [3h0m0s:30m0s]
-												- Duplicate
-													- FunctionCall: min_over_time(...)
-														- MatrixSelector: {__name__="test_metric"}[1h0m0s]
+							- Duplicate
+								- FunctionCall: sum_over_time(...)
+									- Subquery: [10h0m0s:1h0m0s]
+										- Duplicate
+											- FunctionCall: avg_over_time(...)
+												- Subquery: [3h0m0s:30m0s]
+													- Duplicate
+														- FunctionCall: min_over_time(...)
+															- MatrixSelector: {__name__="test_metric"}[1h0m0s]
 			`,
 		},
-		"step-invariant expression nested below the split target: its child is wrapped": {
+		"step-invariant expression nested below the split target": {
 			expr: `count_over_time(vector(1)[5h:3h])`,
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- SplitFunctionCall
 						- FunctionCall: count_over_time(...)
 							- Subquery: [5h0m0s:3h0m0s]
-								- StepInvariantExpression
-									- Duplicate
-										- FunctionCall: vector(...)
-											- NumberLiteral: 1
+								- Duplicate
+									- StepInvariantExpression
+										- Duplicate
+											- FunctionCall: vector(...)
+												- NumberLiteral: 1
 			`,
 		},
-		"step-invariant expression (vector(1)) as one operand of a binary expression: only that operand is wrapped": {
+		"step-invariant expression (vector(1)) as one operand of a binary expression": {
 			expr: `sum_over_time((vector(1) + on() test_metric)[5h:1h])`,
 			expectedPlan: `
 				- SplitFunctionCall
 					- FunctionCall: sum_over_time(...)
 						- Subquery: [5h0m0s:1h0m0s]
-							- BinaryExpression: LHS + on () RHS
-								- LHS: StepInvariantExpression
-									- Duplicate
-										- FunctionCall: vector(...)
-											- NumberLiteral: 1
-								- RHS: VectorSelector: {__name__="test_metric"}
+							- Duplicate
+								- BinaryExpression: LHS + on () RHS
+									- LHS: StepInvariantExpression
+										- Duplicate
+											- FunctionCall: vector(...)
+												- NumberLiteral: 1
+									- RHS: VectorSelector: {__name__="test_metric"}
 			`,
 		},
 		"nested subquery shared by subset selector elimination: its child is still wrapped exactly once": {
@@ -240,16 +246,32 @@ func TestQuerySplitting_InsertDuplicatesAcrossSplitBlocks(t *testing.T) {
 				- SplitFunctionCall
 					- FunctionCall: count_over_time(...)
 						- Subquery: [10h0m0s:12h0m0s]
-							- BinaryExpression: LHS / ignoring (a) RHS, hints exclude (a)
-								- LHS: FunctionCall: sum_over_time(...)
-									- DuplicateFilter: {a="1"}, subset index: 0
-										- ref#1 Duplicate
-											- Subquery: [5h0m0s:1h0m0s]
-												- Duplicate
-													- FunctionCall: max_over_time(...)
-														- MatrixSelector: {__name__="dedupe_filter_metric"}[1h0m0s], subsets: {a="1"} ({__name__="dedupe_filter_metric", a="1"})
-								- RHS: FunctionCall: min_over_time(...)
-									- ref#1 Duplicate ...
+							- Duplicate
+								- BinaryExpression: LHS / ignoring (a) RHS, hints exclude (a)
+									- LHS: FunctionCall: sum_over_time(...)
+										- DuplicateFilter: {a="1"}, subset index: 0
+											- ref#1 Duplicate
+												- Subquery: [5h0m0s:1h0m0s]
+													- Duplicate
+														- FunctionCall: max_over_time(...)
+															- MatrixSelector: {__name__="dedupe_filter_metric"}[1h0m0s], subsets: {a="1"} ({__name__="dedupe_filter_metric", a="1"})
+									- RHS: FunctionCall: min_over_time(...)
+										- ref#1 Duplicate ...
+			`,
+		},
+		"subquery is shared with another": {
+			expr: `sum_over_time(max_over_time(test_metric[10m])[5h:1h]) + stddev_over_time(max_over_time(test_metric[10m])[5h:1h])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS, hints exclude ()
+					- LHS: SplitFunctionCall
+						- FunctionCall: sum_over_time(...)
+							- ref#1 Duplicate
+								- Subquery: [5h0m0s:1h0m0s]
+									- Duplicate
+										- FunctionCall: max_over_time(...)
+											- MatrixSelector: {__name__="test_metric"}[10m0s]
+					- RHS: FunctionCall: stddev_over_time(...)
+						- ref#1 Duplicate ...
 			`,
 		},
 	}
@@ -306,8 +328,9 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 				- SplitFunctionCall
 					- FunctionCall: sum_over_time(...)
 						- Subquery: [5h0m0s:1h0m0s]
-							- FunctionCall: max_over_time(...)
-								- MatrixSelector: {__name__="test_metric"}[10m0s]
+							- Duplicate
+								- FunctionCall: max_over_time(...)
+									- MatrixSelector: {__name__="test_metric"}[10m0s]
 			`,
 			expectedVersion: planning.QueryPlanV21,
 		},
@@ -319,8 +342,9 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 						- FunctionCall: sum_over_time(...)
 							- ref#1 Duplicate
 								- Subquery: [5h0m0s:1h0m0s]
-									- FunctionCall: max_over_time(...)
-										- MatrixSelector: {__name__="test_metric"}[10m0s]
+									- Duplicate
+										- FunctionCall: max_over_time(...)
+											- MatrixSelector: {__name__="test_metric"}[10m0s]
 					- RHS: SplitFunctionCall
 						- FunctionCall: count_over_time(...)
 							- ref#1 Duplicate ...
@@ -335,8 +359,9 @@ func TestQuerySplitting_MinimumRequiredPlanVersion(t *testing.T) {
 						- SplitFunctionCall
 							- FunctionCall: sum_over_time(...)
 								- Subquery: [5h0m0s:1h0m0s]
-									- FunctionCall: max_over_time(...)
-										- MatrixSelector: {__name__="test_metric"}[10m0s]
+									- Duplicate
+										- FunctionCall: max_over_time(...)
+											- MatrixSelector: {__name__="test_metric"}[10m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedVersion: planning.QueryPlanV21,

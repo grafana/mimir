@@ -939,8 +939,8 @@ func isDuplicateNode(node planning.Node) bool {
 }
 
 // insertSplitSubqueryDuplicates finds SplitFunctionCall nodes wrapping a subquery, and inserts Duplicate nodes
-// (via insertDuplicatesAcrossSplitBlocks) around any Subquery/StepInvariantExpression nested inside that
-// subquery's inner expression. Returns the number of Duplicate nodes introduced.
+// (via insertDuplicatesAcrossSplitBlocks) around any Subquery/StepInvariantExpression inside that subquery's inner expression.
+// Returns the number of Duplicate nodes introduced.
 func (e *OptimizationPass) insertSplitSubqueryDuplicates(n planning.Node) (int, error) {
 	introduced := 0
 
@@ -950,7 +950,7 @@ func (e *OptimizationPass) insertSplitSubqueryDuplicates(n planning.Node) (int, 
 		}
 
 		if subquery, isSubquery := unwrapDuplicate(splitCall.Inner.Child(0)).(*core.Subquery); isSubquery {
-			count, err := e.insertDuplicatesAcrossSplitBlocks(subquery.Child(0))
+			count, err := e.insertDuplicatesAcrossSplitBlocks(subquery)
 			if err != nil {
 				return 0, err
 			}
