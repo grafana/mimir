@@ -67,6 +67,7 @@
 * [ENHANCEMENT] Dashboards: Support collapsing the compactor standalone-mode panels by default with the `compactor_standalone_summary_collapsed` flag. #16482
 * [BUGFIX] Recording rules: Add the `image!=""` selector to the `cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate` recording rule, consistently with the memory one. Where cAdvisor sandbox and parent cgroup series are not dropped at scrape time, CPU usage was counted twice, which also inflated the replica count recommended by the Scaling dashboard. #16320
 * [BUGFIX] Alerts: Point `runbook_url` annotations at `/manage/mimir-runbooks/` (docs moved off `operators-guide`). #16329
+* [BUGFIX] Dashboards: Fix the ingest mode latency panels not working with classic histogram metrics. #16556
 
 ### Jsonnet
 

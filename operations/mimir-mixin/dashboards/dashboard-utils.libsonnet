@@ -1995,74 +1995,68 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
   ],
 
+  ingestStorageIngesterEndToEndLatencyPanel(phase, title, description)::
+    local metric = 'cortex_ingest_storage_reader_receive_delay_seconds';
+    local selector = '%s, phase="%s"' % [$.jobMatcher($._config.job_names.ingester), phase];
+    local queries = [
+      {
+        query: utils.ncHistogramAverageRate(metric, selector),
+        legend: 'avg',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.99', metric, selector),
+        legend: '99th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.999', metric, selector),
+        legend: '99.9th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('1.0', metric, selector),
+        legend: '100th percentile',
+      },
+    ];
+    $.timeseriesPanel(title) +
+    $.panelDescription(title, description) +
+    $.queryPanel(
+      std.flattenArrays([[utils.showClassicHistogramQuery(query.query), utils.showNativeHistogramQuery(query.query)] for query in queries]),
+      std.flattenArrays([[query.legend, query.legend] for query in queries]),
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
   ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
-    $.timeseriesPanel('Kafka end-to-end latency when starting') +
-    $.panelDescription(
+    $.ingestStorageIngesterEndToEndLatencyPanel(
+      'starting',
       'Kafka end-to-end latency when starting',
       |||
         Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
         If ingesters are not starting and catching up in the selected time range, this panel will be empty.
-      |||
-    ) +
-    $.queryPanel(
-      [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-      ],
-      [
-        'avg',
-        '99th percentile',
-        '99.9th percentile',
-        '100th percentile',
-      ],
-    ) + {
-      fieldConfig+: {
-        defaults+: { unit: 's' },
-      },
-    },
+      |||,
+    ),
 
   ingestStorageIngesterEndToEndLatencyWhenRunningPanel()::
-    $.timeseriesPanel('Kafka end-to-end latency when ingesters are running') +
-    $.panelDescription(
+    $.ingestStorageIngesterEndToEndLatencyPanel(
+      'running',
       'Kafka end-to-end latency when ingesters are running',
       |||
         Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
-      |||
-    ) +
-    $.queryPanel(
-      [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-      ],
-      [
-        'avg',
-        '99th percentile',
-        '99.9th percentile',
-        '100th percentile',
-      ],
-    ) + {
-      fieldConfig+: {
-        defaults+: { unit: 's' },
-      },
-    },
+      |||,
+    ),
 
   ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel()::
-    $.timeseriesPanel('Kafka 100th percentile end-to-end latency when ingesters are running (outliers)') +
-    $.panelDescription(
-      'Kafka 100th percentile end-to-end latency when ingesters are running (outliers only)',
-      |||
-        The 100th percentile of the time between writing request by distributor to Kafka and reading the record by ingester,
-        when ingesters are running. This panel only shows ingester outliers, to easily spot if the high end-to-end latency
-        may be caused by few ingesters.
-      |||
-    ) +
-    $.hiddenLegendQueryPanel(
-      |||
-        histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+    local metric = 'cortex_ingest_storage_reader_receive_delay_seconds';
+    local selector = '%s, phase="running"' % $.jobMatcher($._config.job_names.ingester);
+    local latency = utils.ncHistogramQuantile('1.0', metric, selector, sum_by=[$._config.per_instance_label]);
+    local ingesterCount = utils.ncHistogramSumBy(
+      utils.ncHistogramCountRate(metric, selector),
+      sum_by=[$._config.per_namespace_label, $._config.per_instance_label]
+    );
+    local outlierQuery = {
+      [histogramType]: |||
+        %(latency)s
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
         # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%
@@ -2074,25 +2068,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 scalar(
                     clamp_min(
                         ceil(
-                            count(count by(%(per_namespace_label)s, %(per_instance_label)s) (cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}))
+                            (count(%(ingester_count)s) or vector(0))
                             * 0.1
                         ), 10
                     )
                 ),
-                histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
-                > 0
+                %(latency)s > 0
             )
           )
           * 2
         )
       ||| % {
-        job_matcher: $.jobMatcher($._config.job_names.ingester),
-        per_instance_label: $._config.per_instance_label,
-        per_namespace_label: $._config.per_namespace_label,
-      },
-      '{{%(per_instance_label)s}}' % {
-        per_instance_label: $._config.per_instance_label,
-      },
+        latency: latency[histogramType],
+        ingester_count: ingesterCount[histogramType],
+      }
+      for histogramType in ['classic', 'native']
+    };
+    $.timeseriesPanel('Kafka 100th percentile end-to-end latency when ingesters are running (outliers)') +
+    $.panelDescription(
+      'Kafka 100th percentile end-to-end latency when ingesters are running (outliers only)',
+      |||
+        The 100th percentile of the time between writing request by distributor to Kafka and reading the record by ingester,
+        when ingesters are running. This panel only shows ingester outliers, to easily spot if the high end-to-end latency
+        may be caused by few ingesters.
+      |||
+    ) +
+    $.hiddenLegendQueryPanel(
+      [
+        utils.showClassicHistogramQuery(outlierQuery),
+        utils.showNativeHistogramQuery(outlierQuery),
+      ],
+      [
+        '{{%(per_instance_label)s}}' % { per_instance_label: $._config.per_instance_label },
+        '{{%(per_instance_label)s}}' % { per_instance_label: $._config.per_instance_label },
+      ],
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },
@@ -2186,6 +2195,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack,
 
   ingestStorageFetchLastProducedOffsetLatencyPanel(jobMatcher)::
+    local metric = 'cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds';
+    local queries = [
+      {
+        query: utils.ncHistogramAverageRate(metric, jobMatcher),
+        legend: 'avg',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.99', metric, jobMatcher),
+        legend: '99th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.999', metric, jobMatcher),
+        legend: '99.9th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('1.0', metric, jobMatcher),
+        legend: '100th percentile',
+      },
+    ];
     $.timeseriesPanel('Fetch last produced offset latency') +
     $.panelDescription(
       'Fetch last produced offset latency',
@@ -2194,18 +2222,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       |||
     ) +
     $.queryPanel(
-      [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
-      ],
-      [
-        'avg',
-        '99th percentile',
-        '99.9th percentile',
-        '100th percentile',
-      ],
+      std.flattenArrays([[utils.showClassicHistogramQuery(query.query), utils.showNativeHistogramQuery(query.query)] for query in queries]),
+      std.flattenArrays([[query.legend, query.legend] for query in queries]),
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },
@@ -2249,24 +2267,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack,
 
   ingestStorageStrongConsistencyWaitLatencyPanel(component, jobMatcher)::
+    local metric = 'cortex_ingest_storage_strong_consistency_wait_duration_seconds';
+    local selector = 'component="%s", %s' % [component, jobMatcher];
+    local queries = [
+      {
+        query: utils.ncHistogramAverageRate(metric, selector),
+        legend: 'avg',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.99', metric, selector),
+        legend: '99th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('0.999', metric, selector),
+        legend: '99.9th percentile',
+      },
+      {
+        query: utils.ncHistogramQuantile('1.0', metric, selector),
+        legend: '100th percentile',
+      },
+    ];
     $.timeseriesPanel('Strong read consistency queries — wait latency') +
     $.panelDescription(
       'Strong read consistency queries — wait latency',
       'How long does the request wait to guarantee strong read consistency.',
     ) +
     $.queryPanel(
-      [
-        'histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
-      ],
-      [
-        'avg',
-        '99th percentile',
-        '99.9th percentile',
-        '100th percentile',
-      ],
+      std.flattenArrays([[utils.showClassicHistogramQuery(query.query), utils.showNativeHistogramQuery(query.query)] for query in queries]),
+      std.flattenArrays([[query.legend, query.legend] for query in queries]),
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },
