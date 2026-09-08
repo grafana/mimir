@@ -35,8 +35,6 @@ func TestLimits_YAMLAndMapstructureDecodingAreEquivalent(t *testing.T) {
 	defaults := defaultLimitsForEquivalence(t)
 	validation.SetDefaultLimitsForYAMLUnmarshalling(defaults)
 
-	gen := limitstest.New()
-
 	f := func(l validation.Limits) bool {
 		// The generated limits are the "input" a user could write: marshal them
 		// to YAML, which is exactly what a runtime config file would contain.
@@ -81,7 +79,7 @@ func TestLimits_YAMLAndMapstructureDecodingAreEquivalent(t *testing.T) {
 	cfg := &quick.Config{
 		MaxCount: 2000,
 		Values: func(args []reflect.Value, r *rand.Rand) {
-			args[0] = reflect.ValueOf(gen.Limits(r, defaults))
+			args[0] = reflect.ValueOf(limitstest.GenerateLimits(r, defaults))
 		},
 	}
 	require.NoError(t, quick.Check(f, cfg))

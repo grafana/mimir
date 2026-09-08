@@ -5,10 +5,10 @@ package distributor
 import (
 	"flag"
 
+	"github.com/grafana/dskit/runtimeconfig/mapstructure"
 	"github.com/pkg/errors"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/grafana/dskit/runtimeconfig/mapstructure"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 

@@ -43,10 +43,16 @@ type Generator struct {
 // ValueFunc returns a random reflect.Value of a specific type.
 type ValueFunc func(*rand.Rand) reflect.Value
 
-// New returns a Generator preconfigured for the standard Mimir
+// GenerateLimits produces a random validation.Limits, encoded as a
+// map[string]any to be passed to a runtimeconfig MapLoader.
+func GenerateLimits(r *rand.Rand, defaults validation.Limits) validation.Limits {
+	return NewGenerator().Limits(r, defaults)
+}
+
+// NewGenerator returns a Generator preconfigured for the standard Mimir
 // validation.Limits field types. The returned Generator may be customized
-// further (its maps are safe to mutate) before use.
-func New() *Generator {
+// before use.
+func NewGenerator() *Generator {
 	return &Generator{
 		ValueFuncs: defaultValueFuncs(),
 		SkipFields: map[string]bool{
@@ -64,18 +70,13 @@ func New() *Generator {
 
 func (g *Generator) Limits(r *rand.Rand, defaults validation.Limits) validation.Limits {
 	l := defaults
-
-	// Give l its own extensions map (RegisterExtensionsDefaults allocates a
-	// fresh one) so perturbing it doesn't mutate the shared defaults.
 	l.RegisterExtensionsDefaults()
 
 	v := reflect.ValueOf(&l).Elem()
 	tp := v.Type()
-	for i := 0; i < v.NumField(); i++ {
+	for i := range v.NumField() {
 		fv := v.Field(i)
 		if !fv.CanSet() {
-			// Unexported bookkeeping fields (extensions map, atomic pointers,
-			// cached hash). They are handled elsewhere or reset on decode.
 			continue
 		}
 		if g.SkipFields[tp.Field(i).Name] {
@@ -139,7 +140,7 @@ func (g *Generator) Value(t reflect.Type, r *rand.Rand) reflect.Value {
 	case reflect.Slice:
 		n := r.Intn(4)
 		s := reflect.MakeSlice(t, n, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			s.Index(i).Set(g.Value(t.Elem(), r))
 		}
 		return s
@@ -174,10 +175,6 @@ func (g *Generator) perturbExtensions(l *validation.Limits, r *rand.Rand) {
 	}
 }
 
-// limitsExtensions returns the (unexported) extensions map of l so the
-// generator can randomize the extension values. There is no exported accessor
-// for it, and exercising the extensions is the whole point of reusing this
-// generator downstream, so we reach in.
 func limitsExtensions(l *validation.Limits) map[string]any {
 	f := reflect.ValueOf(l).Elem().FieldByName("extensions")
 	f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()

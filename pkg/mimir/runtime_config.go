@@ -259,7 +259,7 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	switch cfg.RuntimeConfig.Loader {
 	case runtimeConfigLoaderMap:
-		cfg.RuntimeConfig.Config.MapLoader = loader.loadFromMap
+		cfg.RuntimeConfig.MapLoader = loader.loadFromMap
 	case runtimeConfigLoaderYAML, "":
 		cfg.RuntimeConfig.Config.Loader = loader.load
 	default:

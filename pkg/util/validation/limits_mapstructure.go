@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/runtimeconfig/mapstructure"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"go.yaml.in/yaml/v3"
-
-	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
