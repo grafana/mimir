@@ -325,6 +325,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+			if c.bkt.IsObjNotFoundErr(err) {
+				return blockFileNotFoundError{
+					err: fmt.Errorf("block file not found in bucket: %w", err),
+					id:  meta.ULID,
+				}
+			}
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
@@ -679,6 +685,27 @@ func isIssue347Error(err error) (bool, issue347Error) {
 	var ie issue347Error
 	ok := errors.As(err, &ie)
 	return ok, ie
+}
+
+// blockFileNotFoundError is a type wrapper for when a file of a source block is missing from object storage.
+type blockFileNotFoundError struct {
+	err error
+	id  ulid.ULID
+}
+
+func (e blockFileNotFoundError) Error() string {
+	return fmt.Sprintf("%s (block: %s)", e.err.Error(), e.id.String())
+}
+
+func (e blockFileNotFoundError) Unwrap() error {
+	return e.err
+}
+
+// isBlockFileNotFoundError returns true if the base error is a blockFileNotFoundError.
+func isBlockFileNotFoundError(err error) (bool, blockFileNotFoundError) {
+	var notFoundErr blockFileNotFoundError
+	ok := errors.As(err, &notFoundErr)
+	return ok, notFoundErr
 }
 
 // OutOfOrderChunksError is a type wrapper for OOO chunk error from validating block index.
