@@ -326,10 +326,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
 			if c.bkt.IsObjNotFoundErr(err) {
-				return blockFileNotFoundError{
-					err: fmt.Errorf("block file not found in bucket: %w", err),
-					id:  meta.ULID,
-				}
+				return blockFileNotFoundError{err: err, id: meta.ULID}
 			}
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
@@ -694,7 +691,7 @@ type blockFileNotFoundError struct {
 }
 
 func (e blockFileNotFoundError) Error() string {
-	return fmt.Sprintf("%s (block: %s)", e.err.Error(), e.id.String())
+	return fmt.Sprintf("block file not found in bucket: %s (block: %s)", e.err.Error(), e.id.String())
 }
 
 func (e blockFileNotFoundError) Unwrap() error {
