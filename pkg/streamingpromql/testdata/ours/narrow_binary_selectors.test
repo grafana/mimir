@@ -1,9 +1,34 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-# This test verifies that narrowing preserves ungrouped aggregation results.
+# These tests verify that narrowing stops at nodes that do not preserve all input labels.
 load 1m
   some_metric{cluster="one", namespace="first"} 1+1x5
   some_metric{cluster="two", namespace="second"} 10+2x5
 
+# Ungrouped aggregations remove every label.
 eval instant at 5m sum(max by (cluster, namespace) (some_metric)) - sum(max by (cluster, namespace) (some_metric offset 1m))
   {} 3
+
+# An explicit empty grouping also removes every label.
+eval instant at 5m sum by () (max by (cluster, namespace) (some_metric)) - sum by () (max by (cluster, namespace) (some_metric offset 1m))
+  {} 3
+
+clear
+
+# Without aggregations remove only the listed labels.
+load 1m
+  some_metric{cluster="one", instance="a"} 1+1x5
+  some_metric{cluster="one", instance="b"} 10+2x5
+
+eval instant at 5m sum without (instance) (max by (cluster, instance) (some_metric)) - sum without (instance) (max by (cluster, instance) (some_metric offset 1m))
+  {cluster="one"} 3
+
+clear
+
+# histogram_quantile removes the le label from its aggregation output.
+load 1m
+  some_bucket{cluster="one", le="0.5"} 1+1x5
+  some_bucket{cluster="one", le="+Inf"} 2+2x5
+
+eval instant at 5m histogram_quantile(0.5, sum by (cluster, le) (some_bucket)) - histogram_quantile(0.5, sum by (cluster, le) (some_bucket offset 1m))
+  {cluster="one"} 0
