@@ -35,44 +35,35 @@ func TestLimits_YAMLAndMapstructureDecodingAreEquivalent(t *testing.T) {
 	defaults := defaultLimitsForEquivalence(t)
 	validation.SetDefaultLimitsForYAMLUnmarshalling(defaults)
 
-	f := func(l validation.Limits) bool {
-		// The generated limits are the "input" a user could write: marshal them
-		// to YAML, which is exactly what a runtime config file would contain.
-		b, err := yaml.Marshal(&l)
+	f := func(config map[string]any) bool {
+		// Simulate the real runtimeconfig scenario: config is read from YAML,
+		// then unmarshaled into a map[string]any, then either re-encoded as
+		// YAML (viaYAML) or passed directly as a map (viaMap).
+		b, err := yaml.Marshal(config)
 		require.NoError(t, err)
+		config = map[string]any{}
+		require.NoError(t, yaml.Unmarshal(b, &config))
 
-		// -runtime-config.loader=yaml: decode the YAML document straight into Limits.
 		var viaYAML validation.Limits
+		b, err = yaml.Marshal(config)
+		require.NoError(t, err)
 		errYAML := yaml.Unmarshal(b, &viaYAML)
 
-		// -runtime-config.loader=map: decode the YAML into a generic map (this is
-		// what dskit's runtimeconfig hands to the map loader) and then decode
-		// that map with mapstructure.
-		var raw map[string]any
-		require.NoError(t, yaml.Unmarshal(b, &raw))
 		var viaMap validation.Limits
-		errMap := viaMap.UnmarshalMapstructure(raw)
+		errMap := viaMap.UnmarshalMapstructure(config)
 
-		// Both loaders must agree on whether the config is valid at all.
-		require.Equalf(t, errYAML == nil, errMap == nil,
-			"YAML and mapstructure loaders disagree on validity.\ninput:\n%s\nyaml loader err: %v\nmap loader err: %v",
-			b, errYAML, errMap)
-
-		// If both rejected the config there's nothing else to compare.
+		require.Equalf(t, errYAML == nil, errMap == nil, "YAML and mapstructure loaders disagree on validity.\ninput:\n%s\nyaml loader err: %v\nmap loader err: %v", b, errYAML, errMap)
 		if errYAML != nil {
 			return true
 		}
 
-		// Both accepted it: the resulting configuration must be equivalent. We
-		// compare the marshaled forms so we don't depend on unexported
-		// bookkeeping fields (atomic pointers, cached hashes, ...) which are
-		// derived from the same content anyway.
+		// Compare the marshaled forms so we don't depend on unexported fields.
 		yamlOut, err := yaml.Marshal(&viaYAML)
 		require.NoError(t, err)
 		mapOut, err := yaml.Marshal(&viaMap)
 		require.NoError(t, err)
-		require.Equalf(t, string(yamlOut), string(mapOut),
-			"YAML and mapstructure loaders produced different configs.\ninput:\n%s", b)
+		require.Equalf(t, string(yamlOut), string(mapOut), "YAML and mapstructure loaders produced different configs.\ninput:\n%s", b)
+
 		return true
 	}
 
