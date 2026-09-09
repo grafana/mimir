@@ -17,7 +17,7 @@ For more information, refer to [experimental features](../../../../configure/abo
 The block-builder moves responsibility for producing blocks in [long-term storage](../../../../get-started/about-grafana-mimir-architecture/#long-term-storage)
 from [ingesters](../ingester/) to a separate worker pool.
 
-In the ingest storage architecture, to provide high availability for queries multiple ingesters consume ingested series data from Kafka.
+In the ingest storage architecture, to provide high availability for queries, multiple ingesters consume ingested series data from Kafka.
 When each ingester replica ships blocks to long-term storage, this produces blocks with duplicate series data. The [compactor](../compactor/) then
 works through the shipped uncompacted blocks and deduplicate them.
 
@@ -37,7 +37,7 @@ The following flow describes interaction between block-builder-scheduler, block-
 1. The block-builder consumes the range of records from a Kafka topic partition that the job covers.
 1. The block-builder creates TSDB blocks per tenant locally and uploads them to long-term object storage.
 1. After the upload succeeds, the block-builder reports completion to the block-builder-scheduler.
-1. The scheduler advances the committed Kafka offsets after jobs complete in partition order.
+1. The scheduler advances the committed Kafka offsets after jobs complete, in partition order.
 
 The block-builder-scheduler is a singleton process: there must be only one active scheduler replica. It can't coordinate its state between its own replicas.
 
@@ -48,13 +48,13 @@ If a worker fails to process its job, the scheduler assigns the unfinished job t
 
 The block-builders can be scaled horizontally in response to demand from the scheduler.
 
-### Job model
+### Block-builder-scheduler job model
 
-The block-builder-scheduler divides time into job buckets of size `-block-builder-scheduler.job-size` (default 1h). When the current wall-clock time crosses
+The block-builder-scheduler divides time into job buckets of size `-block-builder-scheduler.job-size` (default 1h). When the current time crosses
 a bucket boundary, the scheduler emits a job covering the Kafka offsets that were produced during the previous bucket.
 
-A job is defined by `(topic, partition, startOffset, endOffset)` tuple. The scheduler tracks committed and planned
-offsets per partition and advances them as jobs complete.
+A job is defined by the tuple `(topic, partition, startOffset, endOffset)`. The scheduler tracks committed and planned
+offsets per partition and advances them as jobs are completed.
 
 ## Migrate to block-builder architecture
 
@@ -119,7 +119,7 @@ Block-builders must also use the same object storage and runtime limit configura
 ### 2. Verify block-builder operation
 
 Wait for the block-builders to catch up with the backlog, while ingesters continue to upload blocks.
-Refer the [Mimir / Block-builder dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/dashboards/block-builder.libsonnet) to observe the process (while the block-builder is experiment, the dashboard is [disabled by default in "mimir-mixin"](https://github.com/grafana/mimir/blob/release-3.2/operations/mimir-mixin/config.libsonnet#L268-L269)).
+Refer to the [Mimir / Block-builder dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/dashboards/block-builder.libsonnet) to observe the process (while the block-builder is experimental, the dashboard is [disabled by default in "mimir-mixin"](https://github.com/grafana/mimir/blob/release-3.2/operations/mimir-mixin/config.libsonnet#L268-L269)).
 Verify that jobs complete, committed offsets advance, blocks reach object storage, and the compactor and store-gateway remain healthy.
 
 ### 3. Disable ingester block shipping
