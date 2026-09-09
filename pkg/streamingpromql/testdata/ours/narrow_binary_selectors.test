@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# This test verifies that narrowing preserves ungrouped aggregation results.
+load 1m
+  some_metric{cluster="one", namespace="first"} 1+1x5
+  some_metric{cluster="two", namespace="second"} 10+2x5
+
+eval instant at 5m sum(max by (cluster, namespace) (some_metric)) - sum(max by (cluster, namespace) (some_metric offset 1m))
+  {} 3
