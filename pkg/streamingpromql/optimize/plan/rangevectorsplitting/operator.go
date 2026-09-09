@@ -931,12 +931,13 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
 		}
 
-		// Include operatorAnnotations (eg. from a nested function inside a split subquery) alongside this
-		// range's own annotations: operator spans every range in this group, so these aren't attributable to
-		// this range specifically, but omitting them would mean a cache hit on this range silently loses them.
-		rangeAnnotations := make(annotations.Annotations, len(*p.rangeAnnotations[rangeIdx])+len(p.operatorAnnotations))
-		rangeAnnotations.Merge(*p.rangeAnnotations[rangeIdx])
-		rangeAnnotations.Merge(p.operatorAnnotations)
+		rangeAnnotations := *p.rangeAnnotations[rangeIdx]
+		if len(p.operatorAnnotations) > 0 {
+			merged := make(annotations.Annotations, len(rangeAnnotations)+len(p.operatorAnnotations))
+			merged.Merge(rangeAnnotations)
+			merged.Merge(p.operatorAnnotations)
+			rangeAnnotations = merged
+		}
 
 		if err := p.parent.cache.Set(
 			ctx,
