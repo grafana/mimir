@@ -989,9 +989,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_AbandonsWhenBlockDeletedAfterMet
 	schedulerExec.metadataCache = metaCache
 	c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
 
-	compactor, planner, err := splitAndMergeCompactorFactory(ctx, cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	compactor, planner, err := splitAndMergeCompactorFactory(ctx, cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
-	c.blocksCompactor = compactor
+	c.blocksCompactorProvider = compactor
 	c.blocksPlanner = planner
 
 	spec := &compactorschedulerpb.JobSpec{
