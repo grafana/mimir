@@ -16,12 +16,6 @@
             min-width: 12em;
         }
 
-        p.hint {
-            margin: 0 0 0.4em 1.8em;
-            color: #555;
-            font-size: 90%;
-        }
-
         p.note {
             margin: 0.2em 0 0.4em 0;
             color: #555;
@@ -37,9 +31,8 @@
     </style>
 </head>
 <body>
-{{ $page := . }}
 <h1>Store-gateway: bucket tenant blocks</h1>
-<p>Current time: {{ .NowText }}</p>
+<p>Current time: {{ .Now.UTC.Format "2006-01-02T15:04:05Z07:00" }}</p>
 <p>Showing blocks for tenant: <strong>{{ .Tenant }}</strong></p>
 <form autocomplete="off">
     <input type="hidden" name="page_size" value="{{ .PageSize }}">
@@ -50,7 +43,7 @@
             <input id="scan-bucket" name="scan_bucket" type="checkbox" {{ if .ScanBucket }}checked{{ end }}>
             <label for="scan-bucket">Scan bucket</label>
         </div>
-        <p class="hint">By default the page lists the blocks of the bucket index, which the compactor updates periodically. Set this to scan the bucket and read every block instead, which is slower but shows the newest blocks.</p>
+        <p class="note">By default the page lists the blocks of the bucket index, which the compactor updates periodically. Set this to scan the bucket and read every block instead, which is slower but shows the newest blocks.</p>
         <div>
             <label class="field" for="block-id">Block ID</label>
             <input id="block-id" name="block_id" type="text" size="28" value="{{ .BlockID }}">
@@ -183,32 +176,32 @@
     {{ range .FormattedBlocks }}
         <tr>
             <td>{{ .ULID }}</td>
-            {{ if gt $page.SplitCount 0 }}
+            {{ if gt $.SplitCount 0 }}
             <td>{{ .SplitID }}</td>{{ end }}
             <td>{{ .ULIDTime }}</td>
             <td>{{ .MinTime }}</td>
             <td>{{ .MaxTime }}</td>
             <td>{{ .Duration }}</td>
-            {{ if $page.ShowDeleted }}
+            {{ if $.ShowDeleted }}
             <td>{{ .DeletedTime }}</td>{{ end }}
             <td>{{ .CompactionLevel }}</td>
-            {{ if $page.HasDetails }}
+            {{ if $.HasDetails }}
             <td>{{ .BlockSize }}</td>{{ end }}
             <td>{{ .Stats.NumSeries }}</td>
-            {{ if $page.HasDetails }}
+            {{ if $.HasDetails }}
             <td>{{ .Stats.NumSamples }}</td>{{ end }}
-            {{ if $page.HasDetails }}
+            {{ if $.HasDetails }}
             <td>{{ .Stats.NumChunks }}</td>{{ end }}
             <td>{{ .Labels }}</td>
             <td>{{ if .OutOfOrder }}Yes{{ end }}</td>
-            {{ if $page.HasNoCompactMarks }}
+            {{ if $.HasNoCompactMarks }}
             <td>
                 {{ range $i, $source := .NoCompactDetails }}
                     {{ if $i }}<br>{{ end }}
                     {{ . }}
                 {{ end }}
             </td>{{ end }}
-            {{ if $page.ShowSources }}
+            {{ if $.ShowSources }}
                 <td>
                     {{ range $i, $source := .Sources }}
                         {{ if $i }}<br>{{ end }}
@@ -216,7 +209,7 @@
                     {{ end }}
                 </td>
             {{ end }}
-            {{ if $page.ShowParents }}
+            {{ if $.ShowParents }}
                 <td>
                     {{ range $i, $source := .Parents }}
                         {{ if $i }}<br>{{ end }}

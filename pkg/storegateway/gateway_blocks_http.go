@@ -51,7 +51,6 @@ type blocksPageContents struct {
 
 	blocksPageOptions
 
-	NowText           string `json:"-"`
 	SourceText        string `json:"-"`
 	HasDetails        bool   `json:"-"`
 	HasNoCompactMarks bool   `json:"-"`
@@ -275,7 +274,6 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 
 		blocksPageOptions: opts,
 
-		NowText:           now.UTC().Format(time.RFC3339),
 		SourceText:        blocksPageSourceText(data, now),
 		HasDetails:        data.metasAreComplete || opts.needsBlockDetails(),
 		HasNoCompactMarks: data.noCompactMarks != nil,

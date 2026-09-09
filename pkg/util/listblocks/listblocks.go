@@ -79,7 +79,6 @@ func LoadNoCompactMarks(ctx context.Context, bkt objstore.BucketReader, user str
 	return fetchMarkerDetails[block.NoCompactMark](ctx, bkt, noCompactMarkerFiles)
 }
 
-// LoadMetaFilesForBlocks does not return the blocks whose meta file is missing.
 func LoadMetaFilesForBlocks(ctx context.Context, bkt objstore.BucketReader, user string, blockIDs []ulid.ULID) (map[ulid.ULID]*block.Meta, error) {
 	metaPaths := make([]string, 0, len(blockIDs))
 	for _, blockID := range blockIDs {
