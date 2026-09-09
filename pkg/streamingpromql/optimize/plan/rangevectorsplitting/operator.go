@@ -387,8 +387,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				}
 				seriesToSplits = append(seriesToSplits, nil)
 			} else {
-				// This shouldn't happen for range vector selectors, DropName will always be false at this point.
-				// There is a problematic edge case if subquery splitting and delayed name removal are enabled:
+				// There is an edge case if subquery splitting and delayed name removal are enabled:
 				//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
 				//  Left: {__name__="foo"} + DropName=true (from rate)
 				//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
