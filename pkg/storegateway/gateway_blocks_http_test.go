@@ -50,7 +50,6 @@ type blocksPageTestResponse struct {
 		SplitID     *int   `json:"splitId"`
 	} `json:"metas"`
 	Source        string `json:"source"`
-	DeletedBlocks int    `json:"deleted_blocks"`
 	TotalBlocks   int    `json:"total_blocks"`
 	MatchedBlocks int    `json:"matched_blocks"`
 	BlocksRead    int    `json:"blocks_read"`
@@ -246,7 +245,6 @@ func TestStoreGateway_BlocksHandler(t *testing.T) {
 	t.Run("the blocks hidden by the deletion marks are counted", func(t *testing.T) {
 		res := requestBlocksPageJSON(t, gateway, "scan_bucket=off")
 		assert.Equal(t, 4, res.TotalBlocks)
-		assert.Equal(t, 1, res.DeletedBlocks)
 		assert.Equal(t, 3, res.MatchedBlocks)
 
 		assert.Contains(t, requestBlocksPage(t, gateway, "", "").Body.String(), "4 blocks before the filters, including 1 marked for deletion.")

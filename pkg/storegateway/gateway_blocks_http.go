@@ -58,7 +58,6 @@ type blocksPageContents struct {
 	IndexUpdatedAt time.Time `json:"index_updated_at,omitempty"`
 
 	TotalBlocks         int `json:"total_blocks"`
-	DeletedBlocks       int `json:"deleted_blocks"`
 	HiddenDeletedBlocks int `json:"-"`
 	MatchedBlocks       int `json:"matched_blocks"`
 	BlocksRead          int `json:"blocks_read"`
@@ -281,7 +280,6 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		IndexUpdatedAt: data.indexUpdatedAt,
 
 		TotalBlocks:         len(data.metas),
-		DeletedBlocks:       data.countDeletedBlocks(),
 		HiddenDeletedBlocks: hiddenDeleted,
 		MatchedBlocks:       len(matched),
 		BlocksRead:          data.blocksRead,
