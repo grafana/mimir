@@ -33,6 +33,12 @@ const (
 	// PrometheusXor2Chunk is a wrapper around Prometheus XOR2-encoded chunk.
 	// IMPORTANT: for backward compatibility reasons we need to keep the value hardcoded.
 	PrometheusXor2Chunk Encoding = 7
+	// PrometheusHistogramSTChunk is a wrapper around a Prometheus start-timestamp-capable histogram chunk.
+	// IMPORTANT: for backward compatibility reasons we need to keep the value hardcoded.
+	PrometheusHistogramSTChunk Encoding = 8
+	// PrometheusFloatHistogramSTChunk is a wrapper around a Prometheus start-timestamp-capable float histogram chunk.
+	// IMPORTANT: for backward compatibility reasons we need to keep the value hardcoded.
+	PrometheusFloatHistogramSTChunk Encoding = 9
 )
 
 type encoding struct {
@@ -63,6 +69,18 @@ var encodings = map[Encoding]encoding{
 		Name: "PrometheusXor2Chunk",
 		New: func() EncodedChunk {
 			return newPrometheusXor2Chunk()
+		},
+	},
+	PrometheusHistogramSTChunk: {
+		Name: "PrometheusHistogramSTChunk",
+		New: func() EncodedChunk {
+			return newPrometheusHistogramSTChunk()
+		},
+	},
+	PrometheusFloatHistogramSTChunk: {
+		Name: "PrometheusFloatHistogramSTChunk",
+		New: func() EncodedChunk {
+			return newPrometheusFloatHistogramSTChunk()
 		},
 	},
 }
