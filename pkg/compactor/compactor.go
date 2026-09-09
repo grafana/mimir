@@ -294,7 +294,7 @@ type ConfigProvider interface {
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
 
 	// FloatChunkEncoding returns the encoding to use for float chunks written for a given user.
-	// An encoding that no -ingester.float-chunk-encoding value selects is treated as the default.
+	// An encoding that no -blocks-storage.tsdb.float-chunk-encoding value selects is treated as the default.
 	FloatChunkEncoding(userID string) chunkenc.Encoding
 }
 

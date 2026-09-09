@@ -4649,7 +4649,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes
 # overlapping chunks. Supported values are: xor, xor2.
-# CLI flag: -ingester.float-chunk-encoding
+# CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
 
 # (advanced) Custom trackers for active metrics. If there are active series
