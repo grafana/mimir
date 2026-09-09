@@ -5,7 +5,7 @@ package limitstest
 import (
 	"fmt"
 	"maps"
-	"math/rand"
+	"math/rand" //#nosec G404 -- Test-only random generator, no need for a CSPRNG -- nosemgrep: math-random-used
 	"net"
 	"reflect"
 	"testing/quick"
