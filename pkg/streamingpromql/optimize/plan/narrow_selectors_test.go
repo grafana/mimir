@@ -87,6 +87,17 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"binary expression aggregation with metric name grouping": {
+			expr: `sum by (__name__, region) (some_metric) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints include (region)
+					- LHS: AggregateExpression: sum by (__name__, region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"binary expression nested grouped aggregation below ungrouped aggregation": {
 			expr: `sum(max by (region) (some_metric)) / some_other_metric`,
 			expectedPlan: `
