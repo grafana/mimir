@@ -77,8 +77,9 @@ func (g *Generator) Limits(r *rand.Rand, defaults validation.Limits) map[string]
 	l := g.limits(r, defaults)
 	m := marshalToMap(&l)
 
-	// Convert to type with custom encodings, then merge the resulting map into
-	// m.
+	// Convert to a type with custom encodings and merge that into m. We need to
+	// merge rather than replace because mapToStructWithCustomEncoding doesn't
+	// map unexported fields, such as extensions.
 	encType := g.mapToStructWithCustomEncoding(reflect.TypeFor[validation.Limits](), r)
 	encoded := deepConvert(reflect.ValueOf(l), encType)
 	maps.Copy(m, marshalToMap(encoded.Interface()))
