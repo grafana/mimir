@@ -694,6 +694,11 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		c.outOfSpace.Inc()
 	}
 
+	if ok, notFoundErr := isBlockFileNotFoundError(err); ok {
+		level.Warn(userLogger).Log("msg", "block file missing from bucket, abandoning job", "block", notFoundErr.id, "err", err)
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
+	}
+
 	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
 	}

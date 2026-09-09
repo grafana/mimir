@@ -30,6 +30,7 @@
 * [BUGFIX] Query-frontend: Stop the `query stats` log from corrupting queries that span multiple lines. Line breaks in query parameters were removed rather than replaced, so when a line break was the only separator between two tokens the tokens were fused together, leaving a logged `param_query` that no longer parsed. #16462
 * [BUGFIX] Query-frontend: Return a HTTP 500 error rather than a HTTP 400 when a querier receives a query plan that is too new. #16233
 * [BUGFIX] Compactor, Store-gateway: Fix the store-gateway always logging `num_series=0` in its `loaded new block` message. #16276
+* [BUGFIX] Compactor: Abandon a compaction job in scheduler mode when a source block file is missing from object storage rather than attempting to retry the job. #16538
 * [BUGFIX] Ingest storage: Account for protobuf framing when splitting Remote Write 1.0 requests so generated Kafka record data stays within `-ingest-storage.kafka.producer-max-record-size-bytes` when individual series and metadata entries fit. #16160
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
 * [BUGFIX] MQE: Propagate an `@` modifier or offset from the `info` function's first argument to its info series matchers, matching Prometheus. #16220 #16497
@@ -45,8 +46,10 @@
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the cardinality `label_names` and `label_values` endpoints when the merged response exceeds `-querier.label-names-and-values-results-max-size-bytes`. #16452
 * [BUGFIX] Querier: Return HTTP 413 instead of 500 from the active series endpoint's framed response format when a single series' JSON exceeds the maximum frame size. #16452
 * [BUGFIX] Query-frontend: Fix subquery spin-off dropping the final step of the subquery range when the subquery range is not an integer multiple of the subquery step, causing results to differ slightly from the query engine's native subquery evaluation. #16504
+* [BUGFIX] Mimir: Exit with status 0, and stop logging `module failed` at error level, when a `SIGTERM` or `SIGINT` arrives before all modules finished starting. Cancelling the start context leaves those modules in a failed state, which was reported as `failed services` and exited 1, making an ordinary rolling restart or node drain of a slow-starting component indistinguishable from a crash. #16524
 * [BUGFIX] Build: Use `#!/usr/bin/env bash`/`#!/usr/bin/env sh` instead of hardcoded interpreter paths in development and CI scripts, fixing failures on systems where those interpreters aren't at that exact path, such as NixOS. #16425
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
+* [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 
 ### Mixin
 

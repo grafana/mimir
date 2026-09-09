@@ -2235,6 +2235,10 @@ Usage of ./cmd/mimir/mimir:
     	Port to listen on for gossip messages. (default 7946)
   -memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
     	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -memberlist.cas-retry-max-backoff duration
+    	[experimental] Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set. (default 10s)
+  -memberlist.cas-retry-min-backoff duration
+    	[experimental] Minimum delay between CAS retries after a version mismatch. 0 disables the delay.
   -memberlist.cluster-label string
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
