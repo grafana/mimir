@@ -4,8 +4,8 @@ package validation
 
 import (
 	"flag"
-	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/runtimeconfig/mapstructure"
@@ -72,6 +72,7 @@ var limitsMapstructureDecodeHook = mapstructure.ComposeDecodeHookFunc(
 var limitsFieldDecoders = map[reflect.Type]mapstructure.DecodeHookFuncValue{
 	reflect.TypeFor[model.Duration]():         mapDecodeAsFlagValue,
 	reflect.TypeFor[model.ValidationScheme](): mapDecodeAsFlagValue,
+	reflect.TypeFor[time.Time]():              mapDecodeTime,
 	// StringSliceCSV parses a comma-separated string in its Set, which is far
 	// cheaper than a YAML round-trip.
 	reflect.TypeFor[flagext.StringSliceCSV](): mapDecodeAsFlagValue,
@@ -112,9 +113,21 @@ func mapDecodeAsYAML(from reflect.Value, to reflect.Value) (any, error) {
 func mapDecodeAsFlagValue(from reflect.Value, to reflect.Value) (any, error) {
 	s, ok := from.Interface().(string)
 	if !ok {
-		return nil, fmt.Errorf("expected a string, got %T", from.Interface())
+		// The value isn't a string. Fall back to YAML decoding.
+		return mapDecodeAsYAML(from, to)
 	}
 	v := reflect.New(to.Type()).Interface().(flag.Value)
 	err := v.Set(s)
 	return v, err
+}
+
+// mapDecodeTime converts a quoted (string) timestamp into time.Time. Unquoted
+// YAML timestamps decode into time.Time natively and pass through unchanged;
+// only strings need converting, which we do via a YAML round-trip so we accept
+// exactly the timestamp formats the YAML loader does.
+func mapDecodeTime(from reflect.Value, to reflect.Value) (any, error) {
+	if _, ok := from.Interface().(string); ok {
+		return mapDecodeAsYAML(from, to)
+	}
+	return from.Interface(), nil
 }
