@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	discord "github.com/prometheus/alertmanager/notify/discord"
+	incidentio "github.com/prometheus/alertmanager/notify/incidentio"
 	msteams "github.com/prometheus/alertmanager/notify/msteams"
 	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/client_golang/prometheus"
@@ -733,6 +734,50 @@ alertmanager_config: |
 			err: fmt.Errorf("error validating Alertmanager config: %w", errWebhookURLFileNotAllowed),
 		},
 		{
+			name: "should pass if incident.io config uses inline token",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      incidentio_configs:
+        - url: https://api.incident.io/v2/alert_events/alertmanager/01EXAMPLE
+          alert_source_token: token
+
+  route:
+    receiver: 'default-receiver'
+`,
+		},
+		{
+			name: "should return error if incident.io url_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      incidentio_configs:
+        - url_file: /secrets
+          alert_source_token: token
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errIncidentioURLFileNotAllowed),
+		},
+		{
+			name: "should return error if incident.io alert_source_token_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      incidentio_configs:
+        - url: https://api.incident.io/v2/alert_events/alertmanager/01EXAMPLE
+          alert_source_token_file: /secrets
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errIncidentioAlertSourceTokenFileNotAllowed),
+		},
+		{
 			name: "should return error if template is wrong",
 			cfg: `
 alertmanager_config: |
@@ -1204,6 +1249,30 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
+		},
+		"*IncidentioConfig.URLFile": {
+			input: &incidentio.IncidentioConfig{
+				URLFile: "/file",
+			},
+			expected: errIncidentioURLFileNotAllowed,
+		},
+		"IncidentioConfig.URLFile": {
+			input: incidentio.IncidentioConfig{
+				URLFile: "/file",
+			},
+			expected: errIncidentioURLFileNotAllowed,
+		},
+		"*IncidentioConfig.AlertSourceTokenFile": {
+			input: &incidentio.IncidentioConfig{
+				AlertSourceTokenFile: "/file",
+			},
+			expected: errIncidentioAlertSourceTokenFileNotAllowed,
+		},
+		"IncidentioConfig.AlertSourceTokenFile": {
+			input: incidentio.IncidentioConfig{
+				AlertSourceTokenFile: "/file",
+			},
+			expected: errIncidentioAlertSourceTokenFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{
