@@ -4,6 +4,7 @@ package limitstest
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
 	"net"
 	"reflect"
@@ -13,13 +14,13 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// Generator produces random validation.Limits values.
-//
-// The zero value is not usable; call New and customize the returned Generator.
+// Generator produces random validation.Limits, encoded as map[string]any to
+// be passed to a runtimeconfig MapLoader.
 type Generator struct {
 	// ValueFuncs maps a reflect.Type to a generator for that type. It is
 	// consulted first, before the testing/quick.Generator interface and before
@@ -31,13 +32,9 @@ type Generator struct {
 	// their default value instead of being randomized.
 	SkipFields map[string]bool
 
-	// FieldPerturbChance is the percentage chance (0-100) that any given
-	// top-level Limits field is randomized rather than left at its default.
-	FieldPerturbChance int
-
-	// ExtensionPerturbChance is the percentage chance (0-100) that any given
-	// registered extension value is randomized rather than left at its default.
-	ExtensionPerturbChance int
+	// Temperature controls how many random perturbances to introduce in the
+	// generated limits, from 0 (nothing) to 2 (maximum).
+	Temperature float64
 }
 
 // ValueFunc returns a random reflect.Value of a specific type.
@@ -45,7 +42,7 @@ type ValueFunc func(*rand.Rand) reflect.Value
 
 // GenerateLimits produces a random validation.Limits, encoded as a
 // map[string]any to be passed to a runtimeconfig MapLoader.
-func GenerateLimits(r *rand.Rand, defaults validation.Limits) validation.Limits {
+func GenerateLimits(r *rand.Rand, defaults validation.Limits) map[string]any {
 	return NewGenerator().Limits(r, defaults)
 }
 
@@ -63,12 +60,33 @@ func NewGenerator() *Generator {
 			"MetricRelabelConfigs":          true,
 			"RulerAlertmanagerClientConfig": true,
 		},
-		FieldPerturbChance:     40,
-		ExtensionPerturbChance: 60,
+		Temperature: 1,
 	}
 }
 
-func (g *Generator) Limits(r *rand.Rand, defaults validation.Limits) validation.Limits {
+const (
+	weightFieldPerturb     = 40
+	weightExtensionPerturb = 60
+	weightDurationAsInt    = 30
+	weightTimeAsString     = 30
+)
+
+// Generator produces a random validation.Limits, encoded as a map[string]any to
+// be passed to a runtimeconfig MapLoader.
+func (g *Generator) Limits(r *rand.Rand, defaults validation.Limits) map[string]any {
+	l := g.limits(r, defaults)
+	m := marshalToMap(&l)
+
+	// Convert to type with custom encodings, then merge the resulting map into
+	// m.
+	encType := g.mapToStructWithCustomEncoding(reflect.TypeFor[validation.Limits](), r)
+	encoded := deepConvert(reflect.ValueOf(l), encType)
+	maps.Copy(m, marshalToMap(encoded.Interface()))
+
+	return m
+}
+
+func (g *Generator) limits(r *rand.Rand, defaults validation.Limits) validation.Limits {
 	l := defaults
 	l.RegisterExtensionsDefaults()
 
@@ -82,13 +100,28 @@ func (g *Generator) Limits(r *rand.Rand, defaults validation.Limits) validation.
 		if g.SkipFields[tp.Field(i).Name] {
 			continue
 		}
-		if r.Intn(100) < g.FieldPerturbChance {
+		if g.coin(r, weightFieldPerturb) {
 			fv.Set(g.Value(fv.Type(), r))
 		}
 	}
 
 	g.perturbExtensions(&l, r)
 	return l
+}
+
+func (g *Generator) chance(weight int) int {
+	c := int(float64(weight)*g.Temperature + 0.5)
+	if c > 100 {
+		return 100
+	}
+	if c < 0 {
+		return 0
+	}
+	return c
+}
+
+func (g *Generator) coin(r *rand.Rand, weight int) bool {
+	return r.Intn(100) < g.chance(weight)
 }
 
 var generatorType = reflect.TypeFor[quick.Generator]()
@@ -169,7 +202,7 @@ func (g *Generator) Value(t reflect.Type, r *rand.Rand) reflect.Value {
 func (g *Generator) perturbExtensions(l *validation.Limits, r *rand.Rand) {
 	ext := limitsExtensions(l)
 	for name, val := range ext {
-		if r.Intn(100) < g.ExtensionPerturbChance {
+		if g.coin(r, weightExtensionPerturb) {
 			ext[name] = g.Value(reflect.TypeOf(val), r).Interface()
 		}
 	}
@@ -191,6 +224,9 @@ func defaultValueFuncs() map[reflect.Type]ValueFunc {
 		},
 		reflect.TypeFor[time.Duration](): func(r *rand.Rand) reflect.Value {
 			return reflect.ValueOf(time.Duration(r.Intn(100000)) * time.Second)
+		},
+		reflect.TypeFor[time.Time](): func(r *rand.Rand) reflect.Value {
+			return reflect.ValueOf(randTime(r))
 		},
 		reflect.TypeFor[model.ValidationScheme](): func(r *rand.Rand) reflect.Value {
 			choices := []model.ValidationScheme{model.UnsetValidation, model.LegacyValidation, model.UTF8Validation}
@@ -238,6 +274,13 @@ func defaultValueFuncs() map[reflect.Type]ValueFunc {
 	}
 }
 
+// randTime returns a random time truncated to whole seconds (so it marshals to a
+// clean RFC3339 timestamp).
+func randTime(r *rand.Rand) time.Time {
+	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	return base.Add(time.Duration(r.Intn(1_000_000_000)) * time.Second)
+}
+
 // randCIDR returns a random, syntactically valid IPv4 or IPv6 CIDR string.
 func randCIDR(r *rand.Rand) string {
 	if r.Intn(2) == 0 {
@@ -273,4 +316,177 @@ func RandKey(r *rand.Rand) string {
 		b[i] = alphabet[r.Intn(len(alphabet))]
 	}
 	return string(b)
+}
+
+// durationAsZeroInt encodes a duration as the bare integer 0.
+type durationAsZeroInt model.Duration
+
+func (durationAsZeroInt) MarshalYAML() (any, error) { return 0, nil }
+
+// timeAsString encodes a timestamp as a quoted RFC3339 string instead of a
+// native YAML timestamp.
+type timeAsString time.Time
+
+func (t timeAsString) MarshalYAML() (any, error) { return time.Time(t).Format(time.RFC3339), nil }
+func (t timeAsString) IsZero() bool              { return time.Time(t).IsZero() }
+
+var (
+	durationType     = reflect.TypeFor[model.Duration]()
+	timeType         = reflect.TypeFor[time.Time]()
+	durationAsIntTyp = reflect.TypeFor[durationAsZeroInt]()
+	timeAsStringTyp  = reflect.TypeFor[timeAsString]()
+
+	yamlMarshalerType   = reflect.TypeFor[yaml.Marshaler]()
+	yamlUnmarshalerType = reflect.TypeFor[yaml.Unmarshaler]()
+)
+
+// mapToTypeWithCustomEncoding maps t to a derived type, such that:
+//
+//   - Unexported fields are dropped (they aren't serialized).
+//   - Types with an associated custom encoding are converted to use the custom
+//     encoding, with some probability.
+func (g *Generator) mapToTypeWithCustomEncoding(t reflect.Type, r *rand.Rand) reflect.Type {
+	switch t {
+	case durationType:
+		if g.coin(r, weightDurationAsInt) {
+			return durationAsIntTyp
+		}
+		return t
+	case timeType:
+		if g.coin(r, weightTimeAsString) {
+			return timeAsStringTyp
+		}
+		return t
+	}
+	if isOpaque(t) {
+		return t
+	}
+
+	switch t.Kind() {
+	case reflect.Pointer:
+		if e := g.mapToTypeWithCustomEncoding(t.Elem(), r); e != t.Elem() {
+			return reflect.PointerTo(e)
+		}
+	case reflect.Slice:
+		if e := g.mapToTypeWithCustomEncoding(t.Elem(), r); e != t.Elem() {
+			return reflect.SliceOf(e)
+		}
+	case reflect.Array:
+		if e := g.mapToTypeWithCustomEncoding(t.Elem(), r); e != t.Elem() {
+			return reflect.ArrayOf(t.Len(), e)
+		}
+	case reflect.Map:
+		if e := g.mapToTypeWithCustomEncoding(t.Elem(), r); e != t.Elem() {
+			return reflect.MapOf(t.Key(), e)
+		}
+	case reflect.Struct:
+		return g.mapToStructWithCustomEncoding(t, r)
+	}
+	return t
+}
+
+func (g *Generator) mapToStructWithCustomEncoding(t reflect.Type, r *rand.Rand) reflect.Type {
+	fields := make([]reflect.StructField, 0, t.NumField())
+	changed := false
+	for f := range t.Fields() {
+		f := f
+		if f.PkgPath != "" {
+			changed = true // dropping an unexported field changes the type
+			continue
+		}
+		ft := g.mapToTypeWithCustomEncoding(f.Type, r)
+		if ft != f.Type {
+			changed = true
+		}
+		fields = append(fields, reflect.StructField{
+			Name:      f.Name,
+			Type:      ft,
+			Tag:       f.Tag,
+			Anonymous: f.Anonymous,
+		})
+	}
+	if !changed {
+		return t
+	}
+	return reflect.StructOf(fields)
+}
+
+func isOpaque(t reflect.Type) bool {
+	pt := reflect.PointerTo(t)
+	return t.Implements(yamlMarshalerType) || pt.Implements(yamlMarshalerType) ||
+		t.Implements(yamlUnmarshalerType) || pt.Implements(yamlUnmarshalerType)
+}
+
+func deepConvert(src reflect.Value, dst reflect.Type) reflect.Value {
+	switch dst {
+	case src.Type(), durationAsIntTyp, timeAsStringTyp:
+		return src.Convert(dst)
+	}
+
+	switch dst.Kind() {
+	case reflect.Pointer:
+		if src.IsNil() {
+			return reflect.Zero(dst)
+		}
+		p := reflect.New(dst.Elem())
+		p.Elem().Set(deepConvert(src.Elem(), dst.Elem()))
+		return p
+	case reflect.Slice:
+		if src.IsNil() {
+			return reflect.Zero(dst)
+		}
+		out := reflect.MakeSlice(dst, src.Len(), src.Len())
+		for i := range src.Len() {
+			out.Index(i).Set(deepConvert(src.Index(i), dst.Elem()))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(dst).Elem()
+		for i := range src.Len() {
+			out.Index(i).Set(deepConvert(src.Index(i), dst.Elem()))
+		}
+		return out
+	case reflect.Map:
+		if src.IsNil() {
+			return reflect.Zero(dst)
+		}
+		out := reflect.MakeMapWithSize(dst, src.Len())
+		for iter := src.MapRange(); iter.Next(); {
+			out.SetMapIndex(iter.Key(), deepConvert(iter.Value(), dst.Elem()))
+		}
+		return out
+	case reflect.Struct:
+		out := reflect.New(dst).Elem()
+		for i := range dst.NumField() {
+			df := dst.Field(i)
+			sf := src.FieldByName(df.Name)
+			if !sf.IsValid() {
+				continue
+			}
+			out.Field(i).Set(deepConvert(sf, df.Type))
+		}
+		return out
+	default:
+		if src.Type().ConvertibleTo(dst) {
+			return src.Convert(dst)
+		}
+		return src
+	}
+}
+
+// marshalToMap marshals v to YAML and parses it back into a generic map, exactly
+// the shape a runtime-config loader receives.
+func marshalToMap(v any) map[string]any {
+	b, err := yaml.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("limitstest: marshaling: %v", err))
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		panic(fmt.Sprintf("limitstest: unmarshaling into map: %v", err))
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	return m
 }
