@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -15,6 +16,15 @@ type streamedChunkReader struct {
 	reader *remote.ChunkedReader
 	closer io.Closer
 	cancel context.CancelCauseFunc
+}
+
+func newEmptyStreamedChunkReader() *streamedChunkReader {
+	emptyReader := &bytes.Buffer{}
+	return &streamedChunkReader{
+		reader: remote.NewChunkedReader(emptyReader, 1, nil),
+		cancel: nil,
+		closer: io.NopCloser(emptyReader),
+	}
 }
 
 func (r *streamedChunkReader) Next() ([]byte, error) {
