@@ -935,8 +935,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 		if len(p.operatorAnnotations) > 0 {
 			merged := make(annotations.Annotations, len(rangeAnnotations)+len(p.operatorAnnotations))
 			merged.Merge(rangeAnnotations)
-			merged.Merge(p.operatorAnnotations)
-			rangeAnnotations = merged
+			rangeAnnotations = merged.Merge(p.operatorAnnotations)
 		}
 
 		if err := p.parent.cache.Set(
