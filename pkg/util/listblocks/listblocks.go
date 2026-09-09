@@ -29,23 +29,9 @@ import (
 // this is useful to filter the results for users with high amount of blocks without reading the metas
 // (but it can be inexact since ULID time can differ from block min/max times range).
 func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionDetails map[ulid.ULID]block.DeletionMark, noCompactDetails map[ulid.ULID]block.NoCompactMark, _ error) {
-	deletedBlocks := map[ulid.ULID]bool{}
-	noCompactMarkerFiles := []string(nil)
-	deletionMarkerFiles := []string(nil)
-
-	// Find blocks marked for deletion and no-compact.
-	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
-		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
-			deletedBlocks[id] = true
-			deletionMarkerFiles = append(deletionMarkerFiles, s)
-		}
-		if _, ok := block.IsNoCompactMarkFilename(path.Base(s)); ok {
-			noCompactMarkerFiles = append(noCompactMarkerFiles, s)
-		}
-		return nil
-	})
+	deletedBlocks, deletionMarkerFiles, noCompactMarkerFiles, err := listMarkerFiles(ctx, bkt, user, true)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("find tenant %s blocks marked for deletion and no-compact: %w", user, err)
+		return nil, nil, nil, err
 	}
 
 	metaPaths := []string(nil)
@@ -82,6 +68,46 @@ func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, use
 	}
 	metas, err = fetchMetas(ctx, bkt, metaPaths)
 	return metas, deletionDetails, noCompactDetails, err
+}
+
+func LoadNoCompactMarks(ctx context.Context, bkt objstore.BucketReader, user string) (map[ulid.ULID]block.NoCompactMark, error) {
+	_, _, noCompactMarkerFiles, err := listMarkerFiles(ctx, bkt, user, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return fetchMarkerDetails[block.NoCompactMark](ctx, bkt, noCompactMarkerFiles)
+}
+
+// LoadMetaFilesForBlocks does not return the blocks whose meta file is missing.
+func LoadMetaFilesForBlocks(ctx context.Context, bkt objstore.BucketReader, user string, blockIDs []ulid.ULID) (map[ulid.ULID]*block.Meta, error) {
+	metaPaths := make([]string, 0, len(blockIDs))
+	for _, blockID := range blockIDs {
+		metaPaths = append(metaPaths, path.Join(user, blockID.String(), block.MetaFilename))
+	}
+
+	return fetchMetas(ctx, bkt, metaPaths)
+}
+
+func listMarkerFiles(ctx context.Context, bkt objstore.BucketReader, user string, withDeletionMarks bool) (deletedBlocks map[ulid.ULID]bool, deletionMarkerFiles, noCompactMarkerFiles []string, _ error) {
+	deletedBlocks = map[ulid.ULID]bool{}
+
+	// Find blocks marked for deletion and no-compact.
+	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
+		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok && withDeletionMarks {
+			deletedBlocks[id] = true
+			deletionMarkerFiles = append(deletionMarkerFiles, s)
+		}
+		if _, ok := block.IsNoCompactMarkFilename(path.Base(s)); ok {
+			noCompactMarkerFiles = append(noCompactMarkerFiles, s)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("find tenant %s blocks marked for deletion and no-compact: %w", user, err)
+	}
+
+	return deletedBlocks, deletionMarkerFiles, noCompactMarkerFiles, nil
 }
 
 const concurrencyLimit = 32
