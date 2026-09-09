@@ -44,3 +44,17 @@ load 1m
 
 eval instant at 5m sum by (__name__, cluster) (some_metric) / some_other_metric
   {cluster="one"} 0.5
+
+clear
+
+# info adds labels that do not exist on its inner selector.
+load 1m
+  metric_total{instance="a", job="1"} 1+1x5
+  other_total{instance="a", job="1"} 2+2x5
+  target_info{data="info", instance="a", job="1"} 1+0x5
+
+eval instant at 5m info(sum by (job, instance) (metric_total), {data=~".+"}) - info(other_total, {data=~".+"})
+  {data="info", instance="a", job="1"} -6
+
+eval instant at 5m info(metric_total, {data=~".+"}) - info(other_total, {data=~".+"})
+  {data="info", instance="a", job="1"} -6
