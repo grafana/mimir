@@ -5962,7 +5962,7 @@
           "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
-          "desc": "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.",
+          "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",
           "fieldValue": null,
           "fieldDefaultValue": "xor",
           "fieldFlag": "ingester.float-chunk-encoding",
