@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"html/template"
 	"maps"
-	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -75,7 +74,7 @@ type blocksPageContents struct {
 type formattedBlockData struct {
 	ULID             string
 	ULIDTime         string
-	SplitID          *uint32
+	SplitID          *int
 	MinTime          string
 	MaxTime          string
 	Duration         string
@@ -92,8 +91,8 @@ type formattedBlockData struct {
 
 type richMeta struct {
 	*block.Meta
-	DeletedTime *int64  `json:"deletedTime,omitempty"`
-	SplitID     *uint32 `json:"splitId,omitempty"`
+	DeletedTime *int64 `json:"deletedTime,omitempty"`
+	SplitID     *int   `json:"splitId,omitempty"`
 }
 
 type blocksPageTimeFilter struct {
@@ -197,9 +196,9 @@ func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	for _, m := range pageBlocks {
-		var blockSplitID *uint32
+		var blockSplitID *int
 		if opts.SplitCount > 0 {
-			bsc := tsdb.HashBlockID(m.ULID) % uint32(opts.SplitCount)
+			bsc := int(tsdb.HashBlockID(m.ULID)) % opts.SplitCount
 			blockSplitID = &bsc
 		}
 
@@ -357,7 +356,7 @@ func parseBlocksPageInt(form url.Values, name string, defaultValue, minValue int
 	if err != nil {
 		return 0, fmt.Errorf("invalid %s: %q is not a number", name, raw)
 	}
-	return min(max(value, minValue), math.MaxInt32), nil
+	return max(value, minValue), nil
 }
 
 func parseBlocksPageTimeFilter(form url.Values, name string, now time.Time) (blocksPageTimeFilter, error) {

@@ -45,9 +45,9 @@ type blocksPageTestBlock struct {
 
 type blocksPageTestResponse struct {
 	Metas []struct {
-		ULID        string  `json:"ulid"`
-		DeletedTime *int64  `json:"deletedTime"`
-		SplitID     *uint32 `json:"splitId"`
+		ULID        string `json:"ulid"`
+		DeletedTime *int64 `json:"deletedTime"`
+		SplitID     *int   `json:"splitId"`
 	} `json:"metas"`
 	Source        string `json:"source"`
 	DeletedBlocks int    `json:"deleted_blocks"`
@@ -209,7 +209,7 @@ func TestStoreGateway_BlocksHandler(t *testing.T) {
 		require.Len(t, res.Metas, 3)
 		for _, m := range res.Metas {
 			require.NotNil(t, m.SplitID)
-			assert.Less(t, *m.SplitID, uint32(4))
+			assert.Less(t, *m.SplitID, 4)
 		}
 	})
 
