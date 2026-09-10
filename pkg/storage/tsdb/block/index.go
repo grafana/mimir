@@ -51,6 +51,9 @@ type HealthStats struct {
 	// IndexFormat is the format version used by the TSDB index file.
 	IndexFormat int
 
+	// SymbolTableSize is the size of the symbol table in bytes.
+	SymbolTableSize uint64
+
 	// TotalSeries represents total number of series in block.
 	TotalSeries int64
 	// OutOfOrderSeries represents number of series that have out of order chunks.
@@ -185,6 +188,8 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
 
 	stats.IndexFormat = r.Version()
+
+	stats.SymbolTableSize = r.SymbolTableSize()
 
 	n, v := index.AllPostingsKey()
 	p, err := r.Postings(ctx, n, v)
