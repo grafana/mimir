@@ -518,12 +518,54 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, reg)
 		cfg := indexheader.Config{VerifyOnLoad: true}
 
-		// Block symbol threshold of 1 byte ensures any compacted block's symbol table exceeds it.
-		const testSymbolTableSizeThreshold = 1
+		// The merged block will have ~104 symbols with on-disk symbol table ~1400 bytes.
+		// This threshold sits below it.
+		const testSymbolTableSizeThreshold = 500
 
 		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
 		require.NoError(t, err)
 
+		// Generate 50 series per block with distinct label values to produce enough symbols.
+		var series1, series2 []labels.Labels
+		for i := range 50 {
+			series1 = append(series1, labels.FromStrings("__name__", "metric", "instance", fmt.Sprintf("instance_%04d", i)))
+			series2 = append(series2, labels.FromStrings("__name__", "metric", "instance", fmt.Sprintf("instance_%04d", i+100)))
+		}
+
+		createAndUpload(t, bkt, []blockgenSpec{
+			{numFloatSamples: 100, mint: 0, maxt: 1000, extLset: extLabels, res: 124, series: series1},
+			{numFloatSamples: 100, mint: 1000, maxt: 2000, extLset: extLabels, res: 124, series: series2},
+			// Third block to trigger compaction (TSDB compaction delay).
+			{
+				numFloatSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels, res: 124,
+				series: []labels.Labels{labels.FromStrings("__name__", "metric", "instance", "trigger")},
+			},
+		})
+
+		// First compaction produces a merged L2 block [0, 3000), preemptively marked as no-compact.
+		require.NoError(t, bComp.Compact(ctx, sy, 0))
+
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason))))
+
+		// Verify the compacted block has expected no-compact marker.
+		var noCompactBlockID ulid.ULID
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+			var mark block.NoCompactMark
+			if err := block.ReadMarker(ctx, logger, objstore.WithNoopInstr(bkt), id.String(), &mark); err != nil {
+				return nil
+			}
+			assert.Equal(t, block.PreemptiveNoCompactReason, mark.Reason)
+			noCompactBlockID = id
+			return nil
+		}))
+		require.NotEqual(t, ulid.ULID{}, noCompactBlockID, "expected a no-compact marker on the just-compacted block")
+
+		// Upload new L1 blocks for the same time range, simulating late-arriving OOO data.
 		createAndUpload(t, bkt, []blockgenSpec{
 			{
 				numFloatSamples: 100, mint: 0, maxt: 1000, extLset: extLabels, res: 124,
@@ -539,38 +581,51 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 					labels.FromStrings("a", "4"),
 				},
 			},
-			// Third block to trigger compaction (TSDB compaction delay).
+			// Third block to trigger compaction.
 			{
 				numFloatSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels, res: 124,
-				series: []labels.Labels{
-					labels.FromStrings("a", "5"),
-				},
+				series: []labels.Labels{labels.FromStrings("__name__", "metric", "instance", "trigger2")},
 			},
 		})
 
+		// On the second compaction, the original no-compact block is excluded from planning; the new blocks form a separate merged block for the same time range.
 		require.NoError(t, bComp.Compact(ctx, sy, 0))
 
-		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
-		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason))))
+		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 
-		// Verify the compacted block has expected no-compact marker.
-		var markerFound bool
+		var l2Blocks []ulid.ULID
 		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
 			id, ok := block.IsBlockDir(n)
 			if !ok {
 				return nil
 			}
-
-			var mark block.NoCompactMark
-			if err := block.ReadMarker(ctx, logger, objstore.WithNoopInstr(bkt), id.String(), &mark); err != nil {
-				return nil // no marker for this block
+			// Skip blocks marked for deletion.
+			if exists, err := bkt.Exists(ctx, path.Join(id.String(), block.DeletionMarkFilename)); err != nil || exists {
+				return nil
 			}
-
-			assert.Equal(t, block.PreemptiveNoCompactReason, mark.Reason)
-			markerFound = true
+			meta, err := block.DownloadMeta(ctx, logger, bkt, id)
+			if err != nil {
+				return nil
+			}
+			if meta.Compaction.Level >= 2 {
+				l2Blocks = append(l2Blocks, id)
+			}
 			return nil
 		}))
-		assert.True(t, markerFound, "expected a no-compact marker on the compacted block")
+
+		require.Len(t, l2Blocks, 2, "expected two L2 blocks: the original no-compact block and a new one")
+
+		// The original no-compact block must still exist and still be marked.
+		var originalStillMarked bool
+		for _, id := range l2Blocks {
+			if id == noCompactBlockID {
+				var mark block.NoCompactMark
+				require.NoError(t, block.ReadMarker(ctx, logger, objstore.WithNoopInstr(bkt), id.String(), &mark))
+				assert.Equal(t, block.PreemptiveNoCompactReason, mark.Reason)
+				originalStillMarked = true
+			}
+		}
+		require.True(t, originalStillMarked, "original no-compact block should still be present and marked")
 	})
 }
 
