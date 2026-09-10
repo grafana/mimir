@@ -21,6 +21,10 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	discord "github.com/prometheus/alertmanager/notify/discord"
 	msteams "github.com/prometheus/alertmanager/notify/msteams"
+	msteamsv2 "github.com/prometheus/alertmanager/notify/msteamsv2"
+	opsgenie "github.com/prometheus/alertmanager/notify/opsgenie"
+	pagerduty "github.com/prometheus/alertmanager/notify/pagerduty"
+	telegram "github.com/prometheus/alertmanager/notify/telegram"
 	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
@@ -375,8 +379,8 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.OpsGenieConfig{}):
-		if err := validateOpsGenieConfig(v.Interface().(config.OpsGenieConfig)); err != nil {
+	case reflect.TypeOf(opsgenie.OpsGenieConfig{}):
+		if err := validateOpsGenieConfig(v.Interface().(opsgenie.OpsGenieConfig)); err != nil {
 			return err
 		}
 
@@ -385,8 +389,8 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.PagerdutyConfig{}):
-		if err := validatePagerDutyConfig(v.Interface().(config.PagerdutyConfig)); err != nil {
+	case reflect.TypeOf(pagerduty.PagerdutyConfig{}):
+		if err := validatePagerDutyConfig(v.Interface().(pagerduty.PagerdutyConfig)); err != nil {
 			return err
 		}
 
@@ -400,13 +404,13 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.MSTeamsV2Config{}):
-		if err := validateMSTeamsV2Config(v.Interface().(config.MSTeamsV2Config)); err != nil {
+	case reflect.TypeOf(msteamsv2.MSTeamsV2Config{}):
+		if err := validateMSTeamsV2Config(v.Interface().(msteamsv2.MSTeamsV2Config)); err != nil {
 			return err
 		}
 
-	case reflect.TypeOf(config.TelegramConfig{}):
-		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
+	case reflect.TypeOf(telegram.TelegramConfig{}):
+		if err := validateTelegramConfig(v.Interface().(telegram.TelegramConfig)); err != nil {
 			return err
 		}
 
@@ -553,7 +557,7 @@ func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 
 // validateOpsGenieConfig validates the OpsGenie config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
+func validateOpsGenieConfig(cfg opsgenie.OpsGenieConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
@@ -562,7 +566,7 @@ func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
 
 // validatePagerDutyConfig validates the PagerDuty config and returns an error if it contains
 // settings not allowed by Mimir.
-func validatePagerDutyConfig(cfg config.PagerdutyConfig) error {
+func validatePagerDutyConfig(cfg pagerduty.PagerdutyConfig) error {
 	if cfg.ServiceKeyFile != "" {
 		return errPagerDutyServiceKeyFileNotAllowed
 	}
@@ -597,7 +601,7 @@ func validateMSTeamsConfig(cfg msteams.MSTeamsConfig) error {
 
 // validateMSTeamsV2Config validates the Microsoft Teams config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateMSTeamsV2Config(cfg config.MSTeamsV2Config) error {
+func validateMSTeamsV2Config(cfg msteamsv2.MSTeamsV2Config) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -606,7 +610,7 @@ func validateMSTeamsV2Config(cfg config.MSTeamsV2Config) error {
 
 // validateTelegramConfig validates the Telegram config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateTelegramConfig(cfg config.TelegramConfig) error {
+func validateTelegramConfig(cfg telegram.TelegramConfig) error {
 	if cfg.BotTokenFile != "" {
 		return errTelegramBotTokenFileNotAllowed
 	}
