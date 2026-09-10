@@ -293,6 +293,12 @@ type ConfigProvider interface {
 	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
 
+	// CompactorNoCompactBlockMaxSymbolTableSize returns the maximum symbol table size (in bytes)
+	// for a compacted block. When the symbol table of a just-compacted block exceeds this threshold,
+	// the block is proactively marked as no-compact to prevent future compactions from exceeding
+	// the 4 GiB symbol table limit. 0 = disabled.
+	CompactorNoCompactBlockMaxSymbolTableSize(userID string) int64
+
 	// FloatChunkEncoding returns the encoding to use for float chunks written for a given user.
 	// An encoding that no -blocks-storage.tsdb.float-chunk-encoding value selects is treated as the default.
 	FloatChunkEncoding(userID string) chunkenc.Encoding
@@ -970,6 +976,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.compactorCfg.SparseIndexHeadersSamplingRate,
 		c.compactorCfg.SparseIndexHeadersConfig,
 		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
+		c.cfgProvider.CompactorNoCompactBlockMaxSymbolTableSize(userID),
 	)
 }
 

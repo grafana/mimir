@@ -330,9 +330,10 @@ type Limits struct {
 	CompactorBlockUploadEnabled           bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
-	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
-	CompactorMaxLookback                  model.Duration `yaml:"compactor_max_lookback" json:"compactor_max_lookback" category:"experimental"`
-	CompactorMaxPerBlockUploadConcurrency int            `yaml:"compactor_max_per_block_upload_concurrency" json:"compactor_max_per_block_upload_concurrency" category:"advanced"`
+	CompactorBlockUploadMaxBlockSizeBytes    int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
+	CompactorMaxLookback                     model.Duration `yaml:"compactor_max_lookback" json:"compactor_max_lookback" category:"experimental"`
+	CompactorMaxPerBlockUploadConcurrency    int            `yaml:"compactor_max_per_block_upload_concurrency" json:"compactor_max_per_block_upload_concurrency" category:"advanced"`
+	CompactorNoCompactBlockMaxSymbolTableSz  int64          `yaml:"compactor_no_compact_block_max_symbol_table_size" json:"compactor_no_compact_block_max_symbol_table_size" category:"experimental"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -534,6 +535,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
 	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than the TSDB block range period (default: 2h). A value of 0s means that all blocks are considered regardless of their upload time.")
 	f.IntVar(&l.CompactorMaxPerBlockUploadConcurrency, "compactor.max-per-block-upload-concurrency", 8, "Maximum number of TSDB segment files that the compactor can upload concurrently per block.")
+	f.Int64Var(&l.CompactorNoCompactBlockMaxSymbolTableSz, "compactor.no-compact-block-max-symbol-table-size", 0, "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.")
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.")
@@ -1438,6 +1440,11 @@ func (o *Overrides) CompactorBlockUploadVerifyChunks(tenantID string) bool {
 // CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
 func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 	return o.getOverridesForUser(userID).CompactorBlockUploadMaxBlockSizeBytes
+}
+
+// CompactorNoCompactBlockMaxSymbolTableSize returns the maximum symbol table size for a compacted block.
+func (o *Overrides) CompactorNoCompactBlockMaxSymbolTableSize(userID string) int64 {
+	return o.getOverridesForUser(userID).CompactorNoCompactBlockMaxSymbolTableSz
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

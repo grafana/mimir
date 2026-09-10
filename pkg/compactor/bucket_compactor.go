@@ -423,7 +423,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	uploadBlocksCount := len(blocksToUpload)
 
-	// update labels and verify all blocks
+	// Update labels, verify all blocks, and detect oversized blocks.
+	var oversizedMtx sync.Mutex
+	var oversizedBlocks []ulid.ULID
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
@@ -452,6 +454,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		if err := verifyBlock(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
+		}
+
+		if oversized, details := c.isOversizedBlock(jobLogger, bdir, blockToUpload.ulid); oversized {
+			level.Info(jobLogger).Log("msg", "compacted block will be marked as no-compact after upload", "block", blockToUpload.ulid, "details", details)
+			oversizedMtx.Lock()
+			oversizedBlocks = append(oversizedBlocks, blockToUpload.ulid)
+			oversizedMtx.Unlock()
 		}
 		return nil
 	})
@@ -539,6 +548,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	elapsed = time.Since(uploadBegin)
 	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "total_size_bytes", totalUploadedSize.Load(), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+
+	c.markBlocksNoCompact(ctx, jobLogger, oversizedBlocks)
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
@@ -638,6 +649,86 @@ func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, s
 	}
 
 	return nil
+}
+
+type byteSlice []byte
+
+func (b byteSlice) Len() int            { return len(b) }
+func (b byteSlice) Range(s, e int) []byte { return b[s:e] }
+
+// readIndexSymbolTableSize reads the index file's TOC and returns the symbol table size in bytes.
+func readIndexSymbolTableSize(indexPath string) (uint64, error) {
+	f, err := os.Open(indexPath)
+	if err != nil {
+		return 0, fmt.Errorf("open index file: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat index file: %w", err)
+	}
+
+	// 6 uint64 fields + CRC32
+	const tocLen = 6*8 + 4
+	if fi.Size() < tocLen {
+		return 0, fmt.Errorf("index file too small (%d bytes)", fi.Size())
+	}
+
+	buf := make([]byte, tocLen)
+	if _, err := f.ReadAt(buf, fi.Size()-tocLen); err != nil {
+		return 0, fmt.Errorf("read index TOC: %w", err)
+	}
+
+	toc, err := index.NewTOCFromByteSlice(byteSlice(buf))
+	if err != nil {
+		return 0, fmt.Errorf("parse index TOC: %w", err)
+	}
+
+	// Symbol table size is from TOC.Symbols+4 (skip the length field) to TOC.Series.
+	if toc.Series <= toc.Symbols+4 {
+		return 0, nil
+	}
+	return toc.Series - toc.Symbols - 4, nil
+}
+
+// isOversizedBlock checks whether a compacted block's symbol table size exceeds
+// the configured threshold. Returns true and a human-readable details string
+// when the block should be marked as no-compact.
+func (c *BucketCompactor) isOversizedBlock(logger log.Logger, bdir string, id ulid.ULID) (bool, string) {
+	if c.noCompactBlockMaxSymbolTableSize <= 0 {
+		return false, ""
+	}
+
+	indexPath := filepath.Join(bdir, block.IndexFilename)
+	symbolTableSize, err := readIndexSymbolTableSize(indexPath)
+	if err != nil {
+		level.Warn(logger).Log("msg", "failed to read symbol table size from compacted block", "block", id, "err", err)
+		return false, ""
+	}
+
+	if symbolTableSize <= uint64(c.noCompactBlockMaxSymbolTableSize) {
+		return false, ""
+	}
+
+	return true, fmt.Sprintf("symbol table size %d exceeds threshold %d", symbolTableSize, c.noCompactBlockMaxSymbolTableSize)
+}
+
+// markBlocksNoCompact marks the given blocks as no-compact in the bucket.
+func (c *BucketCompactor) markBlocksNoCompact(ctx context.Context, logger log.Logger, blockIDs []ulid.ULID) {
+	for _, id := range blockIDs {
+		if err := block.MarkForNoCompact(
+			ctx,
+			logger,
+			c.bkt,
+			id,
+			block.VoluntaryNoCompactReason,
+			"block exceeds configured size threshold",
+			c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)),
+		); err != nil {
+			level.Warn(logger).Log("msg", "failed to mark compacted block as no-compact", "block", id, "err", err)
+		}
+	}
 }
 
 // convertCompactionResultToForEachJobs filters out empty ULIDs.
@@ -917,6 +1008,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.IndexExceeds64GiBNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.SymbolTableTooLargeNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)).Add(0)
 
 	return bcm
 }
@@ -948,6 +1040,7 @@ type BucketCompactor struct {
 	skipFutureMaxTime                bool
 	blockSyncConcurrency             int
 	blockHealthValidationConcurrency int
+	noCompactBlockMaxSymbolTableSize int64
 	metrics                          *BucketCompactorMetrics
 }
 
@@ -972,6 +1065,7 @@ func NewBucketCompactor(
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
 	maxPerBlockUploadConcurrency int,
+	noCompactBlockMaxSymbolTableSize int64,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, fmt.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
@@ -997,6 +1091,7 @@ func NewBucketCompactor(
 		skipFutureMaxTime:                skipFutureMaxTime,
 		blockSyncConcurrency:             blockSyncConcurrency,
 		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
+		noCompactBlockMaxSymbolTableSize: noCompactBlockMaxSymbolTableSize,
 		metrics:                          metrics,
 		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:          sparseIndexHeaderconfig,
