@@ -75,6 +75,7 @@ type Config struct {
 	NotRunningTimeout                   time.Duration      `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries                      bool               `yaml:"parallelize_shardable_queries"`
 	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
+	UseRemoteReadRoundTripperV2         bool               `yaml:"use_remote_read_round_tripper_v2" category:"experimental"`
 	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
 	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
@@ -114,6 +115,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, ShardedQueriesFlag, true, "True to enable query sharding.")
 	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
+	f.BoolVar(&cfg.UseRemoteReadRoundTripperV2, "query-frontend.use-remote-read-round-tripper-v2", false, "Use the experimental remote read round tripper that executes the middleware chain for each remote read query and merges the results.")
 	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, true, fmt.Sprintf("Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -%s=true", ShardedQueriesFlag))
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -314,7 +316,13 @@ func newQueryTripperware(
 		}
 		queryrange := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, cfg.EnableRemoteExecution, queryRangeMiddleware...)
 		instant := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, cfg.EnableRemoteExecution, queryInstantMiddleware...)
-		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
+
+		var remoteRead http.RoundTripper
+		if cfg.UseRemoteReadRoundTripperV2 {
+			remoteRead = NewRemoteReadRoundTripperV2(next, limits, remoteReadMiddleware...)
+		} else {
+			remoteRead = NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
+		}
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
