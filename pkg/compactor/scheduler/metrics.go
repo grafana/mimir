@@ -82,13 +82,13 @@ func newSchedulerMetrics(reg prometheus.Registerer, lanePolicy lanePolicy) *sche
 	m.activeJobs.WithLabelValues(jobTypeCompaction)
 	m.lanePendingJobsLastEmpty = make(map[lane]prometheus.Gauge, len(allLanes))
 	for _, l := range allLanes {
-		m.lanePendingJobsLastEmpty[l] = laneLastEmpty.WithLabelValues(string(l))
+		m.lanePendingJobsLastEmpty[l] = laneLastEmpty.WithLabelValues(l.String())
 	}
 	m.incompleteSplitBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))
 	m.incompleteMergeBytes = make(map[lane]prometheus.Gauge, len(compactionLanes))
 	for _, l := range compactionLanes {
-		m.incompleteSplitBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit, string(l))
-		m.incompleteMergeBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge, string(l))
+		m.incompleteSplitBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeSplit, l.String())
+		m.incompleteMergeBytes[l] = m.incompleteJobsBytes.WithLabelValues(compactionTypeMerge, l.String())
 	}
 	return m
 }

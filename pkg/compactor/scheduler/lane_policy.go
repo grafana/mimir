@@ -10,16 +10,25 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
-// lane is an in-memory identifier of pending work logically enqueued together. Its value is
-// exported as a metric label, so renaming one changes existing metrics.
-type lane string
+// lane is an in-memory identifier of pending work logically enqueued together
+type lane uint8
 
 const (
 	lanePolicySimple = "simple"
 
-	planLane       lane = "plan"
-	compactionLane lane = "compaction"
+	planLane lane = iota
+	compactionLane
 )
+
+func (l lane) String() string {
+	switch l {
+	case planLane:
+		return "plan"
+	case compactionLane:
+		return "compaction"
+	}
+	return ""
+}
 
 type laneTransition struct {
 	lane lane
