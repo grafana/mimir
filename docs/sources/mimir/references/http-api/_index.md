@@ -1415,7 +1415,9 @@ Displays a web page with the list of tenants with blocks in the storage configur
 GET /store-gateway/tenant/{tenant}/blocks
 ```
 
-Displays a web page listing the blocks for a given tenant.
+Displays a web page listing the blocks for a given tenant, with filters and pagination.
+The list comes from the tenant bucket index, which the compactor updates periodically, so a block uploaded after the last update is not listed.
+Set `scan_bucket=on` to read every block of the tenant instead, which is slower but lists every block and fills the size, sample count and chunk count.
 
 ### Prepare for Shutdown
 

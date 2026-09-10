@@ -4,23 +4,145 @@
 <head>
     <meta charset="UTF-8">
     <title>Store-gateway: bucket tenant blocks</title>
+    <style>
+        fieldset {
+            display: inline-block;
+            vertical-align: top;
+            margin: 0 0.5em 0.5em 0;
+        }
+
+        label.field {
+            display: inline-block;
+            min-width: 12em;
+        }
+
+        p.note {
+            margin: 0.2em 0 0.4em 0;
+            color: #555;
+            font-size: 90%;
+        }
+
+        table.blocks th {
+            position: sticky;
+            top: -2px;
+            background-color: #fff;
+            box-shadow: inset 0 -1px 0 #000, 0 -3px 0 #fff;
+        }
+    </style>
 </head>
 <body>
 <h1>Store-gateway: bucket tenant blocks</h1>
-<p>Current time: {{ .Now }}</p>
+<p>Current time: {{ .Now.UTC.Format "2006-01-02T15:04:05Z07:00" }}</p>
 <p>Showing blocks for tenant: <strong>{{ .Tenant }}</strong></p>
-<p>
-    <form>
-        <input type="checkbox" id="show-deleted" name="show_deleted" {{ if .ShowDeleted }} checked {{ end }}>&nbsp;<label for="show-deleted">Show Deleted</label> &nbsp;&nbsp;
-        <input type="checkbox" id="show-sources" name="show_sources" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
-        <input type="checkbox" id="show-parents" name="show_parents" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
-        <label for="split-count">Split count (non-zero value shows block split ID):</label>&nbsp;<input id="split-count" name="split_count" type="text" value="{{ .SplitCount }}" style="width: 6em;" />
+<form autocomplete="off">
+    <input type="hidden" name="page_size" value="{{ .PageSize }}">
+
+    <fieldset>
+        <legend>Filters</legend>
+        <div>
+            <input id="scan-bucket" name="scan_bucket" type="checkbox" {{ if .ScanBucket }}checked{{ end }}>
+            <label for="scan-bucket">Scan bucket</label>
+        </div>
+        <p class="note">By default the page lists the blocks of the bucket index, which the compactor updates periodically. Set this to scan the bucket and read every block instead, which is slower but shows the newest blocks.</p>
+        <div>
+            <label class="field" for="block-id">Block ID</label>
+            <input id="block-id" name="block_id" type="text" size="28" value="{{ .BlockID }}">
+        </div>
+        <div>
+            <label class="field" for="created-after">Created after</label>
+            <input id="created-after" name="created_after" type="text" size="38" placeholder="E.g. now-3h, 2026-01-02T15:04:05Z" value="{{ .CreatedAfter.Input }}">
+        </div>
+        <div>
+            <label class="field" for="created-before">Created before</label>
+            <input id="created-before" name="created_before" type="text" size="38" placeholder="E.g. now-3h, 2026-01-02T15:04:05Z" value="{{ .CreatedBefore.Input }}">
+        </div>
+        <div>
+            <label class="field" for="min-time">Span starts after</label>
+            <input id="min-time" name="min_time" type="text" size="38" placeholder="E.g. now-3h, 2026-01-02T15:04:05Z" value="{{ .MinTime.Input }}">
+        </div>
+        <div>
+            <label class="field" for="max-time">Span ends before</label>
+            <input id="max-time" name="max_time" type="text" size="38" placeholder="E.g. now-3h, 2026-01-02T15:04:05Z" value="{{ .MaxTime.Input }}">
+        </div>
+        <div>
+            <label class="field" for="min-compaction-level">Compaction level from</label>
+            <input id="min-compaction-level" name="min_compaction_level" type="number" min="0" style="width: 5em;" value="{{ if .MinCompactionLevel }}{{ .MinCompactionLevel }}{{ end }}">
+            <label for="max-compaction-level">to</label>
+            <input id="max-compaction-level" name="max_compaction_level" type="number" min="0" style="width: 5em;" value="{{ if .MaxCompactionLevel }}{{ .MaxCompactionLevel }}{{ end }}">
+        </div>
+        <div>
+            <input id="show-deleted" name="show_deleted" type="checkbox" {{ if .ShowDeleted }}checked{{ end }}>
+            <label for="show-deleted">Include blocks marked for deletion</label>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>Extra columns</legend>
+        <div>
+            <input id="show-details" name="show_details" type="checkbox" {{ if .ShowDetails }}checked{{ end }}>
+            <label for="show-details">Size, samples and chunks</label>
+        </div>
+        <div>
+            <input id="show-sources" name="show_sources" type="checkbox" {{ if .ShowSources }}checked{{ end }}>
+            <label for="show-sources">Sources</label>
+        </div>
+        <div>
+            <input id="show-parents" name="show_parents" type="checkbox" {{ if .ShowParents }}checked{{ end }}>
+            <label for="show-parents">Parents</label>
+        </div>
+        <div>
+            <input id="show-no-compact" name="show_no_compact" type="checkbox" {{ if .ShowNoCompact }}checked{{ end }}>
+            <label for="show-no-compact">No compact</label>
+        </div>
+        <p class="note">None of these are in the bucket index, so each one costs extra bucket reads.</p>
+        <div>
+            <label class="field" for="split-count" style="min-width: 0;">Split groups</label>
+            <input id="split-count" name="split_count" type="number" min="0" style="width: 5em;" value="{{ if .SplitCount }}{{ .SplitCount }}{{ end }}">
+        </div>
+        <p class="note">The tenant <code>-compactor.split-groups</code>. Shows the split group that the compactor puts each block in.</p>
+    </fieldset>
+
+    <div>
         <button type="submit" style="background-color: lightgrey;">
-            <span style="padding: 0.5em 1em; font-size: 125%;">Reload</span>
+            <span style="padding: 0.5em 1em; font-size: 125%;">Apply</span>
         </button>
-    </form>
+        &nbsp;<a href="blocks">Reset</a>
+    </div>
+</form>
+
+<p>
+    {{ .SourceText }}
+    {{ if .BlocksRead }}
+        Read {{ .BlocksRead }} block meta files.
+    {{ end }}
 </p>
-<table border="1" cellpadding="5" style="border-collapse: collapse">
+<p>
+    {{ if .MatchedBlocks }}
+        Blocks {{ .ShownFrom }}-{{ .ShownTo }} of {{ .MatchedBlocks }}.
+    {{ else }}
+        No block matches the filters.
+    {{ end }}
+    {{ if ne .MatchedBlocks .TotalBlocks }}
+        {{ .TotalBlocks }} blocks before the filters{{ if .HiddenDeletedBlocks }}, including {{ .HiddenDeletedBlocks }} marked for deletion{{ end }}.
+    {{ end }}
+    {{ if gt .TotalPages 1 }}
+        Page {{ .Page }} of {{ .TotalPages }}:
+        {{ range $i, $link := .PageLinks }}
+            {{ if $i }}|{{ end }}
+            {{ if $link.Enabled }}<a href="{{ $link.URL }}">{{ $link.Label }}</a>{{ else }}{{ $link.Label }}{{ end }}
+        {{ end }}
+    {{ end }}
+</p>
+<p>
+    Blocks per page:
+    {{ range $i, $link := .PageSizeLinks }}
+        {{ if $i }}|{{ end }}
+        {{ if $link.Current }}<strong>{{ $link.Label }}</strong>{{ else }}<a href="{{ $link.URL }}">{{ $link.Label }}</a>{{ end }}
+    {{ end }}
+</p>
+
+{{ if .FormattedBlocks }}
+<table class="blocks" border="1" cellpadding="5" style="border-collapse: collapse">
     <thead>
     <tr>
         <th>Block ID</th>
@@ -33,13 +155,17 @@
         {{ if .ShowDeleted }}
         <th>Deletion Time</th>{{ end }}
         <th>Lvl</th>
-        <th>Size</th>
+        {{ if .HasDetails }}
+        <th>Size</th>{{ end }}
         <th>Series</th>
-        <th>Samples</th>
-        <th>Chunks</th>
+        {{ if .HasDetails }}
+        <th>Samples</th>{{ end }}
+        {{ if .HasDetails }}
+        <th>Chunks</th>{{ end }}
         <th>Labels</th>
         <th>OOO</th>
-        <th>No Compact</th>
+        {{ if .HasNoCompactMarks }}
+        <th>No Compact</th>{{ end }}
         {{ if .ShowSources }}
         <th>Sources</th>{{ end }}
         {{ if .ShowParents }}
@@ -47,32 +173,35 @@
     </tr>
     </thead>
     <tbody style="font-family: monospace;">
-    {{ $page := . }}
     {{ range .FormattedBlocks }}
         <tr>
             <td>{{ .ULID }}</td>
-            {{ if gt $page.SplitCount 0 }}
+            {{ if gt $.SplitCount 0 }}
             <td>{{ .SplitID }}</td>{{ end }}
             <td>{{ .ULIDTime }}</td>
             <td>{{ .MinTime }}</td>
             <td>{{ .MaxTime }}</td>
             <td>{{ .Duration }}</td>
-            {{ if $page.ShowDeleted }}
+            {{ if $.ShowDeleted }}
             <td>{{ .DeletedTime }}</td>{{ end }}
             <td>{{ .CompactionLevel }}</td>
-            <td>{{ .BlockSize }}</td>
+            {{ if $.HasDetails }}
+            <td>{{ .BlockSize }}</td>{{ end }}
             <td>{{ .Stats.NumSeries }}</td>
-            <td>{{ .Stats.NumSamples }}</td>
-            <td>{{ .Stats.NumChunks }}</td>
+            {{ if $.HasDetails }}
+            <td>{{ .Stats.NumSamples }}</td>{{ end }}
+            {{ if $.HasDetails }}
+            <td>{{ .Stats.NumChunks }}</td>{{ end }}
             <td>{{ .Labels }}</td>
             <td>{{ if .OutOfOrder }}Yes{{ end }}</td>
+            {{ if $.HasNoCompactMarks }}
             <td>
                 {{ range $i, $source := .NoCompactDetails }}
                     {{ if $i }}<br>{{ end }}
                     {{ . }}
                 {{ end }}
-            </td>
-            {{ if $page.ShowSources }}
+            </td>{{ end }}
+            {{ if $.ShowSources }}
                 <td>
                     {{ range $i, $source := .Sources }}
                         {{ if $i }}<br>{{ end }}
@@ -80,7 +209,7 @@
                     {{ end }}
                 </td>
             {{ end }}
-            {{ if $page.ShowParents }}
+            {{ if $.ShowParents }}
                 <td>
                     {{ range $i, $source := .Parents }}
                         {{ if $i }}<br>{{ end }}
@@ -92,5 +221,6 @@
     {{ end }}
     </tbody>
 </table>
+{{ end }}
 </body>
 </html>
