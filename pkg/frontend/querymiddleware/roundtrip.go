@@ -314,7 +314,7 @@ func newQueryTripperware(
 		}
 		queryrange := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, cfg.EnableRemoteExecution, queryRangeMiddleware...)
 		instant := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, cfg.EnableRemoteExecution, queryInstantMiddleware...)
-		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
+		remoteRead := NewRemoteReadRoundTripper(next, limits, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
