@@ -630,6 +630,34 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
+		// A series queued as non-owned can become owned again before the owned-series
+		// service's own ticker reconciles pendingNonOwnedRefs, since that ticker runs
+		// on its own schedule. Re-checking against the cached ownedTokenRanges won't
+		// catch this: the cache is only ever updated by updateTenant, which reconciles
+		// pendingNonOwnedRefs in that same call, so re-scanning a stale cache just
+		// repeats the same stale answer. Calling updateTenant here instead re-fetches
+		// current ranges from the ring, so a series owned again is removed from
+		// pendingNonOwnedRefs before takePendingNonOwnedRefs can evict it below.
+		// updateTenant short-circuits when ranges haven't changed, so this is cheap
+		// unless there's an actual discrepancy to reconcile.
+		if i.ownedSeriesService != nil {
+			db.pendingNonOwnedRefsMtx.Lock()
+			hasPendingNonOwnedRefs := len(db.pendingNonOwnedRefs) > 0
+			db.pendingNonOwnedRefsMtx.Unlock()
+
+			if hasPendingNonOwnedRefs {
+				if _, err := i.ownedSeriesService.updateTenant(userID, db, true); err != nil {
+					// The ring lookup failed, so pendingNonOwnedRefs was NOT reconciled this
+					// round: it may still contain refs that are owned again. Ring lookups are
+					// especially likely to fail during the same ring instability that causes
+					// ownership to flip in the first place, so skip eviction for this tenant
+					// rather than risk evicting a currently-owned series. updateTenant already
+					// scheduled a retry for the next tick.
+					continue
+				}
+			}
+		}
+
 		now := time.Now()
 
 		// Fast path: threshold gate is satisfied and min grace period has elapsed.

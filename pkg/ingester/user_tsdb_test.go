@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -667,6 +668,77 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.Len(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)), 1)
 		require.Equal(t, uint64(2), tsdbDB.Head().NumSeries())
 	})
+}
+
+// TestRecomputeOwnedSeries_ConcurrentWithUpdateTokenRanges guards against a race in the
+// compaction loop's pre-eviction ownership re-check: recomputeOwnedSeries and updateTokenRanges
+// are now callable from two goroutines (owned-series service and compaction loop), so this runs
+// both concurrently to prove ownedTokenRanges and ownedState stay properly synchronized.
+//
+// No assertions by design -- verification is the race detector, not a value check, so this only
+// means something under `go test -race` (Mimir's CI default for this package). Removing either
+// of userTSDB's two locks (ownedTokenRangesMtx, recomputeOwnedSeriesMtx) reproduces the race
+// under -race.
+func TestRecomputeOwnedSeries_ConcurrentWithUpdateTokenRanges(t *testing.T) {
+	const userID = "test-user"
+	limits := validation.Limits{MaxGlobalSeriesPerUser: 0}
+	overrides := validation.NewOverrides(limits, nil)
+	limiter := NewLimiter(overrides, newIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
+
+	opts := tsdb.DefaultOptions()
+	opts.SecondaryHashFunction = secondaryTSDBHashFunctionForUser(userID)
+	tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
+
+	app := tsdbDB.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)), 100, 1.0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	db := &userTSDB{
+		userID:       userID,
+		cfg:          &Config{EarlyCompactionNonOwnedSeriesEnabled: true},
+		db:           tsdbDB,
+		limiter:      limiter,
+		activeSeries: activeseries.NewActiveSeries(asmodel.NewMatchers(asmodel.CustomTrackersConfig{}), time.Minute, nil),
+	}
+
+	const iterations = 200
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// Simulates the owned-series service's own goroutine repeatedly updating ranges as the
+	// ring changes.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			if i%2 == 0 {
+				db.updateTokenRanges(ring.TokenRanges{0, math.MaxUint32})
+			} else {
+				db.updateTokenRanges(ring.TokenRanges{0, math.MaxUint32 / 2})
+			}
+		}
+	}()
+
+	// Two goroutines both call recomputeOwnedSeries concurrently: one simulates the
+	// owned-series service's own tick, the other simulates the compaction loop's
+	// pre-eviction re-check landing at the same time. This is what exercises the
+	// ownedState lost-update race specifically (two concurrent recomputes racing each
+	// other), separately from the ownedTokenRanges race exercised by the goroutine above.
+	for shardSize := 3; shardSize <= 4; shardSize++ {
+		shardSize := shardSize
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				db.recomputeOwnedSeries(shardSize, "test", log.NewNopLogger())
+			}
+		}()
+	}
+
+	wg.Wait()
 }
 
 // BenchmarkUserTSDB_addPendingNonOwnedRefs measures the per-call cost of the
