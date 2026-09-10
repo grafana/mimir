@@ -269,6 +269,20 @@
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
 
+## 3.1.6
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.26.7. #16430 #16433
+* [BUGFIX] Update `golang.org/x/crypto` to v0.56.0 to address [CVE-2026-78662](https://pkg.go.dev/vuln/GO-2026-6354) and [CVE-2026-56855](https://pkg.go.dev/vuln/GO-2026-6355). #16517
+* [BUGFIX] Update `google.golang.org/grpc` to v1.83.2 to address [CVE-2026-84304](https://nvd.nist.gov/vuln/detail/CVE-2026-84304) and [CVE-2026-84445](https://nvd.nist.gov/vuln/detail/CVE-2026-84445). #16509 #16543
+
+## 3.1.5
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.26.6 to address [CVE-2026-33818](https://pkg.go.dev/vuln/GO-2026-5972), [CVE-2026-39821](https://pkg.go.dev/vuln/GO-2026-5026), [CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), [CVE-2026-56853](https://pkg.go.dev/vuln/GO-2026-6089), [CVE-2026-56858](https://pkg.go.dev/vuln/GO-2026-6091), [CVE-2026-56859](https://pkg.go.dev/vuln/GO-2026-6088), [CVE-2026-56860](https://pkg.go.dev/vuln/GO-2026-6218), and [CVE-2026-56862](https://pkg.go.dev/vuln/GO-2026-6090). #16408
+
 ## 3.1.4
 
 ### Grafana Mimir
