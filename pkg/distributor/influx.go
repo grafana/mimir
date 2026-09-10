@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -52,7 +53,7 @@ func InfluxHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	retryCfg RetryConfig,
+	retryCfg retryafter.Config,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	logger log.Logger,

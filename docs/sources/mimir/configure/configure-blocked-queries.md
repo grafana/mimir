@@ -149,7 +149,7 @@ overrides:
 
 Rate limiting is enforced on instant and range queries. Unlike blocking, it isn't enforced on remote read requests.
 
-When a matching query arrives less than `allowed_frequency` after the previous matching query was allowed, Mimir rejects it with HTTP status 429 and the [`err-mimir-query-limited`](../../manage/mimir-runbooks/#err-mimir-query-limited) error.
+When a matching query arrives less than `allowed_frequency` after the previous matching query was allowed, Mimir rejects it with HTTP status 429 and returns the [`err-mimir-query-limited`](../../manage/mimir-runbooks/#err-mimir-query-limited) error. If you enable `-query-frontend.retry-after-header.enabled`, the response also includes a `Retry-After` header.
 
 `limited_queries` matches the query text exactly, ignoring only leading and trailing whitespace. The `query` rule must be in the canonicalized format of the query to be limited.
 

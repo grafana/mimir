@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/extract"
+	"github.com/grafana/mimir/pkg/util/retryafter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -335,7 +336,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 
 		// Send write request through the HTTP handler.
-		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, false, overrides, retryafter.Config{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
 		h.ServeHTTP(resp, createRequest(t, marshalledReq))
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
