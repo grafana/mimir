@@ -2,7 +2,11 @@
 
 ## unreleased
 
-* [BUGFIX] Upgrade Go to 1.26.7. #16430
+## 3.1.6
+
+* [BUGFIX] Upgrade Go to 1.26.7. #16430 #16433
+* [BUGFIX] Update `golang.org/x/crypto` to v0.56.0 to address [CVE-2026-78662](https://pkg.go.dev/vuln/GO-2026-6354) and [CVE-2026-56855](https://pkg.go.dev/vuln/GO-2026-6355). #16517
+* [BUGFIX] Update `google.golang.org/grpc` to v1.83.2 to address [CVE-2026-84304](https://nvd.nist.gov/vuln/detail/CVE-2026-84304) and [CVE-2026-84445](https://nvd.nist.gov/vuln/detail/CVE-2026-84445). #16509 #16543
 
 ## 3.1.5
 
