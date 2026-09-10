@@ -22,6 +22,11 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 )
 
+// prefixedRingKey is the actual KV store key of the partition ring: Mimir stores the ring
+// under the configured key prefix (see the -ingester.partition-ring.prefix configuration
+// option, "collectors/" by default).
+const prefixedRingKey = defaultPartitionRingKeyPrefix + ingester.PartitionRingKey
+
 func TestAddPartitionCommand(t *testing.T) {
 	t.Parallel()
 
@@ -40,6 +45,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0, // random port
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -53,7 +59,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		// Verify the partition was added by reading from the seed KV.
 		// Use polling because memberlist is eventually consistent.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -77,7 +83,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partition 0.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
 			return ringDesc, true, nil
@@ -92,6 +98,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -111,7 +118,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partition 0 to simulate an existing ring.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
 			return ringDesc, true, nil
@@ -126,6 +133,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "2",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -137,7 +145,7 @@ func TestAddPartitionCommand(t *testing.T) {
 
 		// Verify partition 2 was added.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -164,6 +172,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0, 1, 2",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -176,7 +185,7 @@ func TestAddPartitionCommand(t *testing.T) {
 
 		// Verify all partitions were added.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -196,7 +205,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partition 1.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(1, ring.PartitionActive, time.Now())
 			return ringDesc, true, nil
@@ -211,6 +220,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0,1,2",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -222,7 +232,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		require.Contains(t, err.Error(), "partition 1 already exists")
 
 		// Verify that partition 0 was NOT added (atomic failure).
-		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		val, err := seedClient.Get(ctx, prefixedRingKey)
 		require.NoError(t, err)
 		ringDesc := val.(*ring.PartitionRingDesc)
 		require.False(t, ringDesc.HasPartition(0), "partition 0 should not be added when operation fails")
@@ -245,6 +255,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            customRingKey,
+			ringPrefix:         "", // An empty prefix uses the ring key verbatim.
 			partitionIDs:       "0",
 			partitionState:     "active",
 			stdin:              strings.NewReader("yes\n"),
@@ -263,7 +274,7 @@ func TestAddPartitionCommand(t *testing.T) {
 		}, 5*time.Second, 100*time.Millisecond, "partition 0 should be added under the custom ring key")
 
 		// The default ring key is left untouched.
-		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		val, err := seedClient.Get(ctx, prefixedRingKey)
 		require.NoError(t, err)
 		if val != nil {
 			require.False(t, val.(*ring.PartitionRingDesc).HasPartition(0), "partition must not be added under the default ring key")
@@ -282,7 +293,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partition 0 with no owners.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(0, ring.PartitionInactive, time.Now())
 			return ringDesc, true, nil
@@ -297,6 +308,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0, // random port
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -309,7 +321,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		// Verify the partition was removed by reading from the seed KV.
 		// Use polling because memberlist is eventually consistent.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -334,6 +346,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -352,7 +365,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partition 0 with an owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -369,6 +382,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -387,7 +401,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partitions 0, 1, 2 with no owners.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionInactive, now)
@@ -405,6 +419,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0,2",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -415,7 +430,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 
 		// Verify partitions 0 and 2 were removed, but 1 remains.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -435,7 +450,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create partitions 0, 1, 2 where partition 1 has an owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionInactive, now)
@@ -454,6 +469,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			partitionIDs:       "0,1,2",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -464,7 +480,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 		require.Contains(t, err.Error(), "partition 1 has 1 owner(s), cannot remove")
 
 		// Verify that partition 0 was NOT removed (atomic failure).
-		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		val, err := seedClient.Get(ctx, prefixedRingKey)
 		require.NoError(t, err)
 		ringDesc := val.(*ring.PartitionRingDesc)
 		require.True(t, ringDesc.HasPartition(0), "partition 0 should still exist when operation fails")
@@ -495,6 +511,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            customRingKey,
+			ringPrefix:         "", // An empty prefix uses the ring key verbatim.
 			partitionIDs:       "0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -524,7 +541,7 @@ func TestAddOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create the partition the owner will own.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
 			return ringDesc, true, nil
@@ -539,6 +556,7 @@ func TestAddOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-a-0",
 			partitionID:        "0",
 			stdin:              strings.NewReader("yes\n"),
@@ -550,7 +568,7 @@ func TestAddOwnerCommand(t *testing.T) {
 
 		// Verify the owner was added.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -574,7 +592,7 @@ func TestAddOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create a partition and owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -591,6 +609,7 @@ func TestAddOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-a-0",
 			partitionID:        "0",
 			stdin:              strings.NewReader("yes\n"),
@@ -610,7 +629,7 @@ func TestAddOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create the partition.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			ringDesc.AddPartition(0, ring.PartitionActive, time.Now())
 			return ringDesc, true, nil
@@ -625,6 +644,7 @@ func TestAddOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
 			partitionID:        "0",
 			stdin:              strings.NewReader("yes\n"),
@@ -636,7 +656,7 @@ func TestAddOwnerCommand(t *testing.T) {
 
 		// Verify both owners were added.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -656,7 +676,7 @@ func TestAddOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create a partition and one existing owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -673,6 +693,7 @@ func TestAddOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
 			partitionID:        "0",
 			stdin:              strings.NewReader("yes\n"),
@@ -684,7 +705,7 @@ func TestAddOwnerCommand(t *testing.T) {
 		require.Contains(t, err.Error(), `owner "ingester-zone-b-0" already exists`)
 
 		// Verify zone-a was NOT added (atomic failure).
-		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		val, err := seedClient.Get(ctx, prefixedRingKey)
 		require.NoError(t, err)
 		ringDesc := val.(*ring.PartitionRingDesc)
 		require.False(t, ringDesc.HasOwner("ingester-zone-a-0"), "zone-a owner should not be added when operation fails")
@@ -714,6 +735,7 @@ func TestAddOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            customRingKey,
+			ringPrefix:         "", // An empty prefix uses the ring key verbatim.
 			ownerIDs:           "ingester-zone-a-0",
 			partitionID:        "0",
 			stdin:              strings.NewReader("yes\n"),
@@ -744,7 +766,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create a partition with an owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -761,6 +783,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-c-0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -771,7 +794,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 
 		// Verify the owner was removed but the partition still exists.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -797,6 +820,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-c-0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -815,7 +839,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create a partition with multiple owners.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -834,6 +858,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-b-0,ingester-zone-c-0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -844,7 +869,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 
 		// Verify zone-b and zone-c owners are removed, zone-a remains.
 		require.Eventually(t, func() bool {
-			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			val, err := seedClient.Get(ctx, prefixedRingKey)
 			if err != nil || val == nil {
 				return false
 			}
@@ -866,7 +891,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 		seedKV, seedClient := startMemberlistKV(t)
 
 		// Pre-create one owner.
-		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		err := seedClient.CAS(ctx, prefixedRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 			now := time.Now()
 			ringDesc.AddPartition(0, ring.PartitionActive, now)
@@ -883,6 +908,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            ingester.PartitionRingKey,
+			ringPrefix:         defaultPartitionRingKeyPrefix,
 			ownerIDs:           "ingester-zone-a-0,ingester-zone-b-0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
@@ -893,7 +919,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 		require.Contains(t, err.Error(), `owner "ingester-zone-b-0" does not exist`)
 
 		// Verify zone-a was NOT removed (atomic failure).
-		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		val, err := seedClient.Get(ctx, prefixedRingKey)
 		require.NoError(t, err)
 		ringDesc := val.(*ring.PartitionRingDesc)
 		require.True(t, ringDesc.HasOwner("ingester-zone-a-0"), "zone-a owner should still exist when operation fails")
@@ -924,6 +950,7 @@ func TestRemoveOwnerCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			ringKey:            customRingKey,
+			ringPrefix:         "", // An empty prefix uses the ring key verbatim.
 			ownerIDs:           "ingester-zone-c-0",
 			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
