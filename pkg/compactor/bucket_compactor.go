@@ -423,9 +423,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	uploadBlocksCount := len(blocksToUpload)
 
-	// Update labels, verify all blocks, and detect oversized blocks.
-	var oversizedMtx sync.Mutex
-	var oversizedBlocks []ulid.ULID
+	blocksHealthStats := make([]block.HealthStats, uploadBlocksCount)
+
+	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
@@ -452,16 +452,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("remove tombstones: %w", err)
 		}
 
-		if err := verifyBlock(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime); err != nil {
+		// Verify block is healthy.
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime)
+		if err != nil {
+			return fmt.Errorf("gather health stats for result block %s: %w", bdir, err)
+		}
+		if err := stats.AnyErr(); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
+		// Per-block health stats are used below after the block was successfully uploaded.
+		blocksHealthStats[idx] = stats
 
-		if oversized, details := c.isOversizedBlock(jobLogger, bdir, blockToUpload.ulid); oversized {
-			level.Info(jobLogger).Log("msg", "compacted block will be marked as no-compact after upload", "block", blockToUpload.ulid, "details", details)
-			oversizedMtx.Lock()
-			oversizedBlocks = append(oversizedBlocks, blockToUpload.ulid)
-			oversizedMtx.Unlock()
-		}
 		return nil
 	})
 	if err != nil {
@@ -514,6 +515,22 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("upload of %s failed: %w", blockToUpload.ulid, err)
 		}
 
+		blockStats := blocksHealthStats[idx]
+		if blockStats.SymbolTableSize > uint64(c.noCompactBlockMaxSymbolTableSize) {
+			// Block is oversized. Preemptively mark it as no-compact, in order to skip it on the next compaction cycle.
+			if err := block.MarkForNoCompact(
+				ctx,
+				jobLogger,
+				c.bkt,
+				blockToUpload.ulid,
+				block.VoluntaryNoCompactReason,
+				"block exceeds configured size threshold",
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)),
+			); err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to preemptively mark block as no-compact", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			}
+		}
+
 		elapsed := time.Since(begin)
 		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
 
@@ -536,6 +553,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			"size_bytes", blockSize,
 			"series_count", seriesCount,
 			"sample_count", sampleCount,
+			"symbols_table_size_bytes", blockStats.SymbolTableSize,
 			"compaction_level", compactionLevel,
 			"duration", elapsed,
 			"duration_ms", elapsed.Milliseconds(),
@@ -548,8 +566,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	elapsed = time.Since(uploadBegin)
 	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "total_size_bytes", totalUploadedSize.Load(), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
-
-	c.markBlocksNoCompact(ctx, jobLogger, oversizedBlocks)
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
@@ -584,15 +600,6 @@ func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger,
 	defer g.Done()
 
 	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
-}
-
-func verifyBlock(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) error {
-	stats, err := gatherBlockHealthStats(ctx, g, logger, bdir, minTime, maxTime)
-	if err != nil {
-		return err
-	}
-
-	return stats.AnyErr()
 }
 
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
@@ -649,86 +656,6 @@ func verifyCompactedBlocksTimeRanges(compIDs []ulid.ULID, sourceBlocksMinTime, s
 	}
 
 	return nil
-}
-
-type byteSlice []byte
-
-func (b byteSlice) Len() int            { return len(b) }
-func (b byteSlice) Range(s, e int) []byte { return b[s:e] }
-
-// readIndexSymbolTableSize reads the index file's TOC and returns the symbol table size in bytes.
-func readIndexSymbolTableSize(indexPath string) (uint64, error) {
-	f, err := os.Open(indexPath)
-	if err != nil {
-		return 0, fmt.Errorf("open index file: %w", err)
-	}
-	defer f.Close()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return 0, fmt.Errorf("stat index file: %w", err)
-	}
-
-	// 6 uint64 fields + CRC32
-	const tocLen = 6*8 + 4
-	if fi.Size() < tocLen {
-		return 0, fmt.Errorf("index file too small (%d bytes)", fi.Size())
-	}
-
-	buf := make([]byte, tocLen)
-	if _, err := f.ReadAt(buf, fi.Size()-tocLen); err != nil {
-		return 0, fmt.Errorf("read index TOC: %w", err)
-	}
-
-	toc, err := index.NewTOCFromByteSlice(byteSlice(buf))
-	if err != nil {
-		return 0, fmt.Errorf("parse index TOC: %w", err)
-	}
-
-	// Symbol table size is from TOC.Symbols+4 (skip the length field) to TOC.Series.
-	if toc.Series <= toc.Symbols+4 {
-		return 0, nil
-	}
-	return toc.Series - toc.Symbols - 4, nil
-}
-
-// isOversizedBlock checks whether a compacted block's symbol table size exceeds
-// the configured threshold. Returns true and a human-readable details string
-// when the block should be marked as no-compact.
-func (c *BucketCompactor) isOversizedBlock(logger log.Logger, bdir string, id ulid.ULID) (bool, string) {
-	if c.noCompactBlockMaxSymbolTableSize <= 0 {
-		return false, ""
-	}
-
-	indexPath := filepath.Join(bdir, block.IndexFilename)
-	symbolTableSize, err := readIndexSymbolTableSize(indexPath)
-	if err != nil {
-		level.Warn(logger).Log("msg", "failed to read symbol table size from compacted block", "block", id, "err", err)
-		return false, ""
-	}
-
-	if symbolTableSize <= uint64(c.noCompactBlockMaxSymbolTableSize) {
-		return false, ""
-	}
-
-	return true, fmt.Sprintf("symbol table size %d exceeds threshold %d", symbolTableSize, c.noCompactBlockMaxSymbolTableSize)
-}
-
-// markBlocksNoCompact marks the given blocks as no-compact in the bucket.
-func (c *BucketCompactor) markBlocksNoCompact(ctx context.Context, logger log.Logger, blockIDs []ulid.ULID) {
-	for _, id := range blockIDs {
-		if err := block.MarkForNoCompact(
-			ctx,
-			logger,
-			c.bkt,
-			id,
-			block.VoluntaryNoCompactReason,
-			"block exceeds configured size threshold",
-			c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)),
-		); err != nil {
-			level.Warn(logger).Log("msg", "failed to mark compacted block as no-compact", "block", id, "err", err)
-		}
-	}
 }
 
 // convertCompactionResultToForEachJobs filters out empty ULIDs.

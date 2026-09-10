@@ -8,7 +8,6 @@ package compactor
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -334,94 +333,4 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestReadIndexSymbolTableSize(t *testing.T) {
-	tempDir := t.TempDir()
-
-	blockID, err := block.CreateBlock(
-		t.Context(), tempDir,
-		[]labels.Labels{
-			labels.FromStrings("__name__", "metric_a", "job", "foo"),
-			labels.FromStrings("__name__", "metric_b", "job", "bar"),
-			labels.FromStrings("__name__", "metric_c", "job", "baz"),
-		}, 10, 0, 1000, labels.EmptyLabels())
-	require.NoError(t, err)
-
-	indexPath := filepath.Join(tempDir, blockID.String(), block.IndexFilename)
-	size, err := readIndexSymbolTableSize(indexPath)
-	require.NoError(t, err)
-	require.Greater(t, size, uint64(0))
-}
-
-func TestReadIndexSymbolTableSize_FileNotFound(t *testing.T) {
-	_, err := readIndexSymbolTableSize("/nonexistent/path/index")
-	require.Error(t, err)
-}
-
-func TestIsOversizedBlock(t *testing.T) {
-	tempDir := t.TempDir()
-
-	blockID, err := block.CreateBlock(
-		t.Context(), tempDir,
-		[]labels.Labels{
-			labels.FromStrings("__name__", "metric_a", "job", "foo"),
-			labels.FromStrings("__name__", "metric_b", "job", "bar"),
-			labels.FromStrings("__name__", "metric_c", "job", "baz"),
-		}, 10, 0, 1000, labels.EmptyLabels())
-	require.NoError(t, err)
-
-	logger := log.NewNopLogger()
-	bdir := filepath.Join(tempDir, blockID.String())
-
-	t.Run("disabled when threshold is 0", func(t *testing.T) {
-		c := &BucketCompactor{noCompactBlockMaxSymbolTableSize: 0}
-		oversized, _ := c.isOversizedBlock(logger, bdir, blockID)
-		assert.False(t, oversized)
-	})
-
-	t.Run("not oversized when below threshold", func(t *testing.T) {
-		c := &BucketCompactor{noCompactBlockMaxSymbolTableSize: 1 << 30}
-		oversized, _ := c.isOversizedBlock(logger, bdir, blockID)
-		assert.False(t, oversized)
-	})
-
-	t.Run("oversized when above threshold", func(t *testing.T) {
-		c := &BucketCompactor{noCompactBlockMaxSymbolTableSize: 1}
-		oversized, details := c.isOversizedBlock(logger, bdir, blockID)
-		assert.True(t, oversized)
-		assert.Contains(t, details, "symbol table size")
-	})
-}
-
-func TestMarkBlocksNoCompact(t *testing.T) {
-	tempDir := t.TempDir()
-
-	blockID, err := block.CreateBlock(
-		t.Context(), tempDir,
-		[]labels.Labels{
-			labels.FromStrings("__name__", "metric_a", "job", "foo"),
-			labels.FromStrings("__name__", "metric_b", "job", "bar"),
-			labels.FromStrings("__name__", "metric_c", "job", "baz"),
-		}, 10, 0, 1000, labels.EmptyLabels())
-	require.NoError(t, err)
-
-	bkt := objstore.NewInMemBucket()
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	blocksMarkedForDeletion := promauto.With(reg).NewCounter(prometheus.CounterOpts{Name: "blocks_marked_for_deletion"})
-	metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, reg)
-
-	c := &BucketCompactor{
-		bkt:     bkt,
-		metrics: metrics,
-	}
-	c.markBlocksNoCompact(t.Context(), logger, []ulid.ULID{blockID})
-
-	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason))))
-
-	markerPath := blockID.String() + "/" + block.NoCompactMarkFilename
-	exists, err := bkt.Exists(t.Context(), markerPath)
-	require.NoError(t, err)
-	assert.True(t, exists)
 }
