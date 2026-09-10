@@ -2660,6 +2660,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_propagate_matchers",
+              "required": false,
+              "desc": "Enable propagating label matchers across binary expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-propagate-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_reduce_matchers",
               "required": false,
               "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
@@ -5951,10 +5962,10 @@
           "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
-          "desc": "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.",
+          "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",
           "fieldValue": null,
           "fieldDefaultValue": "xor",
-          "fieldFlag": "ingester.float-chunk-encoding",
+          "fieldFlag": "blocks-storage.tsdb.float-chunk-encoding",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -9199,17 +9210,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.rewrite-histogram-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "rewrite_propagate_matchers",
-          "required": false,
-          "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.rewrite-propagate-matchers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -21670,6 +21670,28 @@
           "fieldFlag": "memberlist.watch-prefix-buffer-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "cas_retry_min_backoff",
+          "required": false,
+          "desc": "Minimum delay between CAS retries after a version mismatch. 0 disables the delay.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "memberlist.cas-retry-min-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cas_retry_max_backoff",
+          "required": false,
+          "desc": "Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "memberlist.cas-retry-max-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

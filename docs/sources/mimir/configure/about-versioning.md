@@ -134,7 +134,7 @@ The following features are currently experimental:
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Per-tenant float chunk encoding selection (`-ingester.float-chunk-encoding`)
+  - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -246,6 +246,7 @@ The following features are currently experimental:
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
+  - Rate limiting queries on a per-tenant basis (configured with the `limited_queries` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit, as well as `-query-frontend.subquery-spin-off-simple-subqueries` and `-query-frontend.subquery-spin-off-with-excess-downstream-queries`)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
@@ -321,6 +322,9 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.role`
 - Memberlist rejoin custom seed nodes
   - `-memberlist.rejoin-seed-nodes`
+- Memberlist backoff between CAS retries
+  - `-memberlist.cas-retry-min-backoff`
+  - `-memberlist.cas-retry-max-backoff`
 - Jsonnet
   - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.

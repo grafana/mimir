@@ -375,8 +375,7 @@ type Options struct {
 	// resolve it into this one.
 	// Defaults to EncXOR. Set to EncXOR2 to encode new float chunks as XOR2.
 	// Always use DefaultOptions() rather than a bare Options literal; the zero value
-	// of this field is EncNone, not EncXOR. This field is independent of EnableSTStorage:
-	// st-storage does not automatically select EncXOR2.
+	// of this field is EncNone, not EncXOR.
 	FloatChunkEncoding chunkenc.Encoding
 
 	// FeatureRegistry is used to register TSDB features.
@@ -1366,8 +1365,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		var e *errLoadWbl
-		if errors.As(initErr, &e) {
+		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
 			if err := wbl.Repair(e.err); err != nil {
 				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
