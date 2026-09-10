@@ -130,11 +130,13 @@ The following features are currently experimental:
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
   - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
     - `-distributor.ha-tracker.per-sample-dedupe`
+  - Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted instead of being silently dropped by ingesters
+    - `-distributor.merge-duplicate-timeseries`
 - Ingester
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Per-tenant float chunk encoding selection (`-ingester.float-chunk-encoding`)
+  - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -322,8 +324,15 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.role`
 - Memberlist rejoin custom seed nodes
   - `-memberlist.rejoin-seed-nodes`
+    <<<<<<< HEAD
 - Runtime configuration
   - Method used to decode runtime configuration files (`-runtime-config.loader`)
+    ||||||| 1bbffa5036
+    =======
+- Memberlist backoff between CAS retries
+  - `-memberlist.cas-retry-min-backoff`
+  - `-memberlist.cas-retry-max-backoff`
+    > > > > > > > 46d46c4b5828b3192109ddd54cb304a67ff2b743
 - Jsonnet
   - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.

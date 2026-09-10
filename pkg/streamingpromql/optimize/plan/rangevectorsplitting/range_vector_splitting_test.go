@@ -1528,6 +1528,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	opts.CommonOpts.Reg = registry
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
@@ -1613,6 +1614,7 @@ func defaultSplittingOpts() streamingpromql.EngineOpts {
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	return opts
 }
 

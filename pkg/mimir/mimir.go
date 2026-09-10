@@ -1189,9 +1189,12 @@ func (t *Mimir) Run() error {
 		// let's find out which module failed
 		for m, s := range t.ServiceMap {
 			if s == service {
-				if errors.Is(service.FailureCase(), modules.ErrStopProcess) {
+				switch {
+				case errors.Is(service.FailureCase(), modules.ErrStopProcess):
 					level.Info(util_log.Logger).Log("msg", "received stop signal via return error", "module", m, "err", service.FailureCase())
-				} else {
+				case shutdownRequested.Load():
+					level.Info(util_log.Logger).Log("msg", "module startup aborted by shutdown signal", "module", m, "err", service.FailureCase())
+				default:
 					level.Error(util_log.Logger).Log("msg", "module failed", "module", m, "err", service.FailureCase())
 				}
 				return
@@ -1230,7 +1233,12 @@ func (t *Mimir) Run() error {
 
 	// If there is no error yet (= service manager started and then stopped without problems),
 	// but any service failed, report that failure as an error to caller.
-	if err == nil {
+	//
+	// A shutdown signal received while services are still starting cancels their start
+	// context and leaves them in Failed state. That is a requested shutdown, not a
+	// failure, so it must not be reported as one: doing so makes the process exit
+	// non-zero for what is a routine restart. The failures are logged either way.
+	if err == nil && !shutdownRequested.Load() {
 		if failed := sm.ServicesByState()[services.Failed]; len(failed) > 0 {
 			for _, f := range failed {
 				if !errors.Is(f.FailureCase(), modules.ErrStopProcess) {

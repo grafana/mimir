@@ -164,7 +164,7 @@ func TestMaterializer_computeRanges(t *testing.T) {
 	fixedNow := timestamp.Time(100 * hourInMs)
 
 	newMaterializer := func(oooWindow time.Duration) *Materializer {
-		return NewMaterializer(true, 2*time.Hour, staticLimits{oooWindow: oooWindow}, func() time.Time { return fixedNow }, nil, nil, nil)
+		return NewMaterializer(true, 2*time.Hour, true, staticLimits{oooWindow: oooWindow}, func() time.Time { return fixedNow }, nil, nil, nil)
 	}
 
 	// inner builds an inner matrix selector with the given range and offset.

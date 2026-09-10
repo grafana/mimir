@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	promcfg "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
@@ -85,7 +85,7 @@ var stringLimitMetricGetters = map[string]func(*validation.Limits) float64{
 // stable numeric value. The values match the storage chunk encoding constants, which
 // are hardcoded for backward compatibility, making them a safe metric contract.
 func floatChunkEncodingMetricValue(limits *validation.Limits) float64 {
-	if limits.FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+	if validation.ParseFloatChunkEncoding(limits.FloatChunkEncoding) == chunkenc.EncXOR2 {
 		return float64(chunk.PrometheusXor2Chunk)
 	}
 	return float64(chunk.PrometheusXorChunk)

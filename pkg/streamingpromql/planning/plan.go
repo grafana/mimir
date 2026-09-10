@@ -104,7 +104,11 @@ const QueryPlanV19 = QueryPlanVersion(19)
 // incorrect results.
 const QueryPlanV20 = QueryPlanVersion(20)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV20
+// QueryPlanV21 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node

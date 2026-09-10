@@ -1294,7 +1294,19 @@ Requires [authentication](#authentication).
 GET /api/v1/alerts
 ```
 
-Get the current Alertmanager configuration for the authenticated tenant, reading it from the configured object storage.
+Get the current tenant Alertmanager YAML configuration for the authenticated
+tenant from the configured object storage. This is Mimir's multi-tenant config
+API (enabled with `-alertmanager.enable-api`), not the Alertmanager "list
+firing alerts" API.
+
+{{< admonition type="caution" >}}
+Do not confuse this path with Alertmanager's own HTTP API under
+`<alertmanager-http-prefix>` (default `/alertmanager`). Paths such as
+`/alertmanager/api/v1/alerts` are the upstream Alertmanager API; v1 was removed
+and returns HTTP 410. For live alerts and silences, use the Alertmanager **v2**
+routes under that prefix, or the Ruler's
+`<prometheus-http-prefix>/api/v1/alerts` for Prometheus-format alerts.
+{{< /admonition >}}
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
@@ -1311,6 +1323,10 @@ To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool al
 ```
 POST /api/v1/alerts
 ```
+
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager UI/API under `<alertmanager-http-prefix>`.
 
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
@@ -1359,6 +1375,10 @@ alertmanager_config: |
 DELETE /api/v1/alerts
 ```
 
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager UI/API under `<alertmanager-http-prefix>`.
+
 Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
@@ -1395,7 +1415,9 @@ Displays a web page with the list of tenants with blocks in the storage configur
 GET /store-gateway/tenant/{tenant}/blocks
 ```
 
-Displays a web page listing the blocks for a given tenant.
+Displays a web page listing the blocks for a given tenant, with filters and pagination.
+The list comes from the tenant bucket index, which the compactor updates periodically, so a block uploaded after the last update is not listed.
+Set `scan_bucket=on` to read every block of the tenant instead, which is slower but lists every block and fills the size, sample count and chunk count.
 
 ### Prepare for Shutdown
 

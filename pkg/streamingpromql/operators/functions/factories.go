@@ -568,7 +568,9 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 		// all the arguments as if we were going to sort for consistency.
 		if !timeRange.IsInstant {
 			// Match Prometheus' behaviour: only emit the "sort is ineffective for range queries" warning when the range query actually spans more than one moment.
-			if timeRange.StartT != timeRange.EndT {
+			// Deliberately < rather than !=: per types.NewRangeQueryTimeRange, StartT > EndT is a valid time range
+			// meaning a subquery selects no points in the range, and that should not trigger the warning either.
+			if timeRange.StartT < timeRange.EndT {
 				return NewSortInRangeQueryWarning(inner, expressionPosition), nil
 			}
 			return inner, nil
@@ -603,7 +605,9 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 			op := NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval)
 
 			// Match Prometheus' behaviour: only emit the "sort is ineffective for range queries" warning when the range query actually spans more than one step.
-			if timeRange.StartT != timeRange.EndT {
+			// Deliberately < rather than !=: per types.NewRangeQueryTimeRange, StartT > EndT is a valid time range
+			// meaning a subquery selects no points in the range, and that should not trigger the warning either.
+			if timeRange.StartT < timeRange.EndT {
 				return NewSortInRangeQueryWarning(op, expressionPosition), nil
 			}
 
