@@ -178,6 +178,18 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	// fill preserves both sides because every series can produce output.
 	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
 	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
+	// Grouped fill prevents all cross-side propagation.
+	`up{foo="bar"} + on(foo) group_left fill_left(0) down{baz="fob"}`:                `up{foo="bar"} + on(foo) group_left fill_left(0) down{baz="fob"}`,
+	`up{foo="bar"} + on(foo) group_left fill_right(0) down{baz="fob"}`:               `up{foo="bar"} + on(foo) group_left fill_right(0) down{baz="fob"}`,
+	`up{foo="bar"} + on(foo) group_left fill_left(0) fill_right(1) down{baz="fob"}`:  `up{foo="bar"} + on(foo) group_left fill_left(0) fill_right(1) down{baz="fob"}`,
+	`up{foo="bar"} + on(foo) group_right fill_left(0) down{baz="fob"}`:               `up{foo="bar"} + on(foo) group_right fill_left(0) down{baz="fob"}`,
+	`up{foo="bar"} + on(foo) group_right fill_right(0) down{baz="fob"}`:              `up{foo="bar"} + on(foo) group_right fill_right(0) down{baz="fob"}`,
+	`up{foo="bar"} + on(foo) group_right fill_left(0) fill_right(1) down{baz="fob"}`: `up{foo="bar"} + on(foo) group_right fill_left(0) fill_right(1) down{baz="fob"}`,
+	// Grouped fill also blocks propagation from enclosing expressions.
+	`(up{foo="bar"} + on(foo) group_left fill_left(0) down) * right{baz="fob"}`:  `(up{foo="bar"} + on(foo) group_left fill_left(0) down) * right{baz="fob"}`,
+	`left{baz="fob"} * (up + on(foo) group_right fill_right(0) down{foo="bar"})`: `left{baz="fob"} * (up + on(foo) group_right fill_right(0) down{foo="bar"})`,
+	// Grouped fill still permits propagation inside each side.
+	`(up{foo="bar"} * left) + on(foo) group_left fill_left(0) down{baz="fob"}`: `(up{foo="bar"} * left{foo="bar"}) + on(foo) group_left fill_left(0) down{baz="fob"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.

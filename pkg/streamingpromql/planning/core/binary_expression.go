@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -311,11 +312,79 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	if vm := b.GetVectorMatching(); vm != nil && (vm.FillValues.LhsSet || vm.FillValues.RhsSet) {
-		// Queriers that do not understand QueryPlanV20 would silently ignore the fill modifier
-		// and produce incorrect results.
-		return planning.QueryPlanV20, nil
+	vm := b.GetVectorMatching()
+	if vm == nil || (!vm.FillValues.LhsSet && !vm.FillValues.RhsSet) {
+		return planning.QueryPlanVersionZero, nil
 	}
 
-	return planning.QueryPlanVersionZero, nil
+	if !binaryOperationSupportsFill(b.Op) {
+		return planning.QueryPlanVersionZero, fmt.Errorf("binary operation %q does not support fill", b.Op.Describe())
+	}
+	if err := validateFillVectorMatching(vm); err != nil {
+		return planning.QueryPlanVersionZero, err
+	}
+
+	lhsType, err := b.LHS.ResultType()
+	if err != nil {
+		return planning.QueryPlanVersionZero, fmt.Errorf("get left operand type for fill: %w", err)
+	}
+	rhsType, err := b.RHS.ResultType()
+	if err != nil {
+		return planning.QueryPlanVersionZero, fmt.Errorf("get right operand type for fill: %w", err)
+	}
+	if lhsType != parser.ValueTypeVector || rhsType != parser.ValueTypeVector {
+		return planning.QueryPlanVersionZero, fmt.Errorf("fill requires vector-vector operands, got %s-%s", lhsType, rhsType)
+	}
+
+	switch vm.Card {
+	case parser.CardOneToOne:
+		return planning.QueryPlanV20, nil
+	case parser.CardOneToMany, parser.CardManyToOne:
+		return planning.QueryPlanV21, nil
+	default:
+		return planning.QueryPlanVersionZero, fmt.Errorf("fill does not support %s matching", vm.Card)
+	}
+}
+
+func validateFillVectorMatching(vm *VectorMatching) error {
+	if !vm.On {
+		return nil
+	}
+
+	matchingLabels := make(map[string]struct{}, len(vm.MatchingLabels))
+	for _, label := range vm.MatchingLabels {
+		if label == model.MetricNameLabel {
+			return errors.New("fill does not support __name__ in on matching")
+		}
+		matchingLabels[label] = struct{}{}
+	}
+
+	for _, label := range vm.Include {
+		if _, exists := matchingLabels[label]; exists {
+			return fmt.Errorf("fill label %q appears in both on and include", label)
+		}
+	}
+
+	return nil
+}
+
+func binaryOperationSupportsFill(op BinaryOperation) bool {
+	switch op {
+	case BINARY_ATAN2,
+		BINARY_SUB,
+		BINARY_ADD,
+		BINARY_MUL,
+		BINARY_MOD,
+		BINARY_DIV,
+		BINARY_POW,
+		BINARY_EQLC,
+		BINARY_NEQ,
+		BINARY_LTE,
+		BINARY_LSS,
+		BINARY_GTE,
+		BINARY_GTR:
+		return true
+	default:
+		return false
+	}
 }

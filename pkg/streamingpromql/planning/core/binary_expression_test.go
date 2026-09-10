@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestBinaryExpression_Describe(t *testing.T) {
@@ -654,6 +655,127 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, testCase.expected, first.Hints)
 			}
+		})
+	}
+}
+
+func TestBinaryExpression_MinimumRequiredPlanVersionForFill(t *testing.T) {
+	require.Equal(t, planning.QueryPlanV21, planning.MaximumSupportedQueryPlanVersion)
+
+	vector := &VectorSelector{VectorSelectorDetails: &VectorSelectorDetails{}}
+	scalar := &NumberLiteral{NumberLiteralDetails: &NumberLiteralDetails{}}
+
+	testCases := map[string]struct {
+		op              BinaryOperation
+		card            parser.VectorMatchCardinality
+		lhs             planning.Node
+		rhs             planning.Node
+		fill            VectorMatchFillValues
+		expectedVersion planning.QueryPlanVersion
+		expectedError   string
+	}{
+		"no fill": {
+			op:   BINARY_ADD,
+			card: parser.CardOneToOne,
+			lhs:  vector,
+			rhs:  vector,
+		},
+		"one-to-one arithmetic fill": {
+			op:              BINARY_ADD,
+			card:            parser.CardOneToOne,
+			lhs:             vector,
+			rhs:             vector,
+			fill:            VectorMatchFillValues{LhsSet: true},
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"one-to-one comparison fill": {
+			op:              BINARY_EQLC,
+			card:            parser.CardOneToOne,
+			lhs:             vector,
+			rhs:             vector,
+			fill:            VectorMatchFillValues{RhsSet: true},
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"one-to-one atan2 fill": {
+			op:              BINARY_ATAN2,
+			card:            parser.CardOneToOne,
+			lhs:             vector,
+			rhs:             vector,
+			fill:            VectorMatchFillValues{LhsSet: true},
+			expectedVersion: planning.QueryPlanV20,
+		},
+		"one-to-many fill": {
+			op:              BINARY_ADD,
+			card:            parser.CardOneToMany,
+			lhs:             vector,
+			rhs:             vector,
+			fill:            VectorMatchFillValues{LhsSet: true},
+			expectedVersion: planning.QueryPlanV21,
+		},
+		"many-to-one fill": {
+			op:              BINARY_ADD,
+			card:            parser.CardManyToOne,
+			lhs:             vector,
+			rhs:             vector,
+			fill:            VectorMatchFillValues{RhsSet: true},
+			expectedVersion: planning.QueryPlanV21,
+		},
+		"set fill": {
+			op:            BINARY_LAND,
+			card:          parser.CardManyToMany,
+			lhs:           vector,
+			rhs:           vector,
+			fill:          VectorMatchFillValues{LhsSet: true},
+			expectedError: `binary operation "and" does not support fill`,
+		},
+		"vector-scalar fill": {
+			op:            BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhs:           vector,
+			rhs:           scalar,
+			fill:          VectorMatchFillValues{LhsSet: true},
+			expectedError: "fill requires vector-vector operands, got vector-scalar",
+		},
+		"scalar-vector fill": {
+			op:            BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhs:           scalar,
+			rhs:           vector,
+			fill:          VectorMatchFillValues{LhsSet: true},
+			expectedError: "fill requires vector-vector operands, got scalar-vector",
+		},
+		"scalar-scalar fill": {
+			op:            BINARY_ADD,
+			card:          parser.CardOneToOne,
+			lhs:           scalar,
+			rhs:           scalar,
+			fill:          VectorMatchFillValues{LhsSet: true},
+			expectedError: "fill requires vector-vector operands, got scalar-scalar",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expression := &BinaryExpression{
+				LHS: testCase.lhs,
+				RHS: testCase.rhs,
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: testCase.op,
+					VectorMatching: &VectorMatching{
+						Card:       testCase.card,
+						FillValues: testCase.fill,
+					},
+				},
+			}
+
+			version, err := expression.MinimumRequiredPlanVersion(types.QueryTimeRange{})
+			if testCase.expectedError != "" {
+				require.EqualError(t, err, testCase.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedVersion, version)
 		})
 	}
 }
