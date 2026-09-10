@@ -52,6 +52,7 @@ func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReader
 //  2. Reading only the Symbols table from the v1 index-header file format on disk,
 //     and reading the Postings Offset table directly from the full block index in the bucket.
 type StreamBinaryReader struct {
+	indexHeaderVersion int
 	symbolsTOC         *TOCCompat
 	postingsOffsetsTOC *TOCCompat
 
@@ -133,7 +134,7 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
@@ -142,65 +143,40 @@ func NewStreamBinaryReader(
 		)
 	}
 
-	// With full index-header now on disk, initialize the local-disk-backed decbuf factory and read the TOC.
+	// Initialize the local-disk-backed decbuf factory and read the TOC.
 	// The index-header's TOC is also required to build the sparse index-header if one does not already exist.
 	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
 		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
 	)
-	indexHeaderTOC, _, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
-	if err != nil {
-		// TOC read checks CRC32; assume a failure here is file corruption and attempt to recreate the index-header.
+	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
+	needPostingsOffsetsOnDisk := !cfg.BucketReader.Enabled
+	if err != nil || (indexHeaderVersion == BinaryFormatV2 && needPostingsOffsetsOnDisk) {
+		// TOC read checks CRC32; assume a failure here is either due to a file corruption.
 		level.Debug(spanLog).Log(
 			"msg", "failed to read table of contents from index-header on disk; will recreate from bucket block index",
-			"path", localIndexHeaderPath, "err", err,
+			"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
-		indexHeaderTOC, _, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
-		if err != nil {
-			// Failure after recreating index-header from bucket; assume this is unrecoverable.
-			return nil, fmt.Errorf("failed to read table of contents from index-header on disk after recreate from bucket block index: %w", err)
-		}
+
+		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	}
-
-	// Full index-header is now on disk.
-	// If we previously failed to load the sparse index-header, build it now from full header.
-	if !sparseHeaderLoaded {
-		start := time.Now()
-		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
-			ctx, indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, l,
-		)
-		if err != nil {
-			// Exhausted all options to load sparse index-header to memory. Not recoverable.
-			return nil, fmt.Errorf("cannot build sparse index-header values from full index-header: %w", err)
-		}
-
-		level.Info(spanLog).Log("msg", "built sparse index-header values from full index-header",
-			"elapsed", time.Since(start),
-		)
-
-		// Try to write to disk so we do not have to repeat this all again.
-		sparseHeaderProto := &indexheaderpb.Sparse{
-			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
-			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
-		}
-		if err = writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, l); err != nil {
-			// Log an error in case there are disk issues, but we can still continue.
-			level.Error(spanLog).Log(
-				"msg", "failed to write bucket sparse index-header to disk", "err", err,
-			)
-		}
+	if err != nil {
+		// Failure after recreating index-header from bucket; assume this is unrecoverable.
+		return nil, fmt.Errorf("failed to read table of contents from index-header on disk after recreate from bucket block index: %w", err)
 	}
 
 	// Everything is now loaded from bucket or disk.
 	streamBinaryReader := &StreamBinaryReader{
 		sparseSampleFactor: sparseSampleFactor,
+		indexHeaderVersion: indexHeaderVersion,
 	}
 
 	// Set up each of the Symbols table and Postings Offsets table readers
@@ -234,6 +210,39 @@ func NewStreamBinaryReader(
 		// We will read everything from full index-header on disk
 		streamBinaryReader.postingsOffsetsDecbufFactory = filePoolDecbufFactory
 		streamBinaryReader.postingsOffsetsTOC = indexHeaderTOC
+	}
+
+	// Required index-header section(s) are now on disk.
+	// If we previously failed to load the sparse index-header, build it now from full header.
+	// If the bucket reader is enabled, the postings offsets sparse index-header is built from the index header in the bucket.
+	if !sparseHeaderLoaded {
+		start := time.Now()
+		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
+			ctx,
+			sectionSource{streamBinaryReader.symbolsTOC, streamBinaryReader.symbolsDecbufFactory},
+			sectionSource{streamBinaryReader.postingsOffsetsTOC, streamBinaryReader.postingsOffsetsDecbufFactory},
+			sparseSampleFactor, cfg.VerifyOnLoad, l,
+		)
+		if err != nil {
+			// Exhausted all options to load sparse index-header to memory. Not recoverable.
+			return nil, fmt.Errorf("cannot build sparse index-header values from full index-header: %w", err)
+		}
+
+		level.Info(spanLog).Log("msg", "built sparse index-header values from full index-header",
+			"elapsed", time.Since(start),
+		)
+
+		// Try to write to disk so we do not have to repeat this all again.
+		sparseHeaderProto := &indexheaderpb.Sparse{
+			Symbols:             streamindex.SparseSymbolsToProto(allSymbolsCount, sparseSymbolsOffsets),
+			PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
+		}
+		if err = writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, l); err != nil {
+			// Log an error in case there are disk issues, but we can still continue.
+			level.Error(spanLog).Log(
+				"msg", "failed to write bucket sparse index-header to disk", "err", err,
+			)
+		}
 	}
 
 	// DecbufFactory and TOC for each section are now assigned according to their configured sources.
@@ -278,7 +287,7 @@ func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {
 }
 
 func (r *StreamBinaryReader) IndexHeaderVersion() int {
-	return BinaryFormatV1
+	return r.indexHeaderVersion
 }
 
 func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, returnErr error) {

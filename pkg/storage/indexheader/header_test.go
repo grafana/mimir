@@ -105,7 +105,7 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 		t.Run(testBlock.version, func(t *testing.T) {
 			id := testBlock.id
 			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-			require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+			require.NoError(t, WriteBinary(ctx, bkt, id, indexName, false))
 
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
@@ -529,7 +529,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 	require.NoError(t, err)
 
 	indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-	require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+	require.NoError(t, WriteBinary(ctx, bkt, id, indexName, false))
 
 	indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 	require.NoError(t, err)
@@ -602,7 +602,7 @@ func BenchmarkBinaryWrite(t *testing.B) {
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
+		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn, false))
 	}
 }
 

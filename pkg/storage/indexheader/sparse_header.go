@@ -281,7 +281,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	}
 
 	allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := buildInMemorySparseHeaderFromIndexHeader(
-		ctx, indexTOC, filePoolDecbufFactory, sparseSampleFactor, false, l,
+		ctx, sectionSource{indexTOC, filePoolDecbufFactory}, sectionSource{indexTOC, filePoolDecbufFactory}, sparseSampleFactor, false, l,
 	)
 	if err != nil {
 		return fmt.Errorf("cannot build sparse index-header values from full index: %w", err)
@@ -299,10 +299,15 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	return nil
 }
 
+type sectionSource struct {
+	toc *TOCCompat
+	decbufFactory streamencoding.DecbufFactory
+}
+
 func buildInMemorySparseHeaderFromIndexHeader(
 	ctx context.Context,
-	toc *TOCCompat,
-	decbufFactory streamencoding.DecbufFactory,
+	symbols sectionSource,
+	postingsOffsets sectionSource,
 	sparseSampleFactor int,
 	doChecksum bool,
 	l log.Logger,
@@ -321,13 +326,13 @@ func buildInMemorySparseHeaderFromIndexHeader(
 	level.Info(l).Log("msg", "creating sparse index-header from full index-header")
 
 	allSymbolsCount, sparseSymbolsOffsets, err = streamindex.SparseValuesFromSymbolsTable(
-		ctx, decbufFactory, int(toc.Symbols), doChecksum,
+		ctx, symbols.decbufFactory, int(symbols.toc.Symbols), doChecksum,
 	)
 	if err != nil {
 		return -1, nil, nil, err
 	}
 
-	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(ctx, decbufFactory, int(toc.PostingsOffsetTable), toc.PostingsListEnd, sparseSampleFactor, doChecksum)
+	sparsePostingsOffsets, err = streamindex.SparseValuesFromPostingsOffsetsTable(ctx, postingsOffsets.decbufFactory, int(postingsOffsets.toc.PostingsOffsetTable), postingsOffsets.toc.PostingsListEnd, sparseSampleFactor, doChecksum)
 	if err != nil {
 		return -1, nil, nil, err
 	}
