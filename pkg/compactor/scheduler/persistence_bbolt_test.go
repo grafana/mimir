@@ -74,9 +74,10 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	})
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Empty recovery should succeed
@@ -108,9 +109,10 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 		require.NoError(t, mgr.Close())
 	})
 
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Create a bucket with an invalid tenant name
@@ -256,9 +258,10 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	require.Len(t, mgr.dbs, 2)
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, len(tenants))
@@ -318,9 +321,10 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "extra shard file should be deleted")
 
 	allowedTenants := util.NewAllowList(nil, nil)
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, 2)

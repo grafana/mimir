@@ -72,8 +72,9 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			metrics := newTestSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+			lanePolicy := newSimpleLanePolicy()
+			metrics := newSchedulerMetrics(reg, lanePolicy)
+			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clock
 
 			r.RecoverFrom(tc.jobTrackers, tc.creationTime)
@@ -84,15 +85,17 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 
 func newRotatorForTest() *Rotator {
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newTestSchedulerMetrics(reg)
-	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(reg, lanePolicy)
+	return NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 }
 
 // newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
 // compaction jobs (numJobs == 0 yields an empty tracker).
 func newTrackerWithPendingJobs(clk clock.Clock, name string, numJobs int) *JobTracker {
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
-	jt := NewJobTracker(&NopJobPersister{}, name, clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
+	lanePolicy := newSimpleLanePolicy()
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
+	jt := NewJobTracker(&NopJobPersister{}, name, clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
 	for j := range numJobs {
 		id := fmt.Sprintf("%s-%d", name, j)
 		jt.toPendingBack(NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
@@ -228,7 +231,7 @@ func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	clk := clock.New()
 	lanePolicy := newSimpleLanePolicy()
-	metrics := newTestSchedulerMetrics(prometheus.NewPedanticRegistry())
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
 	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
@@ -353,8 +356,9 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 			clk := clock.NewMock()
 			clk.Set(now)
 			reg := prometheus.NewPedanticRegistry()
-			metrics := newTestSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+			lanePolicy := newSimpleLanePolicy()
+			metrics := newSchedulerMetrics(reg, lanePolicy)
+			r := NewRotator(0, 0, 0, 0, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clk
 
 			tc.action(r, clk)
