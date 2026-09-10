@@ -100,7 +100,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_NUMBER_LITERAL:        planning.NodeMaterializerFunc[*core.NumberLiteral](core.MaterializeNumberLiteral),
 		planning.NODE_TYPE_STRING_LITERAL:        planning.NodeMaterializerFunc[*core.StringLiteral](core.MaterializeStringLiteral),
 		planning.NODE_TYPE_UNARY_EXPRESSION:      planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
-		planning.NODE_TYPE_SUBQUERY:              planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
+		planning.NODE_TYPE_SUBQUERY:              planning.RangeAwareNodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 		planning.NODE_TYPE_NO_OP:                 planning.NodeMaterializerFunc[*core.NoOp](core.MaterializeNoOp),
@@ -113,7 +113,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_MULTI_AGGREGATION_GROUP:    planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationGroup](multiaggregation.MaterializeMultiAggregationGroup),
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 
-		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, opts.RangeVectorSplitting.SplitInterval, opts.Limits, opts.TimeNow, intermediateCache, opts.CommonOpts.Reg, opts.Logger),
+		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, opts.RangeVectorSplitting.SplitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.Limits, opts.TimeNow, intermediateCache, opts.CommonOpts.Reg, opts.Logger),
 		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 splitandcache.NewTimeRangeSplitMaterializer(opts.RangeQuerySplittingAndCaching.SplitEnabled, opts.CommonOpts.Reg),
 		planning.NODE_TYPE_CACHE: splitandcache.NewCacheMaterializer(
 			opts.RangeQuerySplittingAndCaching.CacheEnabled,
