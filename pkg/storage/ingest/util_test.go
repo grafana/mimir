@@ -39,7 +39,7 @@ func TestMSKIAMCredentials(t *testing.T) {
 			var cfg KafkaAuthMSKIAMConfig
 			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
 			cfg.FilePath = filePath
-			return kafkaSASLConfig[KafkaMSKIAMStaticConfig](cfg)
+			return cfg.toSubConfig()
 		},
 		"socket-based": func(t *testing.T, secret awssasl.Auth) kafkaSASLConfig[KafkaMSKIAMStaticConfig] {
 			socketPath := serveSecretFromSocket(t, secret)
@@ -47,7 +47,7 @@ func TestMSKIAMCredentials(t *testing.T) {
 			var cfg KafkaAuthMSKIAMConfig
 			cfg.RegisterFlagsWithPrefix("", flag.NewFlagSet("", flag.PanicOnError))
 			cfg.HTTPSocketPath = socketPath
-			return kafkaSASLConfig[KafkaMSKIAMStaticConfig](cfg)
+			return cfg.toSubConfig()
 		},
 	} {
 		t.Run(how, func(t *testing.T) {
@@ -664,4 +664,94 @@ func BenchmarkFetchRecordTracing(b *testing.B) {
 			tracer.OnFetchRecordUnbuffered(rec, true)
 		}
 	})
+}
+
+// TestKafkaAuthMSKIAMConfigValidate covers validation across all credential source
+// combinations, including the empty case that triggers IRSA fallback.
+func TestKafkaAuthMSKIAMConfigValidate(t *testing.T) {
+	tests := map[string]struct {
+		setup   func(*testing.T) KafkaAuthMSKIAMConfig
+		wantErr error
+	}{
+		"all empty falls back to AWS SDK default chain": {
+			setup:   func(*testing.T) KafkaAuthMSKIAMConfig { return KafkaAuthMSKIAMConfig{} },
+			wantErr: nil,
+		},
+		"only region set is still IRSA fallback": {
+			setup:   func(*testing.T) KafkaAuthMSKIAMConfig { return KafkaAuthMSKIAMConfig{Region: "us-east-1"} },
+			wantErr: nil,
+		},
+		"complete static credentials": {
+			setup: func(t *testing.T) KafkaAuthMSKIAMConfig {
+				var cfg KafkaAuthMSKIAMConfig
+				require.NoError(t, cfg.Secret.AccessKey.Set("AKIDEXAMPLE"))
+				require.NoError(t, cfg.Secret.SecretKey.Set("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"))
+				return cfg
+			},
+			wantErr: nil,
+		},
+		"static credentials missing secret key": {
+			setup: func(t *testing.T) KafkaAuthMSKIAMConfig {
+				var cfg KafkaAuthMSKIAMConfig
+				require.NoError(t, cfg.Secret.AccessKey.Set("AKIDEXAMPLE"))
+				return cfg
+			},
+			wantErr: errIncompleteMSKIAMSecret,
+		},
+		"file path only": {
+			setup:   func(*testing.T) KafkaAuthMSKIAMConfig { return KafkaAuthMSKIAMConfig{FilePath: "/tmp/creds.json"} },
+			wantErr: nil,
+		},
+		"http socket only": {
+			setup: func(*testing.T) KafkaAuthMSKIAMConfig {
+				return KafkaAuthMSKIAMConfig{HTTPSocketPath: "/tmp/creds.sock"}
+			},
+			wantErr: nil,
+		},
+		"static credentials and file path together": {
+			setup: func(t *testing.T) KafkaAuthMSKIAMConfig {
+				var cfg KafkaAuthMSKIAMConfig
+				require.NoError(t, cfg.Secret.AccessKey.Set("AKIDEXAMPLE"))
+				require.NoError(t, cfg.Secret.SecretKey.Set("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"))
+				cfg.FilePath = "/tmp/creds.json"
+				return cfg
+			},
+			wantErr: ErrSASLMSKIAMBadConfig,
+		},
+		"file path and http socket together": {
+			setup: func(*testing.T) KafkaAuthMSKIAMConfig {
+				return KafkaAuthMSKIAMConfig{FilePath: "/tmp/creds.json", HTTPSocketPath: "/tmp/creds.sock"}
+			},
+			wantErr: ErrSASLMSKIAMBadConfig,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tc.setup(t).Validate()
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, tc.wantErr)
+		})
+	}
+}
+
+// TestMSKIAMIRSAAuthFunc verifies that the IRSA fallback callback resolves
+// credentials via the AWS SDK default credential chain by stubbing the
+// environment variables the SDK looks at.
+func TestMSKIAMIRSAAuthFunc(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIDIRSATESTKEY")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "irsa-test-secret-key")
+	t.Setenv("AWS_SESSION_TOKEN", "irsa-test-session-token")
+
+	cfg := KafkaAuthMSKIAMConfig{Region: "us-east-1"}
+	require.True(t, cfg.isEmpty(), "cfg with only Region set must be empty for IRSA fallback")
+
+	auth, err := cfg.irsaAuthFunc()(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "AKIDIRSATESTKEY", auth.AccessKey)
+	require.Equal(t, "irsa-test-secret-key", auth.SecretKey)
+	require.Equal(t, "irsa-test-session-token", auth.SessionToken)
 }
