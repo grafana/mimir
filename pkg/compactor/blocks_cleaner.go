@@ -43,15 +43,16 @@ const (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay                 time.Duration
-	CleanupInterval               time.Duration
-	CleanupConcurrency            int
-	TenantCleanupDelay            time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency       int
-	GetDeletionMarkersConcurrency int
-	UpdateBlocksConcurrency       int
-	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
-	EstimateCompactionJobs        bool
+	DeletionDelay                      time.Duration
+	CleanupInterval                    time.Duration
+	CleanupConcurrency                 int
+	TenantCleanupDelay                 time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency            int
+	GetDeletionMarkersConcurrency      int
+	UpdateBlocksConcurrency            int
+	CompactionBlockRanges              mimir_tsdb.DurationList // Used for estimating compaction jobs.
+	SkipElapsedIntermediateBlockRanges bool                    // Used for estimating compaction jobs.
+	EstimateCompactionJobs             bool
 }
 
 type BlocksCleaner struct {
@@ -525,7 +526,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 
 	if c.cfg.EstimateCompactionJobs {
-		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
+		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfg.SkipElapsedIntermediateBlockRanges, c.cfgProvider)
 		if err != nil {
 			// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
 			if !errors.Is(err, context.Canceled) {
@@ -755,7 +756,7 @@ func (c *BlocksCleaner) stalePartialBlockLastModifiedTime(ctx context.Context, b
 	return lastModified, err
 }
 
-func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, cfgProvider ConfigProvider) ([]*Job, error) {
+func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, skipElapsedIntermediateBlockRanges bool, cfgProvider ConfigProvider) ([]*Job, error) {
 	metas := ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 
 	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.
@@ -772,7 +773,7 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 		}
 	}
 
-	grouper := NewSplitAndMergeGrouper(userID, compactionBlockRanges.ToMilliseconds(), cfgProvider, log.NewNopLogger())
+	grouper := NewSplitAndMergeGrouper(userID, compactionBlockRanges.ToMilliseconds(), skipElapsedIntermediateBlockRanges, cfgProvider, log.NewNopLogger())
 	jobs, err := grouper.Groups(metas)
 	return jobs, err
 }
