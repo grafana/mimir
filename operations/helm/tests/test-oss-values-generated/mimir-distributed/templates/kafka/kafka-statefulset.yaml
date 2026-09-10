@@ -57,7 +57,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: KAFKA_CLUSTER_ID
+            - name: CLUSTER_ID
               value: ""
             - name: KAFKA_NODE_ID
               valueFrom:
