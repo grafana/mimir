@@ -25,7 +25,10 @@ func Create(p string) error {
 // Remove removes the shutdown marker file on the given path if it exists.
 func Remove(p string) error {
 	err := os.Remove(p)
-	if err != nil && !os.IsNotExist(err) {
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 
