@@ -399,16 +399,17 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			addRotationFor = append(addRotationFor, tenantLane{tenant: tenant, lane: l})
 		}
 	}
-	if len(addRotationFor) == 0 && ctx.Err() == nil {
-		// Ensures periodic updates for the time we last saw an empty queue rather than only on transition.
-		r.recordEmptyQueues()
-	}
-	r.mtx.RUnlock()
-
-	if len(addRotationFor) == 0 || ctx.Err() != nil {
-		// No tenant needs to be moved into the rotation or we're shutting down and don't care
+	if ctx.Err() != nil {
+		r.mtx.RUnlock()
 		return
 	}
+	if len(addRotationFor) == 0 {
+		// Nothing to do. Refresh empty queue gauges periodically.
+		r.recordEmptyQueues()
+		r.mtx.RUnlock()
+		return
+	}
+	r.mtx.RUnlock()
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -418,9 +419,11 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			r.addToRotation(tl.lane, tl.tenant, tenantState)
 		}
 	}
-	if ctx.Err() == nil {
-		r.recordEmptyQueues()
+	if ctx.Err() != nil {
+		return
 	}
+	// Refresh empty queue gauges periodically.
+	r.recordEmptyQueues()
 }
 
 func (r *Rotator) possiblyRemoveFromRotation(l lane, tenant string) {
