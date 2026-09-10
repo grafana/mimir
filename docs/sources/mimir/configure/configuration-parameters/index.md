@@ -6819,6 +6819,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
 
+# (experimental) Maximum symbol table size in bytes for a compacted block. When
+# the symbol table of a just-compacted block exceeds this threshold, the block
+# is proactively marked as no-compact. 0 = disabled.
+# CLI flag: -compactor.block-symbol-table-size-threshold
+[block_symbol_table_size_threshold: <int> | default = 0]
+
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise
 # all tenants can be compacted. Subject to sharding.
