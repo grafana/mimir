@@ -65,7 +65,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 	require.Equal(t, 0, ov.MaxLabelValueLength("user2"))
 }
 
-func TestLimitsLoadingFromYaml(t *testing.T) {
+func TestLimitsLoadingFromYamlAndMap(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    string
@@ -124,6 +124,15 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			dec.KnownFields(true)
 			require.NoError(t, dec.Decode(&l))
 			tc.testFunc(t, l)
+
+			// YAML-unmarshaling into a map and then map-unmarshaling should
+			// result in the same behavior.
+			lm := Limits{}
+			m := map[string]any{}
+			dec = yaml.NewDecoder(strings.NewReader(tc.input))
+			require.NoError(t, dec.Decode(&m))
+			require.NoError(t, DecodeLimitsMap(m, &lm))
+			tc.testFunc(t, lm)
 		})
 	}
 }
@@ -212,24 +221,41 @@ func TestLimitsTagsYamlMatchJson(t *testing.T) {
 	assert.Empty(t, mismatch, "expected no mismatched JSON and YAML tags")
 }
 
-func TestLimitsStringDurationYamlMatchJson(t *testing.T) {
+func TestLimitsStringDurationYamlMatch(t *testing.T) {
 	inputYAML := `
 max_query_lookback: 1s
 max_partial_query_length: 1s
 `
-	inputJSON := `{"max_query_lookback": "1s", "max_partial_query_length": "1s"}`
-
 	limitsYAML := getDefaultLimits()
 	err := yaml.Unmarshal([]byte(inputYAML), &limitsYAML)
 	require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-	limitsJSON := getDefaultLimits()
-	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
-	require.NoError(t, err, "expected to be able to unmarshal from JSON")
+	for name, unmarshal := range map[string]func() (Limits, error){
+		"JSON": func() (Limits, error) {
+			inputJSON := `{"max_query_lookback": "1s", "max_partial_query_length": "1s"}`
 
-	// Excluding merged config pointers because they're not comparable, and we
-	// don't care about them in this test (they're not exported to JSON or YAML).
-	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig", "costAttributionMergedTrackers")), "expected YAML and JSON to match")
+			limits := getDefaultLimits()
+			err := json.Unmarshal([]byte(inputJSON), &limits)
+			return limits, err
+		},
+		"map": func() (Limits, error) {
+			m := map[string]any{"max_query_lookback": "1s", "max_partial_query_length": "1s"}
+
+			limits := getDefaultLimits()
+			err := DecodeLimitsMap(m, &limits)
+			return limits, err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limits, err := unmarshal()
+			require.NoError(t, err, "expected to be able to unmarshal from %s", name)
+
+			// Excluding merged config pointers because they're not comparable, and we
+			// don't care about them in this test (they're not exported to JSON or YAML).
+			assert.True(t, cmp.Equal(limitsYAML, limits, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig", "costAttributionMergedTrackers")), "expected YAML and %s to match", name)
+
+		})
+	}
 }
 
 func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
@@ -248,27 +274,48 @@ func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
 	assert.Empty(t, badDurationType, "some Limits fields are using stdlib time.Duration instead of model.Duration")
 }
 
-func TestMetricRelabelConfigLimitsLoadingFromYaml(t *testing.T) {
-	inp := `
+func TestMetricRelabelConfigLimitsLoadingFrom(t *testing.T) {
+	for name, unmarshal := range map[string]func() (Limits, error){
+		"YAML": func() (Limits, error) {
+			inp := `
 metric_relabel_configs:
 - action: drop
   source_labels: [le]
   regex: .+
 `
-	exp := relabel.DefaultRelabelConfig
-	exp.Action = relabel.Drop
-	regex, err := relabel.NewRegexp(".+")
-	require.NoError(t, err)
-	exp.Regex = regex
-	exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
-	exp.NameValidationScheme = model.LegacyValidation
+			l := Limits{}
+			dec := yaml.NewDecoder(strings.NewReader(inp))
+			dec.KnownFields(true)
+			err := dec.Decode(&l)
+			return l, err
+		},
+		"map": func() (Limits, error) {
+			inp := map[string]any{
+				"metric_relabel_configs": []any{map[string]any{
+					"action":        "drop",
+					"source_labels": []any{"le"},
+					"regex":         ".+",
+				}}}
+			l := Limits{}
+			err := DecodeLimitsMap(inp, &l)
+			return l, err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l, err := unmarshal()
+			require.NoError(t, err)
 
-	l := Limits{}
-	dec := yaml.NewDecoder(strings.NewReader(inp))
-	dec.KnownFields(true)
-	require.NoError(t, dec.Decode(&l))
+			exp := relabel.DefaultRelabelConfig
+			exp.Action = relabel.Drop
+			regex, err := relabel.NewRegexp(".+")
+			require.NoError(t, err)
+			exp.Regex = regex
+			exp.SourceLabels = model.LabelNames([]model.LabelName{"le"})
+			exp.NameValidationScheme = model.LegacyValidation
 
-	assert.Equal(t, []*relabel.Config{&exp}, l.MetricRelabelConfigs)
+			assert.Equal(t, []*relabel.Config{&exp}, l.MetricRelabelConfigs)
+		})
+	}
 }
 
 func TestSmallestPositiveIntPerTenant(t *testing.T) {
