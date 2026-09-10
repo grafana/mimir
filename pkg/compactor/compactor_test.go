@@ -2380,7 +2380,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
-		cortex_compactor_blocks_marked_for_no_compaction_total{reason="voluntary"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2454,7 +2454,7 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
-		cortex_compactor_blocks_marked_for_no_compaction_total{reason="voluntary"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2477,7 +2477,7 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 2
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
-				cortex_compactor_blocks_marked_for_no_compaction_total{reason="voluntary"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
 			`,
 		},
 		"index exceeds 64GiB": {
@@ -2491,7 +2491,7 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 2
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
-				cortex_compactor_blocks_marked_for_no_compaction_total{reason="voluntary"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
 			`,
 		},
 		"symbol table too large": {
@@ -2505,7 +2505,7 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 2
-				cortex_compactor_blocks_marked_for_no_compaction_total{reason="voluntary"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
 			`,
 		},
 	}

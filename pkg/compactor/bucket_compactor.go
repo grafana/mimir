@@ -523,9 +523,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				jobLogger,
 				c.bkt,
 				blockToUpload.ulid,
-				block.VoluntaryNoCompactReason,
+				block.PreemptiveNoCompactReason,
 				"block exceeds configured size threshold",
-				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)),
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)),
 			); err != nil {
 				level.Warn(jobLogger).Log("msg", "failed to preemptively mark block as no-compact", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
 			}
@@ -553,7 +553,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			"size_bytes", blockSize,
 			"series_count", seriesCount,
 			"sample_count", sampleCount,
-			"symbols_table_size_bytes", blockStats.SymbolTableSize,
+			"symbol_table_size_bytes", blockStats.SymbolTableSize,
 			"compaction_level", compactionLevel,
 			"duration", elapsed,
 			"duration_ms", elapsed.Milliseconds(),
@@ -935,7 +935,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.IndexExceeds64GiBNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.SymbolTableTooLargeNoCompactReason).Add(0)
-	bcm.blocksMarkedForNoCompact.WithLabelValues(string(block.VoluntaryNoCompactReason)).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)).Add(0)
 
 	return bcm
 }
