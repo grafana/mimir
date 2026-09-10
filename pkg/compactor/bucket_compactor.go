@@ -516,7 +516,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		blockStats := blocksHealthStats[idx]
-		if blockStats.SymbolTableSize > uint64(c.noCompactBlockMaxSymbolTableSize) {
+		if c.blockSymbolTableSizeThreshold > 0 && blockStats.SymbolTableSize > c.blockSymbolTableSizeThreshold {
 			// Block is oversized. Preemptively mark it as no-compact, in order to skip it on the next compaction cycle.
 			if err := block.MarkForNoCompact(
 				ctx,
@@ -957,6 +957,7 @@ type BucketCompactor struct {
 	bkt                              objstore.Bucket
 	concurrency                      int
 	skipUnhealthyBlocks              bool
+	blockSymbolTableSizeThreshold    uint64
 	sparseIndexHeaderSamplingRate    int
 	maxPerBlockUploadConcurrency     int
 	sparseIndexHeaderconfig          indexheader.Config
@@ -967,7 +968,6 @@ type BucketCompactor struct {
 	skipFutureMaxTime                bool
 	blockSyncConcurrency             int
 	blockHealthValidationConcurrency int
-	noCompactBlockMaxSymbolTableSize int64
 	metrics                          *BucketCompactorMetrics
 }
 
@@ -981,6 +981,7 @@ func NewBucketCompactor(
 	bkt objstore.Bucket,
 	concurrency int,
 	skipUnhealthyBlocks bool,
+	blockSymbolTableSizeThreshold uint64,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
@@ -992,7 +993,6 @@ func NewBucketCompactor(
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
 	maxPerBlockUploadConcurrency int,
-	noCompactBlockMaxSymbolTableSize int64,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, fmt.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
@@ -1011,6 +1011,7 @@ func NewBucketCompactor(
 		bkt:                              bkt,
 		concurrency:                      concurrency,
 		skipUnhealthyBlocks:              skipUnhealthyBlocks,
+		blockSymbolTableSizeThreshold:    blockSymbolTableSizeThreshold,
 		ownJob:                           ownJob,
 		sortJobs:                         sortJobs,
 		waitPeriod:                       waitPeriod,
@@ -1018,7 +1019,6 @@ func NewBucketCompactor(
 		skipFutureMaxTime:                skipFutureMaxTime,
 		blockSyncConcurrency:             blockSyncConcurrency,
 		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
-		noCompactBlockMaxSymbolTableSize: noCompactBlockMaxSymbolTableSize,
 		metrics:                          metrics,
 		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:          sparseIndexHeaderconfig,

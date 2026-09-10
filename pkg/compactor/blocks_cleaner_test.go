@@ -1859,39 +1859,37 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 }
 
 type mockConfigProvider struct {
-	floatChunkEncodings                  map[string]chunkenc.Encoding
-	userRetentionPeriods                 map[string]time.Duration
-	splitAndMergeShards                  map[string]int
-	oooSplitAndMergeShards               map[string]int
-	instancesShardSize                   map[string]int
-	splitGroups                          map[string]int
-	blockUploadEnabled                   map[string]bool
-	blockUploadValidationEnabled         map[string]bool
-	blockUploadMaxBlockSizeBytes         map[string]int64
-	userPartialBlockDelay                map[string]time.Duration
-	userPartialBlockDelayInvalid         map[string]bool
-	verifyChunks                         map[string]bool
-	maxLookback                          map[string]time.Duration
-	maxPerBlockUploadConcurrency         map[string]int
-	noCompactBlockMaxSymbolTableSize     map[string]int64
+	floatChunkEncodings          map[string]chunkenc.Encoding
+	userRetentionPeriods         map[string]time.Duration
+	splitAndMergeShards          map[string]int
+	oooSplitAndMergeShards       map[string]int
+	instancesShardSize           map[string]int
+	splitGroups                  map[string]int
+	blockUploadEnabled           map[string]bool
+	blockUploadValidationEnabled map[string]bool
+	blockUploadMaxBlockSizeBytes map[string]int64
+	userPartialBlockDelay        map[string]time.Duration
+	userPartialBlockDelayInvalid map[string]bool
+	verifyChunks                 map[string]bool
+	maxLookback                  map[string]time.Duration
+	maxPerBlockUploadConcurrency map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
-		floatChunkEncodings:              make(map[string]chunkenc.Encoding),
-		userRetentionPeriods:             make(map[string]time.Duration),
-		splitAndMergeShards:              make(map[string]int),
-		oooSplitAndMergeShards:           make(map[string]int),
-		splitGroups:                      make(map[string]int),
-		blockUploadEnabled:               make(map[string]bool),
-		blockUploadValidationEnabled:     make(map[string]bool),
-		blockUploadMaxBlockSizeBytes:     make(map[string]int64),
-		userPartialBlockDelay:            make(map[string]time.Duration),
-		userPartialBlockDelayInvalid:     make(map[string]bool),
-		verifyChunks:                     make(map[string]bool),
-		maxLookback:                      make(map[string]time.Duration),
-		maxPerBlockUploadConcurrency:     make(map[string]int),
-		noCompactBlockMaxSymbolTableSize: make(map[string]int64),
+		floatChunkEncodings:          make(map[string]chunkenc.Encoding),
+		userRetentionPeriods:         make(map[string]time.Duration),
+		splitAndMergeShards:          make(map[string]int),
+		oooSplitAndMergeShards:       make(map[string]int),
+		splitGroups:                  make(map[string]int),
+		blockUploadEnabled:           make(map[string]bool),
+		blockUploadValidationEnabled: make(map[string]bool),
+		blockUploadMaxBlockSizeBytes: make(map[string]int64),
+		userPartialBlockDelay:        make(map[string]time.Duration),
+		userPartialBlockDelayInvalid: make(map[string]bool),
+		verifyChunks:                 make(map[string]bool),
+		maxLookback:                  make(map[string]time.Duration),
+		maxPerBlockUploadConcurrency: make(map[string]int),
 	}
 }
 
@@ -1981,10 +1979,6 @@ func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
 		return result
 	}
 	return 0
-}
-
-func (m *mockConfigProvider) CompactorNoCompactBlockMaxSymbolTableSize(userID string) int64 {
-	return m.noCompactBlockMaxSymbolTableSize[userID]
 }
 
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {

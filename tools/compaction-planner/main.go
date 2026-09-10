@@ -152,8 +152,7 @@ func (c *staticConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(_ string) i
 	return 0
 }
 func (c *staticConfigProvider) CompactorMaxLookback(_ string) time.Duration        { return 0 }
-func (c *staticConfigProvider) CompactorMaxPerBlockUploadConcurrency(_ string) int          { return 0 }
-func (c *staticConfigProvider) CompactorNoCompactBlockMaxSymbolTableSize(_ string) int64 { return 0 }
+func (c *staticConfigProvider) CompactorMaxPerBlockUploadConcurrency(_ string) int { return 0 }
 func (c *staticConfigProvider) S3SSEType(_ string) string                          { return "" }
 func (c *staticConfigProvider) S3SSEKMSKeyID(_ string) string                      { return "" }
 func (c *staticConfigProvider) S3SSEKMSEncryptionContext(_ string) string          { return "" }
