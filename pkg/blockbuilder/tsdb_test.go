@@ -497,7 +497,7 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			blockIDs = append(blockIDs, blockID)
 			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
-			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+			sparseSymbols, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
 				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
 			)
 
@@ -507,8 +507,8 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			// 1. At least one symbol is sampled
 			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
 			//   this is always true even with only one symbol written because the block includes the empty string symbol.
-			require.NotEmpty(t, len(sparseSymbolsOffsets))
-			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+			require.NotZero(t, sparseSymbols.NumOffsets())
+			require.Greater(t, sparseSymbols.Count(), sparseSymbols.NumOffsets())
 
 			require.NoError(t, err)
 			require.NotZero(t, len(sparsePostingsOffsets))

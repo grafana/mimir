@@ -57,7 +57,7 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	require.NoError(t, err)
 
 	// Confirm sparse index headers can be read from disk on subsequent builds.
-	_, _, _, err = DownloadAndLoadSparseHeader(ctx, blockID, bkt, tmpDir, 3, log.NewNopLogger())
+	_, _, err = DownloadAndLoadSparseHeader(ctx, blockID, bkt, tmpDir, 3, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Confirm end-to-end success of second build.
