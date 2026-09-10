@@ -59,6 +59,11 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// MinBlockReloadInterval is the minimum supported non-zero block reload interval.
+	MinBlockReloadInterval = time.Second
+
+	defaultBlockReloadInterval = time.Minute
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -97,7 +102,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
 		CompactionDelay:                          time.Duration(0),
 		PostingsDecoderFactory:                   DefaultPostingsDecoderFactory,
-		BlockReloadInterval:                      1 * time.Minute,
+		BlockReloadInterval:                      defaultBlockReloadInterval,
 		IndexLookupPlannerFunc:                   DefaultIndexLookupPlannerFunc,
 		HeadChunksEndTimeVariance:                0,
 		HeadPostingsForMatchersCacheInvalidation: DefaultPostingsForMatchersCacheInvalidation,
@@ -367,6 +372,8 @@ type Options struct {
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
+	// A zero value uses the default of one minute. Non-zero values below
+	// MinBlockReloadInterval are clamped to it.
 	BlockReloadInterval time.Duration
 
 	// FloatChunkEncoding is the encoding used for new float chunks. It is the
@@ -1080,8 +1087,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-	if opts.BlockReloadInterval < 1*time.Second {
-		opts.BlockReloadInterval = 1 * time.Second
+	if opts.BlockReloadInterval == 0 {
+		opts.BlockReloadInterval = defaultBlockReloadInterval
+	} else if opts.BlockReloadInterval < MinBlockReloadInterval {
+		opts.BlockReloadInterval = MinBlockReloadInterval
 	}
 	if opts.IndexLookupPlannerFunc == nil {
 		opts.IndexLookupPlannerFunc = DefaultIndexLookupPlannerFunc
@@ -1977,7 +1986,7 @@ type headViewFactory func(head *Head, mint, maxt int64) BlockReader
 //
 // The evictor must preserve any series that may have received samples
 // after compaction began, as those samples might not be present in the
-// generated blocks.
+// generated blocks -- see fingerprintChangedForRef.
 //
 // maxt is the head's MaxTime at compaction start and is used to detect
 // obvious late writes via sample timestamps.
@@ -2083,12 +2092,18 @@ func (db *DB) CompactStaleHead() (err error) {
 	if err != nil {
 		return err
 	}
+
+	// Snapshot each stale series' in-memory shape before writing any blocks. The eviction
+	// check below compares against this snapshot to catch a sample -- stale or not -- that
+	// arrived for the series after this point, independently of whether isolation is enabled.
+	fingerprints := db.head.snapshotFingerprints(staleSeriesRefs.sortedByRef)
+
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
 		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
 	); err != nil {
@@ -2166,12 +2181,17 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return nil
 	}
 
+	// Snapshot each selected series' in-memory shape before writing any blocks. The eviction
+	// check below compares against this snapshot to catch a sample that arrived for the series
+	// after this point, independently of whether isolation is enabled.
+	fingerprints := db.head.snapshotFingerprints(selectedSeriesRefs.sortedByRef)
+
 	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
 		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark)
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark, fingerprints)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
