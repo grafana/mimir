@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
@@ -128,17 +129,9 @@ func (n *NarrowSelectorsOptimizationPass) hintsForOn(ctx context.Context, e *cor
 	return true
 }
 
-// hintsForIgnoring handles "ignoring (labels)" and default (no on/ignoring) matching.
-// It first tries to derive Include hints from LHS aggregation grouping labels. If that
-// fails, it falls back to exclude-matching mode, telling the operator to build RHS
-// matchers from all LHS labels at query time (excluding ignored and synthesised labels).
-// Returns true if a hint was set.
+// hintsForIgnoring creates hints for default and ignoring matching.
 func (n *NarrowSelectorsOptimizationPass) hintsForIgnoring(ctx context.Context, e *core.BinaryExpression, created map[string]struct{}) bool {
-	// Try to derive Include hints from LHS aggregation grouping labels.
-	// If the LHS subtree contains an aggregation with a "by" clause, we know the
-	// exact output labels statically and can use them as Include hints (after
-	// filtering out any labels synthesised by label_replace/label_join AND any
-	// labels listed in the ignoring clause, since those are not used for matching).
+	// Grouping labels can narrow the RHS when the immediate LHS preserves them.
 	include := includeFromLHS(e.LHS, created)
 	if len(include) > 0 && len(e.VectorMatching.MatchingLabels) > 0 {
 		// Remove ignoring labels from the include set.
@@ -184,30 +177,48 @@ func (n *NarrowSelectorsOptimizationPass) hintsForIgnoring(ctx context.Context, 
 	return true
 }
 
-// includeFromLHS walks the LHS subtree of a binary expression looking for an
-// aggregation with a "by" clause. If found, it returns the grouping labels
-// (filtered by created labels) as candidate Include hints. It recurses through
-// nested binary expressions (following their LHS) so that chains like
-// "sum by (region) (X) / (sum(Y) + sum(Z))" still find the aggregation.
+// includeFromLHS returns safe Include labels for default and ignoring matching.
 func includeFromLHS(node planning.Node, created map[string]struct{}) []string {
 	switch e := node.(type) {
 	case *core.AggregateExpression:
-		if !e.Without && len(e.Grouping) > 0 {
-			return filterLabels(e.Grouping, created)
+		// Without aggregations make output labels depend on input labels.
+		if e.Without {
+			return nil
 		}
-	case *core.BinaryExpression:
-		return includeFromLHS(e.LHS, created)
+
+		// Ungrouped aggregations and by () remove every output label.
+		if len(e.Grouping) == 0 {
+			return nil
+		}
+
+		// A by clause provides safe matching labels, except created labels and the metric name.
+		return filterLabelsForDefaultMatching(e.Grouping, created)
+	// These three wrappers preserve labels that default matching uses.
+	case *core.DeduplicateAndMerge:
+		return includeFromLHS(e.Inner, created)
+	case *core.StepInvariantExpression:
+		return includeFromLHS(e.Inner, created)
+	case *core.UnaryExpression:
+		return includeFromLHS(e.Inner, created)
 	}
 
-	// If the current node isn't a binary expression or aggregation, look at
-	// children to find a suitable aggregation (e.g. through a function call wrapper).
-	for child := range planning.ChildrenIter(node) {
-		if include := includeFromLHS(child, created); len(include) > 0 {
-			return include
-		}
-	}
-
+	// Other nodes can alter labels, so they stop traversal.
 	return nil
+}
+
+// filterLabelsForDefaultMatching removes created labels and the metric name.
+func filterLabelsForDefaultMatching(lbls []string, created map[string]struct{}) []string {
+	out := make([]string, 0, len(lbls))
+	for _, lbl := range lbls {
+		if lbl == model.MetricNameLabel {
+			continue
+		}
+		if _, ok := created[lbl]; !ok {
+			out = append(out, lbl)
+		}
+	}
+
+	return out
 }
 
 // filterLabels returns a new slice of labels that does not include any label in the created set.

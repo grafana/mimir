@@ -127,7 +127,7 @@ func NewInfoFunction(
 }
 
 func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
+	innerMetadata, err := f.Inner.SeriesMetadata(ctx, filterInfoInnerMatchers(matchers, f.Info.Selector.Matchers))
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +161,30 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		return nil, err
 	}
 	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
+}
+
+// filterInfoInnerMatchers removes matchers for labels that info() can add.
+func filterInfoInnerMatchers(matchers, dataLabelMatchers types.Matchers) types.Matchers {
+	dataLabelNames := make(map[string]struct{}, len(dataLabelMatchers))
+	for _, matcher := range dataLabelMatchers {
+		if matcher.Name != model.MetricNameLabel {
+			dataLabelNames[matcher.Name] = struct{}{}
+		}
+	}
+
+	// An unconstrained data selector can add any label from an info series.
+	if len(dataLabelNames) == 0 {
+		return nil
+	}
+
+	innerMatchers := make(types.Matchers, 0, len(matchers))
+	for _, matcher := range matchers {
+		if _, addedByInfo := dataLabelNames[matcher.Name]; !addedByInfo {
+			innerMatchers = append(innerMatchers, matcher)
+		}
+	}
+
+	return innerMatchers
 }
 
 // generateInfoMatchers creates matchers based on job and instance labels from inner series
