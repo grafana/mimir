@@ -485,6 +485,95 @@ func TestGroupCompactE2E(t *testing.T) {
 	})
 }
 
+func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
+	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = block.BucketWithGlobalMarkers(bkt)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		dir := t.TempDir()
+		logger := log.NewLogfmtLogger(os.Stderr)
+
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
+		noCompactMarkerFilter := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
+		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
+			duplicateBlocksFilter,
+			noCompactMarkerFilter,
+		}, 0)
+		require.NoError(t, err)
+
+		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
+		require.NoError(t, err)
+
+		comp, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{1000, 3000}, nil, nil)
+		require.NoError(t, err)
+
+		extLabels := labels.FromStrings("e1", "1")
+		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
+		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
+		reg := prometheus.NewPedanticRegistry()
+		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, reg)
+		cfg := indexheader.Config{VerifyOnLoad: true}
+
+		// Block symbol threshold of 1 byte ensures any compacted block's symbol table exceeds it.
+		const testSymbolTableSizeThreshold = 1
+
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, cfg, 8)
+		require.NoError(t, err)
+
+		createAndUpload(t, bkt, []blockgenSpec{
+			{
+				numFloatSamples: 100, mint: 0, maxt: 1000, extLset: extLabels, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "1"),
+					labels.FromStrings("a", "2"),
+				},
+			},
+			{
+				numFloatSamples: 100, mint: 1000, maxt: 2000, extLset: extLabels, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "3"),
+					labels.FromStrings("a", "4"),
+				},
+			},
+			// Third block to trigger compaction (TSDB compaction delay).
+			{
+				numFloatSamples: 100, mint: 2000, maxt: 3000, extLset: extLabels, res: 124,
+				series: []labels.Labels{
+					labels.FromStrings("a", "5"),
+				},
+			},
+		})
+
+		require.NoError(t, bComp.Compact(ctx, sy, 0))
+
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason))))
+
+		// Verify the compacted block has expected no-compact marker.
+		var markerFound bool
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+
+			var mark block.NoCompactMark
+			if err := block.ReadMarker(ctx, logger, objstore.WithNoopInstr(bkt), id.String(), &mark); err != nil {
+				return nil // no marker for this block
+			}
+
+			assert.Equal(t, block.PreemptiveNoCompactReason, mark.Reason)
+			markerFound = true
+			return nil
+		}))
+		assert.True(t, markerFound, "expected a no-compact marker on the compacted block")
+	})
+}
+
 type blockgenSpec struct {
 	mint, maxt          int64
 	series              []labels.Labels
