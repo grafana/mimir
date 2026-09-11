@@ -55,6 +55,7 @@
 * [BUGFIX] Build: Use `#!/usr/bin/env bash`/`#!/usr/bin/env sh` instead of hardcoded interpreter paths in development and CI scripts, fixing failures on systems where those interpreters aren't at that exact path, such as NixOS. #16425
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
+* [BUGFIX] Query-frontend: Honor errors when failing to send the complete data to the client. #16565
 
 ### Mixin
 
