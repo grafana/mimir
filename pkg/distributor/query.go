@@ -132,23 +132,15 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
-		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
-		// that have been inactive for longer than the lookback period.
 		shardSize := 0
 		if d.cfg.ShuffleShardingEnabled {
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
 
-		// Cap the inactive-partition lookback at query-ingesters-within:
-		//   - past that window, a partition's data isn't queried from ingesters, and its owners may be
-		//     gone; an ownerless partition would otherwise fail the query.
-		//   - 0 means unbounded, so it only tightens the bound when set and below the lookback period.
 		lookbackPeriod := d.cfg.IngestersLookbackPeriod
 		if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
 			lookbackPeriod = queryIngestersWithin
 		}
-
 		now := time.Now()
 
 		// When compartments are enabled, try to restrict the pool of compartments that need to be queried.
@@ -177,7 +169,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 		}
 
 		// Compartments are disabled.
-		r, err := d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
+		r, err := d.queryPartitionsSubring(userID, now)
 		if err != nil {
 			return nil, err
 		}
@@ -200,6 +192,31 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+// queryPartitionsSubring builds the partitions subring to query for the given tenant. We use
+// ShuffleShardWithLookback() to limit the partitions to query to the tenant's shard (when shuffle
+// sharding is enabled) and to filter out partitions that have been inactive for longer than the
+// lookback period.
+func (d *Distributor) queryPartitionsSubring(userID string, now time.Time) (*ring.PartitionInstanceRing, error) {
+	shardSize := 0
+	identifier := userID
+	if d.cfg.ShuffleShardingEnabled {
+		shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
+	}
+	if shardSize <= 0 {
+		// Every tenant gets the full ring and the result doesn't depend on the identifier, but the
+		// subring cache is keyed by it. Share a single cache entry instead of keeping one full ring
+		// copy per querying tenant (~0.5MB each, unbounded with tens of thousands of tenants).
+		identifier = ""
+	}
+
+	lookbackPeriod := d.cfg.IngestersLookbackPeriod
+	if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
+		lookbackPeriod = queryIngestersWithin
+	}
+
+	return d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(identifier, shardSize, lookbackPeriod, now)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

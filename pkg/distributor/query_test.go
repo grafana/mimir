@@ -834,3 +834,58 @@ type byLabels []labels.Labels
 func (b byLabels) Len() int           { return len(b) }
 func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
+
+func TestDistributor_QueryPartitionsSubring_ShuffleShardCacheSharing(t *testing.T) {
+	t.Run("shuffle sharding disabled: all tenants share one cached full-ring subring", func(t *testing.T) {
+		distributors, _, _, _ := prepare(t, prepConfig{
+			numIngesters:            3,
+			happyIngesters:          3,
+			numDistributors:         1,
+			replicationFactor:       1,
+			ingestStorageEnabled:    true,
+			ingestStoragePartitions: 3,
+			configure: func(cfg *Config) {
+				cfg.ShuffleShardingEnabled = false
+			},
+		})
+		d := distributors[0]
+
+		now := time.Now()
+		first, err := d.queryPartitionsSubring("tenant-1", now)
+		require.NoError(t, err)
+		second, err := d.queryPartitionsSubring("tenant-2", now)
+		require.NoError(t, err)
+
+		require.Same(t, first.PartitionRing(), second.PartitionRing())
+		require.Len(t, first.PartitionRing().PartitionIDs(), 3)
+	})
+
+	t.Run("shuffle sharding enabled: tenants keep their own subring", func(t *testing.T) {
+		limits := prepareDefaultLimits()
+		limits.IngestionPartitionsTenantShardSize = 1
+
+		distributors, _, _, _ := prepare(t, prepConfig{
+			numIngesters:            3,
+			happyIngesters:          3,
+			numDistributors:         1,
+			replicationFactor:       1,
+			ingestStorageEnabled:    true,
+			ingestStoragePartitions: 3,
+			limits:                  limits,
+			configure: func(cfg *Config) {
+				cfg.ShuffleShardingEnabled = true
+			},
+		})
+		d := distributors[0]
+
+		now := time.Now()
+		first, err := d.queryPartitionsSubring("tenant-1", now)
+		require.NoError(t, err)
+		second, err := d.queryPartitionsSubring("tenant-2", now)
+		require.NoError(t, err)
+
+		require.NotSame(t, first.PartitionRing(), second.PartitionRing())
+		require.Len(t, first.PartitionRing().PartitionIDs(), 1)
+		require.Len(t, second.PartitionRing().PartitionIDs(), 1)
+	})
+}
