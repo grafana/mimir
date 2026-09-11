@@ -694,7 +694,11 @@
           // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
           // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
           // because resources utilization is not increasing significantly.
-          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % query_params,
+          //
+          // The Prometheus Summary emits NaN for quantile values before the first Observe() call.
+          // >= 0 drops NaN samples (any comparison with NaN is false) before sum, leaving an empty
+          // vector so that or vector(0) can replace it with 0, giving KEDA a well-defined value.
+          query: '(sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]) >= 0) or vector(0))' % query_params,
 
           threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
 

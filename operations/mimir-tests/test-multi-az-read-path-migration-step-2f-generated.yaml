@@ -6921,7 +6921,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_querier_queries_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod!~"(ruler-querier|ruler-query-scheduler)-zone.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod!~"(ruler-querier|ruler-query-scheduler)-zone.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: ruler_querier_queries_hpa_default
@@ -6991,7 +6992,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_querier_queries_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-a.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-a.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: ruler_querier_queries_hpa_default
@@ -7061,7 +7063,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: ruler_querier_queries_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-b.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-b.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: ruler_querier_queries_hpa_default
