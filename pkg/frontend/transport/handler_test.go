@@ -1322,3 +1322,81 @@ func TestFormatQueryString_KeepsQueriesWithLineBreaksParseable(t *testing.T) {
 		})
 	}
 }
+
+// errorReader fails every read with the given error.
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func TestRemoteRead_StreamingIncomplete(t *testing.T) {
+	// Create a buffer large enough such that the http.ResponseWriter will flush
+	// the data before hitting the `ErrUnexpectedEOF`
+	responseData := [8192]byte{}
+
+	downstream := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(responseData[:])),
+		}, nil
+	})
+
+	testCases := map[string]struct {
+		limit       int
+		expectedErr error
+	}{
+		"no limit should succeed": {
+			limit:       -1,
+			expectedErr: nil,
+		},
+		"early out should fail with ErrUnexpectedEOF": {
+			limit:       len(responseData) - 10,
+			expectedErr: io.ErrUnexpectedEOF,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				resp, err := downstream(r)
+				if err != nil {
+					return nil, err
+				}
+
+				if 0 < tc.limit {
+					reader := io.MultiReader(
+						io.LimitReader(resp.Body, int64(tc.limit)),
+						&errorReader{err: io.ErrUnexpectedEOF},
+					)
+					resp.Body = io.NopCloser(reader)
+				}
+
+				return resp, nil
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			cfg := HandlerConfig{QueryStatsEnabled: true}
+			frontendHandler := NewHandler(cfg, roundTripper, logger, reg)
+
+			server := httptest.NewServer(frontendHandler)
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/api/v1/query", nil)
+			require.NoError(t, err)
+
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+			require.Equal(t, 200, resp.StatusCode)
+
+			_, err = io.ReadAll(resp.Body)
+			require.ErrorIs(t, err, tc.expectedErr)
+		})
+	}
+
+}
