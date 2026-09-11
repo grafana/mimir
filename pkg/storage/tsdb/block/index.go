@@ -8,10 +8,13 @@ package block
 import (
 	"cmp"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -50,6 +53,9 @@ func VerifyBlock(ctx context.Context, logger log.Logger, blockDir string, minTim
 type HealthStats struct {
 	// IndexFormat is the format version used by the TSDB index file.
 	IndexFormat int
+
+	// SymbolTableSize is the size of the symbol table in bytes.
+	SymbolTableSize uint64
 
 	// TotalSeries represents total number of series in block.
 	TotalSeries int64
@@ -186,6 +192,13 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 	stats.IndexFormat = r.Version()
 
+	// NOTE: we can't use Reader.SymbolTableSize() here because it returns in-memory sampled offsets table size.
+	// For the HealthStats use-cases we need the on-disk symbol table size, which is limited to 4 GiB (MaxUint32).
+	stats.SymbolTableSize, err = readIndexSymbolTableSize(indexFn)
+	if err != nil {
+		return stats, errors.Wrap(err, "read symbol table size")
+	}
+
 	n, v := index.AllPostingsKey()
 	p, err := r.Postings(ctx, n, v)
 	if err != nil {
@@ -296,6 +309,31 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	}
 
 	return stats, nil
+}
+
+// https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md
+// Symbols table is at the beginning of index, right after magic header and version.
+// It starts with length (4bytes) which is what we return.
+func readIndexSymbolTableSize(indexPath string) (uint64, error) {
+	f, err := os.Open(indexPath)
+	if err != nil {
+		return 0, fmt.Errorf("open index file: %w", err)
+	}
+	defer f.Close()
+
+	// 4-byte magic, 1-byte version, 4-byte symbol table length.
+	var buf [9]byte
+	if _, err := io.ReadFull(f, buf[:]); err != nil {
+		return 0, fmt.Errorf("read index header: %w", err)
+	}
+	if binary.BigEndian.Uint32(buf[:4]) != index.MagicIndex {
+		return 0, fmt.Errorf("invalid index magic")
+	}
+	// we check V1 and V2 as both have symbol table at the beginning with the same format
+	if buf[4] != index.FormatV1 && buf[4] != index.FormatV2 {
+		return 0, fmt.Errorf("unexpected index format version: 0x%02x", buf[4])
+	}
+	return uint64(binary.BigEndian.Uint32(buf[5:])), nil
 }
 
 type ignoreFnType func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error)

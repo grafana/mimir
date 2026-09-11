@@ -13589,6 +13589,17 @@
         },
         {
           "kind": "field",
+          "name": "block_symbol_table_size_threshold",
+          "required": false,
+          "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-symbol-table-size-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.",

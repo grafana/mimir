@@ -79,6 +79,10 @@ const (
 	IndexExceeds64GiBNoCompactReason = "index-exceeds-64gib"
 	// SymbolTableTooLargeNoCompactReason is used when the symbol table would exceed 4GB (uint32 max) during compaction.
 	SymbolTableTooLargeNoCompactReason = "symbol-table-too-large"
+	// PreemptiveNoCompactReason is used when the compactor proactively marks a compacted block as no-compact
+	// because it is approaching structural limits (e.g. symbol table size). The details field
+	// in the marker carries the specific condition that triggered the decision.
+	PreemptiveNoCompactReason NoCompactReason = "preemptive"
 )
 
 // NoCompactMark marker stores reason of block being excluded from compaction if needed.
