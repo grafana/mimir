@@ -8,8 +8,10 @@ package transport
 import (
 	"bytes"
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,13 +38,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	mimirapi "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -1321,4 +1327,249 @@ func TestFormatQueryString_KeepsQueriesWithLineBreaksParseable(t *testing.T) {
 			require.Equal(t, []string{"sum(up)", "or", "sum(down)"}, strings.Fields(logged))
 		})
 	}
+}
+
+// errorReader fails every read with the given error.
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func TestRemoteRead_StreamingIncomplete(t *testing.T) {
+	// Create a buffer large enough such that the http.ResponseWriter will flush
+	// the data before hitting the `ErrUnexpectedEOF`
+	responseData := [8192]byte{}
+
+	downstream := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(responseData[:])),
+		}, nil
+	})
+
+	testCases := map[string]struct {
+		limit       int
+		expectedErr error
+	}{
+		"no limit should succeed": {
+			limit:       -1,
+			expectedErr: nil,
+		},
+		"early out should fail with ErrUnexpectedEOF": {
+			limit:       len(responseData) - 10,
+			expectedErr: io.ErrUnexpectedEOF,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				resp, err := downstream(r)
+				if err != nil {
+					return nil, err
+				}
+
+				if 0 < tc.limit {
+					reader := io.MultiReader(
+						io.LimitReader(resp.Body, int64(tc.limit)),
+						&errorReader{err: io.ErrUnexpectedEOF},
+					)
+					resp.Body = io.NopCloser(reader)
+				}
+
+				return resp, nil
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			cfg := HandlerConfig{QueryStatsEnabled: true}
+			frontendHandler := NewHandler(cfg, roundTripper, logger, reg)
+
+			server := httptest.NewServer(frontendHandler)
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/api/v1/query", nil)
+			require.NoError(t, err)
+
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+			require.Equal(t, 200, resp.StatusCode)
+
+			_, err = io.ReadAll(resp.Body)
+			require.ErrorIs(t, err, tc.expectedErr)
+		})
+	}
+
+}
+
+type limitChunkReader struct {
+	r      *remote.ChunkedReader
+	w      *remote.ChunkedWriter
+	n      int
+	e      error
+	pr     *io.PipeReader
+	pw     *io.PipeWriter
+	closer io.Closer
+}
+
+func newLimitChunkReader(r io.ReadCloser, n int, e error) *limitChunkReader {
+	pr, pw := io.Pipe()
+	chunkedReader := remote.NewChunkedReader(r, math.MaxUint64, nil)
+	chunkedWriter := remote.NewChunkedWriter(pw, nil)
+
+	l := &limitChunkReader{
+		r:      chunkedReader,
+		w:      chunkedWriter,
+		n:      n,
+		e:      e,
+		pr:     pr,
+		pw:     pw,
+		closer: r.(io.Closer),
+	}
+
+	go func() {
+		for {
+			if l.n == 0 {
+				l.pw.CloseWithError(l.e)
+				break
+			}
+			l.n -= 1
+			data, err := l.r.Next()
+			if err != nil {
+				l.pw.CloseWithError(err)
+				break
+			}
+			_, err = l.w.Write(data)
+			if err != nil {
+				l.pw.CloseWithError(err)
+				break
+			}
+		}
+	}()
+
+	return l
+}
+
+func (r *limitChunkReader) Read(p []byte) (n int, err error) {
+	return r.pr.Read(p)
+}
+
+func (r *limitChunkReader) Close() error {
+	return stderrors.Join(
+		r.pr.Close(),
+		r.pw.Close(),
+		r.closer.Close(),
+	)
+}
+
+func makeTestHTTPRequestFromRemoteRead(t *testing.T, url string, readReq *prompb.ReadRequest) *http.Request {
+	data, err := proto.Marshal(readReq)
+	require.NoError(t, err)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, bytes.NewReader(snappy.Encode(nil, data)))
+	require.NoError(t, err)
+	request.Header.Add("User-Agent", "test-user-agent")
+	request.Header.Add("Content-Type", "application/x-protobuf")
+	request.Header.Add("Content-Encoding", "snappy")
+
+	return request
+}
+
+func drainChunkedReader(chunkedReader *remote.ChunkedReader) (n int, err error) {
+	for {
+		_, err := chunkedReader.Next()
+		if err != nil {
+			if !stderrors.Is(err, io.EOF) {
+				return n, err
+			}
+			break
+		}
+		n += 1
+	}
+	return n, nil
+}
+
+func TestRemoteRead_StreamingIncomplete2(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1s
+			up{job="s1", ns="namespace-1", instance="node-2"}                0+1x8000
+			up{job="s2", ns="namespace-1", instance="node-2"}                0+1x8000
+			up{job="s3", ns="namespace-1", instance="node-2"}                0+1x8000
+			up{job="s4", ns="namespace-1", instance="node-2"}                0+1x8000
+			up{job="s5", ns="namespace-1", instance="node-2"}                0+1x8000
+			up{job="s6", ns="namespace-1", instance="node-2"}                0+1x8000
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	origRemoteReadReq := &prompb.ReadRequest{
+		Queries: []*prompb.Query{
+			{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+				},
+				StartTimestampMs: 0,
+				EndTimestampMs:   20000000,
+			},
+		},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+
+	testCases := map[string]struct {
+		limit       int
+		expectedErr error
+	}{
+		"no limit should succeed": {
+			limit:       math.MaxInt,
+			expectedErr: nil,
+		},
+		"early out should fail with ErrUnexpectedEOF": {
+			limit:       3,
+			expectedErr: io.ErrUnexpectedEOF,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			remoteReadHandler := querier.RemoteReadHandler(storage, log.NewNopLogger(), querier.Config{})
+			downstream := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				recorder := httptest.NewRecorder()
+				remoteReadHandler.ServeHTTP(recorder, r)
+				resp := recorder.Result()
+
+				resp.Body = newLimitChunkReader(resp.Body, tc.limit, io.ErrUnexpectedEOF)
+				return resp, nil
+			})
+
+			rr := querymiddleware.NewRemoteReadRoundTripper(downstream)
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			cfg := HandlerConfig{QueryStatsEnabled: true}
+
+			frontendHandler := NewHandler(cfg, rr, logger, reg)
+			server := httptest.NewServer(middleware.AuthenticateUser.Wrap(frontendHandler))
+			defer server.Close()
+
+			req := makeTestHTTPRequestFromRemoteRead(t, server.URL+"/api/v1/read", origRemoteReadReq)
+			req.Header.Add(user.OrgIDHeaderName, "12345")
+
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+			require.Equal(t, 200, resp.StatusCode)
+
+			reader := remote.NewChunkedReader(resp.Body, math.MaxUint64, nil)
+			_, err = drainChunkedReader(reader)
+			require.ErrorIs(t, err, tc.expectedErr)
+		})
+	}
+
 }
