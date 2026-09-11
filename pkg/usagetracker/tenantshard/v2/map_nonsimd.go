@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Dolthub, Inc.
 
-package tenantshard
+package v2
 
 import (
 	"math/bits"
