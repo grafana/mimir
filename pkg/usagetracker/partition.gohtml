@@ -69,22 +69,28 @@
                                 <th class="sortable fit-width" data-col="3" data-type="num" role="button" title="Sort by dead">
                                     <span class="text-nowrap">Dead <i class="bi bi-arrow-down-up sort-indicator"></i>
                                         <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
-                                           title="Number of dead elements (tombstones)."></i>
+                                           title="Number of dead elements (tombstones). Only the v1 shard map implementation creates those."></i>
                                     </span>
                                 </th>
-                                <th class="sortable fit-width" data-col="4" data-type="num" role="button" title="Sort by limit">
+                                <th class="sortable fit-width" data-col="4" data-type="num" role="button" title="Sort by spilled">
+                                    <span class="text-nowrap">Spilled <i class="bi bi-arrow-down-up sort-indicator"></i>
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of groups that spill into the next one, so lookups have to keep probing. Only the v2 shard map implementation counts those."></i>
+                                    </span>
+                                </th>
+                                <th class="sortable fit-width" data-col="5" data-type="num" role="button" title="Sort by limit">
                                     <span class="text-nowrap">Limit <i class="bi bi-arrow-down-up sort-indicator"></i>
                                         <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                            title="Resident count that triggers a rehash when reached."></i>
                                     </span>
                                 </th>
-                                <th class="sortable fit-width" data-col="5" data-type="num" role="button" title="Sort by length">
+                                <th class="sortable fit-width" data-col="6" data-type="num" role="button" title="Sort by length">
                                     <span class="text-nowrap">Length <i class="bi bi-arrow-down-up sort-indicator"></i>
                                         <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                            title="Number of groups; the identical length of the index, keys and data arrays."></i>
                                     </span>
                                 </th>
-                                <th class="sortable fit-width" data-col="6" data-type="num" role="button" title="Sort by rehashes">
+                                <th class="sortable fit-width" data-col="7" data-type="num" role="button" title="Sort by rehashes">
                                     <span class="text-nowrap">Rehashes <i class="bi bi-arrow-down-up sort-indicator"></i>
                                         <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
                                            title="Number of rehashes since this shard was created."></i>
@@ -103,6 +109,7 @@
                                     <td class="align-middle font-monospace small fit-width">{{ .Shard }}</td>
                                     <td class="align-middle font-monospace small fit-width">{{ .Resident }}</td>
                                     <td class="align-middle font-monospace small fit-width">{{ .Dead }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Spilled }}</td>
                                     <td class="align-middle font-monospace small fit-width">{{ .Limit }}</td>
                                     <td class="align-middle font-monospace small fit-width">{{ .Length }}</td>
                                     <td class="align-middle font-monospace small fit-width">{{ .Rehashes }}</td>
