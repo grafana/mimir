@@ -48,6 +48,20 @@
     }}
 {{- fail "metaMonitoring.grafanaAgent.remote.url is set, but metaMonitoring.serviceMonitor is disabled; you will not see any metrics, so enable the metaMonitoring.serviceMonitor or remove the remote configuration" }}
 {{- end }}
+
+{{/*
+Fail if Grafana Agent is enabled, and configured to use chart-managed
+shared service account, and token auto-mounting gets disabled on the
+ServiceAccount level. Grafana Agent uses the service account token to
+discover scrape targets through the Kubernetes API.
+*/}}
+{{- if and
+    .enabled
+    (not (.serviceAccount).create) $.Values.serviceAccount.create
+    (not (kindIs "invalid" $.Values.serviceAccount.automountServiceAccountToken)) (not $.Values.serviceAccount.automountServiceAccountToken)
+    }}
+{{- fail "You have set serviceAccount.automountServiceAccountToken=false while metaMonitoring.grafanaAgent.enabled=true, and Grafana Agent shares that service account. Grafana Agent uses the service account token to discover scrape targets. Set metaMonitoring.grafanaAgent.serviceAccount.create=true to create a dedicated service account, or remove serviceAccount.automountServiceAccountToken." }}
+{{- end }}
 {{- end }}
 
 {{- with ($calculatedConfig.blocks_storage).bucket_store }}
