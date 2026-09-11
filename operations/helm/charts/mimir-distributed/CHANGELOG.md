@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440
 * [BUGFIX] Gateway: use the distributor ClusterIP Service when `distributor.service.trafficDistribution` is configured so that Kubernetes traffic distribution can take effect. #16448
+* [BUGFIX] Hash only the data of the ConfigMap or Secret in the `checksum/config` and `checksum/alertmanager-fallback-config` pod annotations, so that a chart version bump on its own no longer restarts every pod. #16571
 
 ## 6.2.0
 
