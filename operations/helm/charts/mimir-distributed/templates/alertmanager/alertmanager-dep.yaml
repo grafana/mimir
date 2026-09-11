@@ -26,7 +26,7 @@ spec:
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
         {{- if .Values.alertmanager.fallbackConfig }}
-        checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
+        checksum/alertmanager-fallback-config: {{ include "mimir.configMapOrSecretContentHash" (dict "ctx" . "name" "/alertmanager/alertmanager-config.yaml") }}
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
