@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -93,13 +94,38 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
-	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
 )
 
 const (
 	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
 )
+
+// DefaultFloatChunkEncodingValue is the value of the -blocks-storage.tsdb.float-chunk-encoding limit used when the
+// limit is unset, or holds a value this version does not support.
+const DefaultFloatChunkEncodingValue = promcfg.FloatChunkEncodingXOR
+
+// floatChunkEncodings maps every value the -blocks-storage.tsdb.float-chunk-encoding limit accepts to the chunk
+// encoding it selects.
+var floatChunkEncodings = map[string]chunkenc.Encoding{
+	DefaultFloatChunkEncodingValue: chunkenc.EncXOR,
+	promcfg.FloatChunkEncodingXOR2: chunkenc.EncXOR2,
+}
+
+// FloatChunkEncodingValues holds the values the -blocks-storage.tsdb.float-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var FloatChunkEncodingValues = slices.Sorted(maps.Keys(floatChunkEncodings))
+
+// ParseFloatChunkEncoding returns the chunk encoding selected by the given value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit. A value the limit does not accept, the empty string
+// included, selects the encoding of DefaultFloatChunkEncodingValue.
+func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
+	if enc, ok := floatChunkEncodings[value]; ok {
+		return enc
+	}
+	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -139,6 +165,7 @@ type Limits struct {
 	IngestionBurstFactor          float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples               bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HATrackerPerSampleDedupe      bool    `yaml:"ha_tracker_per_sample_dedupe" json:"ha_tracker_per_sample_dedupe" category:"experimental"`
+	MergeDuplicateTimeseries      bool    `yaml:"merge_duplicate_timeseries" json:"merge_duplicate_timeseries" category:"experimental"`
 	HAClusterLabel                string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters                 int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
@@ -364,6 +391,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
+	f.BoolVar(&l.MergeDuplicateTimeseries, "distributor.merge-duplicate-timeseries", false, "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -418,7 +446,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
-	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", "xor", "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.")
+	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -578,7 +606,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	})
 }
 
-// unmarshal does both YAML and JSON.
+// unmarshal does YAML, JSON and mapstructure.
 func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
@@ -733,9 +761,7 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	switch l.FloatChunkEncoding {
-	case "", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2:
-	default:
+	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
 	}
 
@@ -928,6 +954,13 @@ func (o *Overrides) AcceptHASamples(userID string) bool {
 // decision to the whole request) for this user.
 func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
 	return o.getOverridesForUser(userID).HATrackerPerSampleDedupe
+}
+
+// MergeDuplicateTimeseries returns whether timeseries sharing the same label set
+// and created timestamp within a single write request should be merged into a
+// single timeseries for this user.
+func (o *Overrides) MergeDuplicateTimeseries(userID string) bool {
+	return o.getOverridesForUser(userID).MergeDuplicateTimeseries
 }
 
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
@@ -1422,12 +1455,21 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
-// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+// FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
-	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
-		return chunkenc.EncXOR2
+	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+}
+
+// FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit, which is never empty: tsdb.DB.ApplyConfig() reads an empty
+// chunk encoding as "keep the encoding resolved at startup", so a tenant that clears the limit has
+// to be handed DefaultFloatChunkEncodingValue explicitly to fall back to it.
+func (o *Overrides) FloatChunkEncodingValue(userID string) string {
+	value := o.getOverridesForUser(userID).FloatChunkEncoding
+	if _, ok := floatChunkEncodings[value]; ok {
+		return value
 	}
-	return chunkenc.EncXOR
+	return DefaultFloatChunkEncodingValue
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {

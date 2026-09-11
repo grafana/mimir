@@ -859,6 +859,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100). (default 15)
   -blocks-storage.tsdb.early-head-compaction-min-in-memory-series int
     	[experimental] When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether an early compaction is required. Use 0 to disable it.
+  -blocks-storage.tsdb.float-chunk-encoding string
+    	[experimental] Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2. (default "xor")
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
@@ -1529,6 +1531,8 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.merge-duplicate-timeseries
+    	[experimental] Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
@@ -1907,8 +1911,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
-  -ingester.float-chunk-encoding string
-    	[experimental] Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'. (default "xor")
   -ingester.ignore-ooo-exemplars
     	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string
@@ -2235,6 +2237,10 @@ Usage of ./cmd/mimir/mimir:
     	Port to listen on for gossip messages. (default 7946)
   -memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
     	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -memberlist.cas-retry-max-backoff duration
+    	[experimental] Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set. (default 10s)
+  -memberlist.cas-retry-min-backoff duration
+    	[experimental] Minimum delay between CAS retries after a version mismatch. 0 disables the delay.
   -memberlist.cluster-label string
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
@@ -2531,6 +2537,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
+  -querier.mimir-query-engine.enable-propagate-matchers
+    	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
     	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers
@@ -2545,6 +2553,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    	[experimental] Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.
   -querier.mimir-query-engine.range-vector-splitting.enabled
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
@@ -2969,8 +2979,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.rewrite-histogram-queries
     	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
-  -query-frontend.rewrite-propagate-matchers
-    	[experimental] Set to true to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
@@ -3699,6 +3707,8 @@ Usage of ./cmd/mimir/mimir:
     	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
+  -runtime-config.loader string
+    	[experimental] Method used to decode the runtime configuration files. Supported values are: "map" (decode directly using mapstructure) and "yaml" (decode by round-tripping through YAML). (default "yaml")
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.additional-labels comma-separated-list-of-strings

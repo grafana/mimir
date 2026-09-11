@@ -28,6 +28,12 @@
 
     multi_zone_store_gateway_zone_a_backup_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
     multi_zone_store_gateway_zone_b_backup_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+
+    store_gateway_zone_a_data_disk_class: self.store_gateway_data_disk_class,
+    store_gateway_zone_b_data_disk_class: self.store_gateway_data_disk_class,
+    store_gateway_zone_c_data_disk_class: self.store_gateway_data_disk_class,
+    store_gateway_zone_a_backup_data_disk_class: self.store_gateway_data_disk_class,
+    store_gateway_zone_b_backup_data_disk_class: self.store_gateway_data_disk_class,
   },
 
   local container = $.core.v1.container,
@@ -129,10 +135,10 @@
     )) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
-  newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[], rolloutGroup='store-gateway')::
+  newStoreGatewayZoneStatefulSet(zone, container, dataDiskClass, nodeAffinityMatchers=[], rolloutGroup='store-gateway')::
     local name = 'store-gateway-zone-%s' % zone;
 
-    $.newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    $.newStoreGatewayStatefulSet(name, container, dataDiskClass, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': rolloutGroup }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_store_gateway_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': rolloutGroup }) +
@@ -178,25 +184,25 @@
     $.newStoreGatewayZoneContainer('b-backup', $.store_gateway_zone_b_backup_args, $.store_gateway_zone_b_backup_env_map),
 
   store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers) +
+    $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $._config.store_gateway_zone_b_data_disk_class, $.store_gateway_zone_b_node_affinity_matchers) +
     (if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers) +
+    $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $._config.store_gateway_zone_a_data_disk_class, $.store_gateway_zone_a_node_affinity_matchers) +
     (if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_c_statefulset: if !$._config.multi_zone_store_gateway_zone_c_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers) +
+    $.newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $._config.store_gateway_zone_c_data_disk_class, $.store_gateway_zone_c_node_affinity_matchers) +
     (if isZoneCEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_a_backup_statefulset: if !$._config.multi_zone_store_gateway_zone_a_backup_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('a-backup', $.store_gateway_zone_a_backup_container, $.store_gateway_zone_a_backup_node_affinity_matchers) +
+    $.newStoreGatewayZoneStatefulSet('a-backup', $.store_gateway_zone_a_backup_container, $._config.store_gateway_zone_a_backup_data_disk_class, $.store_gateway_zone_a_backup_node_affinity_matchers) +
     (if isBackupAMultiAZEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
     // Default to 0 replicas because we expect to use autoscaling and follow other zone replicas.
     statefulSet.mixin.spec.withReplicas(0),
 
   store_gateway_zone_b_backup_statefulset: if !$._config.multi_zone_store_gateway_zone_b_backup_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('b-backup', $.store_gateway_zone_b_backup_container, $.store_gateway_zone_b_backup_node_affinity_matchers) +
+    $.newStoreGatewayZoneStatefulSet('b-backup', $.store_gateway_zone_b_backup_container, $._config.store_gateway_zone_b_backup_data_disk_class, $.store_gateway_zone_b_backup_node_affinity_matchers) +
     (if isBackupBMultiAZEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
     // Default to 0 replicas because we expect to use autoscaling and follow other zone replicas.
     statefulSet.mixin.spec.withReplicas(0),

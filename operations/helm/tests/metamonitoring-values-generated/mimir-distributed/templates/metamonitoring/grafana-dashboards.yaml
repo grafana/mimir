@@ -4171,17 +4171,16 @@ data:
                    "type": "datasource"
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": ".*",
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": true,
                    "label": "cluster",
-                   "multi": true,
+                   "multi": false,
                    "name": "cluster",
                    "options": [ ],
                    "query": "label_values(cortex_build_info, cluster)",
@@ -4195,17 +4194,16 @@ data:
                    "useTags": false
                 },
                 {
-                   "allValue": ".+",
+                   "allValue": null,
                    "current": {
-                      "selected": true,
-                      "text": "All",
-                      "value": "$__all"
+                      "text": "prod",
+                      "value": "prod"
                    },
                    "datasource": "$datasource",
                    "hide": 0,
                    "includeAll": false,
                    "label": "namespace",
-                   "multi": true,
+                   "multi": false,
                    "name": "namespace",
                    "options": [ ],
                    "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
@@ -4434,7 +4432,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 3,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"} > 0\n",
@@ -4444,6 +4442,55 @@ data:
                          }
                       ],
                       "title": "Tenants compaction progress",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 3,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
+                            "format": "time_series",
+                            "legendFormat": "Jobs",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated Compaction Jobs",
                       "type": "timeseries"
                    },
                    {
@@ -4528,7 +4575,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 3,
+                      "id": 4,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -4558,7 +4605,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 2,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -4759,7 +4806,7 @@ data:
                             }
                          ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -4863,55 +4910,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Estimated Compaction Jobs\nEstimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),\nand compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.\n\nMetric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if\nthere were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more\njobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job\ncovering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.\n\nIn other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 5,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "sum(cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])) == 0)",
-                            "format": "time_series",
-                            "legendFormat": "Jobs",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Estimated Compaction Jobs",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
                       "description": "### Source blocks age\nThe difference between the maximum timestamp of the block being compacted and the current time.\nA steadily increasing value indicates that the compactor cannot keep up with the produced blocks by the ingesters.\nIncrease the number of compactors when this value is consistently increasing.\n\n",
                       "fieldConfig": {
                          "defaults": {
@@ -4948,7 +4946,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_compactor_block_max_time_delta_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -5045,7 +5043,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval]))",
@@ -5095,7 +5093,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(prometheus_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",

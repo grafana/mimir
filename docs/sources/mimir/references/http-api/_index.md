@@ -445,6 +445,10 @@ This API endpoint is usually used by scale down automations.
 GET,POST,DELETE /ingester/prepare-partition-downscale
 ```
 
+{{< admonition type="note" >}}
+This endpoint is only available in ingest storage architecture. In classic architecture, use [Prepare instance ring downscale](#prepare-instance-ring-downscale) instead. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
 This endpoint prepares the ingester's partition for downscaling by setting it to the `INACTIVE` state.
 
 A `GET` call to this endpoint returns a timestamp of when the partition was switched to the `INACTIVE` state, or 0, if the partition is not in the `INACTIVE` state.
@@ -453,7 +457,7 @@ A `POST` call switches this ingester's partition to the `INACTIVE` state, if it 
 
 A `DELETE` call sets the partition back from the `INACTIVE` to the `ACTIVE` state.
 
-If the ingester is not configured to use ingest-storage, any call to this endpoint fails.
+If the ingester is not configured to use ingest-storage, any call to this endpoint fails with `405 Method Not Allowed`.
 
 This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 
@@ -463,6 +467,10 @@ This API endpoint is usually used by scale down automation, e.g. rollout-operato
 GET,POST,DELETE /ingester/prepare-instance-ring-downscale
 ```
 
+{{< admonition type="note" >}}
+This endpoint is only available in classic architecture. In ingest storage architecture, use [Prepare partition downscale](#prepare-partition-downscale) instead. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
 This endpoint prepares the ingester for downscaling by setting it to read-only mode.
 
 A `GET` call to this endpoint returns a timestamp of when the ingester was switched to read-only mode, or 0, if the ingester is not in read-only mode.
@@ -471,7 +479,7 @@ A `POST` call switches this ingester's partition to read-only mode, if it isn't 
 
 A `DELETE` call sets the ingester back to read-write mode.
 
-If the ingester is configured to use ingest-storage, any call to this endpoint fails.
+If the ingester is configured to use ingest-storage, any call to this endpoint fails with `405 Method Not Allowed`.
 
 This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 
@@ -1286,7 +1294,19 @@ Requires [authentication](#authentication).
 GET /api/v1/alerts
 ```
 
-Get the current Alertmanager configuration for the authenticated tenant, reading it from the configured object storage.
+Get the current tenant Alertmanager YAML configuration for the authenticated
+tenant from the configured object storage. This is Mimir's multi-tenant config
+API (enabled with `-alertmanager.enable-api`), not the Alertmanager "list
+firing alerts" API.
+
+{{< admonition type="caution" >}}
+Do not confuse this path with Alertmanager's own HTTP API under
+`<alertmanager-http-prefix>` (default `/alertmanager`). Paths such as
+`/alertmanager/api/v1/alerts` are the upstream Alertmanager API; v1 was removed
+and returns HTTP 410. For live alerts and silences, use the Alertmanager **v2**
+routes under that prefix, or the Ruler's
+`<prometheus-http-prefix>/api/v1/alerts` for Prometheus-format alerts.
+{{< /admonition >}}
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
@@ -1303,6 +1323,10 @@ To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool al
 ```
 POST /api/v1/alerts
 ```
+
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager UI/API under `<alertmanager-http-prefix>`.
 
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
@@ -1351,6 +1375,10 @@ alertmanager_config: |
 DELETE /api/v1/alerts
 ```
 
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager UI/API under `<alertmanager-http-prefix>`.
+
 Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
@@ -1387,7 +1415,9 @@ Displays a web page with the list of tenants with blocks in the storage configur
 GET /store-gateway/tenant/{tenant}/blocks
 ```
 
-Displays a web page listing the blocks for a given tenant.
+Displays a web page listing the blocks for a given tenant, with filters and pagination.
+The list comes from the tenant bucket index, which the compactor updates periodically, so a block uploaded after the last update is not listed.
+Set `scan_bucket=on` to read every block of the tenant instead, which is slower but lists every block and fills the size, sample count and chunk count.
 
 ### Prepare for Shutdown
 

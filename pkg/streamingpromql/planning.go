@@ -88,13 +88,17 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 
+	if opts.EnablePropagateMatchers {
+		planner.RegisterASTOptimizationPass(ast.NewPropagateMatchers(opts.CommonOpts.Reg)) // Propagate matchers before reducing them.
+	}
+
 	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
 	if opts.EnableReduceMatchers {
 		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
+	// After query sharding is moved here, we want to move reorder histogram aggregation here as well before query sharding.
 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
@@ -118,7 +122,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
+		if opts.RangeVectorSplitting.EnableSubquerySplitting && !opts.EnableCommonSubexpressionElimination {
+			return nil, errors.New("cannot enable subquery splitting in range vector splitting without common subexpression elimination")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
