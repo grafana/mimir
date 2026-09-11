@@ -209,22 +209,40 @@ func TestClient_ConfigValidation(t *testing.T) {
 			cfg:  Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "helloworld"},
 		},
 		{
-			name:          "storage_prefix non-alphanumeric characters",
-			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "hello-world!"},
+			name: "storage_prefix with hyphens and underscores",
+			cfg:  Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "hello-world_1"},
+		},
+		{
+			name: "storage_prefix with subpaths",
+			cfg:  Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "tenant-a/environment_1"},
+		},
+		{
+			name:          "storage_prefix with other special characters",
+			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "hello.world!"},
 			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
-			name:          "storage_prefix suffixed with a slash (non-alphanumeric)",
+			name:          "storage_prefix suffixed with a slash",
 			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "helloworld/"},
 			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
-			name:          "storage_prefix that has some character strings that have a meaning in unix paths (..)",
+			name:          "storage_prefix prefixed with a slash",
+			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "/helloworld"},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "storage_prefix with repeated slashes",
+			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "hello//world"},
+			expectedError: ErrInvalidCharactersInStoragePrefix,
+		},
+		{
+			name:          "storage_prefix that is a parent path element",
 			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: ".."},
 			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
 		{
-			name:          "storage_prefix that has some character strings that have a meaning in unix paths (.)",
+			name:          "storage_prefix that is a current path element",
 			cfg:           Config{StorageBackendConfig: StorageBackendConfig{Backend: Filesystem}, StoragePrefix: "."},
 			expectedError: ErrInvalidCharactersInStoragePrefix,
 		},
@@ -254,7 +272,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 					Directory: tempDir,
 				},
 			},
-			StoragePrefix: "prefix",
+			StoragePrefix: "prefix/nested_directory",
 		}
 
 		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
@@ -266,7 +284,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 		_, err = client.Get(ctx, "file")
 		assert.NoError(t, err)
 
-		filePath := path.Join(tempDir, "prefix", "file")
+		filePath := path.Join(tempDir, "prefix", "nested_directory", "file")
 		assert.FileExists(t, filePath)
 
 		b, err := os.ReadFile(filePath)
