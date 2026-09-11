@@ -2349,7 +2349,16 @@ spec:
           policies:
           - periodSeconds: 60
             type: Percent
-            value: 10
+            value: 25
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 60
   maxReplicaCount: 30
   minReplicaCount: 3
   pollingInterval: 10

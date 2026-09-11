@@ -82,6 +82,7 @@
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [ENHANCEMENT] Add `autoscaling_ruler_querier_predictive_scaling_enabled` to scale ruler-queriers based on inflight queries from a configurable period ago, mirroring the existing querier predictive scaling mechanism. #16529
+* [ENHANCEMENT] Add `autoscaling_ruler_querier_scaleup_percent_cap` and `autoscaling_ruler_querier_scaledown_percent_cap` to control how fast ruler-queriers scale up and down. #16529
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 
