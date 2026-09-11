@@ -32,6 +32,8 @@
     autoscaling_ruler_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of ruler-queriers needed.
     autoscaling_ruler_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
     autoscaling_ruler_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the ruler-querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
+    autoscaling_ruler_querier_scaleup_percent_cap: null,  // The maximum percent a ruler-querier deployment may scale up every 2m. Null leaves scale-up uncapped (Kubernetes' own default).
+    autoscaling_ruler_querier_scaledown_percent_cap: 10,  // The maximum percent a ruler-querier deployment may scale down every 1m.
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas_per_zone: error 'you must set autoscaling_distributor_min_replicas_per_zone in the _config',
@@ -745,7 +747,43 @@
             },
           ]
       ),
-    ),
+    ) + {
+      spec+: {
+        advanced+: {
+          horizontalPodAutoscalerConfig+: {
+            behavior+: {
+              // Capping the scale-down rate avoids reacting too aggressively to a brief dip in load.
+              scaleDown: {
+                policies: [{
+                  type: 'Percent',
+                  value: $._config.autoscaling_ruler_querier_scaledown_percent_cap,
+                  periodSeconds: 60,
+                }],
+              },
+            } + (
+              if $._config.autoscaling_ruler_querier_scaleup_percent_cap == null then {} else {
+                // Capping the scale-up rate avoids reacting too aggressively to a brief spike in load.
+                scaleUp: {
+                  policies: [
+                    {
+                      type: 'Percent',
+                      value: $._config.autoscaling_ruler_querier_scaleup_percent_cap,
+                      periodSeconds: 120,
+                    },
+                    {
+                      type: 'Pods',
+                      value: 15,
+                      periodSeconds: 120,
+                    },
+                  ],
+                  stabilizationWindowSeconds: 60,
+                },
+              }
+            ),
+          },
+        },
+      },
+    },
 
   ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
     $.newRulerQuerierScaledObject('ruler-querier', $.ruler_querier_args),
