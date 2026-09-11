@@ -158,12 +158,11 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
-			LabelsRefs:       refs,
-			Samples:          ts.Samples,
-			Histograms:       ts.Histograms,
-			Exemplars:        FromExemplarsToExemplarsRW2(ts.Exemplars, symbols),
-			Metadata:         metadata,
-			CreatedTimestamp: ts.CreatedTimestamp,
+			LabelsRefs: refs,
+			Samples:    ts.Samples,
+			Histograms: ts.Histograms,
+			Exemplars:  FromExemplarsToExemplarsRW2(ts.Exemplars, symbols),
+			Metadata:   metadata,
 		})
 	}
 

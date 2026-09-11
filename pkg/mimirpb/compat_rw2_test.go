@@ -44,16 +44,8 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
-	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
-	rootNode, _ = expectedTree.(*treeprint.Node)
-	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
-	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
-	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
-	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]
-	require.Contains(t, rootNode.Nodes[1].Nodes[2].Nodes[14].String(), " StartTimestamp:")
-	// TimeSeries is node 1 of the request, Histogram is node 2 of TimeSeries, StartTimestamp is node 14 of Histogram.
-	rootNode.Nodes[1].Nodes[2].Nodes = rootNode.Nodes[1].Nodes[2].Nodes[0:14]
-
+	// Our Sample and Histogram messages now carry StartTimestamp (matching upstream's RW2 spec), and
+	// TimeSeries/TimeSeriesRW2 no longer carry CreatedTimestamp (reserved), so the shapes should match directly.
 	require.Equal(t, expectedTree.String(), actualTree.String(), "Proto types are not compatible")
 }
 
@@ -126,6 +118,186 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+	})
+
+	t.Run("Sample and Histogram StartTimestamp round-trip via RW2", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		writeRequest := &WriteRequest{
+			TimeseriesRW2: []TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+					Samples: []Sample{
+						{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
+					},
+					Histograms: []Histogram{
+						FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+					},
+				},
+			},
+		}
+		writeRequest.TimeseriesRW2[0].Histograms[0].StartTimestamp = 1500
+		writeRequest.SymbolsRW2 = syms.GetSymbols()
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(1500), received.Timeseries[0].Histograms[0].StartTimestamp)
+	})
+
+	t.Run("Sample and Histogram StartTimestamp round-trip via RW1", func(t *testing.T) {
+		writeRequest := &WriteRequest{
+			Timeseries: []PreallocTimeseries{
+				{
+					TimeSeries: &TimeSeries{
+						Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+						Samples: []Sample{
+							{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
+						},
+						Histograms: []Histogram{
+							FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+						},
+					},
+				},
+			},
+		}
+		writeRequest.Timeseries[0].Histograms[0].StartTimestamp = 1500
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		received := PreallocWriteRequest{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(1500), received.Timeseries[0].Histograms[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp (pre-final RW2 wire shape) fans out to Samples and Histograms", func(t *testing.T) {
+		// Simulate a legacy sender that still sets the reserved TimeSeriesRW2 field 6 (formerly
+		// created_timestamp) instead of a per-sample/per-histogram StartTimestamp. The current
+		// TimeSeriesRW2 Go type can no longer express that field (it's reserved), so the wire bytes
+		// are built by hand.
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+				{Value: 2, TimestampMs: 2000},
+			},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		tsData, err := ts.Marshal()
+		require.NoError(t, err)
+		tsData = appendVarintField(tsData, 6, 500)
+
+		var data []byte
+		for _, s := range syms.GetSymbols() {
+			data = appendBytesField(data, 4, []byte(s))
+		}
+		data = appendBytesField(data, 5, tsData)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 2)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[0].StartTimestamp)
+		require.Equal(t, int64(500), received.Timeseries[0].Samples[1].StartTimestamp)
+		require.Len(t, received.Timeseries[0].Histograms, 1)
+		require.Equal(t, int64(500), received.Timeseries[0].Histograms[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp does not override an explicit per-sample StartTimestamp", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 900},
+			},
+		}
+		tsData, err := ts.Marshal()
+		require.NoError(t, err)
+		tsData = appendVarintField(tsData, 6, 500)
+
+		var data []byte
+		for _, s := range syms.GetSymbols() {
+			data = appendBytesField(data, 4, []byte(s))
+		}
+		data = appendBytesField(data, 5, tsData)
+
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Timeseries, 1)
+		require.Len(t, received.Timeseries[0].Samples, 1)
+		require.Equal(t, int64(900), received.Timeseries[0].Samples[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp fans out via the plain TimeSeries.Unmarshal too", func(t *testing.T) {
+		// The plain (non-RW2) TimeSeries.Unmarshal is used not just for Remote Write 1.0, but also
+		// for internal distributor->ingester gRPC and ingest-storage Kafka records. A not-yet-
+		// upgraded Mimir component in those internal paths would still encode the reserved field 6
+		// (formerly created_timestamp) instead of a per-sample/per-histogram StartTimestamp, so
+		// this must fan out here too, not just in UnmarshalRW2.
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+				{Value: 2, TimestampMs: 2000},
+			},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+		data = appendVarintField(data, 6, 500)
+
+		received := TimeSeries{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Samples, 2)
+		require.Equal(t, int64(500), received.Samples[0].StartTimestamp)
+		require.Equal(t, int64(500), received.Samples[1].StartTimestamp)
+		require.Len(t, received.Histograms, 1)
+		require.Equal(t, int64(500), received.Histograms[0].StartTimestamp)
+	})
+
+	t.Run("legacy per-series created_timestamp via the plain TimeSeries.Unmarshal does not override an explicit per-sample StartTimestamp", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 900},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+		data = appendVarintField(data, 6, 500)
+
+		received := TimeSeries{}
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Samples, 1)
+		require.Equal(t, int64(900), received.Samples[0].StartTimestamp)
 	})
 
 	t.Run("zero timeseries does not panic", func(t *testing.T) {
@@ -872,6 +1044,108 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 }
 
+// TestMarshalLegacyCreatedTimestamp verifies that TimeSeries/TimeSeriesRW2 marshalling still
+// writes the reserved per-series created_timestamp field (6), for the benefit of not-yet-upgraded
+// readers (e.g. during a rolling upgrade) that only understand that field, not the newer
+// per-sample/per-histogram StartTimestamp fields.
+func TestMarshalLegacyCreatedTimestamp(t *testing.T) {
+	t.Run("TimeSeries.Marshal writes the first sample's StartTimestamp into the legacy field", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+				{Value: 2, TimestampMs: 2000, StartTimestamp: 500},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(500), got)
+	})
+
+	t.Run("TimeSeries.Marshal falls back to the first histogram's StartTimestamp when there are no samples", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		ts.Histograms[0].StartTimestamp = 700
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(700), got)
+	})
+
+	t.Run("TimeSeries.Marshal omits the legacy field when there is no start timestamp to report", func(t *testing.T) {
+		ts := TimeSeries{
+			Labels:  []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{{Value: 1, TimestampMs: 1000}},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		_, found := readVarintField(data, 6)
+		require.False(t, found)
+	})
+
+	t.Run("TimeSeriesRW2.Marshal writes the first sample's StartTimestamp into the legacy field", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(500), got)
+	})
+
+	t.Run("TimeSeriesRW2.Marshal falls back to the first histogram's StartTimestamp when there are no samples", func(t *testing.T) {
+		syms := rw2util.NewSymbolTableBuilder(nil)
+		ts := TimeSeriesRW2{
+			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+			Histograms: []Histogram{
+				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+			},
+		}
+		ts.Histograms[0].StartTimestamp = 700
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		got, found := readVarintField(data, 6)
+		require.True(t, found)
+		require.Equal(t, int64(700), got)
+	})
+
+	t.Run("a round trip through Marshal and Unmarshal by an upgraded reader is unaffected", func(t *testing.T) {
+		// The legacy field is redundant once decoded by an upgraded reader: every sample/histogram
+		// already carries its own StartTimestamp from the modern fields, so the fan-out in
+		// Unmarshal (which only fills in a zero StartTimestamp) is a no-op here.
+		ts := TimeSeries{
+			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+				{Value: 2, TimestampMs: 2000, StartTimestamp: 900},
+			},
+		}
+		data, err := ts.Marshal()
+		require.NoError(t, err)
+
+		received := TimeSeries{}
+		require.NoError(t, received.Unmarshal(data))
+		require.Equal(t, ts, received)
+	})
+}
+
 func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *WriteRequest {
 	req := &WriteRequest{
 		TimeseriesRW2: []TimeSeriesRW2{
@@ -901,4 +1175,86 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *WriteRequest {
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+// appendVarint appends v to buf using standard protobuf varint encoding.
+func appendVarint(buf []byte, v uint64) []byte {
+	for v >= 0x80 {
+		buf = append(buf, byte(v)|0x80)
+		v >>= 7
+	}
+	return append(buf, byte(v))
+}
+
+// appendVarintField appends a varint-wiretype field (tag + value) to buf, to hand-craft wire
+// messages containing fields that are no longer expressible through the generated Go types
+// (e.g. reserved fields).
+func appendVarintField(buf []byte, fieldNum int, value int64) []byte {
+	buf = appendVarint(buf, uint64(fieldNum)<<3) // wire type 0: varint
+	return appendVarint(buf, uint64(value))
+}
+
+// appendBytesField appends a length-delimited-wiretype field (tag + length + data) to buf.
+func appendBytesField(buf []byte, fieldNum int, data []byte) []byte {
+	buf = appendVarint(buf, uint64(fieldNum)<<3|2)
+	buf = appendVarint(buf, uint64(len(data)))
+	return append(buf, data...)
+}
+
+// readVarint reads a standard protobuf varint from the start of buf, returning the value and the
+// number of bytes consumed (0 if buf doesn't start with a valid varint).
+func readVarint(buf []byte) (uint64, int) {
+	var v uint64
+	for i, b := range buf {
+		v |= uint64(b&0x7F) << (7 * i)
+		if b < 0x80 {
+			return v, i + 1
+		}
+	}
+	return 0, 0
+}
+
+// readVarintField scans data for the first occurrence of fieldNum with a varint wire type and
+// returns its value, without going through the (symbol-aware) generated Unmarshal path. Used to
+// verify legacy-compat fields are actually present on the wire, independent of whether the
+// current Go types can still decode them into a named field.
+func readVarintField(data []byte, fieldNum int) (int64, bool) {
+	i := 0
+	for i < len(data) {
+		tag, n := readVarint(data[i:])
+		if n == 0 {
+			return 0, false
+		}
+		i += n
+		fn := int(tag >> 3)
+		wt := int(tag & 0x7)
+		if fn == fieldNum && wt == 0 {
+			v, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			return int64(v), true
+		}
+		switch wt {
+		case 0: // varint
+			_, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			i += n
+		case 1: // fixed64
+			i += 8
+		case 2: // length-delimited
+			l, n := readVarint(data[i:])
+			if n == 0 {
+				return 0, false
+			}
+			i += n + int(l)
+		case 5: // fixed32
+			i += 4
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
 }
