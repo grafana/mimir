@@ -74,7 +74,7 @@ spec:
           {{- end -}}
           {{- $defaultEnv := list
               (dict "name" "_POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")))
-              (dict "name" "KAFKA_CLUSTER_ID" "value" (.clusterId | default ""))
+              (dict "name" "CLUSTER_ID" "value" (.clusterId | default ""))
               (dict "name" "KAFKA_NODE_ID" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.labels['apps.kubernetes.io/pod-index']")))
               (dict "name" "KAFKA_PROCESS_ROLES" "value" "broker,controller")
               (dict "name" "KAFKA_LISTENERS" "value" "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
