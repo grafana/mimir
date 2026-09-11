@@ -297,6 +297,17 @@ func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
 			}
 		}
 	}
+	if limit == nil {
+		return removed
+	}
+
+	// Shrink only when the map is more than twice the size we need: limits fluctuate, and rehashing
+	// a whole shard under its lock on every dip costs more than holding on to some extra memory.
+	// TODO: use an active-series hint instead of the limit, which usually sits far above actual usage.
+	if target := m.nextSize(limit.Load()); uint32(len(m.index))/2 > target {
+		m.rehash(target)
+	}
+
 	return removed
 }
 
@@ -337,14 +348,14 @@ func (m *Map) nextSize(limit uint64) uint32 {
 	return numGroups(uint32(target))
 }
 
-func (m *Map) rehash(n uint32) {
+func (m *Map) rehash(groups uint32) {
 	m.rehashes++
 
 	indices, ks, datas := m.index, m.keys, m.data
-	m.index = make([]index, n)
-	m.keys = make([]keys, n)
-	m.data = make([]data, n)
-	m.limit = n * maxAvgGroupLoad
+	m.index = make([]index, groups)
+	m.keys = make([]keys, groups)
+	m.data = make([]data, groups)
+	m.limit = groups * maxAvgGroupLoad
 	m.resident, m.spilled = 0, 0
 	for g := range indices {
 		occupied := indices[g].matchOccupied()

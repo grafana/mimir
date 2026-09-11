@@ -514,10 +514,8 @@ func TestMapCleanup(t *testing.T) {
 		}
 	})
 
-	t.Run("cleanup never resizes the map", func(t *testing.T) {
-		// Cleanup frees slots for reuse, but it never rehashes: a shard that grew once keeps
-		// its size until the service restarts. See the note on Cleanup.
-		m := New(200)
+	t.Run("cleanup shrinks the map when it is far above the limit", func(t *testing.T) {
+		m := New(200) // 50 groups
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 10)
 		}
@@ -527,8 +525,48 @@ func TestMapCleanup(t *testing.T) {
 		require.Zero(t, m.Count())
 
 		after := m.Stats()
+		require.Less(t, after.Length, before.Length)
+		require.Equal(t, int(numGroups(1000/NumShards)), after.Length)
+		require.Equal(t, before.Rehashes+1, after.Rehashes)
+	})
+
+	t.Run("cleanup keeps the size when it is within 2x of the limit", func(t *testing.T) {
+		m := New(200) // 50 groups
+		for i := uint64(0); i < 200; i++ {
+			m.Load(i, 10)
+		}
+		before := m.Stats()
+
+		// 2400/NumShards = 150 series per shard, i.e. 38 groups, and 50 groups is less than 2x that.
+		require.Equal(t, 200, m.Cleanup(10, atomic.NewUint64(2400)))
+		require.Zero(t, m.Count())
+
+		after := m.Stats()
 		require.Equal(t, before.Length, after.Length)
 		require.Equal(t, before.Rehashes, after.Rehashes)
+	})
+
+	t.Run("cleanup never shrinks below the live entries", func(t *testing.T) {
+		// Load() ignores limits, so a shard can hold more than its share of the series: a limit that
+		// drops must not shrink the map below what is still resident.
+		m := New(2000) // 500 groups
+		for i := uint64(0); i < 200; i++ {
+			m.Load(i, 50) // survives the watermark below
+		}
+		before := m.Stats()
+
+		require.Zero(t, m.Cleanup(10, atomic.NewUint64(NumShards))) // 1 series per shard
+		require.Equal(t, 200, m.Count())
+
+		after := m.Stats()
+		require.Less(t, after.Length, before.Length)
+		require.GreaterOrEqual(t, after.Limit, uint32(200))
+
+		got := itemsMap(t, m)
+		require.Len(t, got, 200)
+		for i := uint64(0); i < 200; i++ {
+			require.Equal(t, clock.Minutes(50), got[i])
+		}
 	})
 
 	// fullGroupWithExpiredLastSlot fills the first group completely with sequential keys, all of
