@@ -124,6 +124,17 @@ func run() error {
 	if err := runWithPlanner(ctx, meta, instrBkt, headerReader, matchers, &index.ScanEmptyMatchersLookupPlanner{}); err != nil {
 		return fmt.Errorf("ScanEmptyMatchersLookupPlanner: %w", err)
 	}
+	fmt.Println()
+
+	fmt.Fprintln(os.Stderr, "building cost-based planner statistics…")
+	costPlanner, err := storegateway.BuildCostBasedPlanner(blockDir, meta, logger)
+	if err != nil {
+		return fmt.Errorf("build cost-based planner: %w", err)
+	}
+	fmt.Println("=== CostBasedPlanner ===")
+	if err := runWithPlanner(ctx, meta, instrBkt, headerReader, matchers, costPlanner); err != nil {
+		return fmt.Errorf("CostBasedPlanner: %w", err)
+	}
 
 	return nil
 }
