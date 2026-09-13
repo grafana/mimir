@@ -123,11 +123,11 @@ func TestSubquery_IsSplittable(t *testing.T) {
 		},
 		"negative offset selector nested inside the subquery": {
 			expr:       `sum_over_time(rate(test_metric[3m] offset -10m)[5h:1h])`,
-			splittable: false,
+			splittable: true,
 		},
 		"@ modifier selector nested inside the subquery": {
 			expr:       `sum_over_time((test_metric @ 100)[5h:1h])`,
-			splittable: false,
+			splittable: true,
 		},
 	}
 

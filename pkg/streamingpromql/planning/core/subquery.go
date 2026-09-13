@@ -55,26 +55,20 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 }
 
 func (s *Subquery) IsSplittable() bool {
-	return !hasUnsafeTimeModifier(s.Inner)
+	return !hasUnsupportedExtendedRangeModifier(s.Inner)
 }
 
-// hasUnsafeTimeModifier reports whether subtree contains a selector whose time range isn't safe to split:
-// a negative offset, an `@` timestamp, or a `smoothed`/`anchored` matrix selector.
-// Splitting a subquery containing one of these can produce a cache entry that goes stale once matching data lands.
-func hasUnsafeTimeModifier(node planning.Node) bool {
+// hasUnsupportedExtendedRangeModifier reports whether the subtree contains a smoothed or anchored selector.
+func hasUnsupportedExtendedRangeModifier(node planning.Node) bool {
 	switch n := node.(type) {
 	case *MatrixSelector:
-		return n.Anchored || n.Smoothed || n.Offset < 0 || n.Timestamp != nil
+		return n.Anchored || n.Smoothed
 	case *VectorSelector:
-		return n.Smoothed || n.Offset < 0 || n.Timestamp != nil
-	case *Subquery:
-		if n.Offset < 0 || n.Timestamp != nil {
-			return true
-		}
+		return n.Smoothed
 	}
 
 	for child := range planning.ChildrenIter(node) {
-		if hasUnsafeTimeModifier(child) {
+		if hasUnsupportedExtendedRangeModifier(child) {
 			return true
 		}
 	}
@@ -196,7 +190,21 @@ func (s *Subquery) ResultType() (parser.ValueType, error) {
 }
 
 func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
+	return s.queriedTimeRange(queryTimeRange, s.GetRangeParams(), lookbackDelta)
+}
+
+func (s *Subquery) QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams planning.RangeParams, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return s.queriedTimeRange(queryTimeRange, overrideRangeParams, lookbackDelta)
+}
+
+func (s *Subquery) queriedTimeRange(queryTimeRange types.QueryTimeRange, rangeParams planning.RangeParams, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	var ts *time.Time
+	if rangeParams.HasTimestamp {
+		ts = &rangeParams.Timestamp
+	}
+
+	childrenTimeRange := SubqueryChildrenTimeRange(queryTimeRange, rangeParams.Range, s.Step, rangeParams.Offset, ts)
+	return s.Inner.QueriedTimeRange(childrenTimeRange, lookbackDelta)
 }
 
 func (s *Subquery) ExpressionPosition() (posrange.PositionRange, error) {

@@ -105,7 +105,8 @@ func TestComputeSplitRanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, 0) // No OOO window
+			actual, err := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, newOOOThresholdChecker(tt.endTs+1))
+			require.NoError(t, err)
 			require.Equal(t, tt.expectedRanges, actual)
 		})
 	}
@@ -226,7 +227,8 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, tt.oooThreshold)
+			actual, err := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, newOOOThresholdChecker(tt.oooThreshold))
+			require.NoError(t, err)
 			require.Equal(t, tt.expectedRanges, actual, "split ranges mismatch")
 		})
 	}
