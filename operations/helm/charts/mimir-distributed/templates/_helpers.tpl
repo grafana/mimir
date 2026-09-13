@@ -279,7 +279,6 @@ Params:
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
-helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
