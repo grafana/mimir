@@ -7,7 +7,7 @@ services:
       - 8510:8500
 
   minio:
-    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    image: quay.io/minio/minio:RELEASE.2025-05-24T17-08-30Z
     # MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
     # starts empty, so create the buckets the dev cluster needs before starting the server.
     entrypoint: [ "sh", "-c", "mkdir -p /data/mimir-tsdb /data/mimir-rules && exec minio server --console-address :9101 /data" ]
