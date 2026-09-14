@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
+* [CHANGE] Update minimum supported Kubernetes version to 1.35. This reflects the fact that Grafana does not test with older versions of Kubernetes. #16580
 * [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440

@@ -4,7 +4,7 @@ appVersion: r411-a5b92939
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
-kubeVersion: ^1.32.0-0
+kubeVersion: ^1.35.0-0
 name: mimir-distributed
 dependencies:
   - name: minio
