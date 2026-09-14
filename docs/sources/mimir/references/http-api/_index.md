@@ -210,7 +210,7 @@ This endpoint displays a web page with the status of internal Grafana Mimir serv
 GET /ready
 ```
 
-This endoint returns 200 when Grafana Mimir is ready to serve traffic.
+This endpoint returns 200 when Grafana Mimir is ready to serve traffic.
 
 ### Metrics
 
