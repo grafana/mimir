@@ -324,6 +324,8 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.role`
 - Memberlist rejoin custom seed nodes
   - `-memberlist.rejoin-seed-nodes`
+- Runtime configuration
+  - Method used to decode runtime configuration files (`-runtime-config.loader`)
 - Memberlist backoff between CAS retries
   - `-memberlist.cas-retry-min-backoff`
   - `-memberlist.cas-retry-max-backoff`

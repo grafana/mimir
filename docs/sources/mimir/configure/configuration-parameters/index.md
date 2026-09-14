@@ -446,6 +446,12 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-disable-keep-alives
   [http_client_disable_keep_alives: <boolean> | default = true]
 
+  # (experimental) Method used to decode the runtime configuration files.
+  # Supported values are: "map" (decode directly using mapstructure) and "yaml"
+  # (decode by round-tripping through YAML).
+  # CLI flag: -runtime-config.loader
+  [loader: <string> | default = "yaml"]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 

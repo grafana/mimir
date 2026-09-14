@@ -383,7 +383,6 @@ rules:
   - get
   - watch
   - delete
-  - patch
 - apiGroups:
   - apps
   resources:
@@ -1369,8 +1368,7 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        - -zpdb.pod-ready-annotation-patch-timeout=5s
-        image: grafana/rollout-operator:v0.39.0
+        image: grafana/rollout-operator:v0.40.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
