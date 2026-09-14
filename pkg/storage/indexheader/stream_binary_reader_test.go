@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -420,6 +421,53 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 			compareIndexToHeaderPostings(t, indexBytes, reader)
 		})
 	}
+}
+
+// TestStreamBinaryReader_LoadedMetric asserts that indexheader_loaded reflects the
+// on-disk format version of a loaded index-header, and is cleared again once the reader is closed.
+func TestStreamBinaryReader_LoadedMetric(t *testing.T) {
+	const samplingRate = 3
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	tmpDir := t.TempDir()
+
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	bkt := objstore.WithNoopInstr(ubkt)
+	t.Cleanup(func() {
+		require.NoError(t, bkt.Close())
+		require.NoError(t, ubkt.Close())
+	})
+
+	blockID, err := block.CreateBlock(
+		ctx, tmpDir,
+		generateLabels(generateSymbols("name", 5), generateSymbols("value", 50)),
+		100, 0, 1000, labels.FromStrings("ext1", "1"),
+	)
+	require.NoError(t, err)
+	_, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
+
+	reg := prometheus.NewPedanticRegistry()
+	metrics := NewStreamBinaryReaderMetrics(reg)
+
+	reader, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, Config{}, samplingRate, logger, metrics)
+	require.NoError(t, err)
+	require.Equal(t, BinaryFormatV1, reader.IndexHeaderVersion())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP indexheader_loaded Number of index-header files currently loaded from local disk, by on-disk format version.
+		# TYPE indexheader_loaded gauge
+		indexheader_loaded{version="1"} 1
+	`), "indexheader_loaded"))
+
+	require.NoError(t, reader.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP indexheader_loaded Number of index-header files currently loaded from local disk, by on-disk format version.
+		# TYPE indexheader_loaded gauge
+	`), "indexheader_loaded"))
 }
 
 // seedIndexHeaderOnDisk writes an index-header of the given format under dir, standing in for one

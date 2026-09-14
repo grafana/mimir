@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,12 +35,17 @@ import (
 
 type StreamBinaryReaderMetrics struct {
 	filePool *filepool.FilePoolMetrics
+	loaded   *prometheus.GaugeVec
 }
 
 func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
 	reg = prometheus.WrapRegistererWithPrefix("indexheader_", reg)
 	return &StreamBinaryReaderMetrics{
 		filePool: filepool.NewFilePoolMetrics(reg),
+		loaded: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "loaded",
+			Help: "Number of index-header files currently loaded from local disk, by on-disk format version.",
+		}, []string{"version"}),
 	}
 }
 
@@ -53,6 +60,7 @@ func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReader
 //     and reading the Postings Offset table directly from the full block index in the bucket.
 type StreamBinaryReader struct {
 	indexHeaderVersion int
+	metrics            *StreamBinaryReaderMetrics
 	symbolsTOC         *TOCCompat
 	postingsOffsetsTOC *TOCCompat
 
@@ -177,6 +185,7 @@ func NewStreamBinaryReader(
 	streamBinaryReader := &StreamBinaryReader{
 		sparseSampleFactor: sparseSampleFactor,
 		indexHeaderVersion: indexHeaderVersion,
+		metrics:            metrics,
 	}
 
 	// Set up each of the Symbols table and Postings Offsets table readers
@@ -278,6 +287,8 @@ func NewStreamBinaryReader(
 	}); err != nil {
 		return nil, fmt.Errorf("failed to build symbols cache for label names: %w", err)
 	}
+
+	metrics.loaded.WithLabelValues(strconv.Itoa(indexHeaderVersion)).Inc()
 
 	return streamBinaryReader, nil
 }
@@ -399,6 +410,9 @@ func (r *StreamBinaryReader) Close() error {
 		// When both Symbols and Postings offset are read from disk,
 		// they use the same DecbufFactory object; avoid double-close.
 		merr.Add(r.postingsOffsetsDecbufFactory.Close())
+	}
+	if r.metrics != nil {
+		r.metrics.loaded.WithLabelValues(strconv.Itoa(r.indexHeaderVersion)).Dec()
 	}
 	return merr.Err()
 }
