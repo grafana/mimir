@@ -147,7 +147,7 @@ func NewLazyBinaryReader(
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, logger)
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, cfg.BucketReader.WriteV2IndexHeader, logger)
 	})
 
 	g.Go(func() error {
@@ -186,6 +186,7 @@ func ensureIndexHeaderOnDisk(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
+	writeV2IndexHeader bool,
 	logger log.Logger,
 ) error {
 	localBlockDir := filepath.Join(dir, blockID.String())
@@ -204,7 +205,7 @@ func ensureIndexHeaderOnDisk(
 	level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath, false); err != nil {
+	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath, writeV2IndexHeader); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
