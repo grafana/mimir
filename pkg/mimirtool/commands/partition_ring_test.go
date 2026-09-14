@@ -65,8 +65,52 @@ func TestAddPartitionCommand(t *testing.T) {
 				return false
 			}
 			partition := ringDesc.Partitions[0]
-			return partition.State == ring.PartitionActive && len(partition.Tokens) > 0
-		}, 5*time.Second, 100*time.Millisecond, "partition 0 should be added with active state and tokens")
+			return partition.State == ring.PartitionActive && len(partition.Tokens) == 512
+		}, 5*time.Second, 100*time.Millisecond, "partition 0 should be added with active state and 512 tokens")
+	})
+
+	t.Run("successfully adds a new partition without tokens", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		// Start a seed memberlist node.
+		seedKV, seedClient := startMemberlistKV(t)
+
+		// Get the seed node's listening port.
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		cmd := &AddPartitionCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0, // random port
+			ringKey:            ingester.PartitionRingKey,
+			partitionIDs:       "0",
+			partitionState:     "active",
+			omitTokens:         true,
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+
+		require.NoError(t, cmd.run())
+
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			return ringDesc.HasPartition(0)
+		}, 5*time.Second, 100*time.Millisecond, "partition 0 should be added")
+
+		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		require.NoError(t, err)
+		partition := val.(*ring.PartitionRingDesc).Partitions[0]
+		require.Empty(t, partition.Tokens)
+		require.Equal(t, int32(0), partition.Id)
+		require.Equal(t, ring.PartitionActive, partition.State)
+		require.NotZero(t, partition.StateTimestamp)
 	})
 
 	t.Run("fails if partition already exists", func(t *testing.T) {

@@ -38,6 +38,7 @@ type AddPartitionCommand struct {
 	ringKey                string
 	partitionIDs           string
 	partitionState         string
+	omitTokens             bool
 	verbose                bool
 	logger                 log.Logger
 	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
