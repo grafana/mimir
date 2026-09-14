@@ -112,6 +112,14 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		Required().
 		StringVar(&addCmd.partitionState)
 
+	// Partition tokens are a pure function of the partition ID, so ring readers which derive them
+	// don't need them stored in the ring. Only use this when every reader derives tokens: a reader
+	// which doesn't gives a token-less partition no part of the hash space, and partitions are
+	// immutable once created, so re-adding the partition doesn't fix it.
+	addPartitionCmd.Flag("partition.omit-tokens", "Don't store the partition tokens in the ring. Only safe once all ring readers derive partition tokens from the partition ID, otherwise the partition owns no part of the hash space and receives no data.").
+		Default("false").
+		BoolVar(&addCmd.omitTokens)
+
 	// Register remove-partition subcommand.
 	removeCmd := &RemovePartitionCommand{}
 	removePartitionCmd := partitionRingCmd.Command("remove-partition", "Forcefully remove a partition from the ingest storage partition ring.").
@@ -239,10 +247,16 @@ func (c *AddPartitionCommand) run() error {
 		return err
 	}
 
-	// Ask for confirmation.
+	// Ask for confirmation. Partitions are immutable once created, so make it clear whether the
+	// tokens are being stored: the two outcomes are not reversible and differ materially.
+	tokensMessage := "The partition tokens will be stored in the ring."
+	if c.omitTokens {
+		tokensMessage = "The partition tokens will NOT be stored in the ring. Ring readers which don't derive partition tokens from the partition ID will route no data to these partitions."
+	}
 	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
 Adding partitions directly to the ring bypasses normal ingester lifecycle.
-About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.CleanName())
+About to add partition(s) %v with state '%s' to the ring.
+%s`, partitionIDs, state.CleanName(), tokensMessage)
 	if err := askForConfirmation(message, c.getStdin()); err != nil {
 		return err
 	}
@@ -261,7 +275,7 @@ About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the partitions.
-	if err := addPartitions(ctx, kvClient, c.ringKey, partitionIDs, state); err != nil {
+	if err := addPartitions(ctx, kvClient, c.ringKey, partitionIDs, state, c.omitTokens); err != nil {
 		return err
 	}
 
@@ -570,7 +584,7 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 	return kvClient, cleanup, nil
 }
 
-func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState) error {
+func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState, omitTokens bool) error {
 	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
@@ -584,6 +598,17 @@ func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, part
 		// Second pass: add all partitions.
 		now := time.Now()
 		for _, partitionID := range partitionIDs {
+			if omitTokens {
+				// Equivalent to AddPartition() without the Tokens field. dskit has no helper for
+				// this, so write the partition directly.
+				ringDesc.Partitions[partitionID] = ring.PartitionDesc{
+					Id:             partitionID,
+					State:          state,
+					StateTimestamp: now.Unix(),
+				}
+				continue
+			}
+
 			ringDesc.AddPartition(partitionID, state, now)
 		}
 
