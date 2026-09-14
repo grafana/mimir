@@ -2986,6 +2986,17 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_subquery_splitting",
+                  "required": false,
+                  "desc": "Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -5619,6 +5630,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.ha-tracker.per-sample-dedupe",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "merge_duplicate_timeseries",
+          "required": false,
+          "desc": "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.merge-duplicate-timeseries",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -21301,6 +21323,17 @@
           "fieldFlag": "runtime-config.http-client-disable-keep-alives",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "loader",
+          "required": false,
+          "desc": "Method used to decode the runtime configuration files. Supported values are: \"map\" (decode directly using mapstructure) and \"yaml\" (decode by round-tripping through YAML).",
+          "fieldValue": null,
+          "fieldDefaultValue": "yaml",
+          "fieldFlag": "runtime-config.loader",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

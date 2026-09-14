@@ -446,6 +446,12 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-disable-keep-alives
   [http_client_disable_keep_alives: <boolean> | default = true]
 
+  # (experimental) Method used to decode the runtime configuration files.
+  # Supported values are: "map" (decode directly using mapstructure) and "yaml"
+  # (decode by round-tripping through YAML).
+  # CLI flag: -runtime-config.loader
+  [loader: <string> | default = "yaml"]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
@@ -2177,6 +2183,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+    # (experimental) Enable splitting subqueries, in addition to range vector
+    # selectors. Requires
+    # -querier.mimir-query-engine.range-vector-splitting.enabled and
+    # -querier.mimir-query-engine.enable-common-subexpression-elimination to
+    # also be enabled.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    [enable_subquery_splitting: <boolean> | default = false]
 
   time_splitting_and_caching:
     # (experimental) Enable caching of query results that were not fully
@@ -4471,6 +4485,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # federation or metrics proxies.
 # CLI flag: -distributor.ha-tracker.per-sample-dedupe
 [ha_tracker_per_sample_dedupe: <boolean> | default = false]
+
+# (experimental) Merge timeseries that share the same label set and created
+# timestamp within a single write request, so that duplicate samples within that
+# same request are deduplicated and counted in cortex_discarded_samples_total
+# instead of being silently dropped by ingesters.
+# CLI flag: -distributor.merge-duplicate-timeseries
+[merge_duplicate_timeseries: <boolean> | default = false]
 
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster

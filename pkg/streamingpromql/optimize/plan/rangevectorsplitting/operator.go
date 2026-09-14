@@ -185,6 +185,10 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
+	// Subquery's operator can't attribute annotations from its nested content to a specific combined range,
+	// so do not combine ranges for Subquery split targets, each uncached range gets its own split instead.
+	innerIsSubquery := containsSubquery(m.innerNode)
+
 	flushCurrentUncachedRanges := func() error {
 		if len(currentUncachedRanges) == 0 {
 			return nil
@@ -218,7 +222,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 		thisRangeLength := splitRange.End - splitRange.Start
 
-		if len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
+		if !innerIsSubquery && len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		} else {
 			if err := flushCurrentUncachedRanges(); err != nil {
@@ -383,21 +387,18 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				}
 				seriesToSplits = append(seriesToSplits, nil)
 			} else {
-				if seriesMetadata.DropName != mergedMetadata[mergedIdx].DropName {
-					// This shouldn't happen for range vector selectors, DropName will always be false at this point.
-					// TODO: There is a problematic edge case if subquery splitting is supported and delayed name
-					//  removal is enabled:
-					//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
-					//  Left: {__name__="foo"} + DropName=true (from rate)
-					//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
-					//  If the left is missing from some splits, we get inconsistent DropNames.
-					//  DeduplicateAndMerge will take the DropName value from the LHS, if results exist for the LHS at
-					//  any point. Otherwise the RHS DropName is used.
-					//  In the split case, if there are splits that don't have the LHS, we can get inconsistent
-					//  DropNames across splits. The splits don't know whether there were samples from the LHS or not so
-					//  cannot always reproduce the non-split behaviour.
-					return nil, nil, fmt.Errorf("series %s has conflicting DropName values across splits (split %d has %t, merged has %t)", seriesMetadata.Labels.String(), splitIdx, seriesMetadata.DropName, mergedMetadata[mergedIdx].DropName)
-				}
+				// There is an edge case if subquery splitting and delayed name removal are enabled:
+				//  rate(foo[1d]) or label_replace(bar{}, "__name__", "foo", "", "")
+				//  Left: {__name__="foo"} + DropName=true (from rate)
+				//  Right: {__name__="foo"} + DropName=false (no functions to set DropName=true)
+				//  If the left is missing from some splits, we get inconsistent DropNames.
+				//  DeduplicateAndMerge will take the DropName value from the LHS, if results exist for the LHS at
+				//  any point. Otherwise the RHS DropName is used.
+				//  In the split case, if there are splits that don't have the LHS, we can get inconsistent
+				//  DropNames across splits. The splits don't know whether there were samples from the LHS or not so
+				//  cannot always reproduce the non-split behaviour.
+				// We handle this by keeping the DropName value from whichever split first introduced the series,
+				// rather than erroring, even though this can differ from the non-split behaviour.
 				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Labels)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
@@ -756,6 +757,10 @@ type UncachedSplit[T any] struct {
 	rangeSeriesMetadata [][]int // metadata idx per range idx
 	stats               []*types.OperatorEvaluationStats
 
+	// operatorAnnotations holds annotations from operator.Finalize(), eg. from a nested function inside a
+	// split subquery. Unlike rangeAnnotations, these apply to the whole group, not one range specifically.
+	operatorAnnotations annotations.Annotations
+
 	// localToMergedIdx maps split-local series index to the parent's merged series index.
 	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
 	localToMergedIdx      []int
@@ -892,6 +897,10 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvalu
 
 	defer combinedStatsForAllRanges.Close()
 
+	// Clone before merging rangeAnnotations in below: Annotations.Merge mutates its receiver in place, and we
+	// need operatorAnnotations to hold only what operator.Finalize() itself returned.
+	p.operatorAnnotations = types.CloneAnnotations(combinedAnnos)
+
 	for _, annos := range p.rangeAnnotations {
 		if len(*annos) > 0 {
 			combinedAnnos.Merge(*annos)
@@ -922,6 +931,13 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
 		}
 
+		rangeAnnotations := *p.rangeAnnotations[rangeIdx]
+		if len(p.operatorAnnotations) > 0 {
+			merged := make(annotations.Annotations, len(rangeAnnotations)+len(p.operatorAnnotations))
+			merged.Merge(rangeAnnotations)
+			rangeAnnotations = merged.Merge(p.operatorAnnotations)
+		}
+
 		if err := p.parent.cache.Set(
 			ctx,
 			p.parent.FuncId,
@@ -929,7 +945,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			seriesMetadata,
-			querierpb.EncodeAnnotations(*p.rangeAnnotations[rangeIdx], ""),
+			querierpb.EncodeAnnotations(rangeAnnotations, ""),
 			p.rangeResults[rangeIdx],
 			p.stats[rangeIdx].Encode(),
 			len(p.seriesMetadata),

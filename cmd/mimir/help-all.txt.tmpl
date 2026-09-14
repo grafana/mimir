@@ -1531,6 +1531,8 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.merge-duplicate-timeseries
+    	[experimental] Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
@@ -2551,6 +2553,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend for intermediate results cache, if not empty. Supported values: memcached.
   -querier.mimir-query-engine.range-vector-splitting.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
+  -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    	[experimental] Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.
   -querier.mimir-query-engine.range-vector-splitting.enabled
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
@@ -3703,6 +3707,8 @@ Usage of ./cmd/mimir/mimir:
     	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
+  -runtime-config.loader string
+    	[experimental] Method used to decode the runtime configuration files. Supported values are: "map" (decode directly using mapstructure) and "yaml" (decode by round-tripping through YAML). (default "yaml")
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.additional-labels comma-separated-list-of-strings

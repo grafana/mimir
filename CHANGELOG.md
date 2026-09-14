@@ -11,6 +11,7 @@
 * [CHANGE] The `bucket` label of the `thanos_objstore_bucket_*` metrics, previously always empty, is now set to the name of the bucket the metrics refer to. This lets a component that accesses more than one bucket report each of them separately. The `thanos_store_bucket_cache_*` and `cortex_bucket_index_load*` metrics gained a `bucket` label carrying the same bucket name, for the same reason. #16265
 * [CHANGE] Compactor: Stabilize `-compactor.first-level-compaction-skip-future-max-time` to `true` and `-compactor.first-level-compaction-ooo-wait-period` to 5 minutes, both of which have been shown to improve batching during the split phase and reduce the total volume of L2 blocks in deployments with lots of out-of-order writes. #16464
 * [CHANGE] Querier, Store-gateway: Remove support for opaque GRPC hint types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.2. See associated release notes for more information. #16481
+* [FEATURE] Distributor: add experimental per-tenant limit configuration `-distributor.merge-duplicate-timeseries` to merge timeseries objects that share the same label set and created timestamp within a write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to the ingesters, where they were silently dropped without incrementing `cortex_discarded_samples_total`. Disabled by default. #15589
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
@@ -23,7 +24,11 @@
 * [ENHANCEMENT] Validation: Add an optional `reason` field to `limited_queries` rules, aligning them with `blocked_queries`. When set, the reason is included in the client-facing error and the query-frontend's `"query limited"` log line. #16407
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.scheduler-client.enable-ring-based-cleanup` option, which when disabled stops a scheduler-mode compactor from running the ring-based background blocks cleaner. #16457
 * [ENHANCEMENT] Block-builder-scheduler: Add `cortex_blockbuilder_scheduler_end_offset_probe_failed_total`, counting failures to list a cluster's end offsets, and `cortex_blockbuilder_scheduler_startup_jobs_skipped_total`, counting observed jobs that startup recovery could not import. #16134
+* [ENHANCEMENT] Store-gateway: The `/store-gateway/tenant/{tenant}/blocks` admin page now lists the blocks from the bucket index by default, and has filters and pagination. #16549
+* [ENHANCEMENT] Runtimeconfig: Add the experimental flag `-runtime-config.loader`. Pass value `map` to skip YAML re-encoding when loading config sources. #16415
+* [ENHANCEMENT] Compactor scheduler: Add per-lane queue metrics. #16489
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
+* [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444
 * [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
 * [BUGFIX] Query-frontend: Wait for the querier ring to be populated during startup, up to 30 seconds, before reporting the query-frontend as ready. Previously a query-frontend could become ready before it had seen any querier in the ring and fail every query it received until the ring was populated. Only applies when remote execution is enabled, and can be disabled with the experimental `-query-frontend.wait-for-querier-ring-on-startup=false`. #16333
@@ -75,6 +80,7 @@
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440
+* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.40.0. The generated manifests no longer set the deprecated `-zpdb.pod-ready-annotation-patch-timeout` flag and no longer grant the `patch` verb on pods, because cross-zone eviction delays now read the Pod Ready condition instead of patching the `grafana.com/ready-time` annotation. #16564
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
@@ -83,8 +89,22 @@
 ### Documentation
 
 * [ENHANCEMENT] Add documentation for deploying Mimir with Juju. #16485
+* [ENHANCEMENT] Document architecture for the block-builder and block-builder-scheduler components. #16454
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
 * [ENHANCEMENT] Clarify that `/ingester/prepare-partition-downscale` is only available in the ingest storage architecture and `/ingester/prepare-instance-ring-downscale` only in the classic architecture. #16469
+* [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
+
+### Tools
+
+
+## 3.2.1
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.26 latest to address [CVE-2026-33818](https://pkg.go.dev/vuln/GO-2026-5972), [CVE-2026-39821](https://pkg.go.dev/vuln/GO-2026-5026), [CVE-2026-46600](https://pkg.go.dev/vuln/GO-2026-5942), [CVE-2026-56853](https://pkg.go.dev/vuln/GO-2026-6089), [CVE-2026-56858](https://pkg.go.dev/vuln/GO-2026-6091), [CVE-2026-56859](https://pkg.go.dev/vuln/GO-2026-6088), [CVE-2026-56860](https://pkg.go.dev/vuln/GO-2026-6218), and [CVE-2026-56862](https://pkg.go.dev/vuln/GO-2026-6090). #16408 #16430
+
+### Documentation
+
 * [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
 
 ### Tools
