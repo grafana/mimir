@@ -2343,6 +2343,14 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.active-series-write-timeout
 [active_series_write_timeout: <duration> | default = 5m]
 
+# (experimental) Enable the cortex_query_frontend_max_inflight_http_requests and
+# cortex_query_frontend_max_inflight_http_request_age_seconds metrics, which
+# report the per-tenant peak number of concurrent in-flight requests and the
+# greatest age an in-flight request reached since the last scrape. Disabling it
+# skips per-tenant in-flight tracking on every request.
+# CLI flag: -query-frontend.max-inflight-http-metrics-enabled
+[max_inflight_http_metrics_enabled: <boolean> | default = false]
+
 # Address of the query-scheduler component, in host:port format. The host should
 # resolve to all query-scheduler instances. This option should be set only when
 # query-scheduler component is in use and
@@ -2395,6 +2403,16 @@ The `frontend` block configures the query-frontend.
 # remote execution response from a querier.
 # CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
 [remote_execution_series_metadata_batch_size: <int> | default = 128]
+
+# (experimental) Enable the
+# cortex_query_frontend_max_inflight_dispatched_queries and
+# cortex_query_frontend_max_inflight_dispatched_query_age_seconds metrics, which
+# report the per-tenant peak number of concurrent queries this frontend had
+# dispatched and the greatest age a dispatched query reached since the last
+# scrape. Disabling it skips per-tenant in-flight tracking on every dispatched
+# query.
+# CLI flag: -query-frontend.max-inflight-dispatched-metrics-enabled
+[max_inflight_dispatched_metrics_enabled: <boolean> | default = false]
 
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable

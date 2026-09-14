@@ -2448,7 +2448,7 @@ func runProtobufResponseBenchmark(b *testing.B, seriesCount int, pointCount int,
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	}
 
-	frontend, _ := setupFrontendWithConcurrencyAndServerOptions(b, nil, scheduler, testFrontendWorkerConcurrency, log.NewNopLogger())
+	frontend, _ := setupFrontendWithConcurrencyAndServerOptions(b, nil, scheduler, testFrontendWorkerConcurrency, log.NewNopLogger(), nil)
 
 	ctx := user.InjectOrgID(context.Background(), "the-user")
 	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
