@@ -198,7 +198,7 @@ func TestFailFast_HaltsProcessing(t *testing.T) {
 			WithFailFast(false),
 		)
 		_ = v.Run(context.Background(), dirs)
-		assert.EqualValues(t, 5, passing.calls.Load(), "full-report should process all 5 blocks")
+		assert.EqualValues(t, 5, passing.calls.Load(), "fail-fast disabled should process all 5 blocks")
 	})
 }
 

@@ -121,7 +121,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("false").
 		BoolVar(&c.dryRun)
 
-	cmd.Flag("fail-fast", "Aggregate verification failures across all blocks instead of stopping at the first failure.").
+	cmd.Flag("fail-fast", "Aborts verification after the first failure.").
 		Default("true").
 		BoolVar(&c.failFast)
 
@@ -129,7 +129,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("true").
 		BoolVar(&c.deepVerification)
 
-	cmd.Flag("single-block-per-day", "Enforce one block per UTC day. If false, only enforce that blocks don't overlap (but there could be multiple blocks per day).").
+	cmd.Flag("single-block-per-day", "Enforce at most one block per UTC day. If false, allow multiple blocks per day as long as they don't overlap. Either way, no block may span two UTC days.").
 		Default("false").
 		BoolVar(&c.singleBlockPerDay)
 
@@ -179,12 +179,13 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 			verify.WithFailFast(c.failFast),
 			verify.WithConcurrency(c.verifyConcurrency),
 			verify.WithBlockCheck(verify.NewMetaCheckVerifier(logger)),
+			// The compactor rejects a block whose range crosses a boundary of its
+			// largest configured block range, so no block may span two UTC days
+			// regardless of how many blocks per day we allow.
+			verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
 		}
 		if c.singleBlockPerDay {
-			opts = append(opts,
-				verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
-				verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
-			)
+			opts = append(opts, verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)))
 		} else {
 			// More expensive than single-block-per-day, but necessary for the shape
 			// of blocks some tools produce.

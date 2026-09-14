@@ -75,12 +75,13 @@ func NewVerifier(logger log.Logger, opts ...Option) *Verifier {
 // Mode returns the verifier's configured depth mode.
 func (v *Verifier) Mode() Mode { return v.opts.mode }
 
-// Run executes all registered per-block verifiers in parallel, then all batch verifiers sequentially on the survivors. It
-// returns a Report aggregating per-block, per-check failures. Inspect Report.HasFailures()
-// or Report.Err() to determine what errors were detected during verification.
+// Run executes all registered per-block verifiers in parallel, then all batch
+// verifiers sequentially. It returns a Report aggregating per-block, per-check
+// failures. Inspect Report.HasFailures() or Report.Err() to determine what
+// errors were detected during verification.
 //
-// If fail-fast mode is true, Run returns after the first error is detected, whereas
-// all checks are run when that mode is disabled.
+// If fail-fast mode is true, Run returns after the first error is detected,
+// whereas all checks are run when that mode is disabled.
 func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	report := newReport(len(blockDirs))
 
