@@ -26,7 +26,7 @@ type Config struct {
 func main() {
 	cfg := Config{}
 	flag.StringVar(&cfg.LocalAddress, "local-address", ":8080", "Local address to listen on (host:port or :port).")
-	flag.StringVar(&cfg.RemoteURL, "remote-address", "", "URL of target to forward requests to to (eg. http://domain.com:80).")
+	flag.StringVar(&cfg.RemoteURL, "remote-address", "", "URL of target to forward requests to (eg. http://domain.com:80).")
 	flag.StringVar(&cfg.TenantID, "tenant-id", "", "Tenant ID to inject to proxied requests.")
 
 	// Parse CLI arguments.

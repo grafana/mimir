@@ -11,7 +11,7 @@ keywords:
 
 # Enable external access to Grafana Mimir
 
-Set up external access to Grafana Mimir to allow writing and quering metrics from outside the Kubernetes cluster. You can set up an [ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) that enables you to externally access a Kubernetes cluster.
+Set up external access to Grafana Mimir to allow writing and querying metrics from outside the Kubernetes cluster. You can set up an [ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) that enables you to externally access a Kubernetes cluster.
 
 ## Before you begin
 
