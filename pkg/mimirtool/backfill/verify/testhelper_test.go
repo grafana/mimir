@@ -15,6 +15,24 @@ import (
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
+// failureULIDs returns the failures' block ULIDs in report order.
+func failureULIDs(failures []Failure) []string {
+	out := make([]string, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, f.BlockULID)
+	}
+	return out
+}
+
+// failureMessages returns the failures' messages in report order.
+func failureMessages(failures []Failure) []string {
+	out := make([]string, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, f.Err.Error())
+	}
+	return out
+}
+
 // sampleAt returns a chunks.Sample suitable for chunks.ChunkFromSamples and
 // block.GenerateBlockFromSpec.
 func sampleAt(ts int64, v float64) chunks.Sample {

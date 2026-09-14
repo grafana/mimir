@@ -30,6 +30,7 @@
 * [FEATURE] Querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. Disabled by default. #16292
 * [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444
 * [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
+* [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
 * [BUGFIX] Query-frontend: Wait for the querier ring to be populated during startup, up to 30 seconds, before reporting the query-frontend as ready. Previously a query-frontend could become ready before it had seen any querier in the ring and fail every query it received until the ring was populated. Only applies when remote execution is enabled, and can be disabled with the experimental `-query-frontend.wait-for-querier-ring-on-startup=false`. #16333
 * [BUGFIX] Query-frontend: Fail queries with a clear error, rather than planning them against an invalid maximum supported query plan version, when the querier ring contains only unhealthy queriers. #16333
@@ -4350,34 +4351,34 @@ _Changes since Cortex 1.10.0._
 
   * Distributor endpoints
 
-    | Legacy endpoint               | Alternative                   |
-    | ----------------------------- | ----------------------------- |
-    | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
-    | `/all_user_stats`             | `/distributor/all_user_stats` |
-    | `/ha-tracker`                 | `/distributor/ha_tracker`     |
+    | Legacy endpoint              | Alternative                   |
+    | ---------------------------- | ----------------------------- |
+    | `/<legacy-http-prefix>/push` | `/api/v1/push`                |
+    | `/all_user_stats`            | `/distributor/all_user_stats` |
+    | `/ha-tracker`                | `/distributor/ha_tracker`     |
 
   * Ingester endpoints
 
-    | Legacy          | Alternative           |
-    | --------------- | --------------------- |
-    | `/ring`         | `/ingester/ring`      |
-    | `/shutdown`     | `/ingester/shutdown`  |
-    | `/flush`        | `/ingester/flush`     |
-    | `/push`         | `/ingester/push`      |
+    | Legacy      | Alternative          |
+    | ----------- | -------------------- |
+    | `/ring`     | `/ingester/ring`     |
+    | `/shutdown` | `/ingester/shutdown` |
+    | `/flush`    | `/ingester/flush`    |
+    | `/push`     | `/ingester/push`     |
 
   * Ruler endpoints
 
-    | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                    |
-    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                     |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                     |
-    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |  `<prometheus-http-prefix>/config/v1/rules`                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |  `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |  `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                     |
+    | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                  |
+    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                    |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                    |
+    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         | `<prometheus-http-prefix>/config/v1/rules`                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                    |
 
     > __Note:__ The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
     in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
@@ -4385,10 +4386,10 @@ _Changes since Cortex 1.10.0._
 
   * Alertmanager endpoints
 
-    | Legacy                      | Alternative                        |
-    | --------------------------- | ---------------------------------- |
-    | `/<legacy-http-prefix>`     | `/alertmanager`                    |
-    | `/status`                   | `/multitenant_alertmanager/status` |
+    | Legacy                  | Alternative                        |
+    | ----------------------- | ---------------------------------- |
+    | `/<legacy-http-prefix>` | `/alertmanager`                    |
+    | `/status`               | `/multitenant_alertmanager/status` |
 
 * [CHANGE] Ingester: changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
 * [CHANGE] Ingester: default `-ingester.ring.min-ready-duration` reduced from 1m to 15s. #126

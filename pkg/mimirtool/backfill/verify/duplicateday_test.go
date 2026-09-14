@@ -4,8 +4,8 @@ package verify
 
 import (
 	"context"
+	"fmt"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -24,7 +24,7 @@ func blockRefAt(t *testing.T, seed uint64, day int64) BlockRef {
 	t.Helper()
 	id := ulid.MustNew(seed, nil)
 	return BlockRef{
-		Dir: "",
+		Dir: fmt.Sprintf("/blocks/%s", id),
 		Meta: block.Meta{
 			BlockMeta: tsdb.BlockMeta{
 				ULID:    id,
@@ -36,89 +36,128 @@ func blockRefAt(t *testing.T, seed uint64, day int64) BlockRef {
 	}
 }
 
+// verifyDuplicateDays runs the verifier and returns the failures it recorded
+// along with its summary verdict.
+func verifyDuplicateDays(t *testing.T, refs []BlockRef) ([]Failure, error) {
+	t.Helper()
+	report := newReport(len(refs))
+	err := NewDuplicateDayVerifier(log.NewNopLogger()).Verify(context.Background(), refs, report)
+	return report.Failures(), err
+}
+
+// verifyDuplicateDaysPass asserts the check passed and recorded nothing.
+func verifyDuplicateDaysPass(t *testing.T, refs []BlockRef) {
+	t.Helper()
+	failures, err := verifyDuplicateDays(t, refs)
+	require.NoError(t, err)
+	assert.Empty(t, failures)
+}
+
+// verifyDuplicateDaysFail asserts the check reported a verdict, and returns
+// the failures it recorded.
+func verifyDuplicateDaysFail(t *testing.T, refs []BlockRef) []Failure {
+	t.Helper()
+	failures, err := verifyDuplicateDays(t, refs)
+	require.Error(t, err, "collisions must be reported as a summary verdict, not only in the report")
+	assert.NotEmpty(t, failures)
+	return failures
+}
+
 func TestDuplicateDayVerifier_Verify(t *testing.T) {
-	t.Run("empty_batch_returns_nil", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
-		require.NoError(t, v.Verify(context.Background(), nil))
-		require.NoError(t, v.Verify(context.Background(), []BlockRef{}))
+	t.Run("empty_batch_passes", func(t *testing.T) {
+		verifyDuplicateDaysPass(t, nil)
+		verifyDuplicateDaysPass(t, []BlockRef{})
 	})
 
-	t.Run("single_block_returns_nil", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
-		require.NoError(t, v.Verify(context.Background(), []BlockRef{blockRefAt(t, 1, 0)}))
+	t.Run("single_block_passes", func(t *testing.T) {
+		verifyDuplicateDaysPass(t, []BlockRef{blockRefAt(t, 1, 0)})
 	})
 
-	t.Run("two_distinct_days_returns_nil", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
-		refs := []BlockRef{blockRefAt(t, 1, 0), blockRefAt(t, 2, 1)}
-		require.NoError(t, v.Verify(context.Background(), refs))
+	t.Run("distinct_days_pass", func(t *testing.T) {
+		verifyDuplicateDaysPass(t, []BlockRef{blockRefAt(t, 1, 0), blockRefAt(t, 2, 1)})
 	})
 
-	t.Run("two_blocks_same_day_returns_error", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
+	t.Run("summary_verdict_is_bounded_and_counts_collisions", func(t *testing.T) {
+		// Day 0: 3 blocks. Day 4: 2 blocks.
+		refs := []BlockRef{
+			blockRefAt(t, 1, 0), blockRefAt(t, 2, 0), blockRefAt(t, 3, 0),
+			blockRefAt(t, 4, 4), blockRefAt(t, 5, 4),
+		}
+		_, err := verifyDuplicateDays(t, refs)
+		require.EqualError(t, err, "5 block(s) share a UTC day with another block, across 2 day(s)")
+		for _, r := range refs {
+			assert.NotContains(t, err.Error(), r.Meta.ULID.String(),
+				"the verdict must not enumerate blocks; it is logged as one line")
+		}
+	})
+
+	t.Run("same_day_records_one_failure_per_block", func(t *testing.T) {
 		r1 := blockRefAt(t, 1, 5)
 		r2 := blockRefAt(t, 2, 5)
-		err := v.Verify(context.Background(), []BlockRef{r1, r2})
-		require.Error(t, err)
-		msg := err.Error()
-		assert.Contains(t, msg, "same UTC day")
-		assert.Contains(t, msg, r1.Meta.ULID.String())
-		assert.Contains(t, msg, r2.Meta.ULID.String())
-		assert.Contains(t, msg, "day 5")
+		failures := verifyDuplicateDaysFail(t, []BlockRef{r1, r2})
+
+		require.Len(t, failures, 2)
+		assert.Equal(t, []string{r1.Meta.ULID.String(), r2.Meta.ULID.String()}, failureULIDs(failures))
+		for _, f := range failures {
+			assert.Equal(t, "duplicate-day", f.Check)
+			assert.Contains(t, f.Err.Error(), "covers UTC day 5")
+			assert.Contains(t, f.Err.Error(), "covered by 1 other block(s)")
+		}
+		assert.Equal(t, r1.Dir, failures[0].BlockDir, "BlockDir should be populated for batch failures")
 	})
 
-	t.Run("three_blocks_same_day_returns_error_lex_order", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
+	t.Run("failure_message_does_not_name_peers", func(t *testing.T) {
+		r1 := blockRefAt(t, 1, 0)
+		r2 := blockRefAt(t, 2, 0)
+		for _, msg := range failureMessages(verifyDuplicateDaysFail(t, []BlockRef{r1, r2})) {
+			assert.NotContains(t, msg, r1.Meta.ULID.String())
+			assert.NotContains(t, msg, r2.Meta.ULID.String())
+		}
+	})
+
+	t.Run("blocks_within_a_day_reported_in_ulid_order", func(t *testing.T) {
 		r1 := blockRefAt(t, 10, 0)
 		r2 := blockRefAt(t, 20, 0)
 		r3 := blockRefAt(t, 30, 0)
-		err := v.Verify(context.Background(), []BlockRef{r3, r1, r2})
-		require.Error(t, err)
-		msg := err.Error()
-		sorted := []string{r1.Meta.ULID.String(), r2.Meta.ULID.String(), r3.Meta.ULID.String()}
-		slices.Sort(sorted)
-		for i := 0; i < len(sorted)-1; i++ {
-			assert.Less(t, strings.Index(msg, sorted[i]), strings.Index(msg, sorted[i+1]),
-				"ULIDs must appear in lexicographic order in the error message")
+		failures := verifyDuplicateDaysFail(t, []BlockRef{r3, r1, r2})
+
+		want := []string{r1.Meta.ULID.String(), r2.Meta.ULID.String(), r3.Meta.ULID.String()}
+		slices.Sort(want)
+		assert.Equal(t, want, failureULIDs(failures))
+		for _, msg := range failureMessages(failures) {
+			assert.Contains(t, msg, "covered by 2 other block(s)")
 		}
 	})
 
 	t.Run("multiple_collision_groups_day_ascending", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
 		// Day 2: 2 collisions. Day 7: 3 collisions. Day 5: 1 block (loner).
 		refs := []BlockRef{
 			blockRefAt(t, 100, 2), blockRefAt(t, 101, 2),
 			blockRefAt(t, 200, 7), blockRefAt(t, 201, 7), blockRefAt(t, 202, 7),
 			blockRefAt(t, 300, 5),
 		}
-		err := v.Verify(context.Background(), refs)
-		require.Error(t, err)
-		msg := err.Error()
-		assert.Contains(t, msg, "day 2")
-		assert.Contains(t, msg, "day 7")
-		assert.NotContains(t, msg, "day 5", "single-block day must not appear in collision report")
-		assert.Less(t, strings.Index(msg, "day 2"), strings.Index(msg, "day 7"),
-			"colliding days must be enumerated in ascending order")
-		assert.Contains(t, msg, ulid.MustNew(100, nil).String())
-		assert.Contains(t, msg, ulid.MustNew(101, nil).String())
-		assert.Contains(t, msg, ulid.MustNew(200, nil).String())
-		assert.Contains(t, msg, ulid.MustNew(201, nil).String())
-		assert.Contains(t, msg, ulid.MustNew(202, nil).String())
-		assert.NotContains(t, msg, ulid.MustNew(300, nil).String())
+		failures := verifyDuplicateDaysFail(t, refs)
+
+		require.Len(t, failures, 5, "the single-block day must not be reported")
+		assert.NotContains(t, failureULIDs(failures), ulid.MustNew(300, nil).String())
+
+		msgs := failureMessages(failures)
+		for _, msg := range msgs[:2] {
+			assert.Contains(t, msg, "covers UTC day 2")
+		}
+		for _, msg := range msgs[2:] {
+			assert.Contains(t, msg, "covers UTC day 7")
+		}
 	})
 
 	t.Run("deterministic_across_input_order", func(t *testing.T) {
-		v := NewDuplicateDayVerifier(log.NewNopLogger())
 		refs1 := []BlockRef{
 			blockRefAt(t, 1, 0), blockRefAt(t, 2, 0),
 			blockRefAt(t, 3, 3), blockRefAt(t, 4, 3),
 		}
 		refs2 := []BlockRef{refs1[3], refs1[1], refs1[2], refs1[0]}
-		err1 := v.Verify(context.Background(), refs1)
-		err2 := v.Verify(context.Background(), refs2)
-		require.Error(t, err1)
-		require.Error(t, err2)
-		assert.Equal(t, err1.Error(), err2.Error(),
-			"error string must be identical regardless of input order")
+
+		assert.Equal(t, verifyDuplicateDaysFail(t, refs1), verifyDuplicateDaysFail(t, refs2),
+			"recorded failures must be identical regardless of input order")
 	})
 }

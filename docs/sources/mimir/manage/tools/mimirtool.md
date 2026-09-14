@@ -1192,6 +1192,29 @@ The block-upload feature is disabled by default.
 To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload](../../../configure/configure-tsdb-block-upload/).
 If block upload is not enabled for the user, `mimirtool backfill` will fail.
 
+
+#### Backfill Verification
+
+The `backfill` command can optionally run a pre-verification step on blocks intended for upload. Verification performs a number of checks, including:
+
+* meta.json correctness
+* Block well-formedness checks (either basic or full consistency)
+* Whether blocks cover distinct time periods or overlap
+* Alignment to UTC midnight
+* (Optionally) Enforce one-day-for-one-block structure.
+
+If the blocks intended for upload fail these checks, it may be necessary to either regenerate the blocks with different options, or use a compaction tool to coerce them into the right shape.
+The process of correcting verification errors is outside the scope of this document.
+
+| Flag                     | Description                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--verify`               | Enable verification of blocks before uploading.                                                                                                                                                                    |
+| `--dry-run`              | Only perform verification, do not upload.                                                                                                                                                                          |
+| `--fail-fast`            | Abort verification on the first error encountered. When false, collects a report of all errors detected during verification.                                                                                       |
+| `--deep-verification`    | When verifying, performs a deep introspection of individual chunks for consistency. Can be skipped for some workflows with high confidence in the integrity of created blocks.                                     |
+| `--single-block-per-day` | When true, enforces that each block covers at most a single UTC day, and each UTC day has at most one corresponding block. When false, only enforces that blocks do not cross the day boundary and do not overlap. |
+| `--verify-concurrency`   | Sets the number of goroutines for performing verification. If 0, defaults to GOMAXPROCS.                                                                                                                           |
+
 ##### Example
 
 ```bash

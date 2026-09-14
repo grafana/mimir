@@ -47,7 +47,7 @@ func (f *failingBlockVerifier) Verify(_ context.Context, _ string, _ block.Meta)
 type rejectMultiBatchVerifier struct{ calls atomic.Int64 }
 
 func (r *rejectMultiBatchVerifier) Name() string { return "reject-multi-batch" }
-func (r *rejectMultiBatchVerifier) Verify(_ context.Context, blocks []BlockRef) error {
+func (r *rejectMultiBatchVerifier) Verify(_ context.Context, blocks []BlockRef, _ *Report) error {
 	r.calls.Add(1)
 	if len(blocks) > 1 {
 		return fmt.Errorf("rejecting multi-block batch of size %d", len(blocks))
@@ -131,6 +131,40 @@ func TestBatchVerifierSeam_InvokedAfterPerBlock(t *testing.T) {
 	require.True(t, report.HasFailures(), "batch rejection should appear in report")
 	_, _, failures := report.Summary()
 	assert.Equal(t, 1, failures)
+}
+
+func TestBatchVerifierFailFast_StopsAfterFirstVerdict(t *testing.T) {
+	tempRoot := t.TempDir()
+	const day = int64(86_400_000)
+	dirs := []string{
+		writeMinimalBlockDir(t, tempRoot, 0, day),
+		writeMinimalBlockDir(t, tempRoot, day, 2*day),
+	}
+
+	for _, tc := range []struct {
+		name          string
+		failFast      bool
+		wantSecondRun int64
+		wantFailures  int
+	}{
+		{name: "fail_fast_skips_later_batch_checks", failFast: true, wantSecondRun: 0, wantFailures: 1},
+		{name: "full_report_runs_every_batch_check", failFast: false, wantSecondRun: 1, wantFailures: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first, second := &rejectMultiBatchVerifier{}, &rejectMultiBatchVerifier{}
+			v := NewVerifier(log.NewNopLogger(),
+				WithFailFast(tc.failFast),
+				WithBatchCheck(first),
+				WithBatchCheck(second),
+			)
+			report := v.Run(context.Background(), dirs)
+
+			assert.EqualValues(t, 1, first.calls.Load(), "the first batch check always runs")
+			assert.EqualValues(t, tc.wantSecondRun, second.calls.Load())
+			_, _, failures := report.Summary()
+			assert.Equal(t, tc.wantFailures, failures)
+		})
+	}
 }
 
 func TestFailFast_HaltsProcessing(t *testing.T) {

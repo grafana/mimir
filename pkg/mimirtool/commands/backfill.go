@@ -18,13 +18,15 @@ import (
 )
 
 type BackfillCommand struct {
-	clientConfig          client.Config
-	blocks                blockList
-	sleepTime             time.Duration
-	dryRun                bool
-	skipChunkVerification bool
-	fullReport            bool
-	verifyConcurrency     int
+	clientConfig      client.Config
+	blocks            blockList
+	sleepTime         time.Duration
+	verifyBlocks      bool
+	dryRun            bool
+	failFast          bool
+	deepVerification  bool
+	singleBlockPerDay bool
+	verifyConcurrency int
 }
 
 type blockList []string
@@ -108,26 +110,34 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("20s").
 		DurationVar(&c.sleepTime)
 
-	cmd.Flag("dry-run", "Run verification without uploading any blocks. Exits 0 if all blocks pass verification, non-zero otherwise.").
+	// Verification is opt-in while it is experimental. Eventually this flag's
+	// default becomes true, and later the flag goes away entirely so that
+	// blocks must pass verification in order to be backfilled.
+	cmd.Flag("verify", "Verify blocks before uploading them. Experimental, and disabled by default for now.").
+		Default("false").
+		BoolVar(&c.verifyBlocks)
+
+	cmd.Flag("dry-run", "Verify blocks without uploading any of them; implies --verify. Exits 0 if all blocks pass verification, non-zero otherwise.").
 		Default("false").
 		BoolVar(&c.dryRun)
 
-	cmd.Flag("skip-chunk-verification", "Reduce verification depth: skip the per-chunk CRC32 walk. Use only when you trust your block producer.").
-		Default("false").
-		BoolVar(&c.skipChunkVerification)
+	cmd.Flag("fail-fast", "Aggregate verification failures across all blocks instead of stopping at the first failure.").
+		Default("true").
+		BoolVar(&c.failFast)
 
-	cmd.Flag("full-report", "Aggregate verification failures across all blocks instead of stopping at the first failure.").
+	cmd.Flag("deep-verification", "Use high verification depth, including slow per-chunk CRC32 walks.").
+		Default("true").
+		BoolVar(&c.deepVerification)
+
+	cmd.Flag("single-block-per-day", "Enforce one block per UTC day. If false, only enforce that blocks don't overlap (but there could be multiple blocks per day).").
 		Default("false").
-		BoolVar(&c.fullReport)
+		BoolVar(&c.singleBlockPerDay)
 
 	cmd.Flag("verify-concurrency", "Number of blocks to verify in parallel. 0 selects min(GOMAXPROCS, 4); 1 forces serial execution.").
 		Default("0").
 		IntVar(&c.verifyConcurrency)
 
 	cmd.Validate(func(_ *kingpin.CmdClause) error {
-		if c.skipChunkVerification && c.fullReport {
-			return fmt.Errorf("--full-report cannot be combined with --skip-chunk-verification")
-		}
 		if !c.dryRun {
 			var missing []string
 			if c.clientConfig.Address == "" {
@@ -152,23 +162,37 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		return err
 	}
 
-	mode := verify.Deep
-	if c.skipChunkVerification {
-		mode = verify.Medium
-	}
+	// A dry run's only purpose is verification, so it turns verification on
+	// regardless of --verify. That also makes "neither verify nor upload"
+	// impossible to ask for.
+	var verifier *verify.Verifier
+	if c.verifyBlocks || c.dryRun {
+		mode := verify.Medium
+		if c.deepVerification {
+			mode = verify.Deep
+		}
 
-	// Block-level checks run in registration order. Run the cheap pure-header
-	// checks first so fail-fast skips the expensive structural walk when the
-	// meta is already obviously bad.
-	verifier := verify.NewVerifier(logger,
-		verify.WithMode(mode),
-		verify.WithFailFast(!c.fullReport),
-		verify.WithConcurrency(c.verifyConcurrency),
-		verify.WithBlockCheck(verify.NewMetaCheckVerifier(logger)),
-		verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
-		verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)),
-		verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
-	)
+		// Block-level checks run in registration order, so run cheap checks first
+		// so fail-fast skips expensive walks when the meta is already bad.
+		opts := []verify.Option{
+			verify.WithMode(mode),
+			verify.WithFailFast(c.failFast),
+			verify.WithConcurrency(c.verifyConcurrency),
+			verify.WithBlockCheck(verify.NewMetaCheckVerifier(logger)),
+		}
+		if c.singleBlockPerDay {
+			opts = append(opts,
+				verify.WithBlockCheck(verify.NewSingleUTCDayVerifier(logger)),
+				verify.WithBatchCheck(verify.NewDuplicateDayVerifier(logger)),
+			)
+		} else {
+			// More expensive than single-block-per-day, but necessary for the shape
+			// of blocks some tools produce.
+			opts = append(opts, verify.WithBatchCheck(verify.NewOverlappingBlockVerifier(logger)))
+		}
+		opts = append(opts, verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)))
+		verifier = verify.NewVerifier(logger, opts...)
+	}
 
 	return cli.BackfillWithOptions(context.Background(), c.blocks, c.sleepTime, verifier, c.dryRun)
 }

@@ -40,7 +40,11 @@ type BlockVerifier interface {
 // for checks that require analysis of multiple blocks.
 type BatchVerifier interface {
 	Name() string
-	Verify(ctx context.Context, blocks []BlockRef) error
+	// Verify runs the verification for the batch. It should return nil on
+	// success, and error if the verification fails. One verification may produce
+	// many failures, so individual error reports should be added to the provided
+	// Report.
+	Verify(ctx context.Context, blocks []BlockRef, report *Report) error
 }
 
 // BlockRef records per-block directory and meta information for processing by a BatchVerifier.
@@ -147,12 +151,16 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	if batchShouldRun {
 		for _, bcheck := range v.opts.batchChecks {
 			level.Info(v.logger).Log("check", bcheck.Name(), "msg", "running batch check")
-			if err := bcheck.Verify(ctx, refs); err != nil {
-				level.Error(v.logger).Log("check", bcheck.Name(), "msg", err.Error())
-				report.Add("", bcheck.Name(), "", err)
+			err := bcheck.Verify(ctx, refs, report)
+			if err == nil {
+				level.Info(v.logger).Log("check", bcheck.Name(), "msg", "passed")
 				continue
 			}
-			level.Info(v.logger).Log("check", bcheck.Name(), "msg", "passed")
+			level.Error(v.logger).Log("check", bcheck.Name(), "msg", err.Error())
+			report.Add("", bcheck.Name(), "", err)
+			if v.opts.failFast {
+				break
+			}
 		}
 	} else if len(v.opts.batchChecks) > 0 {
 		level.Info(v.logger).Log(
