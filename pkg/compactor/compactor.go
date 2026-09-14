@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
@@ -86,13 +87,18 @@ type BlocksGrouperFactory func(
 	reg prometheus.Registerer,
 ) Grouper
 
-// BlocksCompactorFactory builds and returns the compactor and planner for compacting a tenant's blocks.
+// BlocksCompactorFactory builds and returns the compactor provider and planner for compacting tenants' blocks.
 type BlocksCompactorFactory func(
 	ctx context.Context,
 	cfg Config,
+	cfgProvider ConfigProvider,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (Compactor, Planner, error)
+) (BlocksCompactorProvider, Planner, error)
+
+// BlocksCompactorProvider returns the Compactor to use for a given tenant's blocks. It must be safe
+// for concurrent use, because jobs belonging to different tenants can be compacted at the same time.
+type BlocksCompactorProvider func(userID string) Compactor
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
@@ -105,8 +111,8 @@ type Config struct {
 	CompactionRetries                int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency            int                     `yaml:"compaction_concurrency" category:"advanced"`
 	CompactionWaitPeriod             time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
-	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
+	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
+	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time"`
 	CleanupInterval                  time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency               int                     `yaml:"cleanup_concurrency" category:"advanced"`
 	DeletionDelay                    time.Duration           `yaml:"deletion_delay" category:"advanced"`
@@ -172,8 +178,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.")
-	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 0, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.")
-	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", false, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
+	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 5*time.Minute, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction.")
+	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", true, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
@@ -286,6 +292,10 @@ type ConfigProvider interface {
 
 	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
+
+	// FloatChunkEncoding returns the encoding to use for float chunks written for a given user.
+	// An encoding that no -blocks-storage.tsdb.float-chunk-encoding value selects is treated as the default.
+	FloatChunkEncoding(userID string) chunkenc.Encoding
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -308,9 +318,9 @@ type MultitenantCompactor struct {
 	// Blocks cleaner is responsible for hard deletion of blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
 
-	// Underlying compactor and planner for compacting TSDB blocks.
-	blocksCompactor Compactor
-	blocksPlanner   Planner
+	// Underlying compactor provider and planner for compacting TSDB blocks.
+	blocksCompactorProvider BlocksCompactorProvider
+	blocksPlanner           Planner
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
@@ -571,7 +581,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Create blocks compactor dependencies.
-	c.blocksCompactor, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.logger, c.registerer)
+	c.blocksCompactorProvider, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.cfgProvider, c.logger, c.registerer)
 	if err != nil {
 		return fmt.Errorf("failed to initialize compactor dependencies: %w", err)
 	}
@@ -944,7 +954,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
-		c.blocksCompactor,
+		c.blocksCompactorProvider(userID),
 		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,

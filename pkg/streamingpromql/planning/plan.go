@@ -99,7 +99,16 @@ const QueryPlanV18 = QueryPlanVersion(18)
 // QueryPlanV19 introduces support for deduplicating scalar expressions.
 const QueryPlanV19 = QueryPlanVersion(19)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV19
+// QueryPlanV20 introduces support for the fill_left and fill_right modifiers in binary expressions.
+// Queriers that do not support this version would silently ignore the fill modifier and produce
+// incorrect results.
+const QueryPlanV20 = QueryPlanVersion(20)
+
+// QueryPlanV21 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node

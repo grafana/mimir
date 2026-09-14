@@ -1105,7 +1105,7 @@ multiple `blocked_queries` rules, and this alert fires as long as any one of the
 How to **investigate**:
 
 - The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `blocked_queries` rules for the affected tenant, to help confirm scope.
-- Check the tenant's `blocked_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- Check the tenant's `blocked_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added. Refer to [Track expiring rules](../../configure/configure-blocked-queries/#track-expiring-rules).
 - If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
 
 ### MimirLimitedQueryRuleExpired
@@ -1123,7 +1123,7 @@ multiple `limited_queries` rules, and this alert fires as long as any one of the
 How to **investigate**:
 
 - The `Query blocking and rate limiting` row on the `Mimir / Queries` dashboard shows the count of expired `limited_queries` rules for the affected tenant, to help confirm scope.
-- Check the tenant's `limited_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added.
+- Check the tenant's `limited_queries` runtime config for rules with `expires_at` in the past, and check their `note`, `created_by`, and `created_at` fields for context on why they were added. Refer to [Track expiring rules](../../configure/configure-blocked-queries/#track-expiring-rules).
 - If a rule is no longer needed, remove it. If it's still needed, update its `expires_at`.
 
 ### MimirSchedulerQueriesStuck
@@ -3372,7 +3372,7 @@ This error occurs when a query-frontend blocks a read request because the query 
 How it **works**:
 
 - The query-frontend implements a middleware responsible for assessing whether the query is blocked or not.
-- To configure the limit, set the block `blocked_queries` in the `limits`.
+- To configure the limit, set the block `blocked_queries` in the `limits`. Refer to [Block queries](../../configure/configure-blocked-queries/#block-queries).
 
 How to **fix** it:
 
@@ -3385,7 +3385,7 @@ This error occurs when a query-frontend blocks a read request because the query 
 How it **works**:
 
 - The query-frontend implements a middleware responsible for assessing whether the query should be limited and whether it has been run within the last allowed frequency.
-- To configure the limit, set the block `limited_queries` in the `limits`.
+- To configure the limit, set the block `limited_queries` in the `limits`. Refer to [Rate limit queries](../../configure/configure-blocked-queries/#rate-limit-queries).
 
 How to **fix** it:
 

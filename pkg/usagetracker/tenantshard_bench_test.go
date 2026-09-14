@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
@@ -14,15 +15,22 @@ import (
 )
 
 func BenchmarkTenantShard(b *testing.B) {
-	for _, totalSeries := range []int{1e6, 10e6, 100e6} {
-		b.Run(fmt.Sprintf("totalSeries=%d", totalSeries), func(b *testing.B) {
-			series := make([]uint64, totalSeries)
-			for i := range series {
-				series[i] = rand.Uint64() << 7
-			}
+	for _, version := range []int{1, 2} {
+		b.Run(fmt.Sprintf("impl=v%d", version), func(b *testing.B) {
+			newShard, err := tenantshard.NewFactory(version)
+			require.NoError(b, err)
 
-			m := tenantshard.New(uint32(len(series)))
-			benchmarkWithSeries(b, m, series)
+			for _, totalSeries := range []int{1e6, 10e6, 100e6} {
+				b.Run(fmt.Sprintf("totalSeries=%d", totalSeries), func(b *testing.B) {
+					series := make([]uint64, totalSeries)
+					for i := range series {
+						series[i] = rand.Uint64() << 7
+					}
+
+					m := newShard(uint32(len(series)))
+					benchmarkWithSeries(b, m, series)
+				})
+			}
 		})
 	}
 }

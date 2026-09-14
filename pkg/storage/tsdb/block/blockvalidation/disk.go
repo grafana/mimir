@@ -20,8 +20,7 @@ type CheckBlockOnDiskOptions struct {
 	// headers are validated.
 	CheckChunks bool
 	// MaxBlockSizeBytes, when > 0, caps the total file size declared in
-	// meta.Thanos.Files. Useful for re-checking the limit just before the
-	// expensive structural walk.
+	// meta.Thanos.Files.
 	MaxBlockSizeBytes int64
 }
 
@@ -34,7 +33,7 @@ type CheckBlockOnDiskOptions struct {
 //  3. block.VerifyBlock succeeds against meta's declared time range.
 //
 // CheckBlockOnDisk does not download the block; callers must materialise
-// the block on disk first. CheckChunks is forwarded to block.VerifyBlock.
+// the block on disk first.
 func CheckBlockOnDisk(ctx context.Context, logger log.Logger, blockDir string, meta *block.Meta, opts CheckBlockOnDiskOptions) error {
 	if meta == nil {
 		return fmt.Errorf("missing block metadata")

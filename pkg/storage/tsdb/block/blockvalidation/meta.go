@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package blockvalidation provides reusable validation routines for TSDB
-// blocks destined for ingestion into a Mimir tenant. The package is shared
-// between the compactor's block-upload handlers and mimirtool's backfill
-// pre-upload verifier so that both paths apply the same acceptance rules.
+// blocks destined for ingestion into a Mimir tenant.
 package blockvalidation
 
 import (
@@ -21,38 +19,40 @@ import (
 )
 
 // MaxBlockSizeBytesFormat is the error message format used when a block
-// exceeds the configured maximum size. Exported so callers can match against
-// it in tests.
+// exceeds the configured maximum size.
 const MaxBlockSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
+
+// MaxBlockInvalidSizeError reports that the sum of declared file sizes in a
+// block exceeded the configured maximum or overflowed int64.
+//
+// SizeBytes may be negative if the sum overflows int64.
+type MaxBlockInvalidSizeError struct {
+	LimitBytes int64
+	SizeBytes  int64
+}
+
+func (e *MaxBlockInvalidSizeError) Error() string {
+	return fmt.Sprintf(MaxBlockSizeBytesFormat, e.LimitBytes)
+}
 
 // uploadSource is the value written to meta.Thanos.Source by
 // SanitizeForUpload to mark a block as having entered the cluster via the
 // block-upload API.
 const uploadSource = "upload"
 
-// allowedRelPath matches the relative paths that may appear in
+// AllowedRelPath matches the relative paths that may appear in
 // meta.Thanos.Files alongside the meta.json file itself. Any other path is
 // rejected by CheckMeta.
-var allowedRelPath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var AllowedRelPath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
 // CheckMetaOptions configures CheckMeta.
 type CheckMetaOptions struct {
 	// MaxBlockSizeBytes is an upper bound on the sum of file sizes declared
-	// in meta.Thanos.Files. A value of 0 disables the check.
+	// in meta.Thanos.Files. A value <=0 disables the check.
 	MaxBlockSizeBytes int64
 }
 
-// CheckMeta runs read-only validation against meta. It does not mutate meta.
-// The returned error is suitable for surfacing to the user; callers that
-// need an HTTP status code can wrap or inspect the message directly.
-//
-// CheckMeta accepts the deprecated external labels recognised by
-// SanitizeForUpload (DeprecatedTenantIDExternalLabel,
-// DeprecatedIngesterIDExternalLabel, DeprecatedShardIDExternalLabel) and an
-// empty CompactorShardIDExternalLabel. SanitizeForUpload removes those
-// labels before persisting the block, so treating them as no-ops here keeps
-// the upload and backfill-verify paths in agreement about what is
-// acceptable.
+// CheckMeta runs read-only validation against meta.
 func CheckMeta(meta *block.Meta, opts CheckMetaOptions) error {
 	if meta == nil {
 		return errors.New("missing block metadata")
@@ -125,8 +125,7 @@ func CheckMeta(meta *block.Meta, opts CheckMetaOptions) error {
 //
 // SanitizeForUpload performs no validation; callers should run CheckMeta
 // afterwards (or before, to surface issues unaffected by the mutations).
-// The function is safe to call when meta is nil; it returns immediately in
-// that case.
+// Returns immediately when meta is nil.
 func SanitizeForUpload(logger log.Logger, meta *block.Meta, blockID ulid.ULID) {
 	if meta == nil {
 		return

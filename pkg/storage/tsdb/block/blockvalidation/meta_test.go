@@ -4,6 +4,7 @@ package blockvalidation
 
 import (
 	crypto_rand "crypto/rand"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -162,14 +163,19 @@ func TestCheckMeta_MaxBlockSize(t *testing.T) {
 	err := CheckMeta(m, CheckMetaOptions{MaxBlockSizeBytes: 299})
 	require.Error(t, err)
 	assert.Equal(t, fmt.Sprintf(MaxBlockSizeBytesFormat, int64(299)), err.Error())
+
+	// The size error must remain inspectable via errors.As so that callers
+	// (e.g. the compactor) can recover the observed total for logging.
+	var sizeErr *MaxBlockInvalidSizeError
+	require.True(t, errors.As(err, &sizeErr))
+	assert.Equal(t, int64(299), sizeErr.LimitBytes)
+	assert.Equal(t, int64(300), sizeErr.SizeBytes)
 }
 
-// Test_checkMaxBlockSize exercises the unexported helper directly so we can
+// TestCheckMaxBlockSize exercises the size helper directly so we can
 // cover negative-size and overflow paths that are otherwise short-circuited
-// by CheckMeta's earlier file checks. The compactor previously owned an
-// equivalent TestMultitenantCompactor_ValidateMaximumBlockSize test which
-// became redundant once the helper moved here.
-func Test_checkMaxBlockSize(t *testing.T) {
+// by CheckMeta's earlier file checks.
+func TestCheckMaxBlockSize(t *testing.T) {
 	const maxInt64 = int64(1<<63 - 1)
 
 	tests := map[string]struct {
@@ -216,7 +222,7 @@ func Test_checkMaxBlockSize(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := checkMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
+			err := CheckMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
 			if tc.expectErr {
 				require.Error(t, err)
 				return

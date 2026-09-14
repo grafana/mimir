@@ -446,6 +446,12 @@ runtime_config:
   # CLI flag: -runtime-config.http-client-disable-keep-alives
   [http_client_disable_keep_alives: <boolean> | default = true]
 
+  # (experimental) Method used to decode the runtime configuration files.
+  # Supported values are: "map" (decode directly using mapstructure) and "yaml"
+  # (decode by round-tripping through YAML).
+  # CLI flag: -runtime-config.loader
+  [loader: <string> | default = "yaml"]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
@@ -2133,6 +2139,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
+  # (experimental) Enable propagating label matchers across binary expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = false]
+
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
@@ -2173,6 +2183,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+    # (experimental) Enable splitting subqueries, in addition to range vector
+    # selectors. Requires
+    # -querier.mimir-query-engine.range-vector-splitting.enabled and
+    # -querier.mimir-query-engine.enable-common-subexpression-elimination to
+    # also be enabled.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    [enable_subquery_splitting: <boolean> | default = false]
 
   time_splitting_and_caching:
     # (experimental) Enable caching of query results that were not fully
@@ -2444,11 +2462,6 @@ results_cache:
 # efficient order of execution.
 # CLI flag: -query-frontend.rewrite-histogram-queries
 [rewrite_histogram_queries: <boolean> | default = false]
-
-# (experimental) Set to true to enable rewriting queries to propagate label
-# matchers across binary expressions.
-# CLI flag: -query-frontend.rewrite-propagate-matchers
-[rewrite_propagate_matchers: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
@@ -4297,6 +4310,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.watch-prefix-buffer-size
 [watch_prefix_buffer_size: <int> | default = 128]
 
+# (experimental) Minimum delay between CAS retries after a version mismatch. 0
+# disables the delay.
+# CLI flag: -memberlist.cas-retry-min-backoff
+[cas_retry_min_backoff: <duration> | default = 0s]
+
+# (experimental) Maximum delay between CAS retries after a version mismatch.
+# Only takes effect if cas-retry-min-backoff is also set.
+# CLI flag: -memberlist.cas-retry-max-backoff
+[cas_retry_max_backoff: <duration> | default = 10s]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
@@ -4462,6 +4485,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # federation or metrics proxies.
 # CLI flag: -distributor.ha-tracker.per-sample-dedupe
 [ha_tracker_per_sample_dedupe: <boolean> | default = false]
+
+# (experimental) Merge timeseries that share the same label set and created
+# timestamp within a single write request, so that duplicate samples within that
+# same request are deduplicated and counted in cortex_discarded_samples_total
+# instead of being silently dropped by ingesters.
+# CLI flag: -distributor.merge-duplicate-timeseries
+[merge_duplicate_timeseries: <boolean> | default = false]
 
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster
@@ -4637,9 +4667,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
-# (experimental) Encoding used for float chunks in the ingester and block
-# builder for this tenant. Valid values are 'xor' and 'xor2'.
-# CLI flag: -ingester.float-chunk-encoding
+# (experimental) Encoding used for float chunks written for this tenant by the
+# ingester and block-builder, and by the compactor when it re-encodes
+# overlapping chunks. Supported values are: xor, xor2.
+# CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
 
 # (advanced) Custom trackers for active metrics. If there are active series
@@ -5040,6 +5071,13 @@ blocked_requests:
 # 'all' to enable all experimental modifiers.
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
+
+# Enable certain experimental PromQL binary operation fill modifiers (fill,
+# fill_left, fill_right), which are subject to being changed or removed at any
+# time, on a per-tenant basis. Defaults to empty which means all fill modifiers
+# are disabled. Set to 'all' to enable all fill modifiers.
+# CLI flag: -query-frontend.enabled-promql-binop-fill-modifiers
+[enabled_promql_binop_fill_modifiers: <string> | default = ""]
 
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
@@ -6719,18 +6757,17 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks containing out-of-order samples. When set to 0 (default), out-of-order
-# blocks do not delay compaction.
+# How long the compactor waits before compacting first-level blocks containing
+# out-of-order samples. When set to 0, out-of-order blocks do not delay
+# compaction.
 # CLI flag: -compactor.first-level-compaction-ooo-wait-period
-[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
+[first_level_compaction_ooo_wait_period: <duration> | default = 5m]
 
-# (experimental) When enabled, the compactor skips first-level compaction jobs
-# if any source block has a MaxTime more recent than the wait period threshold.
-# This prevents premature compaction of blocks that may still receive
-# late-arriving data.
+# When enabled, the compactor skips first-level compaction jobs if any source
+# block has a MaxTime more recent than the wait period threshold. This prevents
+# premature compaction of blocks that may still receive late-arriving data.
 # CLI flag: -compactor.first-level-compaction-skip-future-max-time
-[first_level_compaction_skip_future_max_time: <boolean> | default = false]
+[first_level_compaction_skip_future_max_time: <boolean> | default = true]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.

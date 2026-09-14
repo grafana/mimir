@@ -27,13 +27,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -66,7 +63,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -2218,72 +2214,6 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	}
 }
 
-func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	bktDir := filepath.Join(tmpDir, "bkt")
-	bkt, err := filesystem.NewBucket(bktDir)
-	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
-
-	var (
-		logger   = log.NewNopLogger()
-		instrBkt = objstore.WithNoopInstr(bkt)
-	)
-
-	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
-	assert.NoError(t, err)
-
-	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{}, nil, logger)
-	assert.NoError(t, err)
-
-	store, err := NewBucketStore(
-		"test",
-		instrBkt,
-		newTestBucketIndexMetadataReader(t, bkt, "test"),
-		fetcher,
-		tmpDir,
-		mimir_tsdb.BucketStoreConfig{
-			StreamingBatchSize:          5000,
-			BlockSyncConcurrency:        10,
-			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			IndexHeader: indexheader.Config{
-				LazyLoadingEnabled:     false,
-				LazyLoadingIdleTimeout: 0,
-			},
-		},
-		selectAllStrategy{},
-		newStaticChunksLimiterFactory(100),
-		newStaticSeriesLimiterFactory(0),
-		newGapBasedPartitionersHelper(mimir_tsdb.DefaultPartitionerMaxGapSize),
-		hashcache.NewSeriesHashCache(1024*1024),
-		NewBucketStoreMetrics(nil),
-		WithLogger(logger),
-		WithIndexCache(indexCache),
-	)
-	assert.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
-	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
-
-	assert.NoError(t, store.SyncBlocks(context.Background()))
-
-	// Create a request with invalid hints (uses response hints instead of request hints).
-	req := &storepb.SeriesRequest{
-		MinTime: 0,
-		MaxTime: 3,
-		Matchers: []storepb.LabelMatcher{
-			{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-		},
-		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
-	}
-
-	srv := newStoreGatewayTestServer(t, store)
-	_, _, _, _, err = srv.Series(context.Background(), req)
-	assert.Error(t, err)
-	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
-}
-
 func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	tmpDir := t.TempDir()
 	bktDir := filepath.Join(tmpDir, "bkt")
@@ -2791,14 +2721,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	}
 }
 
-func mustMarshalAny(pb proto.Message) *types.Any {
-	out, err := types.MarshalAny(pb)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
 func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storeTestSeries, []*storeTestSeries, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
@@ -2972,11 +2894,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			labelNamesReq: &storepb.LabelNamesRequest{
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelNamesRequestHints{
+				RequestHints: &storepb.LabelNamesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				},
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
@@ -2989,11 +2911,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				Label: "ext1",
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelValuesRequestHints{
+				RequestHints: &storepb.LabelValuesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				},
 			},
 			expectedValues: []string{"1"},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{

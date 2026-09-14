@@ -85,6 +85,50 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 			expect: []string{"anchored"},
 			err:    `extended range selector modifier "anchored" is not enabled for tenant`,
 		},
+		"fill both sides": {
+			query:  `a + fill(1) b`,
+			expect: []string{"fill"},
+			err:    `binary operation fill modifier "fill" is not enabled for tenant`,
+		},
+		"fill_left only": {
+			query:  `a + fill_left(1) b`,
+			expect: []string{"fill_left"},
+			err:    `binary operation fill modifier "fill_left" is not enabled for tenant`,
+		},
+		"fill_right only": {
+			query:  `a + fill_right(1) b`,
+			expect: []string{"fill_right"},
+			err:    `binary operation fill modifier "fill_right" is not enabled for tenant`,
+		},
+		"fill_left and fill_right different values": {
+			query:  `a + fill_left(1) fill_right(2) b`,
+			expect: []string{"fill_left", "fill_right"},
+		},
+		"fill_left and fill_right same values": {
+			// fill_left(v) fill_right(v) with equal values is canonically equivalent to fill(v),
+			// so it is gated on the "fill" feature, consistent with the PromQL printer.
+			query:  `a + fill_left(1) fill_right(1) b`,
+			expect: []string{"fill"},
+			err:    `binary operation fill modifier "fill" is not enabled for tenant`,
+		},
+		"fill NaN": {
+			query:  `a + fill(NaN) b`,
+			expect: []string{"fill"},
+			err:    `binary operation fill modifier "fill" is not enabled for tenant`,
+		},
+		"fill_left and fill_right NaN same value": {
+			// fill_left(NaN) fill_right(NaN) with equal NaN values is canonically equivalent to fill(NaN),
+			// so it is gated on the "fill" feature. NaN != NaN by IEEE 754, so equality must use math.IsNaN.
+			query:  `a + fill_left(NaN) fill_right(NaN) b`,
+			expect: []string{"fill"},
+			err:    `binary operation fill modifier "fill" is not enabled for tenant`,
+		},
+		"fill_left NaN and fill_right finite": {
+			// fill_left(NaN) fill_right(1) must NOT be classified as fill(NaN).
+			// The two sides are different, so this is fill_left + fill_right.
+			query:  `a + fill_left(NaN) fill_right(1) b`,
+			expect: []string{"fill_left", "fill_right"},
+		},
 	}
 
 	for name, tc := range testCases {
