@@ -669,7 +669,7 @@ func (h *partitionHandlerTestHelper) newHandlerForPartitionID(t *testing.T, part
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
 
-	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
+	p, err := newPartitionHandler(partitionID, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, newTestShardFactory(), logger, reg)
 	require.NoError(t, err)
 	return p
 }

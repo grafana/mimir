@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package tenantshard
+package v1
 
 import (
 	"fmt"
@@ -43,84 +43,6 @@ func TestMapStats(t *testing.T) {
 	// Inserting 50 elements into a map that started with capacity for 8 must have triggered rehashes.
 	require.Greater(t, s.Rehashes, uint32(0))
 	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
-}
-
-func TestMap(t *testing.T) {
-	series := atomic.NewUint64(0)
-	const events = 5
-	const seriesPerEvent = 5
-	limit := atomic.NewUint64(uint64(events * seriesPerEvent))
-
-	// Start small, let rehashing happen.
-	m := New(seriesPerEvent)
-
-	storedValues := map[uint64]clock.Minutes{}
-	for i := 1; i <= events; i++ {
-		refs := make([]uint64, seriesPerEvent)
-		for j := range refs {
-			refs[j] = uint64(i*100 + j)
-			storedValues[refs[j]] = clock.Minutes(i)
-			created, rejected := m.Put(refs[j], clock.Minutes(i), series, limit, false)
-			require.True(t, created)
-			require.False(t, rejected)
-		}
-	}
-
-	require.Equal(t, events*seriesPerEvent, m.Count())
-	require.Equal(t, uint64(events*seriesPerEvent), series.Load())
-
-	{
-		// No more series will fit.
-		created, rejected := m.Put(uint64(65535), 1, series, limit, true)
-		require.False(t, created)
-		require.True(t, rejected)
-	}
-
-	{
-		gotValues := map[uint64]clock.Minutes{}
-		length, items := m.Items()
-		require.Equal(t, len(storedValues), length)
-		for key, value := range items {
-			gotValues[key] = value
-		}
-		require.Equal(t, storedValues, gotValues)
-	}
-
-	{
-		// Cleanup first wave of series
-		removed := m.Cleanup(clock.Minutes(1), nil)
-		series.Add(-uint64(removed))
-		expectedSeries := (events - 1) * seriesPerEvent
-
-		// It's unsafe to check m.count() after Cleanup event.
-		require.Equal(t, expectedSeries, int(series.Load()))
-	}
-}
-
-func TestMapValues(t *testing.T) {
-	const count = 10e3
-	stored := map[uint64]clock.Minutes{}
-	m := New(100)
-	total := atomic.NewUint64(0)
-	for i := 0; i < count; i++ {
-		key := rand.Uint64()
-		val := clock.Minutes(i)
-		if val >= 0xfe {
-			continue
-		}
-		stored[key] = val
-		m.Put(key, val, total, nil, false)
-	}
-	require.Equal(t, len(stored), m.Count())
-	require.Equal(t, len(stored), int(total.Load()))
-
-	got := map[uint64]clock.Minutes{}
-	l, items := m.Items()
-	require.Equal(t, len(stored), l)
-	for key, value := range items {
-		got[key] = value
-	}
-	require.Equal(t, stored, got)
 }
 
 func TestNextSize(t *testing.T) {
@@ -204,91 +126,6 @@ func TestLimitAwareGrowth(t *testing.T) {
 }
 
 func TestMapCleanup(t *testing.T) {
-	// itemsMap is a helper that collects Items() into a map.
-	itemsMap := func(t *testing.T, m *Map) map[uint64]clock.Minutes {
-		t.Helper()
-		got := map[uint64]clock.Minutes{}
-		_, items := m.Items()
-		for key, value := range items {
-			got[key] = value
-		}
-		return got
-	}
-
-	t.Run("empty map", func(t *testing.T) {
-		m := New(8)
-		removed := m.Cleanup(100, nil)
-		require.Equal(t, 0, removed)
-		require.Equal(t, 0, m.Count())
-		require.Zero(t, m.dead)
-		require.Zero(t, m.resident)
-	})
-
-	t.Run("no entries expired", func(t *testing.T) {
-		m := New(8)
-		m.Load(1, 50)
-		m.Load(2, 60)
-		m.Load(3, 70)
-
-		removed := m.Cleanup(10, nil) // watermark=10 is before all entries
-		require.Equal(t, 0, removed)
-		require.Equal(t, 3, m.Count())
-		require.Zero(t, m.dead)
-		require.Equal(t, uint32(3), m.resident)
-	})
-
-	t.Run("all entries expired", func(t *testing.T) {
-		m := New(8)
-		m.Load(1, 10)
-		m.Load(2, 20)
-		m.Load(3, 30)
-
-		removed := m.Cleanup(30, nil) // watermark=30 expires all
-		require.Equal(t, 3, removed)
-		require.Equal(t, 0, m.Count())
-	})
-
-	t.Run("some entries expired some not", func(t *testing.T) {
-		m := New(16)
-		// Insert entries with different timestamps.
-		m.Load(100, 10)
-		m.Load(200, 20)
-		m.Load(300, 30)
-		m.Load(400, 40)
-		m.Load(500, 50)
-
-		removed := m.Cleanup(30, nil) // expire entries with value <= 30
-		require.Equal(t, 3, removed)
-		require.Equal(t, 2, m.Count())
-
-		// Survivors should be findable.
-		got := itemsMap(t, m)
-		require.Contains(t, got, uint64(400))
-		require.Contains(t, got, uint64(500))
-		require.Equal(t, clock.Minutes(40), got[400])
-		require.Equal(t, clock.Minutes(50), got[500])
-	})
-
-	t.Run("survivors findable via put update path", func(t *testing.T) {
-		m := New(16)
-		m.Load(100, 10) // will expire
-		m.Load(200, 50) // will survive
-		m.Load(300, 50) // will survive
-		m.Load(400, 10) // will expire
-
-		removed := m.Cleanup(20, nil)
-		require.Equal(t, 2, removed)
-		require.Equal(t, 2, m.Count())
-
-		// Update survivors via Put — should find them (not create new).
-		created, _ := m.Put(200, 60, nil, nil, false)
-		require.False(t, created, "should update existing entry, not create new")
-		created, _ = m.Put(300, 60, nil, nil, false)
-		require.False(t, created, "should update existing entry, not create new")
-
-		require.Equal(t, 2, m.Count())
-	})
-
 	t.Run("tombstone avoidance with empty slots in group", func(t *testing.T) {
 		// With maxAvgGroupLoad=4 and groupSize=8, a small map will have groups
 		// that are partially full, so cleanup should avoid tombstones.
@@ -488,59 +325,6 @@ func TestMapCleanup(t *testing.T) {
 		require.Zero(t, m.dead)
 	})
 
-	t.Run("count and items consistent after cleanup", func(t *testing.T) {
-		m := New(32)
-		expected := map[uint64]clock.Minutes{}
-		for i := uint64(0); i < 20; i++ {
-			val := clock.Minutes(10)
-			if i%2 == 0 {
-				val = 50 // survivors
-				expected[i] = val
-			}
-			m.Load(i, val)
-		}
-
-		removed := m.Cleanup(20, nil) // expire val<=20
-		require.Equal(t, 10, removed)
-		require.Equal(t, len(expected), m.Count())
-
-		got := itemsMap(t, m)
-		require.Equal(t, expected, got)
-	})
-
-	t.Run("sequential cleanups with interleaved puts", func(t *testing.T) {
-		m := New(32)
-
-		// Round 1: insert keys with value 10.
-		for i := uint64(0); i < 10; i++ {
-			m.Load(i, 10)
-		}
-		removed := m.Cleanup(10, nil) // expire all
-		require.Equal(t, 10, removed)
-		require.Equal(t, 0, m.Count())
-
-		// Round 2: insert new keys with value 20.
-		for i := uint64(100); i < 110; i++ {
-			m.Load(i, 20)
-		}
-		require.Equal(t, 10, m.Count())
-
-		// Round 3: expire half, add more.
-		for i := uint64(110); i < 120; i++ {
-			m.Load(i, 30)
-		}
-		removed = m.Cleanup(20, nil) // expire value<=20
-		require.Equal(t, 10, removed)
-		require.Equal(t, 10, m.Count())
-
-		// All remaining should be keys 110-119.
-		got := itemsMap(t, m)
-		for i := uint64(110); i < 120; i++ {
-			require.Contains(t, got, i)
-			require.Equal(t, clock.Minutes(30), got[i])
-		}
-	})
-
 	t.Run("cleanup with limit triggers limit-aware rehash", func(t *testing.T) {
 		// Fill groups completely, expire everything, pass a limit.
 		m := New(groupSize * 2)
@@ -561,52 +345,6 @@ func TestMapCleanup(t *testing.T) {
 		}
 	})
 
-	t.Run("large scale correctness", func(t *testing.T) {
-		// Insert many elements with mixed timestamps, cleanup, verify survivors.
-		const n = 10000
-		m := New(uint32(n))
-		expected := map[uint64]clock.Minutes{}
-		for i := uint64(0); i < n; i++ {
-			val := clock.Minutes(i % 100)
-			if val >= 0xfe {
-				continue
-			}
-			m.Load(i, val)
-			if val > 50 {
-				expected[i] = val
-			}
-		}
-
-		removed := m.Cleanup(50, nil) // expire val <= 50
-		require.Equal(t, n-len(expected), removed)
-		require.Equal(t, len(expected), m.Count())
-
-		got := itemsMap(t, m)
-		require.Equal(t, expected, got)
-	})
-
-	t.Run("put after cleanup finds correct entries", func(t *testing.T) {
-		// Regression test: after cleanup with shifts, Put must still find
-		// existing keys and not create duplicates.
-		m := New(32)
-		series := atomic.NewUint64(0)
-		for i := uint64(0); i < 20; i++ {
-			m.Put(i, clock.Minutes(i%50+1), series, nil, false)
-		}
-		require.Equal(t, uint64(20), series.Load())
-
-		m.Cleanup(10, nil) // expire val <= 10
-
-		// Try to Put all 20 keys again. Expired ones should be created, survivors updated.
-		for i := uint64(0); i < 20; i++ {
-			created, _ := m.Put(i, 40, series, nil, false)
-			if i%50+1 <= 10 {
-				require.True(t, created, "key %d was expired, should be created", i)
-			} else {
-				require.False(t, created, "key %d survived cleanup, should be updated", i)
-			}
-		}
-	})
 }
 
 func BenchmarkMapRehash(b *testing.B) {
