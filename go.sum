@@ -587,8 +587,8 @@ github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc h1:PXZQA2WCxe85T
 github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/dskit v0.0.0-20260907151705-0befd17d9692 h1:Ja7VGj/leaI6oxad6qy41/JNWBRFetZDZ38OKgvO1uI=
 github.com/grafana/dskit v0.0.0-20260907151705-0befd17d9692/go.mod h1:0Q7k/y3o2Yvi3Y9ctXEX0Pltq1Y2x8TkCSG9JmjJJec=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f h1:gxaqz5StufMU078tWFuf8CUi4PZtITBxjM2TZV7NOFw=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f/go.mod h1:KFvJP5m5GQ837CN7rUbWIiPdw1JZgeRJTEyp2O5U0is=
+github.com/grafana/e2e v0.1.2-0.20260914044258-ebe09ad459cf h1:LlofMBakqqPCwzMv//Z3wRfplwj3T+Hzr6lcGvCmXZc=
+github.com/grafana/e2e v0.1.2-0.20260914044258-ebe09ad459cf/go.mod h1:o6aUPNFrl7H0XjIdBpXSU2Gou6vVwctVBuSvWPN7Ogg=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87 h1:Op5/Kd8Ae90IC7Ow+CNwGo/oq87cJX2iE+U8Dw4a8Bc=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87/go.mod h1:FWqXKmpTKh7spGdV89XqWZN+kdZL8NZJJWyZQtuTXiI=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
