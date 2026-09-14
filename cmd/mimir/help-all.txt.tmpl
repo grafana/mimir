@@ -2891,6 +2891,10 @@ Usage of ./cmd/mimir/mimir:
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
+  -query-frontend.max-inflight-dispatched-metrics-enabled
+    	[experimental] Enable the cortex_query_frontend_max_inflight_dispatched_queries and cortex_query_frontend_max_inflight_dispatched_query_age_seconds metrics, which report the per-tenant peak number of concurrent queries this frontend had dispatched and the greatest age a dispatched query reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every dispatched query.
+  -query-frontend.max-inflight-http-metrics-enabled
+    	[experimental] Enable the cortex_query_frontend_max_inflight_http_requests and cortex_query_frontend_max_inflight_http_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int

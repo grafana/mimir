@@ -8470,6 +8470,17 @@
         },
         {
           "kind": "field",
+          "name": "max_inflight_http_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_http_requests and cortex_query_frontend_max_inflight_http_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-http-metrics-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "scheduler_address",
           "required": false,
           "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
@@ -8869,6 +8880,17 @@
           "fieldDefaultValue": 128,
           "fieldFlag": "query-frontend.remote-execution-series-metadata-batch-size",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_inflight_dispatched_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_dispatched_queries and cortex_query_frontend_max_inflight_dispatched_query_age_seconds metrics, which report the per-tenant peak number of concurrent queries this frontend had dispatched and the greatest age a dispatched query reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every dispatched query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-dispatched-metrics-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
