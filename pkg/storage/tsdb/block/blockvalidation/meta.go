@@ -84,7 +84,7 @@ func CheckMeta(meta *block.Meta, opts CheckMetaOptions) error {
 		if f.RelPath == block.MetaFilename {
 			continue
 		}
-		if !allowedRelPath.MatchString(f.RelPath) {
+		if !AllowedRelPath.MatchString(f.RelPath) {
 			return fmt.Errorf("file with invalid path: %s", f.RelPath)
 		}
 		if f.SizeBytes <= 0 {
@@ -171,7 +171,7 @@ func checkMaxBlockSize(files []block.File, maxBlockSizeBytes int64) error {
 	}
 
 	if blockSizeBytes > maxBlockSizeBytes || blockSizeBytes < 0 {
-		return fmt.Errorf(MaxBlockSizeBytesFormat, maxBlockSizeBytes)
+		return &MaxBlockInvalidSizeError{maxBlockSizeBytes, blockSizeBytes}
 	}
 	return nil
 }

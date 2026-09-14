@@ -114,6 +114,28 @@ func (c *MimirClient) BackfillBlock(ctx context.Context, bkt objstore.BucketRead
 	return c.backfillBlock(ctx, bkt, blockID, c.logger, sleepTime)
 }
 
+var ErrBlockInvalid = errors.New("block is invalid")
+
+func (c *MimirClient) doBackfillRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
+	}
+
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	}
+
+	return resp, nil
+}
+
 // drainAndCloseBody drains and closes the body to let the transport reuse the connection.
 func drainAndCloseBody(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, resp.Body)
