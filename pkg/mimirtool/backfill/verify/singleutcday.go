@@ -16,20 +16,8 @@ import (
 const msPerDay int64 = 24 * 60 * 60 * 1000 // 86_400_000
 
 // SingleUTCDayVerifier enforces that a block's [MinTime, MaxTime) range lies
-// entirely within a single calendar UTC day. It is a pure header-arithmetic
-// check over meta.json: it accepts sparse blocks whose span is less than 24
-// hours and rejects 2-hour Prometheus-default blocks or any block whose
-// header crosses a UTC-midnight boundary.
-//
-// Formula: floor(MinTime / msPerDay) == floor((MaxTime-1) / msPerDay).
-// MaxTime is exclusive (see pkg/storage/tsdb/block/block_generator.go:173
-// "MaxTime: specs.MaxTime() + 1, // Not included.").
-//
-// SingleUTCDayVerifier does NOT call block.VerifyBlock. Any chunks that
-// extend outside the block's declared [MinTime, MaxTime) range are caught
-// by WellFormedVerifier (which runs block.VerifyBlock against meta's own
-// range and reports OutsideChunks via HealthStats). Running both checks is
-// sufficient to detect every case the earlier deep-UTC-day walk caught.
+// entirely within a single calendar UTC day based on meta.json header data. It
+// accepts sparse blocks whose span is less than 24 hours.
 type SingleUTCDayVerifier struct {
 	logger log.Logger
 }

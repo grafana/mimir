@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package verify provides a pluggable pre-upload verification framework for mimirtool backfill. Per-block and batch-level checks are composed via functional options; no global registry.
+// Package verify provides a pluggable pre-upload verification framework for mimirtool backfill. Per-block and batch-level checks are composed via functional options.
 package verify
 
 import (
@@ -21,46 +21,41 @@ import (
 type Mode int
 
 const (
-	// Deep runs the full index walk and chunk-checksum verification.
+	// Deep runs include more expensive checks.
 	Deep Mode = iota
-	// Medium runs only header-level checks (no chunk-checksum walk).
+	// Medium runs only header-level / quick checks.
 	Medium
 )
 
 // BlockVerifier runs a single check against one block.
-// Implementations MUST NOT retain strings derived from meta past the call's
-// return; callers of block data from shared pools must strings.Clone first.
 type BlockVerifier interface {
-	// Name returns the stable check name used in log lines and report entries.
+	// Name return the name of this check, for reporting and identification.
 	Name() string
 	// Verify returns nil if the block passes. A non-nil error is recorded as a
 	// per-block, per-check failure in the Report.
 	Verify(ctx context.Context, blockDir string, meta block.Meta) error
 }
 
-// BatchVerifier runs a single check across all blocks in one invocation.
-// Used for future duplicate-day and overlap detection (ships with zero
-// implementations in v1; the interface seam is proved by a test double).
+// BatchVerifier runs a single check across all blocks in one invocation,
+// for checks that require analysis of multiple blocks.
 type BatchVerifier interface {
 	Name() string
 	Verify(ctx context.Context, blocks []BlockRef) error
 }
 
-// BlockRef is the input to BatchVerifier.Verify. Dir is the on-disk block
-// directory; Meta is the already-parsed meta.json to avoid re-reading.
+// BlockRef records per-block directory and meta information for processing by a BatchVerifier.
 type BlockRef struct {
 	Dir  string
 	Meta block.Meta
 }
 
-// Verifier orchestrates per-block and batch-level checks.
+// Verifier is the top-level object for executing verification.
 type Verifier struct {
 	logger log.Logger
 	opts   options
 }
 
-// NewVerifier assembles a Verifier from functional options. Defaults: Deep
-// mode, fail-fast, concurrency=0 (auto = min(GOMAXPROCS, 4) at Run time).
+// NewVerifier assembles a Verifier from the given Options.
 func NewVerifier(logger log.Logger, opts ...Option) *Verifier {
 	o := options{
 		mode:        Deep,
@@ -73,32 +68,15 @@ func NewVerifier(logger log.Logger, opts ...Option) *Verifier {
 	return &Verifier{logger: logger, opts: o}
 }
 
-// Mode returns the verifier's configured depth mode. Child verifiers that
-// care about Deep vs Medium may consult this when constructed.
+// Mode returns the verifier's configured depth mode.
 func (v *Verifier) Mode() Mode { return v.opts.mode }
 
-// Run executes all registered per-block verifiers in parallel (bounded by
-// concurrency), then all batch verifiers sequentially on the survivors. It
-// returns a Report aggregating per-block, per-check failures. Run never
-// returns a Go error for a verification failure; inspect Report.HasFailures()
-// or Report.Err() instead. Run DOES record I/O failures reading meta.json as
-// a special "meta" failure in the Report.
+// Run executes all registered per-block verifiers in parallel, then all batch verifiers sequentially on the survivors. It
+// returns a Report aggregating per-block, per-check failures. Inspect Report.HasFailures()
+// or Report.Err() to determine what errors were detected during verification.
 //
-// Fail-fast semantics (opts.failFast == true): the first worker that records
-// a failure calls cancel() on the errgroup context; peer workers observe
-// ctx.Done() between blocks and return without scheduling new work.
-// Already-running block.VerifyBlock calls are NOT aborted mid-walk because
-// the Prometheus TSDB postings walk does not check ctx between iterations
-// (see pkg/storage/tsdb/block/index.go). Stray in-flight failures may still
-// be recorded.
-//
-// In fail-fast mode, if any per-block check fails, batch-level checks are
-// NOT executed. An info log line "skipping batch checks due to per-block
-// fail-fast" is emitted to make this explicit to users who registered a
-// BatchVerifier.
-//
-// Full-report (opts.failFast == false): all workers run to completion and
-// all batch checks run.
+// If fail-fast mode is true, Run returns after the first error is detected, whereas
+// all checks are run when that mode is disabled.
 func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	report := newReport(len(blockDirs))
 
@@ -121,7 +99,6 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 	for _, dir := range blockDirs {
 		eg.Go(func() error {
 			if err := egCtx.Err(); err != nil {
-				// Context cancelled (fail-fast peer). Do not schedule new work.
 				return nil
 			}
 
@@ -164,9 +141,8 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 
 	_ = eg.Wait() // errFailFast is a signal, not a reportable error
 
-	// Batch stage: run after per-block settles. Skipped if fail-fast already tripped.
-	// Emit an explicit log line on skip so users who registered a BatchVerifier
-	// aren't left wondering why it didn't run.
+	// If fail-fast is true and we already have an error, do not bother to run
+	// batch checks.
 	batchShouldRun := !report.HasFailures() || !v.opts.failFast
 	if batchShouldRun {
 		for _, bcheck := range v.opts.batchChecks {
@@ -185,7 +161,6 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 		)
 	}
 
-	// Summary line.
 	total, failedBlocks, totalFailures := report.Summary()
 	outcome := "all_checked"
 	if v.opts.failFast && report.HasFailures() {
@@ -203,5 +178,5 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 }
 
 // errFailFast is an internal sentinel used to short-circuit the errgroup in
-// fail-fast mode. It is never returned to the caller of Run.
+// fail-fast mode.
 var errFailFast = errors.New("verify: fail-fast triggered")

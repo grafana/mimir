@@ -12,20 +12,11 @@ import (
 )
 
 // DuplicateDayVerifier rejects a batch that contains two or more blocks whose
-// [MinTime, MaxTime) ranges share the same UTC-day key. Uploading two blocks
-// that cover the same UTC day creates guaranteed compaction conflicts on the
-// server side, so this client-side batch check fails fast before any upload.
+// [MinTime, MaxTime) ranges share the same UTC-day key. Such blocks should be
+// pre-compacted before pushing.
 //
-// Day-key formula: day = meta.MinTime / msPerDay. The msPerDay constant is
-// defined in singleutcday.go and reused here (same package).
-//
-// SingleUTCDayVerifier dependency: DuplicateDayVerifier assumes each block
-// already passed SingleUTCDayVerifier, so its [MinTime, MaxTime) fits entirely
-// inside one UTC day and MinTime uniquely identifies that day. If a caller
-// registers DuplicateDayVerifier without SingleUTCDayVerifier, a block that
-// spans two UTC days will be keyed only on its MinTime day — we deliberately
-// do NOT re-check here, because splitting one bad block across two day
-// buckets would mask genuine single-day collisions for the other blocks.
+// DuplicateDayVerifier only checks min-times, so it should also be run
+// alongside the SingleUTCDayVerifier.
 //
 // yoloString safety: the ULIDs recorded in the error message come from
 // meta.ULID.String(), where ulid.ULID is a fixed-size [16]byte array. String()
@@ -46,8 +37,7 @@ func (v *DuplicateDayVerifier) Name() string { return "duplicate-day" }
 
 // Verify returns nil if every block in the batch covers a distinct UTC day.
 // On collision it returns a single error enumerating every colliding day and
-// the ULIDs of all blocks sharing that day, with days sorted ascending and
-// ULIDs sorted lexicographically within each day for deterministic output.
+// the ULIDs of all blocks sharing that day.
 func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef) error {
 	if len(blocks) < 2 {
 		return nil

@@ -11,17 +11,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
 )
 
-// MetaCheckVerifier runs the read-only meta-only validation that the
-// compactor applies to every uploaded block: downsampling, external-label
-// allowlist, file paths and sizes, TSDB version, time-range sanity, and
-// future-time rejection. It is a pure header check — no I/O, no chunk
-// walks — and so makes a cheap precondition to the more expensive
-// well-formed check.
+// MetaCheckVerifier runs the standard blockvalidation.CheckMeta header check.
 //
-// MetaCheckVerifier does not enforce a max block size: backfill is
-// client-side and does not have access to the per-tenant
-// CompactorBlockUploadMaxBlockSizeBytes limit. The compactor still
-// rejects oversized blocks server-side.
+// MetaCheckVerifier does not enforce a max block size: backfill is client-side
+// and does not have access to the per-tenant
+// CompactorBlockUploadMaxBlockSizeBytes limit. The compactor still rejects
+// oversized blocks server-side.
 type MetaCheckVerifier struct {
 	logger log.Logger
 }

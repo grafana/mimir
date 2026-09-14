@@ -13,16 +13,9 @@ import (
 )
 
 // WellFormedVerifier checks that a block on disk is structurally valid by
-// delegating to blockvalidation.CheckBlockOnDisk, which first verifies that
-// every file declared in meta.Thanos.Files exists at the expected size and
-// then runs block.VerifyBlock. In Deep mode (checkChunks=true) the
-// structural walk performs a full CRC32 check over every chunk; in Medium
-// mode (checkChunks=false) it validates only the index structure and chunk
-// segment headers.
-//
-// This verifier is a thin wrapper around shared validation routines: the
-// same rules run server-side in the compactor block-upload handler. Do not
-// reimplement the walk here.
+// delegating to blockvalidation.CheckBlockOnDisk. In Deep mode the structural
+// walk performs a full CRC32 check over every chunk; in Medium mode it
+// validates only the index structure and chunk segment headers.
 type WellFormedVerifier struct {
 	logger      log.Logger
 	checkChunks bool
@@ -41,14 +34,7 @@ func NewWellFormedVerifier(logger log.Logger, mode Mode) *WellFormedVerifier {
 func (v *WellFormedVerifier) Name() string { return "well-formed" }
 
 // Verify returns nil if the block at blockDir passes the well-formed check.
-// On any failure (missing files, file size mismatch, mangled index,
-// chunk-checksum mismatch in deep mode, ...) it returns a wrapped error
-// suitable for inclusion in the verification Report.
-//
-// Caveat: block.VerifyBlock (invoked via blockvalidation.CheckBlockOnDisk)
-// does not check ctx.Err() inside its postings walk (see
-// pkg/storage/tsdb/block/index.go:177-299). Cancellation via ctx can only
-// abort between blocks, not mid-walk.
+// On any failure it returns a wrapped error.
 func (v *WellFormedVerifier) Verify(ctx context.Context, blockDir string, meta block.Meta) error {
 	if err := ctx.Err(); err != nil {
 		return err

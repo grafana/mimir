@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sync/atomic"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -44,8 +44,6 @@ func (f *failingBlockVerifier) Verify(_ context.Context, _ string, _ block.Meta)
 	return f.err
 }
 
-// rejectMultiBatchVerifier is a test-only BatchVerifier (per SPEC §9 / RESEARCH §Pitfall 8).
-// The framework ships zero real BatchVerifier implementations in v1.
 type rejectMultiBatchVerifier struct{ calls atomic.Int64 }
 
 func (r *rejectMultiBatchVerifier) Name() string { return "reject-multi-batch" }
@@ -186,10 +184,8 @@ func TestReport_SummaryAndErr(t *testing.T) {
 	assert.Contains(t, err.Error(), "verification failed")
 }
 
-// TestReport_ErrFormat asserts the aggregated error is a summary only — per
-// WARNING 3 in the checker review, enumerating every failure produced
-// unreadable errors for large batches (500 blocks * 2 checks = 1000 lines).
-// Detail belongs in log lines; Err() carries counts.
+// TestReport_ErrFormat asserts the aggregated error is a summary only to
+// prevent unreadable errors enumerating every single failure for large batches.
 func TestReport_ErrFormat(t *testing.T) {
 	r := newReport(10)
 	for i := 0; i < 7; i++ {

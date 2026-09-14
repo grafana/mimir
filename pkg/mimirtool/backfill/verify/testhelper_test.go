@@ -16,10 +16,7 @@ import (
 )
 
 // sampleAt returns a chunks.Sample suitable for chunks.ChunkFromSamples and
-// block.GenerateBlockFromSpec. Uses the canonical Mimir test.Sample type
-// (pkg/util/test/tsdb.go). This is the convention used across
-// pkg/compactor/compactor_test.go and pkg/storegateway/bucket_stores_test.go.
-// Shared with wellformed_test.go and singleutcday_test.go (Plan 01-03).
+// block.GenerateBlockFromSpec.
 func sampleAt(ts int64, v float64) chunks.Sample {
 	return testutil.Sample{TS: ts, Val: v}
 }
@@ -50,8 +47,7 @@ func generateValidBlock(t *testing.T, parent string, samples []chunks.Sample) (s
 }
 
 // corruptChunkSegment truncates chunks/000001 to a very small size so the
-// internal format is destroyed. Deep mode should fail; medium mode may or
-// may not catch it depending on header position.
+// internal format is destroyed.
 func corruptChunkSegment(t *testing.T, blockDir string) {
 	t.Helper()
 	path := filepath.Join(blockDir, "chunks", "000001")
@@ -59,7 +55,7 @@ func corruptChunkSegment(t *testing.T, blockDir string) {
 }
 
 // mangleIndex overwrites the first 100 bytes of the index file with zeros,
-// which destroys the file header. Both deep and medium modes should fail.
+// which destroys the file header.
 func mangleIndex(t *testing.T, blockDir string) {
 	t.Helper()
 	path := filepath.Join(blockDir, "index")
@@ -74,7 +70,6 @@ func mangleIndex(t *testing.T, blockDir string) {
 // flipChunkByte flips a single bit inside chunks/000001 at the given offset
 // (measured from the start of the file; caller chooses an offset past the
 // segment header so the file format stays valid and only CRC32 is broken).
-// This causes deep mode to fail and medium mode to pass.
 func flipChunkByte(t *testing.T, blockDir string, offset int64) {
 	t.Helper()
 	path := filepath.Join(blockDir, "chunks", "000001")

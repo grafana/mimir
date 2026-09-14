@@ -59,14 +59,8 @@ func TestWellFormedVerifier_MangledIndex(t *testing.T) {
 }
 
 func TestWellFormedVerifier_ChecksumMismatch_DeepFailsMediumPasses(t *testing.T) {
-	// Flip a byte inside the first chunk's data region. The chunks segment
-	// layout is: 8-byte segment header, then repeating chunks each encoded
-	// as [uvarint len][1-byte encoding][data...][4-byte CRC32]. For the
-	// small first chunk produced here the data length uvarint is 1 byte, so
-	// offset 10 (== 8 + 1 + 1) lands on the first byte of chunk data. This
-	// breaks the stored CRC32 without touching the segment header, so deep
-	// mode catches it and medium mode (which doesn't open the chunks dir at
-	// all) does not.
+	// Flip a byte inside the first chunk's data region, with the intent to break
+	// full-depth checks while allowing header-level checks to pass.
 	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
 		sampleAt(1_000, 1.0),
 		sampleAt(2_000, 2.0),

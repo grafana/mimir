@@ -126,7 +126,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 
 	cmd.Validate(func(_ *kingpin.CmdClause) error {
 		if c.skipChunkVerification && c.fullReport {
-			return fmt.Errorf("--full-report requires deep analysis and cannot be combined with --skip-chunk-verification")
+			return fmt.Errorf("--full-report cannot be combined with --skip-chunk-verification")
 		}
 		if !c.dryRun {
 			var missing []string
