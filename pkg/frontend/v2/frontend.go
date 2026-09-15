@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -77,6 +78,8 @@ type Config struct {
 	RemoteExecutionBatchSize               uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
 	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
+	MaxInflightDispatchedMetricsEnabled bool `yaml:"max_inflight_dispatched_metrics_enabled" category:"experimental"`
+
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
@@ -96,6 +99,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
 	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
+	f.BoolVar(&cfg.MaxInflightDispatchedMetricsEnabled, "query-frontend.max-inflight-dispatched-metrics-enabled", false, "Enable the cortex_query_frontend_max_inflight_dispatched_queries and cortex_query_frontend_max_inflight_dispatched_query_age_seconds metrics, which report the per-tenant peak number of concurrent queries this frontend had dispatched and the greatest age a dispatched query reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every dispatched query.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -145,6 +149,9 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+
+	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -165,6 +172,10 @@ type frontendRequest struct {
 	spanLogger *spanlogger.SpanLogger
 
 	enqueue chan enqueueResult
+
+	// maxInflightID identifies this request to Frontend.maxInflight. It is zero when the
+	// max in-flight metrics are disabled, which Remove treats as a no-op.
+	maxInflightID uint64
 
 	// enqueuedAt is set once the scheduler has accepted this request into its queue.
 	// Used to approximate queue time if the request is cancelled before a querier
@@ -238,6 +249,18 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
+
+	if cfg.MaxInflightDispatchedMetricsEnabled {
+		f.maxInflight = inflight.NewMaxInflightCollector(
+			"cortex_query_frontend_max_inflight_dispatched_queries",
+			"Peak number of concurrent queries a tenant had dispatched by this frontend and not yet finished, since the last metric collection (reset on each scrape). One API request can dispatch many queries when query sharding or splitting is enabled.",
+			"cortex_query_frontend_max_inflight_dispatched_query_age_seconds",
+			"Greatest age reached by a query dispatched by this frontend for a tenant since the last metric collection (reset on each scrape). Queries that finished within the window are included.",
+		)
+		if reg != nil {
+			reg.MustRegister(f.maxInflight)
+		}
+	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_frontend_connected_schedulers",
@@ -319,6 +342,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
 	// This runs when the caller closes the response body, which reaches the query-frontend
@@ -329,6 +353,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
 		f.inflightRequestCount.Dec()
+		f.untrackInflight(freq)
 	})
 	cleanupInDefer := true
 	defer func() {
@@ -433,6 +458,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 
 	go func() {
 		defer func() {
@@ -440,6 +466,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			cancelStream(errExecutingQueryRoundTripFinished)
 			logger.Finish()
 			f.inflightRequestCount.Dec()
+			f.untrackInflight(freq)
 		}()
 
 		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(streamContext)
@@ -1075,6 +1102,24 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 	msg := fmt.Sprintf("not ready: number of schedulers this worker is connected to is %d", workers)
 	level.Info(f.log).Log("msg", msg)
 	return errors.New(msg)
+}
+
+// trackInflight starts counting freq towards the tenant's peak in-flight queries and query
+// age. It pairs with untrackInflight, and does nothing when the metrics are disabled.
+func (f *Frontend) trackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	freq.maxInflightID = f.maxInflight.Add(freq.userID)
+}
+
+// untrackInflight stops counting freq. It is safe to call more than once for the same
+// request, which matters because the caller's cleanup can run more than once.
+func (f *Frontend) untrackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	f.maxInflight.Remove(freq.maxInflightID)
 }
 
 type requestsInProgress struct {
