@@ -26,10 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
-	return c.BackfillWithOptions(ctx, blocks, sleepTime, verify.NewVerifier(c.logger), false)
-}
-
 // BackfillWithOptions runs the provided verifier over all blocks before any
 // upload begins. If any block fails verification, the method returns the
 // aggregated error without issuing any /api/v1/upload/block/... requests.
@@ -57,10 +53,14 @@ func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, 
 			return report.Err()
 		}
 
-		if dryRun {
+	}
+	if dryRun {
+		if verifier != nil {
 			level.Info(c.logger).Log("msg", "dry-run: verification passed, skipping uploads", "blocks", len(blocks))
-			return nil
+		} else {
+			level.Info(c.logger).Log("msg", "dry-run with verification disabled, doing nothing")
 		}
+		return nil
 	}
 
 	// Upload each block
