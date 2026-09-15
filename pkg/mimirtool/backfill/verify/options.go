@@ -6,7 +6,6 @@ package verify
 type options struct {
 	blockChecks []BlockVerifier
 	batchChecks []BatchVerifier
-	mode        Mode
 	failFast    bool
 	concurrency int
 }
@@ -25,9 +24,6 @@ func WithBlockCheck(v BlockVerifier) Option {
 func WithBatchCheck(v BatchVerifier) Option {
 	return func(o *options) { o.batchChecks = append(o.batchChecks, v) }
 }
-
-// WithMode sets the verification depth mode.
-func WithMode(m Mode) Option { return func(o *options) { o.mode = m } }
 
 // WithFailFast toggles fail-fast behavior.
 // When false, all blocks and all checks run to completion ("full report").

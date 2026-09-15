@@ -222,7 +222,7 @@ func TestCheckMaxBlockSize(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := checkMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
+			err := CheckMaxBlockSize(tc.files, tc.maxBlockSizeBytes)
 			if tc.expectErr {
 				require.Error(t, err)
 				return

@@ -84,8 +84,6 @@ func writeMinimalBlockDir(t *testing.T, parent string, minTime, maxTime int64) s
 
 func TestNewVerifier_Defaults(t *testing.T) {
 	v := NewVerifier(log.NewNopLogger())
-	require.Equal(t, Deep, v.Mode())
-
 	report := v.Run(context.Background(), nil)
 	require.NotNil(t, report)
 	assert.False(t, report.HasFailures())

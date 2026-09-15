@@ -40,6 +40,8 @@ func (v *SingleUTCDayVerifier) Verify(_ context.Context, _ string, meta block.Me
 			meta.MinTime, meta.MaxTime)
 	}
 
+	// Note: very small negative timestamps will map to the same 0 bucket as small
+	// positive timestamps.
 	startDay := meta.MinTime / msPerDay
 	endDay := (meta.MaxTime - 1) / msPerDay
 	if startDay != endDay {

@@ -42,7 +42,13 @@ func (r *Report) Add(blockULID, checkName, blockDir string, err error) {
 		Check:     checkName,
 		Err:       err,
 	})
-	r.failedBlocks[blockULID] = struct{}{}
+	// Only add to r.failedBlocks for valid block / dirs.
+	switch {
+	case blockULID != "":
+		r.failedBlocks[blockULID] = struct{}{}
+	case blockDir != "":
+		r.failedBlocks[blockDir] = struct{}{}
+	}
 }
 
 // HasFailures reports whether any failure has been recorded.
@@ -62,24 +68,11 @@ func (r *Report) Failures() []Failure {
 }
 
 // Summary returns (totalBlocks, failedBlocks, totalFailures). failedBlocks
-// excludes the empty-ULID bucket used for batch/meta failures.
+// includes the empty-ULID bucket used for batch/meta failures.
 func (r *Report) Summary() (int, int, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.totalBlocks, r.uniqueBlockCountLocked(), len(r.failures)
-}
-
-// uniqueBlockCountLocked returns the number of distinct failing blocks by
-// ULID, excluding the empty-ULID bucket reserved for batch/meta failures.
-// Caller must hold r.mu.
-func (r *Report) uniqueBlockCountLocked() int {
-	n := 0
-	for ulid := range r.failedBlocks {
-		if ulid != "" {
-			n++
-		}
-	}
-	return n
+	return r.totalBlocks, len(r.failedBlocks), len(r.failures)
 }
 
 // Err returns a single aggregated error suitable for propagating from
@@ -94,6 +87,9 @@ func (r *Report) Err() error {
 	if len(r.failures) == 0 {
 		return nil
 	}
+	if len(r.failedBlocks) == 0 {
+		return fmt.Errorf("verification failed: %d failure(s)", len(r.failures))
+	}
 	return fmt.Errorf("verification failed: %d failure(s) across %d block(s)",
-		len(r.failures), r.uniqueBlockCountLocked())
+		len(r.failures), len(r.failedBlocks))
 }

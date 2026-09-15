@@ -46,8 +46,16 @@ func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, 
 	report := verifier.Run(ctx, blocks)
 	if report.HasFailures() {
 		for _, f := range report.Failures() {
-			logctx := log.With(c.logger, "block", f.BlockULID)
-			level.Error(logctx).Log("check", f.Check, "msg", f.Err.Error())
+			var logger log.Logger
+			switch {
+			case f.BlockULID != "":
+				logger = log.With(c.logger, "block", f.BlockULID)
+			case f.BlockDir != "":
+				logger = log.With(c.logger, "blockdir", f.BlockDir)
+			default:
+				logger = c.logger
+			}
+			level.Error(logger).Log("check", f.Check, "msg", f.Err.Error())
 		}
 		return report.Err()
 	}

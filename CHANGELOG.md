@@ -4351,34 +4351,34 @@ _Changes since Cortex 1.10.0._
 
   * Distributor endpoints
 
-    | Legacy endpoint              | Alternative                   |
-    | ---------------------------- | ----------------------------- |
-    | `/<legacy-http-prefix>/push` | `/api/v1/push`                |
-    | `/all_user_stats`            | `/distributor/all_user_stats` |
-    | `/ha-tracker`                | `/distributor/ha_tracker`     |
+    | Legacy endpoint               | Alternative                   |
+    | ----------------------------- | ----------------------------- |
+    | `/<legacy-http-prefix>/push`  | `/api/v1/push`                |
+    | `/all_user_stats`             | `/distributor/all_user_stats` |
+    | `/ha-tracker`                 | `/distributor/ha_tracker`     |
 
   * Ingester endpoints
 
-    | Legacy      | Alternative          |
-    | ----------- | -------------------- |
-    | `/ring`     | `/ingester/ring`     |
-    | `/shutdown` | `/ingester/shutdown` |
-    | `/flush`    | `/ingester/flush`    |
-    | `/push`     | `/ingester/push`     |
+    | Legacy          | Alternative           |
+    | --------------- | --------------------- |
+    | `/ring`         | `/ingester/ring`      |
+    | `/shutdown`     | `/ingester/shutdown`  |
+    | `/flush`        | `/ingester/flush`     |
+    | `/push`         | `/ingester/push`      |
 
   * Ruler endpoints
 
-    | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                  |
-    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                    |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                    |
-    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         | `<prometheus-http-prefix>/config/v1/rules`                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                    |
+    | Legacy                                                | Alternative                                         | Alternative #2 (not available before Mimir 2.0.0)                    |
+    | ----------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |                                                                     |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |                                                                     |
+    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |  `<prometheus-http-prefix>/config/v1/rules`                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |  `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |  `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |  `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/ruler_ring`                                         | `/ruler/ring`                                       |                                                                     |
 
     > __Note:__ The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
     in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
@@ -4386,10 +4386,10 @@ _Changes since Cortex 1.10.0._
 
   * Alertmanager endpoints
 
-    | Legacy                  | Alternative                        |
-    | ----------------------- | ---------------------------------- |
-    | `/<legacy-http-prefix>` | `/alertmanager`                    |
-    | `/status`               | `/multitenant_alertmanager/status` |
+    | Legacy                      | Alternative                        |
+    | --------------------------- | ---------------------------------- |
+    | `/<legacy-http-prefix>`     | `/alertmanager`                    |
+    | `/status`                   | `/multitenant_alertmanager/status` |
 
 * [CHANGE] Ingester: changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
 * [CHANGE] Ingester: default `-ingester.ring.min-ready-duration` reduced from 1m to 15s. #126

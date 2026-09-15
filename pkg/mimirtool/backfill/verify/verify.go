@@ -41,9 +41,9 @@ type BlockVerifier interface {
 type BatchVerifier interface {
 	Name() string
 	// Verify runs the verification for the batch. It should return nil on
-	// success, and error if the verification fails. One verification may produce
-	// many failures, so individual error reports should be added to the provided
-	// Report.
+	// success, and error if the verification fails. Verifiers should record
+	// individual failures to the provided Report, and the error text will be
+	// recorded as an failure summary in the Report.
 	Verify(ctx context.Context, blocks []BlockRef, report *Report) error
 }
 
@@ -62,7 +62,6 @@ type Verifier struct {
 // NewVerifier assembles a Verifier from the given Options.
 func NewVerifier(logger log.Logger, opts ...Option) *Verifier {
 	o := options{
-		mode:        Deep,
 		failFast:    true,
 		concurrency: 0,
 	}
@@ -71,9 +70,6 @@ func NewVerifier(logger log.Logger, opts ...Option) *Verifier {
 	}
 	return &Verifier{logger: logger, opts: o}
 }
-
-// Mode returns the verifier's configured depth mode.
-func (v *Verifier) Mode() Mode { return v.opts.mode }
 
 // Run executes all registered per-block verifiers in parallel, then all batch
 // verifiers sequentially. It returns a Report aggregating per-block, per-check
@@ -120,6 +116,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			refs = append(refs, BlockRef{Dir: dir, Meta: *meta})
 			refsMu.Unlock()
 
+			// XXX: We should probably add a verifier for duplicate block ULID
 			blockULID := meta.ULID.String()
 			blockLogger := log.With(v.logger, "block", blockULID)
 			level.Info(blockLogger).Log("msg", "verifying block")
@@ -129,38 +126,41 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 					return nil
 				}
 				if verr := check.Verify(egCtx, dir, *meta); verr != nil {
-					level.Error(blockLogger).Log("check", check.Name(), "msg", verr.Error())
+					if err := egCtx.Err(); err != nil {
+						return nil
+					}
 					report.Add(blockULID, check.Name(), dir, verr)
 					if v.opts.failFast {
 						return errFailFast
 					}
 					continue
 				}
-				level.Info(blockLogger).Log("check", check.Name(), "msg", "passed")
 			}
 
-			level.Info(blockLogger).Log("msg", "verified")
 			return nil
 		})
 	}
 
 	_ = eg.Wait() // errFailFast is a signal, not a reportable error
 
-	// If fail-fast is true and we already have an error, do not bother to run
-	// batch checks.
-	batchShouldRun := !report.HasFailures() || !v.opts.failFast
-	if batchShouldRun {
+	if err := ctx.Err(); err != nil {
+		report.Add("", "context", "", fmt.Errorf("verification aborted before all blocks were checked: %w", err))
+	}
+
+	// Only run batch checks if the context is still good, and if the report has
+	// failures, only run if we've been asked to do a full report.
+	if ctx.Err() == nil && (!report.HasFailures() || !v.opts.failFast) {
 		for _, bcheck := range v.opts.batchChecks {
 			level.Info(v.logger).Log("check", bcheck.Name(), "msg", "running batch check")
 			err := bcheck.Verify(ctx, refs, report)
-			if err == nil {
-				level.Info(v.logger).Log("check", bcheck.Name(), "msg", "passed")
-				continue
-			}
-			level.Error(v.logger).Log("check", bcheck.Name(), "msg", err.Error())
-			report.Add("", bcheck.Name(), "", err)
-			if v.opts.failFast {
-				break
+			if err != nil {
+				// Batch verifiers are expected to write their own reports, but failure
+				// to do so will cause verification to incorrectly pass. Instead, add
+				// a report item for the error summary.
+				report.Add("", bcheck.Name(), "", err)
+				if v.opts.failFast {
+					break
+				}
 			}
 		}
 	} else if len(v.opts.batchChecks) > 0 {

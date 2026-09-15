@@ -175,7 +175,6 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 		// Block-level checks run in registration order, so run cheap checks first
 		// so fail-fast skips expensive walks when the meta is already bad.
 		opts := []verify.Option{
-			verify.WithMode(mode),
 			verify.WithFailFast(c.failFast),
 			verify.WithConcurrency(c.verifyConcurrency),
 			verify.WithBlockCheck(verify.NewMetaCheckVerifier(logger)),
