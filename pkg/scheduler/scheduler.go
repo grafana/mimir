@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/parentquery"
 )
 
 var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
@@ -304,10 +306,15 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
 				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
 			default:
-				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")
+				level.Debug(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.ParentQueryID)...)).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete", "addr", frontendAddress)
 			}
 
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
+			if msg.ParentQueryID != 0 {
+				// Reported as a string because the query-frontend seeds parent query IDs randomly,
+				// so roughly half of them are outside the range of an int64 attribute.
+				enqueueSpan.SetAttributes(attribute.String(parentquery.FieldName, strconv.FormatUint(msg.ParentQueryID, 10)))
+			}
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
@@ -315,6 +322,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
 				enqueueSpan.RecordError(err)
+				level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.ParentQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			case errors.Is(err, queue.ErrStopped):
 				enqueueSpan.RecordError(err)
@@ -402,6 +410,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
+		ParentQueryID:             msg.ParentQueryID,
 		StatsEnabled:              msg.StatsEnabled,
 		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
@@ -418,6 +427,8 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	now := time.Now()
 
 	req.ParentSpanContext = trace.SpanContextFromContext(requestContext)
+	// The parent query ID is not set on this span: it is already on the "enqueue" span this one
+	// descends from
 	req.Ctx, req.QueueSpan = tracer.Start(ctx, "queued")
 	req.EnqueueTime = now
 	req.CancelFunc = cancel
@@ -563,6 +574,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		msg := &schedulerpb.SchedulerToQuerier{
 			UserID:          req.UserID,
 			QueryID:         req.QueryID,
+			ParentQueryID:   req.ParentQueryID,
 			FrontendAddress: req.FrontendAddr,
 			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
@@ -634,6 +646,8 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 }
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRequest, requestErr error) {
+	logger := log.With(s.log, req.LogFields()...)
+
 	opts, err := s.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
@@ -644,14 +658,14 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
 	)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+		level.Warn(logger).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
 
 	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(ctx, req.FrontendAddr, opts...)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+		level.Warn(logger).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
 
@@ -673,13 +687,13 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 		})
 
 		if err != nil {
-			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
 		}
 	} else { // Protobuf request, so send a streaming response.
 		stream, err := client.QueryResultStream(userCtx)
 		if err != nil {
-			level.Warn(s.log).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			level.Warn(logger).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
 		}
 
@@ -694,12 +708,12 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 		}
 
 		if err := stream.Send(&msg); err != nil {
-			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			level.Warn(logger).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
 		}
 
 		if _, err = stream.CloseAndRecv(); err != nil {
-			level.Warn(s.log).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			level.Warn(logger).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
 		}
 	}
