@@ -141,7 +141,7 @@ func newPartitionHandler(
 
 		snapshotsKafkaWriter: snapshotsKafkaWriter,
 		snapshotsBucket:      snapshotsBucket,
-		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
+		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, cfg.NumShards),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
@@ -900,7 +900,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 		return nil
 	}
 
-	for s := range shards {
+	for s := 0; s < p.store.numShards; s++ {
 		var buf []byte
 		if len(bufs) > 0 {
 			buf, bufs = bufs[len(bufs)-1], bufs[:len(bufs)-1]

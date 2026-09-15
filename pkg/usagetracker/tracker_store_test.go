@@ -26,10 +26,20 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
-// newTestShardFactory returns a factory for the default tenant shard map implementation.
-// The behaviour of every implementation is covered by the tenantshard package tests.
+// shards is the shard count that newTestShardFactory uses. Tests whose assertions depend on
+// the shard count read it from here.
+const shards = tenantshard.DefaultNumShards
+
+// newTestShardFactory returns a factory for the default tenant shard map implementation and
+// the default shard count. The behaviour of every implementation is covered by the
+// tenantshard package tests.
 func newTestShardFactory() tenantshard.Factory {
-	newShard, err := tenantshard.NewFactory(tenantshard.DefaultImplVersion)
+	return newTestShardFactoryWithShards(shards)
+}
+
+// newTestShardFactoryWithShards is newTestShardFactory with an explicit shard count.
+func newTestShardFactoryWithShards(numShards int) tenantshard.Factory {
+	newShard, err := tenantshard.NewFactory(tenantshard.DefaultImplVersion, numShards)
 	if err != nil {
 		panic(err)
 	}
@@ -751,9 +761,12 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 	version := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
 	require.Equal(t, uint8(snapshotEncodingVersion), version)
+	numShards := snapshot.Uvarint64()
+	require.NoError(t, snapshot.Err())
+	require.Equal(t, uint64(shards), numShards)
 	shard := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
-	require.True(t, shard < shards)
+	require.Less(t, uint64(shard), numShards)
 
 	_ = time.Unix(int64(snapshot.Be64()), 0)
 	require.NoError(t, snapshot.Err())
@@ -796,61 +809,68 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				groupByModuloShards(inputs[i])
+				groupByModuloShards(inputs[i], shards)
 			}
 		})
 	}
 }
 
 func TestGroupByModuloShards(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		var series []uint64
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.Empty(t, series)
-	})
+	// The shard count is configurable, so the grouping has to hold for any of them, including the
+	// degenerate single-shard case and the maximum.
+	for _, numShards := range []int{1, 2, 3, 16, 100, tenantshard.MaxNumShards} {
+		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
+			t.Run("empty", func(t *testing.T) {
+				var series []uint64
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.Empty(t, series)
+			})
 
-	t.Run("single element", func(t *testing.T) {
-		series := []uint64{42}
-		original := slices.Clone(series)
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.ElementsMatch(t, series, original)
-	})
+			t.Run("single element", func(t *testing.T) {
+				series := []uint64{42}
+				original := slices.Clone(series)
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.ElementsMatch(t, series, original)
+			})
 
-	t.Run("basic", func(t *testing.T) {
-		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-		original := slices.Clone(series)
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.ElementsMatch(t, series, original)
-	})
+			t.Run("basic", func(t *testing.T) {
+				series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+				original := slices.Clone(series)
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.ElementsMatch(t, series, original)
+			})
 
-	t.Run("random tests", func(t *testing.T) {
-		r := rand.New(rand.NewSource(0))
-		for i := 0; i < 1000; i++ {
-			series := make([]uint64, r.Int63n(1024))
-			for i := range series {
-				series[i] = r.Uint64()
-			}
-			original := slices.Clone(series)
-			groupByModuloShards(series)
-			requireGroupedByModuloShards(t, series)
-			require.ElementsMatch(t, series, original)
-		}
-	})
+			t.Run("random tests", func(t *testing.T) {
+				r := rand.New(rand.NewSource(0))
+				for i := 0; i < 1000; i++ {
+					series := make([]uint64, r.Int63n(1024))
+					for i := range series {
+						series[i] = r.Uint64()
+					}
+					original := slices.Clone(series)
+					groupByModuloShards(series, numShards)
+					requireGroupedByModuloShards(t, series, numShards)
+					require.ElementsMatch(t, series, original)
+				}
+			})
+		})
+	}
 }
 
-func requireGroupedByModuloShards(t *testing.T, series []uint64) {
+func requireGroupedByModuloShards(t *testing.T, series []uint64, numShards int) {
 	t.Helper()
 	if len(series) == 0 {
 		return
 	}
-	current := series[0] % shards
+	mod64 := uint64(numShards)
+	current := series[0] % mod64
 	seenModulos := make(map[uint64]bool)
 	seenModulos[current] = true
 	for _, s := range series[1:] {
-		mod := s % shards
+		mod := s % mod64
 		if mod != current {
 			if seenModulos[mod] {
 				t.Fatalf("modulo %d from s=%d was seen already", mod, s)

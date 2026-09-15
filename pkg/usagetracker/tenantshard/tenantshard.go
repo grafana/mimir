@@ -21,9 +21,17 @@ import (
 )
 
 const (
-	// NumShards is the number of shards used by the tracker store per tenant.
-	// Implementations size themselves relative to it, so their copies must hold the same value.
-	NumShards = 16
+	// DefaultNumShards is the default number of shards used by the tracker store per tenant.
+	// It is a balanced default: more shards lower lock contention and cleanup-induced tail
+	// latency for very large tenants, but add fixed per-tenant overhead that is wasteful for
+	// small tenants. It is configurable via -usage-tracker.num-shards; see that flag and the
+	// usagetracker.Config.NumShards field for the full tradeoff.
+	DefaultNumShards = 16
+
+	// MaxNumShards is the maximum number of shards allowed per tenant.
+	// The shard index is stored as a single byte (uint8) in snapshots and used to index
+	// per-tenant shard slices, so it must fit in [0, 256).
+	MaxNumShards = 256
 
 	// DefaultImplVersion is the implementation used unless it is configured otherwise.
 	DefaultImplVersion = 1
@@ -77,19 +85,42 @@ type Stats struct {
 	Rehashes uint32 `json:"rehashes"`
 }
 
-// Factory creates a Map with capacity for size elements.
-type Factory func(size uint32) Map
+// Factory creates the per-tenant shard maps of one implementation.
+// It also carries the number of shards each tenant is split into: the maps derive their
+// per-shard target size from the tenant-wide series limit, so they need to know how many
+// ways that limit is split, and the tracker store reads it back to size its shard slices.
+// The zero value is not usable: build one with NewFactory.
+type Factory struct {
+	numShards int
+	newMap    func(size, numShards uint32) Map
+}
 
-// NewFactory returns a Factory that builds maps of the given implementation version.
-func NewFactory(version int) (Factory, error) {
+// New creates a Map with capacity for size elements.
+func (f Factory) New(size uint32) Map {
+	return f.newMap(size, uint32(f.numShards))
+}
+
+// NumShards is the number of shards each tenant's series are split into.
+func (f Factory) NumShards() int {
+	return f.numShards
+}
+
+// NewFactory returns a Factory that builds maps of the given implementation version,
+// for tenants split into numShards shards.
+func NewFactory(version int, numShards int) (Factory, error) {
+	if numShards < 1 || numShards > MaxNumShards {
+		return Factory{}, fmt.Errorf("invalid number of tenant shards %d, must be between 1 and %d", numShards, MaxNumShards)
+	}
+	f := Factory{numShards: numShards}
 	switch version {
 	case 1:
-		return func(size uint32) Map { return v1Map{v1.New(size)} }, nil
+		f.newMap = func(size, numShards uint32) Map { return v1Map{v1.New(size, numShards)} }
 	case 2:
-		return func(size uint32) Map { return v2Map{v2.New(size)} }, nil
+		f.newMap = func(size, numShards uint32) Map { return v2Map{v2.New(size, numShards)} }
 	default:
-		return nil, fmt.Errorf("unsupported tenant shard map implementation version %d, supported versions are 1 and 2", version)
+		return Factory{}, fmt.Errorf("unsupported tenant shard map implementation version %d, supported versions are 1 and 2", version)
 	}
+	return f, nil
 }
 
 // v1Map adapts v1.Map to the Map interface, and v2Map does the same for v2.Map.
