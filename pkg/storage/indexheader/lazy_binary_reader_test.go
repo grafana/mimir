@@ -694,7 +694,7 @@ func BenchmarkLazyBinaryReader_LoadReader(b *testing.B) {
 			require.NoError(b, err)
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName, false))
 
 			diskReaderBenchFactory := func(
 				cachingBucket *bucketcache.CachingBucket,
