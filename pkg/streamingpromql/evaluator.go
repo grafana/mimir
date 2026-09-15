@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
@@ -94,34 +95,45 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
-	// Recover from panics during evaluation.
+	// Recover from panics during evaluation. A panic can come from the engine's own invariant checks,
+	// a Go runtime error, or library code (notably the Prometheus histogram library, which panics on
+	// invalid data such as a native histogram with a negative-offset span that older versions could
+	// write). Unhandled, it would crash a querier or ruler shared by many tenants.
 	//
-	// A genuine Go runtime error (nil dereference, index out of range, ...) indicates a bug in
-	// the engine, so we re-panic to crash the process: engine bugs are typically reproducible in
-	// test environments, and failing fast there surfaces them before they reach production.
+	// surfaceEvaluationPanics decides what happens, regardless of the panic's source:
+	//   - Enabled (dev and ops): re-raise every panic so it crashes the process and bugs fail fast.
+	//   - Disabled (the default, production): convert every panic into a query error, matching the
+	//     Prometheus engine, so one bad query or series cannot take down the component.
 	//
-	// Any other panic is converted into a query error rather than crashing. In particular, the
-	// Prometheus histogram library uses panic-with-an-error as an error channel when it encounters
-	// invalid data during evaluation (for example a stored native histogram with a negative-offset
-	// span, which older versions could write). Such data is only ever seen in production, so a
-	// crash there cannot be caught earlier and would take down a querier or ruler shared by other
-	// tenants. Converting it into a failed query matches how the Prometheus engine behaves.
-	//
-	// Either way the stats logging above reports the query as failed instead of successful. Recovered
-	// panics are counted, labelled by the affected tenant and a coarse reason, so they can be alerted
-	// on; re-panicked runtime errors are not, because the process exits before the counter could be
-	// reliably scraped, and the crash is visible on its own.
+	// Either way the stats logging above reports the query as failed. Recovered panics are counted,
+	// labelled by tenant and a coarse reason, and logged with a stack trace (except known invalid-data
+	// panics, which can recur on every evaluation over the same series).
 	defer func() {
 		r := recover()
 		if r == nil {
 			return
 		}
 
-		if _, isRuntimeErr := r.(runtime.Error); isRuntimeErr {
-			level.Error(logger).Log("msg", "runtime error while evaluating query, re-panicking to crash", "err", r, "expr", e.originalExpression)
-			if err == nil {
+		rErr, isErr := r.(error)
+		if err == nil {
+			if isErr {
+				err = rErr
+			} else {
 				err = fmt.Errorf("panic during query evaluation: %v", r)
 			}
+		}
+
+		// logWithStack logs msg with the panic's stack trace. It must run in this deferred function,
+		// while the unwinding stack is still intact, so the trace reaches the panic site: re-panicking
+		// would otherwise discard those frames, and when recovering the log is the only pointer to them.
+		logWithStack := func(l log.Logger, msg string) {
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+			l.Log("msg", msg, "err", r, "expr", e.originalExpression, "stacktrace", string(buf))
+		}
+
+		if e.engine.surfaceEvaluationPanics {
+			logWithStack(level.Error(logger), "panic while evaluating query, re-panicking to crash")
 			panic(r)
 		}
 
@@ -130,37 +142,28 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 			userID = tenant.JoinTenantIDs(tenantIDs)
 		}
 
-		// Classify the panic so data problems can be told apart from possible engine bugs without
-		// reading logs. Validation errors raised by the histogram library indicate invalid stored
-		// data; anything else may be a bug even though nothing crashed.
+		// Classify the panic so data problems and likely bugs can be told apart without reading logs.
+		// Validation errors from the histogram library mean invalid stored data; a Go runtime error is
+		// almost certainly an engine bug; anything else is unclassified and may also be a bug.
+		_, isRuntimeErr := r.(runtime.Error)
 		reason := "other"
-		rErr, isErr := r.(error)
 		if isErr {
 			var validationErr histogram.Error
-			if errors.As(rErr, &validationErr) {
+			switch {
+			case errors.As(rErr, &validationErr):
 				reason = "invalid_data"
+			case isRuntimeErr:
+				reason = "runtime_error"
 			}
 		}
 
 		e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
 		if reason == "invalid_data" {
-			// The panic's origin is known and this can recur on every evaluation over the same
-			// invalid series, so don't log a stack trace for it.
+			// Origin is known and this recurs over the same invalid series, so log no stack trace.
 			level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
 		} else {
-			// A possible engine bug that no longer crashes the process: the stack trace in this log
-			// is the only remaining pointer to the panic's origin, so capture it. Deferred functions
-			// run before the stack unwinds, so this includes the frames down to the panic site.
-			buf := make([]byte, 64<<10)
-			buf = buf[:runtime.Stack(buf, false)]
-			level.Error(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression, "stacktrace", string(buf))
-		}
-		if err == nil {
-			if isErr {
-				err = rErr
-			} else {
-				err = fmt.Errorf("panic during query evaluation: %v", r)
-			}
+			// A possible engine bug that no longer crashes: the stack trace is the only pointer to its origin.
+			logWithStack(level.Error(logger), "recovered from panic while evaluating query, returning it as a query error")
 		}
 	}()
 
