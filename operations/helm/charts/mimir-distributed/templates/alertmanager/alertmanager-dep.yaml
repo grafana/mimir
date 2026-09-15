@@ -32,7 +32,7 @@ spec:
     spec:
       serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
-      priorityClassName: {{ .Values.query_frontend.priorityClassName }}
+      priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
