@@ -3,7 +3,6 @@
 package rangevectorsplitting_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -85,59 +84,6 @@ func TestQuerySplitting_SubqueryNestedAnnotationsAreAttributedPerBlock(t *testin
 			require.Len(t, cachedResult.Warnings.AsErrors(), 1)
 			require.Contains(t, cachedResult.Warnings.AsErrors()[0].Error(), mixedTypesWarning)
 			verifyCacheStats(t, testCache, expectedEntries*2, expectedEntries, expectedEntries)
-		})
-	}
-}
-
-func TestSubquery_IsSplittable(t *testing.T) {
-	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-
-	testCases := map[string]struct {
-		expr       string
-		splittable bool
-	}{
-		"plain selector nested inside the subquery": {
-			expr:       `sum_over_time(test_metric[5h:1h])`,
-			splittable: true,
-		},
-		"step-invariant expression with no selector nested inside the subquery": {
-			expr:       `sum_over_time(vector(1)[5h:1h])`,
-			splittable: true,
-		},
-		"smoothed matrix selector nested inside the subquery": {
-			expr:       `sum_over_time(rate(test_metric[3m] smoothed)[5h:1h])`,
-			splittable: false,
-		},
-		"smoothed vector selector nested inside the subquery": {
-			expr:       `sum_over_time((test_metric smoothed)[5h:1h])`,
-			splittable: false,
-		},
-		"anchored selector nested inside the subquery": {
-			expr:       `sum_over_time(rate(test_metric[3m] anchored)[5h:1h])`,
-			splittable: false,
-		},
-		"positive offset selector nested inside the subquery": {
-			expr:       `sum_over_time(rate(test_metric[3m] offset 10m)[5h:1h])`,
-			splittable: true,
-		},
-		"negative offset selector nested inside the subquery": {
-			expr:       `sum_over_time(rate(test_metric[3m] offset -10m)[5h:1h])`,
-			splittable: true,
-		},
-		"@ modifier selector nested inside the subquery": {
-			expr:       `sum_over_time((test_metric @ 100)[5h:1h])`,
-			splittable: true,
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			plan, err := planner.NewQueryPlan(t.Context(), tc.expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(24*time.Hour)),
-				streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
-			require.NoError(t, err)
-
-			require.Equal(t, tc.splittable, strings.Contains(plan.String(), "SplitFunctionCall"), "plan:\n%s", plan.String())
 		})
 	}
 }

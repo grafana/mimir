@@ -55,25 +55,7 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 }
 
 func (s *Subquery) IsSplittable() bool {
-	return !hasUnsupportedExtendedRangeModifier(s.Inner)
-}
-
-// hasUnsupportedExtendedRangeModifier reports whether the subtree contains a smoothed or anchored selector.
-func hasUnsupportedExtendedRangeModifier(node planning.Node) bool {
-	switch n := node.(type) {
-	case *MatrixSelector:
-		return n.Anchored || n.Smoothed
-	case *VectorSelector:
-		return n.Smoothed
-	}
-
-	for child := range planning.ChildrenIter(node) {
-		if hasUnsupportedExtendedRangeModifier(child) {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
 
 func (s *Subquery) GetRangeParams() planning.RangeParams {
