@@ -154,3 +154,49 @@ func TestExprNodesImplementExpr(t *testing.T) {
 	And{}.expr()
 	Or{}.expr()
 }
+
+func FuzzParse(f *testing.F) {
+	for _, input := range []string{
+		"",
+		"cortex",
+		"cortex AND rule_evaluation_failures OR loki",
+		"(cortex OR loki) AND rule_evaluation_failures",
+		`"AND" OR "rule evaluation failures"`,
+		`"unterminated`,
+		"cortex AND )",
+		"\x00",
+		"\xff",
+		"((((((cortex))))))",
+	} {
+		f.Add(input)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		expr, err := Parse(input)
+		if err != nil {
+			return
+		}
+		require.NotNil(t, expr)
+		assertWellFormedExpr(t, expr)
+	})
+}
+
+func assertWellFormedExpr(t *testing.T, expr Expr) {
+	t.Helper()
+	switch expr := expr.(type) {
+	case Term:
+		assert.NotEmpty(t, expr.Value)
+	case And:
+		require.NotNil(t, expr.Left)
+		require.NotNil(t, expr.Right)
+		assertWellFormedExpr(t, expr.Left)
+		assertWellFormedExpr(t, expr.Right)
+	case Or:
+		require.NotNil(t, expr.Left)
+		require.NotNil(t, expr.Right)
+		assertWellFormedExpr(t, expr.Left)
+		assertWellFormedExpr(t, expr.Right)
+	default:
+		t.Fatalf("unexpected expression type %T", expr)
+	}
+}
