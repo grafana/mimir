@@ -127,13 +127,23 @@ func run() error {
 	fmt.Println()
 
 	fmt.Fprintln(os.Stderr, "building cost-based planner statistics…")
-	costPlanner, err := storegateway.BuildCostBasedPlanner(blockDir, meta, logger)
+	ingestCostPlanner, err := storegateway.BuildCostBasedPlanner(blockDir, meta, ingestCostConfig(), logger)
 	if err != nil {
-		return fmt.Errorf("build cost-based planner: %w", err)
+		return fmt.Errorf("build cost-based planner (ingester config): %w", err)
 	}
-	fmt.Println("=== CostBasedPlanner ===")
-	if err := runWithPlanner(ctx, meta, instrBkt, headerReader, matchers, costPlanner); err != nil {
-		return fmt.Errorf("CostBasedPlanner: %w", err)
+	fmt.Println("=== CostBasedPlanner (ingester cost config) ===")
+	if err := runWithPlanner(ctx, meta, instrBkt, headerReader, matchers, ingestCostPlanner); err != nil {
+		return fmt.Errorf("CostBasedPlanner (ingester): %w", err)
+	}
+	fmt.Println()
+
+	sgPlanner, err := storegateway.BuildCostBasedPlanner(blockDir, meta, sgCostConfig(), logger)
+	if err != nil {
+		return fmt.Errorf("build cost-based planner (sg config): %w", err)
+	}
+	fmt.Println("=== CostBasedPlanner (store-gateway cost config) ===")
+	if err := runWithPlanner(ctx, meta, instrBkt, headerReader, matchers, sgPlanner); err != nil {
+		return fmt.Errorf("CostBasedPlanner (sg): %w", err)
 	}
 
 	return nil
