@@ -186,6 +186,143 @@ func TestFilterOrShortCircuitsAtPerfectMatch(t *testing.T) {
 	assert.Equal(t, 1, called, "second filter must not be invoked once a child returns 1.0")
 }
 
+func TestFilterAndRejectsAndShortCircuits(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		filters func(*int) []storage.Filter
+	}{
+		{
+			name: "first child rejects",
+			filters: func(called *int) []storage.Filter {
+				return []storage.Filter{
+					scoreFilter{accepted: false},
+					countingFilter{counter: called, accepted: true, score: 0.5},
+				}
+			},
+		},
+		{
+			name: "middle child rejects",
+			filters: func(called *int) []storage.Filter {
+				return []storage.Filter{
+					scoreFilter{accepted: true, score: 0.8},
+					scoreFilter{accepted: false, score: 0.9},
+					countingFilter{counter: called, accepted: true, score: 0.7},
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			called := 0
+			accepted, score := newFilterAnd(test.filters(&called)...).Accept("anything")
+			assert.False(t, accepted)
+			assert.Equal(t, 0.0, score)
+			assert.Zero(t, called, "a rejected child prevents evaluation of later children")
+		})
+	}
+}
+
+func TestFilterAndWithNoChildrenRejects(t *testing.T) {
+	accepted, score := newFilterAnd().Accept("anything")
+	assert.False(t, accepted)
+	assert.Equal(t, 0.0, score)
+}
+
+func TestFilterOrOfAndAcceptsGCXCorpusScenario(t *testing.T) {
+	newContains := func(term string) storage.Filter {
+		filter, err := NewFilterContains(term, true)
+		require.NoError(t, err)
+		return filter
+	}
+
+	filter := newFilterOr(
+		newFilterAnd(newContains("cortex"), newContains("rule_evaluation_failures")),
+		newContains("loki"),
+	)
+
+	for _, test := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "cortex_prometheus_rule_evaluation_failures_total", want: true},
+		{value: "loki_prometheus_rule_evaluation_failures_total", want: true},
+		{value: "envoy_cache_shard_00004_evaluation_failures_total", want: false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			accepted, _ := filter.Accept(test.value)
+			assert.Equal(t, test.want, accepted)
+		})
+	}
+}
+
+func TestFilterCompositionSupportsNestedGroupsWithGCXCorpusCandidates(t *testing.T) {
+	newContains := func(term string) storage.Filter {
+		filter, err := NewFilterContains(term, true)
+		require.NoError(t, err)
+		return filter
+	}
+
+	// All candidates below occur in the GCX metric-name corpus. Keep the
+	// expression structure tests grounded in the same corpus-derived names as
+	// TestFilterOrOfAndAcceptsGCXCorpusScenario; score and short-circuit tests
+	// above intentionally use stub filters because candidate names cannot
+	// control those Filter-contract behaviors deterministically.
+	for _, test := range []struct {
+		name   string
+		filter storage.Filter
+		values map[string]bool
+	}{
+		{
+			name: "cortex AND (rule_evaluation_failures OR cache_shard)",
+			filter: newFilterAnd(
+				newContains("cortex"),
+				newFilterOr(newContains("rule_evaluation_failures"), newContains("cache_shard")),
+			),
+			values: map[string]bool{
+				"cortex_prometheus_rule_evaluation_failures_total":  true,
+				"cortex_cache_shard_00000_operations_total":         true,
+				"loki_prometheus_rule_evaluation_failures_total":    false,
+				"envoy_cache_shard_00004_evaluation_failures_total": false,
+			},
+		},
+		{
+			name: "(cortex OR loki) AND rule_evaluation_failures",
+			filter: newFilterAnd(
+				newFilterOr(newContains("cortex"), newContains("loki")),
+				newContains("rule_evaluation_failures"),
+			),
+			values: map[string]bool{
+				"cortex_prometheus_rule_evaluation_failures_total":  true,
+				"loki_prometheus_rule_evaluation_failures_total":    true,
+				"cortex_cache_shard_00000_operations_total":         false,
+				"envoy_cache_shard_00004_evaluation_failures_total": false,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for value, want := range test.values {
+				t.Run(value, func(t *testing.T) {
+					accepted, _ := test.filter.Accept(value)
+					assert.Equal(t, want, accepted)
+				})
+			}
+		})
+	}
+}
+
+func TestFilterCompositionCombinesScores(t *testing.T) {
+	and := newFilterAnd(
+		scoreFilter{accepted: true, score: 0.9},
+		scoreFilter{accepted: true, score: 0.4},
+	)
+	accepted, score := and.Accept("anything")
+	assert.True(t, accepted)
+	assert.InDelta(t, 0.4, score, 1e-9, "filterAnd returns the lowest accepting child score")
+
+	accepted, score = newFilterOr(and, scoreFilter{accepted: true, score: 0.7}).Accept("anything")
+	assert.True(t, accepted)
+	assert.InDelta(t, 0.7, score, 1e-9, "AND takes the minimum before OR takes the maximum")
+}
+
 type countingFilter struct {
 	counter  *int
 	accepted bool
@@ -353,21 +490,28 @@ func TestCaseFoldingFilterFoldsOncePerAcceptAndPassesLoweredValue(t *testing.T) 
 		"caseFoldingFilter must hand each value, lowered, to the inner filter exactly once")
 }
 
-func TestCaseFoldingFilterFeedsORChildrenLoweredValue(t *testing.T) {
-	// caseFoldingFilter wrapping a filterOr root must fold the value once
-	// and forward the lowered value to every child leaf — never the original
-	// case. Use score 0.5 so filterOr does not short-circuit on the first
-	// leaf (it short-circuits at exactly 1.0).
-	rec1 := &recordingFilter{score: 0.5}
-	rec2 := &recordingFilter{score: 0.5}
-	root := &caseFoldingFilter{inner: newFilterOr(rec1, rec2)}
+func TestCaseFoldingFilterFeedsCompositeChildrenLoweredValue(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		build func(storage.Filter, storage.Filter) storage.Filter
+	}{
+		{name: "OR", build: func(a, b storage.Filter) storage.Filter { return newFilterOr(a, b) }},
+		{name: "AND", build: func(a, b storage.Filter) storage.Filter { return newFilterAnd(a, b) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Use score 0.5 so OR does not short-circuit before both children
+			// receive the candidate.
+			rec1 := &recordingFilter{score: 0.5}
+			rec2 := &recordingFilter{score: 0.5}
+			root := &caseFoldingFilter{inner: test.build(rec1, rec2)}
 
-	_, _ = root.Accept("MIXEDCase_Value")
-
-	assert.Equal(t, []string{"mixedcase_value"}, rec1.seen,
-		"first leaf must see only the lowered value")
-	assert.Equal(t, []string{"mixedcase_value"}, rec2.seen,
-		"second leaf must see only the lowered value (folded once at the root, not per-leaf)")
+			accepted, _ := root.Accept("MIXEDCase_Value")
+			assert.True(t, accepted)
+			assert.Equal(t, []string{"mixedcase_value"}, rec1.seen)
+			assert.Equal(t, []string{"mixedcase_value"}, rec2.seen,
+				"each child must see the value lowered once at the root")
+		})
+	}
 }
 
 // BenchmarkBuildFilterCaseInsensitiveAccept measures allocs/op for repeated
