@@ -1,5 +1,11 @@
 multitenancy_enabled: false
 
+querier:
+  mimir_query_engine:
+    # Crash on query evaluation panics in this dev cluster so engine bugs surface early, instead of
+    # being turned into query errors as they are in production.
+    surface_evaluation_panics: true
+
 distributor:
   pool:
     health_check_ingesters: true
@@ -56,7 +62,6 @@ blocks_storage:
     container_name:    mimir-tsdb
 
 ruler:
-  enable_sharding: true
   poll_interval: 2s
   ring:
     kvstore:

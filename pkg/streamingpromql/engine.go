@@ -144,7 +144,12 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
+		evaluationPanics: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_evaluation_panics_total",
+			Help: "Number of panics recovered during query evaluation and converted into query errors, labelled by tenant (user) and reason: 'invalid_data' for invalid stored data, 'runtime_error' for a Go runtime error (likely an engine bug), 'other' for anything else. Not counted while -querier.mimir-query-engine.surface-evaluation-panics is enabled, as panics then crash the process instead.",
+		}, []string{"user", "reason"}),
 
+		surfaceEvaluationPanics:         opts.SurfaceEvaluationPanics,
 		pedantic:                        opts.Pedantic,
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
 		planner:                         planner,
@@ -180,6 +185,11 @@ type Engine struct {
 
 	logger                         log.Logger
 	estimatedPeakMemoryConsumption prometheus.Histogram
+	evaluationPanics               *prometheus.CounterVec
+
+	// When true, query evaluation panics are re-raised to crash the process; when false they are
+	// recovered into query errors. See the SurfaceEvaluationPanics option.
+	surfaceEvaluationPanics bool
 
 	// When operating in pedantic mode:
 	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
