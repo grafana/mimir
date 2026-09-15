@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -177,6 +178,36 @@ func (o *filterOr) Accept(value string) (bool, float64) {
 		}
 	}
 	return any, best
+}
+
+// filterAnd is the AND-min combinator across child filters. It accepts a value
+// only when every child accepts it, and uses the lowest accepted score so an
+// incomplete match cannot rank above its weakest term. An empty AND rejects
+// defensively: a valid expression compiler must never emit one, and accepting
+// it would turn a malformed expression into an unbounded search.
+type filterAnd struct {
+	filters []storage.Filter
+}
+
+func newFilterAnd(filters ...storage.Filter) *filterAnd {
+	return &filterAnd{filters: filters}
+}
+
+func (a *filterAnd) Accept(value string) (bool, float64) {
+	if len(a.filters) == 0 {
+		assert.Unreachable("empty AND filter", map[string]any{"num_filters": len(a.filters)})
+		return false, 0
+	}
+
+	lowest := 1.0
+	for _, f := range a.filters {
+		accepted, score := f.Accept(value)
+		if !accepted {
+			return false, 0
+		}
+		lowest = min(lowest, score)
+	}
+	return true, lowest
 }
 
 // filterFallback is the substring-then-fuzzy combinator per term. Tries
