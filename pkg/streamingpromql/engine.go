@@ -228,7 +228,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 	}
 
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.NewPrometheusQueryOpts(false, 0, nil)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
