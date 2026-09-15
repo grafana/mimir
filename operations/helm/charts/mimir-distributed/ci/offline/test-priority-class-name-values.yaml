@@ -7,14 +7,9 @@ alertmanager:
 compactor:
   priorityClassName: compactor-priority
 
-# check-helm-tests rejects continuous-tests:
-# * spec.strategy.rollingUpdate.maxUnavailable set to 1, but 0 is required
-# * no PodDisruptionBudget
-# When resolved in future, the following test scenario should be enabled:
-#
-# continuous_test:
-#   enabled: true
-#   priorityClassName: continuous-test-priority
+continuous_test:
+  enabled: true
+  priorityClassName: continuous-test-priority
 
 distributor:
   priorityClassName: distributor-priority
