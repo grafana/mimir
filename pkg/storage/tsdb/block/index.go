@@ -8,10 +8,8 @@ package block
 import (
 	"cmp"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -311,9 +309,10 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	return stats, nil
 }
 
+// The TOC section is 6 uint64 fields + CRC32
 // https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md
-// Symbols table is at the beginning of index, right after magic header and version.
-// It starts with length (4bytes) which is what we return.
+const indexTOCLen = 6*8 + crc32.Size
+
 func readIndexSymbolTableSize(indexPath string) (uint64, error) {
 	f, err := os.Open(indexPath)
 	if err != nil {
@@ -321,20 +320,37 @@ func readIndexSymbolTableSize(indexPath string) (uint64, error) {
 	}
 	defer f.Close()
 
-	// 4-byte magic, 1-byte version, 4-byte symbol table length.
-	var buf [9]byte
-	if _, err := io.ReadFull(f, buf[:]); err != nil {
-		return 0, fmt.Errorf("read index header: %w", err)
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat index file: %w", err)
 	}
-	if magic := binary.BigEndian.Uint32(buf[:4]); magic != index.MagicIndex {
-		return 0, fmt.Errorf("invalid index magic: %x", magic)
+	size := fi.Size()
+	if size < int64(indexTOCLen) {
+		return 0, fmt.Errorf("index file too small to contain a valid TOC (size: %d, minimum: %d)", size, indexTOCLen)
 	}
-	// we check V1 and V2 as both have symbol table at the beginning with the same format
-	if buf[4] != index.FormatV1 && buf[4] != index.FormatV2 {
-		return 0, fmt.Errorf("unexpected index format version: 0x%02x", buf[4])
+
+	buf := make([]byte, indexTOCLen)
+	if _, err := f.ReadAt(buf, size-int64(indexTOCLen)); err != nil {
+		return 0, fmt.Errorf("read index TOC: %w", err)
 	}
-	return uint64(binary.BigEndian.Uint32(buf[5:])), nil
+
+	toc, err := index.NewTOCFromByteSlice(realByteSlice(buf))
+	if err != nil {
+		return 0, fmt.Errorf("parse index TOC: %w", err)
+	}
+	if toc.Series < toc.Symbols {
+		return 0, fmt.Errorf("invalid TOC: series offset (%d) before symbols offset (%d)", toc.Series, toc.Symbols)
+	}
+	// The symbols section spans from its start offset to the beginning of the series section.
+	return toc.Series - toc.Symbols, nil
 }
+
+// realByteSlice implements index.ByteSlice over a plain byte slice.
+type realByteSlice []byte
+
+func (b realByteSlice) Len() int                     { return len(b) }
+func (b realByteSlice) Range(s, e int) []byte        { return b[s:e] }
+func (b realByteSlice) Sub(s, e int) index.ByteSlice { return b[s:e] }
 
 type ignoreFnType func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error)
 
