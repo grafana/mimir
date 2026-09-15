@@ -47,3 +47,9 @@ func TestShutdownMarker_Remove(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, exists)
 }
+
+func TestShutdownMarker_Remove_WhenParentDirectoryDoesNotExist(t *testing.T) {
+	shutdownMarkerPath := GetPath(filepath.Join(t.TempDir(), "missing"))
+
+	require.NoError(t, Remove(shutdownMarkerPath))
+}
