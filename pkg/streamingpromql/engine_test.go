@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -50,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/parentquery"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -6079,6 +6083,55 @@ func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
 			// Mimir with the pass must also match (previously dropped all series).
 			withPass := exec(t, newMimirEngine(t, true), expr)
 			mqetest.RequireEqualResults(t, expr, expected, withPass, false)
+		})
+	}
+}
+
+func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
+	// A parent query ID above math.MaxInt64: the query-frontend seeds them from rand.Uint64(), so
+	// roughly half are in that range.
+	const parentQueryID = uint64(math.MaxUint64) - 4242
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x4
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	for name, withParentQueryID := range map[string]bool{
+		"parent query ID in context":    true,
+		"no parent query ID in context": false,
+	} {
+		t.Run(name, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			opts := NewTestEngineOpts()
+			opts.Logger = log.NewLogfmtLogger(logs)
+
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			if withParentQueryID {
+				ctx = parentquery.ContextWithID(ctx, parentQueryID)
+			}
+
+			q, err := engine.NewInstantQuery(ctx, storage, nil, "some_metric", timestamp.Time(0))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(ctx)
+			require.NoError(t, res.Err)
+
+			require.Contains(t, logs.String(), `msg="evaluation stats"`)
+
+			if withParentQueryID {
+				require.Contains(t, logs.String(), fmt.Sprintf("parent_query_id=%d", parentQueryID))
+			} else {
+				// Absent rather than reported as parent query 0.
+				require.NotContains(t, logs.String(), "parent_query_id")
+			}
 		})
 	}
 }

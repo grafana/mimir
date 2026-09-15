@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/parentquery"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -506,6 +507,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
+				require.NotZero(t, msg["parent_query_id"])
 				require.EqualValues(t, 0, msg["retries"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
@@ -1108,6 +1110,101 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 		}
 		assert.Contains(t, queryStatsSection, "- "+field, "field %q logged in 'query stats' is not documented in the runbook", field)
 	}
+}
+
+func TestHandler_ParentQueryID(t *testing.T) {
+	const queries = 3
+
+	for name, testCase := range map[string]struct {
+		queryStatsEnabled bool
+		// downstreamErr forces the error path, on which the stats line is logged unconditionally.
+		downstreamErr      error
+		expectStatsLogLine bool
+	}{
+		"query stats enabled": {
+			queryStatsEnabled:  true,
+			expectStatsLogLine: true,
+		},
+		// The ID is allocated for every request, not only when query stats are enabled, because the
+		// query-scheduler and the queriers report it even when the query-frontend logs nothing.
+		"query stats disabled, successful query": {
+			queryStatsEnabled:  false,
+			expectStatsLogLine: false,
+		},
+		"query stats disabled, failed query": {
+			queryStatsEnabled:  false,
+			downstreamErr:      errors.New("something went wrong"),
+			expectStatsLogLine: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// The ID must reach the request context, so that the query-frontend can pass it on to
+			// the query-scheduler and the queriers.
+			var contextParentQueryIDs []uint64
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				contextParentQueryIDs = append(contextParentQueryIDs, parentquery.IDFromContext(req.Context()))
+
+				if testCase.downstreamErr != nil {
+					return nil, testCase.downstreamErr
+				}
+
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			})
+
+			logger := &testLogger{}
+			cfg := HandlerConfig{QueryStatsEnabled: testCase.queryStatsEnabled, MaxBodySize: 1024}
+			handler := NewHandler(cfg, roundTripper, logger, prometheus.NewPedanticRegistry())
+
+			for range queries {
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+				req = req.WithContext(user.InjectOrgID(t.Context(), "12345"))
+				handler.ServeHTTP(httptest.NewRecorder(), req)
+			}
+
+			require.Len(t, contextParentQueryIDs, queries)
+			distinctParentQueryIDs := make(map[uint64]struct{}, queries)
+			for _, parentQueryID := range contextParentQueryIDs {
+				require.NotZero(t, parentQueryID)
+				distinctParentQueryIDs[parentQueryID] = struct{}{}
+			}
+			require.Len(t, distinctParentQueryIDs, queries, "each query should get a distinct parent query ID")
+
+			if !testCase.expectStatsLogLine {
+				require.Empty(t, logger.logMessages)
+				return
+			}
+
+			require.Len(t, logger.logMessages, queries)
+			for i, msg := range logger.logMessages {
+				require.Equal(t, "query stats", msg["msg"])
+
+				loggedParentQueryID, ok := msg["parent_query_id"].(uint64)
+				require.True(t, ok, "parent_query_id should be logged as a uint64")
+				require.Equal(t, contextParentQueryIDs[i], loggedParentQueryID)
+			}
+		})
+	}
+}
+func TestHandler_SlowQueryLogReportsParentQueryID(t *testing.T) {
+	// The slow query line is gated on its own threshold rather than on query stats, so it needs the
+	// ID independently.
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		time.Sleep(50 * time.Nanosecond)
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+
+	logger := &testLogger{}
+	cfg := HandlerConfig{QueryStatsEnabled: false, LogQueriesLongerThan: time.Nanosecond, MaxBodySize: 1024}
+	handler := NewHandler(cfg, roundTripper, logger, prometheus.NewPedanticRegistry())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+	req = req.WithContext(user.InjectOrgID(t.Context(), "12345"))
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.Len(t, logger.logMessages, 1)
+	require.Equal(t, "slow query detected", logger.logMessages[0]["msg"])
+	require.NotZero(t, logger.logMessages[0]["parent_query_id"])
 }
 
 func TestHandler_QueryStringLoggedLast(t *testing.T) {

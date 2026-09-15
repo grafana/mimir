@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/parentquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -445,7 +446,11 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		req.enqueue <- enqueueResult{status: schedulerReturnedError, schedulerErr: resp.Error}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
-		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
+		logger := log.With(spanLogger, "queryID", req.queryID)
+		if req.parentQueryID != 0 {
+			logger = log.With(logger, parentquery.FieldName, req.parentQueryID)
+		}
+		level.Warn(logger).Log("msg", "scheduler reported it has too many outstanding requests")
 		req.enqueue <- enqueueResult{status: tooManyRequests}
 
 	default:

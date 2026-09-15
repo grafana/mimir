@@ -57,6 +57,10 @@ message SchedulerToQuerier {
 
   // How much time did query spend in the queue.
   int64 queueTimeNanos = 6;
+
+  // Identifies the user query this request is a sub-request of, as reported by the frontend.
+  // Zero means unknown.
+  uint64 parentQueryID = 8;
 }
 
 message ProtobufRequest {
@@ -108,6 +112,11 @@ message FrontendToScheduler {
   }
   bool statsEnabled = 6;
   repeated string additionalQueueDimensions = 7;
+
+  // Identifies the user query this request is a sub-request of. Each frontend manages its own
+  // parentQueryIDs, so it is only unique within a single frontend. Zero means unknown, which is
+  // the case for queries that did not come through the frontend's HTTP transport handler.
+  uint64 parentQueryID = 9;
 }
 
 enum SchedulerToFrontendStatus {

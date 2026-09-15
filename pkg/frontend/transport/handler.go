@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -37,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/parentquery"
 )
 
 const (
@@ -143,6 +146,9 @@ type Handler struct {
 	queryEquivalentSamplesRead *prometheus.CounterVec
 	activeUsers                *util.ActiveUsersCleanupService
 
+	// lastParentQueryID is the source of the parent query ID assigned to each user query.
+	lastParentQueryID atomic.Uint64
+
 	mtx              sync.Mutex
 	inflightRequests int
 	stopped          bool
@@ -158,6 +164,9 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
+	// Randomize the starting point so that parent query IDs logged before a restart are unlikely
+	// to be reused for a different query after it.
+	h.lastParentQueryID.Store(rand.Uint64())
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -250,14 +259,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var queryDetails *querydetails.QueryDetails
 
+	// Allocate a unique parent query id which can be referenced for all sub-requests which
+	// are related to this query. This parent_query_id will be logged on sub-requests running on the
+	// query-scheduler and querier components.
+	ctx := parentquery.ContextWithID(r.Context(), f.lastParentQueryID.Inc())
+
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
 	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
-		var ctx context.Context
-		queryDetails, ctx = querydetails.ContextWithEmptyDetails(r.Context())
-		r = r.WithContext(ctx)
+		queryDetails, ctx = querydetails.ContextWithEmptyDetails(ctx)
 	}
+
+	r = r.WithContext(ctx)
 
 	var params url.Values
 	var err error
@@ -346,6 +360,8 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}
 
+	logMessage = parentquery.AppendLogFields(logMessage, parentquery.IDFromContext(r.Context()))
+
 	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	// Append query string params last so that, if the log line is truncated downstream,
@@ -425,6 +441,8 @@ func (f *Handler) reportQueryStats(
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,
 	}
+
+	logMessage = parentquery.AppendLogFields(logMessage, parentquery.IDFromContext(r.Context()))
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
