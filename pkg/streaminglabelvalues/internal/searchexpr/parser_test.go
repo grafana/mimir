@@ -99,21 +99,33 @@ func assertParse(t *testing.T, input string, want Expr) {
 }
 
 func TestParseRejectsInvalidExpressions(t *testing.T) {
-	for _, input := range []string{
-		"",
-		"AND cortex",
-		"cortex OR",
-		"cortex rule_evaluation_failures",
-		"(cortex OR loki",
-		"(",
-		"cortex AND )",
-		"cortex)",
-		`""`,
-		`"unterminated`,
-		"\"trailing escape\\",
+	for _, test := range []struct {
+		name  string
+		input string
+	}{
+		{name: "empty expression", input: ""},
+		{name: "leading AND", input: "AND cortex"},
+		{name: "leading OR", input: "OR cortex"},
+		{name: "trailing AND", input: "cortex AND"},
+		{name: "trailing OR", input: "cortex OR"},
+		{name: "repeated AND", input: "cortex AND AND loki"},
+		{name: "repeated OR", input: "cortex OR OR loki"},
+		{name: "implicit adjacent terms", input: "cortex rule_evaluation_failures"},
+		{name: "implicit term before group", input: "cortex (loki OR envoy)"},
+		{name: "empty group", input: "()"},
+		{name: "whitespace-only group", input: "(  )"},
+		{name: "missing closing parenthesis", input: "(cortex OR loki"},
+		{name: "missing group operand", input: "("},
+		{name: "operator before close parenthesis", input: "cortex AND )"},
+		{name: "extra closing parenthesis", input: "cortex)"},
+		{name: "operator in nested group", input: "cortex AND (loki OR)"},
+		{name: "adjacent quoted terms", input: `"cortex""loki"`},
+		{name: "empty quoted term", input: `""`},
+		{name: "unterminated quoted term", input: `"unterminated`},
+		{name: "trailing quote escape", input: "\"trailing escape\\"},
 	} {
-		t.Run(input, func(t *testing.T) {
-			_, err := Parse(input)
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Parse(test.input)
 			require.Error(t, err)
 			assert.True(t, strings.HasPrefix(err.Error(), "search expression:"))
 		})
