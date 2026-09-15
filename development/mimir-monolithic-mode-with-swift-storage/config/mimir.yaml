@@ -62,7 +62,6 @@ blocks_storage:
     container_name:    mimir-tsdb
 
 ruler:
-  enable_sharding: true
   poll_interval: 2s
   ring:
     kvstore:
