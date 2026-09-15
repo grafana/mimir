@@ -97,7 +97,7 @@ func TOCFromBucketTSDBIndex(
 }
 
 // TOCFromIndexHeader builds a TOCCompat from the on-disk Mimir BinaryFormatV1 or BinaryFormatV2.
-// These formats currently only exists on-disk in the store-gateways.
+// These formats currently only exist on-disk in the store-gateways.
 // The BinaryFormatV1 only has two main sections, which are copies of the Symbols and PostingsOffsets tables,
 // and it has a different layout for the header/metadata and TOC.
 // This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.

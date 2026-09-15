@@ -300,7 +300,7 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 }
 
 type sectionSource struct {
-	toc *TOCCompat
+	toc           *TOCCompat
 	decbufFactory streamencoding.DecbufFactory
 }
 
