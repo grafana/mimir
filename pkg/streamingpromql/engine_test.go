@@ -3480,7 +3480,7 @@ func TestQueryStats(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(true, 0)
+		opts := promql.NewPrometheusQueryOpts(true, 0, nil)
 		if isInstantQuery {
 			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
 		} else {
@@ -4158,7 +4158,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, start, end time.Time, interval time.Duration) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(true, 0)
+		opts := promql.NewPrometheusQueryOpts(true, 0, nil)
 
 		if interval == 0 {
 			// Instant query
@@ -5208,7 +5208,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("lookback delta not set in query options", func(t *testing.T) {
-			queryOpts := promql.NewPrometheusQueryOpts(false, 0)
+			queryOpts := promql.NewPrometheusQueryOpts(false, 0, nil)
 			runTest(t, engine, queryOpts, DefaultLookbackDelta)
 		})
 
@@ -5217,7 +5217,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 		})
 
 		t.Run("lookback delta set in query options", func(t *testing.T) {
-			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute)
+			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute, nil)
 			runTest(t, engine, queryOpts, 14*time.Minute)
 		})
 	})
@@ -5231,7 +5231,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("lookback delta not set in query options", func(t *testing.T) {
-			queryOpts := promql.NewPrometheusQueryOpts(false, 0)
+			queryOpts := promql.NewPrometheusQueryOpts(false, 0, nil)
 			runTest(t, engine, queryOpts, 12*time.Minute)
 		})
 
@@ -5240,7 +5240,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 		})
 
 		t.Run("lookback delta set in query options", func(t *testing.T) {
-			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute)
+			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute, nil)
 			runTest(t, engine, queryOpts, 14*time.Minute)
 		})
 	})
