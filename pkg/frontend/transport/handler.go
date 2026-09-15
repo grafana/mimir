@@ -325,14 +325,20 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	// we don't check for copy error as there is no much we can do at this point
-	queryResponseSize, _ := io.Copy(w, resp.Body)
+	queryResponseSize, err := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, err)
+	}
+
+	if err != nil {
+		level.Error(util_log.WithContext(r.Context(), f.log)).Log(
+			"msg", "failed to write query response; aborting connection to signal truncation",
+			"bytes_written", queryResponseSize, "err", err)
+		panic(http.ErrAbortHandler)
 	}
 }
 
