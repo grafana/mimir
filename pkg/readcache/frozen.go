@@ -452,6 +452,7 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 					}
 					continue
 				}
+				r.instrumentTSDB(db)
 
 				minT, maxT := db.sampleBounds()
 				if maxT < cutoff {
@@ -543,6 +544,7 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				}
 				continue
 			}
+			r.instrumentTSDB(db)
 
 			addRestored(marker, tenant, db)
 		}

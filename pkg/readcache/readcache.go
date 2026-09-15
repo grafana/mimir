@@ -132,6 +132,23 @@ type Readcache struct {
 	// the two histograms compare directly.
 	queriedSamples prometheus.Histogram
 
+	// queryStreamTSDBs and queryStreamSeries expose the physical work
+	// hidden behind the externally-compatible QueryStream response. The
+	// storage-shape experiment should reduce TSDB fan-out while preserving
+	// the returned series set; the selected stage includes duplicates
+	// gathered from separate physical TSDBs and the returned stage is after
+	// label-set coalescing.
+	queryStreamTSDBs  prometheus.Histogram
+	queryStreamSeries *prometheus.HistogramVec
+	queryStreamChunks prometheus.Histogram
+
+	// tsdbMutationLockWait and tsdbMutationDuration measure serialization
+	// around appends, compaction, runtime config updates, and close. They are
+	// deliberately operation-only: pod/workload labels supplied by the
+	// monitoring stack provide the A/B dimension without tenant cardinality.
+	tsdbMutationLockWait *prometheus.HistogramVec
+	tsdbMutationDuration *prometheus.HistogramVec
+
 	// partitionWarmupDuration records successful asynchronous Kafka
 	// catch-up time after acquiring a partition. The current number of
 	// warming partitions is exported by a GaugeFunc over partitions.
@@ -403,6 +420,38 @@ func New(
 		Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 	})
 
+	r.queryStreamTSDBs = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_tsdbs",
+		Help:                        "Number of physical TSDBs selected for one QueryStream call.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 2, 8),
+		NativeHistogramBucketFactor: 1.1,
+	})
+	r.queryStreamSeries = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_series",
+		Help:                        "Number of series processed by QueryStream before physical-TSDB deduplication and returned after deduplication.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 4, 10),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"stage"})
+	r.queryStreamChunks = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_query_stream_chunks",
+		Help:                        "Number of chunks returned by one QueryStream call after physical-TSDB deduplication.",
+		Buckets:                     prometheus.ExponentialBuckets(1, 4, 10),
+		NativeHistogramBucketFactor: 1.1,
+	})
+
+	r.tsdbMutationLockWait = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_tsdb_mutation_lock_wait_seconds",
+		Help:                        "Time spent waiting to mutate a readcache TSDB, by operation.",
+		Buckets:                     prometheus.ExponentialBuckets(0.000001, 4, 12),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+	r.tsdbMutationDuration = promauto.With(metricReg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_readcache_tsdb_mutation_duration_seconds",
+		Help:                        "Time spent holding the readcache TSDB mutation lock, by operation.",
+		Buckets:                     prometheus.ExponentialBuckets(0.00001, 4, 12),
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"operation"})
+
 	promauto.With(metricReg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_readcache_partitions_warming",
 		Help: "Number of currently owned Kafka partitions whose readers have not yet caught up to the live edge.",
@@ -426,6 +475,7 @@ func New(
 
 	if reg != nil {
 		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
+		reg.MustRegister(newReadcacheTSDBCollector(r))
 		reg.MustRegister(r.queryLoad)
 	}
 
@@ -978,6 +1028,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 	if r.tsdbMetrics != nil {
 		r.tsdbMetrics.SetRegistryForTenant(tsdbMetricsTenantID(tenantID, partitionID), tsdbPromReg)
 	}
+	r.instrumentTSDB(opened)
 	p.tenants[tenantID] = opened
 	return opened, nil
 }

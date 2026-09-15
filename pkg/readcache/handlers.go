@@ -42,7 +42,11 @@ import (
 // preserved so distributor reads can target a readcache pod
 // interchangeably with an ingester pod once Phase 2C routes traffic.
 
-const queryStreamBatchSize = 128
+const (
+	queryStreamBatchSize           = 128
+	queryStreamSeriesStageSelected = "selected"
+	queryStreamSeriesStageReturned = "returned"
+)
 
 // queryStream streams series + chunks for the given matchers across
 // the partitions this readcache instance owns for the requested
@@ -100,7 +104,11 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	// is bounded and small; cross-partition fan-out is a separate
 	// dimension counted at the distributor (readcache_query_stream_calls).
 	spanlog.SetTag("num_tsdbs", len(dbs))
+	r.queryStreamTSDBs.Observe(float64(len(dbs)))
 	if len(dbs) == 0 {
+		r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageSelected).Observe(0)
+		r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageReturned).Observe(0)
+		r.queryStreamChunks.Observe(0)
 		// No owned partition for this tenant: send EOS and return.
 		return client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true})
 	}
@@ -231,6 +239,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	if gatherErr != nil {
 		return gatherErr
 	}
+	r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageSelected).Observe(float64(len(items)))
 
 	sort.Slice(items, func(i, j int) bool {
 		return labels.Compare(items[i].labels, items[j].labels) < 0
@@ -246,6 +255,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		coalesced = append(coalesced, item)
 	}
 	items = coalesced
+	r.queryStreamSeries.WithLabelValues(queryStreamSeriesStageReturned).Observe(float64(len(items)))
 
 	// Phase 2: stream the deduplicated labels, then the chunks for each
 	// series in the same order. Wrapped in a child span so the wire /
@@ -333,6 +343,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	if r.queriedSamples != nil {
 		r.queriedSamples.Observe(float64(samples))
 	}
+	r.queryStreamChunks.Observe(float64(numChunks))
 	spanlog.SetTag("series", len(items))
 	spanlog.SetTag("samples", samples)
 	spanlog.SetTag("chunks", numChunks)

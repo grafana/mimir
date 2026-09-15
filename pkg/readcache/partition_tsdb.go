@@ -64,6 +64,38 @@ type partitionTSDB struct {
 	// We also hold this for CompactHead and ApplyConfig so those never
 	// race with appends.
 	tsdbMut sync.Mutex
+
+	mutationObservers [tsdbMutationOperationCount]tsdbMutationObservers
+}
+
+type tsdbMutationOperation uint8
+
+const (
+	tsdbMutationAppend tsdbMutationOperation = iota
+	tsdbMutationApplyConfig
+	tsdbMutationCompact
+	tsdbMutationClose
+	tsdbMutationOperationCount
+)
+
+type tsdbMutationObservers struct {
+	wait prometheus.Observer
+	hold prometheus.Observer
+}
+
+func (o tsdbMutationOperation) String() string {
+	switch o {
+	case tsdbMutationAppend:
+		return "append"
+	case tsdbMutationApplyConfig:
+		return "apply_config"
+	case tsdbMutationCompact:
+		return "compact"
+	case tsdbMutationClose:
+		return "close"
+	default:
+		panic(fmt.Sprintf("unknown TSDB mutation operation %d", o))
+	}
 }
 
 type postingsCacheKeyContextKey struct{}
@@ -340,8 +372,7 @@ func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, ma
 	if limits == nil || p.db == nil {
 		return nil
 	}
-	p.tsdbMut.Lock()
-	defer p.tsdbMut.Unlock()
+	defer p.lockForMutation(tsdbMutationApplyConfig)()
 
 	oooTW := limits.OutOfOrderTimeWindow(p.tenantID)
 	if oooTW < 0 {
@@ -449,8 +480,7 @@ func (p *partitionTSDB) Blocks() []*tsdb.Block {
 // CompactHead compacts the in-memory head into a block on disk.
 // Unlike the ingester, blocks stay local; no shipper picks them up.
 func (p *partitionTSDB) CompactHead() error {
-	p.tsdbMut.Lock()
-	defer p.tsdbMut.Unlock()
+	defer p.lockForMutation(tsdbMutationCompact)()
 
 	h := p.db.Head()
 	return p.db.CompactHead(tsdb.NewRangeHead(h, h.MinTime(), h.MaxTime()))
@@ -459,8 +489,7 @@ func (p *partitionTSDB) CompactHead() error {
 // Close shuts down the TSDB. Idempotent.
 func (p *partitionTSDB) Close() error {
 	// Wait for in-flight appends / compaction / ApplyConfig before closing.
-	p.tsdbMut.Lock()
-	defer p.tsdbMut.Unlock()
+	defer p.lockForMutation(tsdbMutationClose)()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -486,4 +515,57 @@ func (p *partitionTSDB) IsClosed() bool {
 // Dir returns the on-disk directory for this partition TSDB.
 func (p *partitionTSDB) Dir() string {
 	return p.dir
+}
+
+func (r *Readcache) instrumentTSDB(db *partitionTSDB) {
+	if r.tsdbMutationLockWait == nil || r.tsdbMutationDuration == nil {
+		return
+	}
+	for operation := tsdbMutationOperation(0); operation < tsdbMutationOperationCount; operation++ {
+		db.mutationObservers[operation] = tsdbMutationObservers{
+			wait: r.tsdbMutationLockWait.WithLabelValues(operation.String()),
+			hold: r.tsdbMutationDuration.WithLabelValues(operation.String()),
+		}
+	}
+}
+
+// lockForMutation acquires the TSDB mutation lock and returns its unlock
+// function. The observer pointers are nil in low-level TSDB tests that open a
+// partitionTSDB without constructing a Readcache.
+func (p *partitionTSDB) lockForMutation(operation tsdbMutationOperation) func() {
+	waitStarted := time.Now()
+	p.tsdbMut.Lock()
+	lockedAt := time.Now()
+	waitSeconds := lockedAt.Sub(waitStarted).Seconds()
+	observers := p.mutationObservers[operation]
+
+	return func() {
+		holdSeconds := time.Since(lockedAt).Seconds()
+		p.tsdbMut.Unlock()
+		if observers.wait != nil {
+			observers.wait.Observe(waitSeconds)
+		}
+		if observers.hold != nil {
+			observers.hold.Observe(holdSeconds)
+		}
+	}
+}
+
+func (p *partitionTSDB) storageSnapshot() (tsdbStorageSnapshot, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed {
+		return tsdbStorageSnapshot{}, false
+	}
+
+	blocks := p.Blocks()
+	out := tsdbStorageSnapshot{
+		tsdbs:      1,
+		headSeries: p.Head().NumSeries(),
+		blocks:     len(blocks),
+	}
+	for _, block := range blocks {
+		out.blockBytes += block.Size()
+	}
+	return out, true
 }

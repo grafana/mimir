@@ -86,8 +86,7 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 
 	// Serialize with CompactHead and ApplyConfig on this partition TSDB.
 	// Kafka ingest may use parallel pusher shards (ingestion-concurrency-max).
-	db.tsdbMut.Lock()
-	defer db.tsdbMut.Unlock()
+	defer db.lockForMutation(tsdbMutationAppend)()
 
 	app := db.Appender(ctx).(ingester.ExtendedAppender)
 	res := ingester.PushWriteRequestTimeseries(ctx, ingester.WriteRequestTimeseriesPush{
