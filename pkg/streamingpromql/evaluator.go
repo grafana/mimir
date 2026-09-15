@@ -143,7 +143,18 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		}
 
 		e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
-		level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
+		if reason == "invalid_data" {
+			// The panic's origin is known and this can recur on every evaluation over the same
+			// invalid series, so don't log a stack trace for it.
+			level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
+		} else {
+			// A possible engine bug that no longer crashes the process: the stack trace in this log
+			// is the only remaining pointer to the panic's origin, so capture it. Deferred functions
+			// run before the stack unwinds, so this includes the frames down to the panic site.
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+			level.Error(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression, "stacktrace", string(buf))
+		}
 		if err == nil {
 			if isErr {
 				err = rErr

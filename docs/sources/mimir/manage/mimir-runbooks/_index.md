@@ -395,10 +395,10 @@ More information:
 
 This alert fires when the Mimir query engine (MQE) recovers from panics while evaluating queries. Each recovered panic fails the affected query or rule evaluation with an error instead of crashing the querier or ruler process.
 
-The metric's `user` label identifies the affected tenant, and the `reason` label classifies the cause. For the details, find the `recovered from panic while evaluating query` warning in the querier or ruler logs: it includes the panic message and the query expression.
+The metric's `user` label identifies the affected tenant, and the `reason` label classifies the cause. For the details, find the `recovered from panic while evaluating query` message in the querier or ruler logs: it includes the panic message and the query expression.
 
 - `reason="invalid_data"`: the stored data for the affected series is invalid, for example a native histogram with an invalid bucket layout. The affected queries and rules keep failing until the data is remediated. Note that alerting rules that fail this way don't fire. Investigate to see if this indicates a new bug that should be addressed.
-- Any other reason: the panic likely indicates a bug in the engine, even though nothing crashed. Report it, including the logged panic message and query expression.
+- Any other reason: the panic likely indicates a bug in the engine, even though nothing crashed. For this reason the log message also includes the stack trace of the panic. Report the bug, including the logged panic message, stack trace, and query expression.
 
 Panics caused by Go runtime errors are not covered by this alert: they crash the process on purpose so that engine bugs are surfaced, and are visible as process restarts and as a stack trace in the logs.
 
