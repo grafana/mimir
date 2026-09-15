@@ -4034,6 +4034,9 @@ continuous_test:
   initContainers: []
   # -- Nodeselector of continuous test replicas
   nodeSelector: {}
+  # -- Pod Disruption Budget for continuous test
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for continuous test pods
   priorityClassName: null
   # -- Kubernetes resource requests and limits for continuous test
