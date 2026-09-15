@@ -74,6 +74,27 @@ func TestOptimizationPass(t *testing.T) {
 			},
 			expectedOutput: `__sharded_concat__(histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric{__query_shard__="1_of_2_by_span_name"}[5m]))), histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric{__query_shard__="2_of_2_by_span_name"}[5m]))))`,
 		},
+		"subset header falls back to classic sharding for an unsupported query shape": {
+			// The subset path only handles histogram_quantile(sum by (le, ...) (rate(...))); any other
+			// shape must shard classically even when the header is set.
+			input: `sum(rate(metric[5m]))`,
+			options: requestoptions.Options{
+				PropagatedHeaders: map[string][]string{
+					experimentalSubsetShardingHeader: {"true"},
+				},
+			},
+			expectedOutput: `sum(__sharded_concat__(sum(rate(metric{__query_shard__="1_of_4"}[5m])), sum(rate(metric{__query_shard__="2_of_4"}[5m])), sum(rate(metric{__query_shard__="3_of_4"}[5m])), sum(rate(metric{__query_shard__="4_of_4"}[5m]))))`,
+		},
+		"subset header is a no-op when the query resolves to a single shard": {
+			input: `histogram_quantile(0.9, sum by (le, span_name) (rate(metric[5m])))`,
+			options: requestoptions.Options{
+				TotalShards: 1,
+				PropagatedHeaders: map[string][]string{
+					experimentalSubsetShardingHeader: {"true"},
+				},
+			},
+			expectedOutput: `histogram_quantile(0.9, sum by (le, span_name) (rate(metric[5m])))`,
+		},
 		"shardable expression with estimated series count available": {
 			input: `sum(foo)`,
 			hints: &querymiddleware.Hints{

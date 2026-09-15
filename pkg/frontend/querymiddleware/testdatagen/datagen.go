@@ -335,9 +335,19 @@ func filterSeriesByShard(series []storage.Series, shard *sharding.ShardSelector)
 	}
 
 	var filtered []storage.Series
+	var hashBuffer []byte
 
 	for _, s := range series {
-		if labels.StableHash(s.Labels())%shard.ShardCount == shard.ShardIndex {
+		// Subset-label shards own a series based on a hash over only the requested labels, mirroring what
+		// the ingester and store-gateway do at query time. Classic shards hash the full label set.
+		var hash uint64
+		if len(shard.ByLabels) > 0 {
+			hash, hashBuffer = s.Labels().HashForLabels(hashBuffer, shard.ByLabels...)
+		} else {
+			hash = labels.StableHash(s.Labels())
+		}
+
+		if hash%shard.ShardCount == shard.ShardIndex {
 			filtered = append(filtered, s)
 		}
 	}

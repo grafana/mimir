@@ -6847,6 +6847,86 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	})
 }
 
+// BenchmarkIngester_QueryStream_SubsetLabelSharding measures the ingester-side cost of the subset-label
+// sharding root cause described in the experiment (SUBSET_LABEL_SHARDING_EXPERIMENT_RESULTS.md): classic
+// sharding passes ShardIndex/ShardCount through the TSDB select hints, so each shard's Select returns only
+// that shard's ~1/N series; subset sharding cannot use those hints, so every shard's Select enumerates all
+// matching series, reads their labels, and computes HashForLabels(span_name) before discarding the ones it
+// doesn't own. Querying all numShards shards therefore scans the full series set once per shard for subset,
+// versus once in total for classic — the ns/op and allocs/op gap between the two arms is that amplification.
+//
+// This isolates the enumerate+hash cost (Send is a no-op, data is synthetic and in-memory), so its
+// subset/classic ratio is much larger than the experiment's ~2.2x QueryStream span, where the same extra
+// work is diluted by real chunk streaming, block/head I/O, and network. It reproduces the mechanism and
+// direction, not that absolute ratio.
+func BenchmarkIngester_QueryStream_SubsetLabelSharding(b *testing.B) {
+	const (
+		numSpanNames  = 500
+		seriesPerSpan = 50 // 25000 series total.
+		numSamples    = 240
+		numShards     = 16
+	)
+
+	cfg := defaultIngesterTestConfig(b)
+	limits := defaultLimitsTestConfig()
+	limits.MaxGlobalSeriesPerMetric = 0
+	limits.MaxGlobalSeriesPerUser = 0
+
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
+	require.NoError(b, err)
+	startAndWaitHealthy(b, i, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	samples := make([]mimirpb.Sample, 0, numSamples)
+	for j := 0; j < numSamples; j++ {
+		samples = append(samples, mimirpb.Sample{Value: float64(j), TimestampMs: int64(j)})
+	}
+	for s := 0; s < numSpanNames; s++ {
+		for k := 0; k < seriesPerSpan; k++ {
+			lbls := labels.FromStrings(model.MetricNameLabel, "foo", "span_name", "span_"+strconv.Itoa(s), "id", strconv.Itoa(k))
+			_, err = i.Push(ctx, writeRequestSingleSeries(lbls, samples))
+			require.NoError(b, err)
+		}
+	}
+
+	metricMatcher := &client.LabelMatcher{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"}
+
+	arms := []struct {
+		name     string
+		byLabels []string
+	}{
+		{name: "classic", byLabels: nil},
+		{name: "subset", byLabels: []string{"span_name"}},
+	}
+
+	for _, arm := range arms {
+		b.Run(arm.name, func(b *testing.B) {
+			mockStream := &mockQueryStreamServer{ctx: ctx}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for it := 0; it < b.N; it++ {
+				// Query every shard, as the querier does for a sharded query.
+				for idx := 0; idx < numShards; idx++ {
+					shard := sharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: numShards, ByLabels: arm.byLabels}
+					req := &client.QueryRequest{
+						StartTimestampMs: math.MinInt64,
+						EndTimestampMs:   math.MaxInt64,
+						Matchers: []*client.LabelMatcher{metricMatcher, {
+							Type:  client.EQUAL,
+							Name:  sharding.ShardLabel,
+							Value: shard.LabelValue(),
+						}},
+					}
+
+					require.NoError(b, i.QueryStream(req, mockStream))
+				}
+			}
+		})
+	}
+}
+
 func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
 	ingester, r, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, nil, registerer)
 	require.NoError(t, err)

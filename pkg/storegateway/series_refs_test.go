@@ -1919,6 +1919,106 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 	}
 }
 
+// BenchmarkOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding measures the store-gateway index
+// loading cost of the three arms compared in the subset-label sharding experiment
+// (SUBSET_LABEL_SHARDING_EXPERIMENT_RESULTS.md, 2026-08-28 follow-up): classic sharding, subset-label
+// sharding using the late series filter, and subset-label sharding using the single-label postings
+// prefilter. It reports per-op series loaded from the index and their byte size (series_loaded/op,
+// series_bytes/op) alongside ns/op.
+//
+// The controlled comparison is "subset late filter" vs "subset prefilter": same shard, the only
+// difference is the prefilter, which loads only the shard-owned label-value postings instead of every
+// candidate series. Expect its series_loaded/op and series_bytes/op to be ~shardCount lower.
+//
+// The "classic" arm is a reference only: its series-hash cache is cold here (a fresh cache per op), so
+// it loads every matching series to hash it, like the late-filter arm. A warm classic hash cache would
+// prefilter its postings too; the experiment's point is that the subset prefilter needs no such warm
+// cache. The prefilter's cost is extra label-value postings reads (see postings_bytes/op).
+func BenchmarkOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding(b *testing.B) {
+	const (
+		numSpanNames  = 200
+		seriesPerSpan = 20
+		shardCount    = 8
+		batchSize     = 5000
+	)
+
+	tb := test.NewTB(b)
+	testBlock := fixtures.SetupTestBlock(tb, func(tb testing.TB, appenderFactory func() storage.Appender) {
+		appender := appenderFactory()
+		builder := labels.NewScratchBuilder(3)
+		for s := 0; s < numSpanNames; s++ {
+			for i := 0; i < seriesPerSpan; i++ {
+				builder.Reset()
+				builder.Add("__name__", "traces_spanmetrics_latency_bucket")
+				builder.Add("id", fmt.Sprintf("%d", i))
+				builder.Add("span_name", fmt.Sprintf("span_%d", s))
+				builder.Sort()
+				_, err := appender.Append(0, builder.Labels(), 0, 0)
+				require.NoError(tb, err)
+			}
+		}
+		require.NoError(tb, appender.Commit())
+	})
+	newTestBlock := testBlockToBucketBlock(tb, testBlock)
+
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "traces_spanmetrics_latency_bucket")}
+	classicShard := &sharding.ShardSelector{ShardIndex: 0, ShardCount: shardCount}
+	subsetShard := &sharding.ShardSelector{ShardIndex: 0, ShardCount: shardCount, ByLabels: []string{"span_name"}}
+
+	// Each arm builds the iterator for one query. classic and subsetPrefilter go through the outer
+	// entrypoint (the prefilter runs only for single-label subset shards). subsetLateFilter calls the
+	// from-postings iterator directly with the un-prefiltered postings, exercising the pre-prefilter
+	// behaviour (load every candidate, hash, discard unowned) that the experiment's first run measured.
+	arms := map[string]func(ctx context.Context, block *bucketBlock, indexr *bucketIndexReader, stats *safeQueryStats) (iterator[seriesChunkRefsSet], error){
+		"classic": func(ctx context.Context, block *bucketBlock, indexr *bucketIndexReader, stats *safeQueryStats) (iterator[seriesChunkRefsSet], error) {
+			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+			return openBlockSeriesChunkRefsSetsIterator(ctx, batchSize, "", indexr, block.indexCache, block.meta, matchers, classicShard, cachedSeriesHasher{hashCache}, noChunkRefs, block.meta.MinTime, block.meta.MaxTime, stats, log.NewNopLogger(), nil)
+		},
+		"subset late filter": func(ctx context.Context, block *bucketBlock, indexr *bucketIndexReader, stats *safeQueryStats) (iterator[seriesChunkRefsSet], error) {
+			ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+			if err != nil {
+				return nil, err
+			}
+			psi := newPostingsSetsIterator(ps, batchSize)
+			return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, "", indexr, block.indexCache, block.meta, subsetShard, cachedSeriesHasher{}, noChunkRefs, block.meta.MinTime, block.meta.MaxTime, stats, psi, pendingMatchers, log.NewNopLogger()), nil
+		},
+		"subset prefilter": func(ctx context.Context, block *bucketBlock, indexr *bucketIndexReader, stats *safeQueryStats) (iterator[seriesChunkRefsSet], error) {
+			return openBlockSeriesChunkRefsSetsIterator(ctx, batchSize, "", indexr, block.indexCache, block.meta, matchers, subsetShard, cachedSeriesHasher{}, noChunkRefs, block.meta.MinTime, block.meta.MaxTime, stats, log.NewNopLogger(), nil)
+		},
+	}
+
+	for name, build := range arms {
+		b.Run(name, func(b *testing.B) {
+			ctx, cancel := context.WithCancel(context.Background())
+			b.Cleanup(cancel)
+
+			block := newTestBlock()
+			// A noop index cache keeps every iteration's work identical and comparable across arms (no
+			// cross-iteration series/postings caching that would otherwise skew per-op counts).
+			block.indexCache = noopCache{}
+			indexReader := block.indexReader(selectAllStrategy{})
+			b.Cleanup(func() { require.NoError(b, indexReader.Close()) })
+
+			stats := newSafeQueryStats()
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				iterator, err := build(ctx, block, indexReader, stats)
+				require.NoError(b, err)
+				readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
+				require.NoError(b, iterator.Err())
+			}
+			b.StopTimer()
+
+			exported := stats.export()
+			b.ReportMetric(float64(exported.seriesProcessed)/float64(b.N), "series_loaded/op")
+			b.ReportMetric(float64(exported.seriesProcessedSizeSum)/float64(b.N), "series_bytes/op")
+			b.ReportMetric(float64(exported.postingsFetchedSizeSum)/float64(b.N), "postings_bytes/op")
+		})
+	}
+}
+
 func TestMetasToChunkRefs(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	testCases := map[string]struct {

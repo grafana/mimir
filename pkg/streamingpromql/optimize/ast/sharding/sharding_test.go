@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -25,8 +27,13 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/shardingtest"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	storagesharding "github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func createEngine(t *testing.T, shardCount int) (promql.QueryEngine, *prometheus.Registry) {
@@ -178,6 +185,193 @@ func TestQuerySharding_AvgStats(t *testing.T) {
 			require.Equal(t, unshardedSamplesRead, shardedSamplesRead, "sharded avg() should report the same 'samples read' count as unsharded avg()")
 		})
 	}
+}
+
+// TestSubsetLabelSharding_Correctness replicates the correctness result from the subset-label query
+// sharding experiment (docs/internal SUBSET_LABEL_SHARDING_EXPERIMENT_RESULTS.md): for the supported
+// histogram_quantile(sum by (le, <labels>) (rate(...))) shape, subset-label sharding returns the same
+// series and samples as an unsharded query and as classic sharding.
+//
+// Subset sharding pushes the whole histogram_quantile down into each shard and concatenates the
+// per-shard outputs. That is only correct because every series in a given subset group (here,
+// span_name) is owned by exactly one shard. The mock queryable in testdatagen reproduces that
+// ownership by hashing over the subset labels, exactly like the ingester and store-gateway do at
+// query time.
+func TestSubsetLabelSharding_Correctness(t *testing.T) {
+	const metric = "traces_spanmetrics_latency_bucket"
+
+	// Cumulative classic-histogram buckets. Larger le must have a >= count, so use a per-bucket factor
+	// that grows with the bucket index to keep the buckets monotonic at every timestamp.
+	buckets := []string{"0.1", "0.5", "1", "2.5", "5", "10", "+Inf"}
+	from := shardingtest.Start.Add(-5 * time.Minute) // Enough history for the [5m] rate at the range start.
+	to := shardingtest.End
+
+	// histogramSeries returns the le-bucket series for one classic histogram identified by the given
+	// distinguishing labels (e.g. span_name, cluster). Passing none models samples that are missing the
+	// subset label entirely, which must still be owned by exactly one shard (the empty-subset-hash shard).
+	histogramSeries := func(distinguishing ...labels.Label) []storage.Series {
+		out := make([]storage.Series, 0, len(buckets))
+		for i, le := range buckets {
+			b := labels.NewBuilder(labels.EmptyLabels())
+			b.Set("__name__", metric)
+			b.Set("le", le)
+			for _, l := range distinguishing {
+				b.Set(l.Name, l.Value)
+			}
+			out = append(out, testdatagen.NewSeries(b.Labels(), from, to, shardingtest.Step, testdatagen.Factor(float64(i+1))))
+		}
+		return out
+	}
+
+	singleLabelSeries := func() []storage.Series {
+		var s []storage.Series
+		for i := range 8 {
+			s = append(s, histogramSeries(labels.Label{Name: "span_name", Value: "span_" + strconv.Itoa(i)})...)
+		}
+		return s
+	}
+
+	multiLabelSeries := func() []storage.Series {
+		var s []storage.Series
+		for c := range 2 {
+			for i := range 6 {
+				s = append(s, histogramSeries(
+					labels.Label{Name: "cluster", Value: "cluster_" + strconv.Itoa(c)},
+					labels.Label{Name: "span_name", Value: "span_" + strconv.Itoa(i)},
+				)...)
+			}
+		}
+		return s
+	}
+
+	missingLabelSeries := func() []storage.Series {
+		s := histogramSeries() // One histogram with no span_name at all.
+		for i := range 6 {
+			s = append(s, histogramSeries(labels.Label{Name: "span_name", Value: "span_" + strconv.Itoa(i)})...)
+		}
+		return s
+	}
+
+	scenarios := []struct {
+		name     string
+		query    string
+		byLabels []string // Subset labels expected in the shard selector, sorted as the pass emits them.
+		series   []storage.Series
+	}{
+		{
+			name:     "single subset label",
+			query:    `histogram_quantile(0.9, sum by (le, span_name) (rate(traces_spanmetrics_latency_bucket[5m])))`,
+			byLabels: []string{"span_name"},
+			series:   singleLabelSeries(),
+		},
+		{
+			// Multiple subset labels take the store-gateway/ingester late-filter path (the postings
+			// prefilter is single-label only); ownership is a hash over both labels together.
+			name:     "multiple subset labels",
+			query:    `histogram_quantile(0.9, sum by (le, cluster, span_name) (rate(traces_spanmetrics_latency_bucket[5m])))`,
+			byLabels: []string{"cluster", "span_name"},
+			series:   multiLabelSeries(),
+		},
+		{
+			// Some series are missing span_name entirely. They hash as the empty subset value and must be
+			// owned by exactly one shard, mirroring the ingester/store-gateway HashForLabels behaviour.
+			name:     "series missing the subset label",
+			query:    `histogram_quantile(0.9, sum by (le, span_name) (rate(traces_spanmetrics_latency_bucket[5m])))`,
+			byLabels: []string{"span_name"},
+			series:   missingLabelSeries(),
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			queryable := testdatagen.StorageSeriesQueryable(scenario.series)
+
+			generators := map[string]func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query{
+				"instant query": func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query {
+					q, err := engine.NewInstantQuery(ctx, queryable, nil, scenario.query, shardingtest.End)
+					require.NoError(t, err)
+					return q
+				},
+				"range query": func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query {
+					q, err := engine.NewRangeQuery(ctx, queryable, nil, scenario.query, shardingtest.Start, shardingtest.End, shardingtest.Step)
+					require.NoError(t, err)
+					return q
+				},
+			}
+
+			for name, generator := range generators {
+				t.Run(name, func(t *testing.T) {
+					baseCtx := user.InjectOrgID(context.Background(), "test-user")
+
+					// Run the query without sharding to establish the expected result.
+					unshardedEngine, _ := createEngine(t, 0)
+					unshardedQuery := generator(t, baseCtx, unshardedEngine)
+					unshardedResult := unshardedQuery.Exec(baseCtx)
+					require.NoError(t, unshardedResult.Err)
+					require.NotEmpty(t, unshardedResult.Value)
+					requireValidSamples(t, unshardedResult.Value)
+
+					// The subset header only reaches the sharding optimization pass through the request
+					// options, so inject it the same way the query-frontend does after allow-listing it.
+					subsetCtx := requestoptions.ContextWithOptions(baseCtx, requestoptions.Options{
+						PropagatedHeaders: http.Header{
+							experimentalSubsetShardingHeader: {"true"},
+						},
+					})
+
+					for _, numShards := range []int{2, 4, 8, 16} {
+						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+							// Guard against a silent fallback to classic sharding: confirm the subset header
+							// actually rewrites the query into i_of_N_by_<labels> shards. Without this, the
+							// correctness comparison below would still pass if the header were ignored.
+							requireSubsetRewrite(t, scenario.query, scenario.byLabels, numShards)
+
+							// Classic sharding (no subset header) is the second reference: the experiment
+							// compared unsharded, classic, and subset and found all three identical.
+							classicEngine, classicReg := createEngine(t, numShards)
+							classicQuery := generator(t, baseCtx, classicEngine)
+							classicResult := classicQuery.Exec(baseCtx)
+							require.NoError(t, classicResult.Err)
+							testutils.RequireEqualResults(t, scenario.query, unshardedResult, classicResult, false)
+							shardingtest.AssertShardingMetrics(t, classicReg, 1, numShards)
+
+							// Subset-label sharding: the header makes the pass rewrite into per-shard
+							// histogram_quantile(...){__query_shard__="i_of_N_by_<labels>"} concatenated together.
+							subsetEngine, subsetReg := createEngine(t, numShards)
+							subsetQuery := generator(t, subsetCtx, subsetEngine)
+							subsetResult := subsetQuery.Exec(subsetCtx)
+							require.NoError(t, subsetResult.Err)
+							testutils.RequireEqualResults(t, scenario.query, unshardedResult, subsetResult, false)
+							shardingtest.AssertShardingMetrics(t, subsetReg, 1, numShards)
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+// requireSubsetRewrite asserts that, under the subset-sharding header, the optimization pass rewrites
+// query into per-shard i_of_numShards_by_<byLabels> subset shards rather than classic i_of_numShards shards.
+func requireSubsetRewrite(t *testing.T, query string, byLabels []string, numShards int) {
+	t.Helper()
+
+	limits := &mockLimits{totalShards: numShards, splitAndMergeShards: 1}
+	pass := NewOptimizationPass(limits, 0, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+
+	parsed, err := promqlext.NewPromQLParser().ParseExpr(query)
+	require.NoError(t, err)
+
+	ctx := requestoptions.ContextWithOptions(user.InjectOrgID(context.Background(), "test-user"), requestoptions.Options{
+		PropagatedHeaders: http.Header{experimentalSubsetShardingHeader: {"true"}},
+	})
+	output, err := pass.Apply(ctx, parsed, &planning.QueryParameters{TimeRange: types.NewInstantQueryTimeRange(shardingtest.End)})
+	require.NoError(t, err)
+
+	// Expect the production shard-label format for shard 1, e.g. 1_of_4_by_span_name (labels sorted,
+	// comma-joined). Reuse ShardSelector.LabelValue so the test tracks the real formatting.
+	expected := storagesharding.ShardSelector{ShardIndex: 0, ShardCount: uint64(numShards), ByLabels: byLabels}.LabelValue()
+	require.Contains(t, output.String(), expected)
 }
 
 // requireValidSamples ensures the query produces some results which are not NaN.
