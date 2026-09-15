@@ -144,8 +144,16 @@ type userTSDB struct {
 	ownedStateMtx sync.Mutex
 	ownedState    ownedSeriesState
 
-	// Only accessed by ownedSeries service, no need to synchronization.
-	ownedTokenRanges ring.TokenRanges
+	// recomputeOwnedSeriesMtx serializes recompute calls (recomputeOwnedSeries /
+	// recomputeOwnedSeriesWithComputeFn) for this tenant. Both the owned-series service and the
+	// compaction loop's pre-eviction ownership re-check can call these concurrently; without this
+	// lock, a slower call could overwrite a faster one's more up-to-date ownedState.
+	recomputeOwnedSeriesMtx sync.Mutex
+
+	// ownedTokenRangesMtx guards ownedTokenRanges for the same reason: updateTokenRanges (write)
+	// and computeOwnedSeries (read) can now both be called from either of those two goroutines.
+	ownedTokenRangesMtx sync.Mutex
+	ownedTokenRanges    ring.TokenRanges
 
 	// offsetCatalogue tracks Kafka offset watermarks for compacted blocks.
 	// Only set when ingest storage is enabled.
@@ -614,7 +622,8 @@ func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {
 // This method returns false, if recomputation of owned series failed multiple times due to too
 // many new series being added during the computation. If no such problem happened, this method returns true.
 //
-// This method and updateTokenRanges should be only called from the same goroutine. (ownedSeries service)
+// Safe to call from any goroutine: concurrent calls for the same tenant are serialized by
+// recomputeOwnedSeriesMtx.
 func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (success bool) {
 	success, _ = u.recomputeOwnedSeriesWithComputeFn(shardSize, reason, logger, u.computeOwnedSeries)
 	return success
@@ -626,6 +635,12 @@ const (
 )
 
 func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
+	// Only one recompute runs at a time for this tenant. Without this, a concurrent call
+	// (from the compaction loop's pre-eviction re-check, racing the owned-series service's
+	// own tick) could interleave with this one and overwrite ownedState with a stale result.
+	u.recomputeOwnedSeriesMtx.Lock()
+	defer u.recomputeOwnedSeriesMtx.Unlock()
+
 	start := time.Now()
 
 	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore, localLimitBefore, localLimitNew int
@@ -685,12 +700,22 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 
 // updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
 //
-// This method and recomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
+// Safe to call from any goroutine.
 func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
+	u.ownedTokenRangesMtx.Lock()
 	prev := u.ownedTokenRanges
 	u.ownedTokenRanges = newTokenRanges
+	u.ownedTokenRangesMtx.Unlock()
 
 	return !prev.Equal(newTokenRanges)
+}
+
+// getOwnedTokenRanges returns the tenant's current owned token ranges. Safe to call from any
+// goroutine.
+func (u *userTSDB) getOwnedTokenRanges() ring.TokenRanges {
+	u.ownedTokenRangesMtx.Lock()
+	defer u.ownedTokenRangesMtx.Unlock()
+	return u.ownedTokenRanges
 }
 
 // addPendingNonOwnedRefs reconciles the per-tenant pending-eviction set with the
@@ -756,10 +781,15 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
+	// Snapshot once and reuse for the whole scan below: updateTokenRanges only ever replaces the
+	// ranges wholesale, never mutates them in place, so one snapshot is safe to reuse and gives
+	// every series in this pass a consistent view.
+	ownedTokenRanges := u.getOwnedTokenRanges()
+
 	// If no token ranges are assigned, all head series are non-owned.
 	// activeSeries.Clear handles the active-series state; the loop below collects
 	// refs for targeted eviction.
-	allNonOwned := len(u.ownedTokenRanges) == 0
+	allNonOwned := len(ownedTokenRanges) == 0
 	if allNonOwned {
 		u.activeSeries.Clear()
 	}
@@ -788,7 +818,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 			return
 		}
 		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
+			if ownedTokenRanges.IncludesKey(sh) {
 				count++
 				continue
 			}
