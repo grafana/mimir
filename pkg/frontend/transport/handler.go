@@ -10,7 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
+	"crypto/rand"
 	"net/http"
 	"net/url"
 	"strconv"
