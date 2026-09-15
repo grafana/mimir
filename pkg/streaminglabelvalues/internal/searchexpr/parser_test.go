@@ -91,9 +91,12 @@ func TestParseOperatorsAndQuotedTerms(t *testing.T) {
 			},
 		},
 		{
-			name:  "quoted operator is a term",
-			input: `"NOT" OR "rule evaluation failures"`,
-			want:  Or{Left: Term{Value: "NOT"}, Right: Term{Value: "rule evaluation failures"}},
+			name:  "quoted keywords are terms",
+			input: `"AND" AND "OR" OR "NOT"`,
+			want: Or{
+				Left:  And{Left: Term{Value: "AND"}, Right: Term{Value: "OR"}},
+				Right: Term{Value: "NOT"},
+			},
 		},
 		{
 			name:  "quoted term supports escapes",
@@ -183,7 +186,7 @@ func FuzzParse(f *testing.F) {
 		"cortex AND rule_evaluation_failures OR loki",
 		"NOT cortex AND loki",
 		"(cortex OR loki) AND rule_evaluation_failures",
-		`"AND" OR "rule evaluation failures"`,
+		`"AND" AND "OR" OR "NOT"`,
 		`"unterminated`,
 		"cortex AND )",
 		"\x00",
