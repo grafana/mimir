@@ -40,9 +40,16 @@ type Or struct {
 
 func (Or) expr() {}
 
-// Parse parses terms combined with AND, OR, and parentheses. AND binds more
-// tightly than OR. Operators are case-insensitive; quote a term to search for
-// the literal text "and" or "or".
+// Not rejects candidates accepted by its child.
+type Not struct {
+	Expr Expr
+}
+
+func (Not) expr() {}
+
+// Parse parses terms combined with NOT, AND, OR, and parentheses. NOT binds
+// more tightly than AND, which binds more tightly than OR. Operators are
+// case-insensitive; quote a term to search for literal operator text.
 func Parse(input string) (Expr, error) {
 	tokens, err := tokenize(input)
 	if err != nil {
@@ -65,6 +72,7 @@ type tokenKind uint8
 const (
 	tokenEOF tokenKind = iota
 	tokenTerm
+	tokenNot
 	tokenAnd
 	tokenOr
 	tokenLeftParen
@@ -83,6 +91,8 @@ func (t token) describe() string {
 		return "end of expression"
 	case tokenTerm:
 		return fmt.Sprintf("term %q", t.value)
+	case tokenNot:
+		return "NOT"
 	case tokenAnd:
 		return "AND"
 	case tokenOr:
@@ -155,6 +165,8 @@ func quotedTerm(input string, start int) (string, int, error) {
 
 func keywordToken(value string, pos int) token {
 	switch strings.ToUpper(value) {
+	case "NOT":
+		return token{kind: tokenNot, pos: pos}
 	case "AND":
 		return token{kind: tokenAnd, pos: pos}
 	case "OR":
@@ -176,7 +188,7 @@ func (p *parser) parseOr() (Expr, error) {
 }
 
 func (p *parser) parseAnd() (Expr, error) {
-	return p.parseBinary(tokenAnd, p.parsePrimary, func(left, right Expr) Expr {
+	return p.parseBinary(tokenAnd, p.parseUnary, func(left, right Expr) Expr {
 		return And{Left: left, Right: right}
 	})
 }
@@ -195,6 +207,18 @@ func (p *parser) parseBinary(operator tokenKind, parseOperand func() (Expr, erro
 		left = combine(left, right)
 	}
 	return left, nil
+}
+
+func (p *parser) parseUnary() (Expr, error) {
+	if p.peek().kind != tokenNot {
+		return p.parsePrimary()
+	}
+	p.next()
+	expr, err := p.parseUnary()
+	if err != nil {
+		return nil, err
+	}
+	return Not{Expr: expr}, nil
 }
 
 func (p *parser) parsePrimary() (Expr, error) {
