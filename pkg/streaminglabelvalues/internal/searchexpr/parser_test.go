@@ -37,6 +37,22 @@ func TestParsePrecedence(t *testing.T) {
 				Right: Term{Value: "rule_evaluation_failures"},
 			},
 		},
+		{
+			name:  "NOT binds tighter than AND",
+			input: "NOT cortex AND loki",
+			want: And{
+				Left:  Not{Expr: Term{Value: "cortex"}},
+				Right: Term{Value: "loki"},
+			},
+		},
+		{
+			name:  "parenthesized NOT applies to the whole group",
+			input: "NOT (cortex OR loki)",
+			want: Not{Expr: Or{
+				Left:  Term{Value: "cortex"},
+				Right: Term{Value: "loki"},
+			}},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assertParse(t, test.input, test.want)
@@ -76,8 +92,8 @@ func TestParseOperatorsAndQuotedTerms(t *testing.T) {
 		},
 		{
 			name:  "quoted operator is a term",
-			input: `"AND" OR "rule evaluation failures"`,
-			want:  Or{Left: Term{Value: "AND"}, Right: Term{Value: "rule evaluation failures"}},
+			input: `"NOT" OR "rule evaluation failures"`,
+			want:  Or{Left: Term{Value: "NOT"}, Right: Term{Value: "rule evaluation failures"}},
 		},
 		{
 			name:  "quoted term supports escapes",
@@ -106,10 +122,13 @@ func TestParseRejectsInvalidExpressions(t *testing.T) {
 		{name: "empty expression", input: ""},
 		{name: "leading AND", input: "AND cortex"},
 		{name: "leading OR", input: "OR cortex"},
+		{name: "bare NOT", input: "NOT"},
 		{name: "trailing AND", input: "cortex AND"},
 		{name: "trailing OR", input: "cortex OR"},
+		{name: "trailing NOT", input: "cortex AND NOT"},
 		{name: "repeated AND", input: "cortex AND AND loki"},
 		{name: "repeated OR", input: "cortex OR OR loki"},
+		{name: "NOT before close parenthesis", input: "NOT )"},
 		{name: "implicit adjacent terms", input: "cortex rule_evaluation_failures"},
 		{name: "implicit term before group", input: "cortex (loki OR envoy)"},
 		{name: "empty group", input: "()"},
@@ -139,6 +158,7 @@ func TestTokenDescribe(t *testing.T) {
 	}{
 		{token: token{kind: tokenEOF}, want: "end of expression"},
 		{token: token{kind: tokenTerm, value: "cortex"}, want: `term "cortex"`},
+		{token: token{kind: tokenNot}, want: "NOT"},
 		{token: token{kind: tokenAnd}, want: "AND"},
 		{token: token{kind: tokenOr}, want: "OR"},
 		{token: token{kind: tokenLeftParen}, want: "("},
@@ -153,6 +173,7 @@ func TestExprNodesImplementExpr(t *testing.T) {
 	Term{}.expr()
 	And{}.expr()
 	Or{}.expr()
+	Not{}.expr()
 }
 
 func FuzzParse(f *testing.F) {
@@ -160,6 +181,7 @@ func FuzzParse(f *testing.F) {
 		"",
 		"cortex",
 		"cortex AND rule_evaluation_failures OR loki",
+		"NOT cortex AND loki",
 		"(cortex OR loki) AND rule_evaluation_failures",
 		`"AND" OR "rule evaluation failures"`,
 		`"unterminated`,
@@ -196,6 +218,9 @@ func assertWellFormedExpr(t *testing.T, expr Expr) {
 		require.NotNil(t, expr.Right)
 		assertWellFormedExpr(t, expr.Left)
 		assertWellFormedExpr(t, expr.Right)
+	case Not:
+		require.NotNil(t, expr.Expr)
+		assertWellFormedExpr(t, expr.Expr)
 	default:
 		t.Fatalf("unexpected expression type %T", expr)
 	}
