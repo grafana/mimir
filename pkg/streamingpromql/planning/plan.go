@@ -306,6 +306,10 @@ type SplitNode interface {
 	IsSplittable() bool
 
 	GetRangeParams() RangeParams
+
+	// QueriedTimeRangeWithSubRange returns the range of data queried from ingesters and store-gateways when this node
+	// is evaluated with overrideRangeParams instead of its original range parameters.
+	QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams RangeParams, lookbackDelta time.Duration) (QueriedTimeRange, error)
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.
