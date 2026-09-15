@@ -144,6 +144,10 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
+		evaluationPanics: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_evaluation_panics_total",
+			Help: "Total number of panics recovered during query evaluation and converted into query errors, labelled by the affected tenant and the reason: 'invalid_data' for validation errors raised by invalid stored data, 'other' for anything else, which may indicate an engine bug. Panics caused by Go runtime errors are not counted: they crash the process on purpose and are visible in logs and as process restarts.",
+		}, []string{"user", "reason"}),
 
 		pedantic:                        opts.Pedantic,
 		eagerLoadSelectors:              opts.EagerLoadSelectors,
@@ -180,6 +184,7 @@ type Engine struct {
 
 	logger                         log.Logger
 	estimatedPeakMemoryConsumption prometheus.Histogram
+	evaluationPanics               *prometheus.CounterVec
 
 	// When operating in pedantic mode:
 	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
