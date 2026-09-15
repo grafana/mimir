@@ -52,14 +52,14 @@ func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (s
 	return startTs, endTs
 }
 
-// boundaryChecker reports whether a candidate range reaches or crosses the boundary.
-type boundaryChecker func(Range) (bool, error)
+// cacheabilityChecker reports whether a candidate range is safe to cache based on the time range it queries.
+type cacheabilityChecker func(Range) (bool, error)
 
-// newOOOThresholdChecker returns a checker for ranges whose End is the maximum timestamp queried from storage.
-func newOOOThresholdChecker(oooThreshold int64) boundaryChecker {
+// newOOOCacheabilityChecker returns a checker for ranges whose End is the maximum timestamp queried from storage.
+func newOOOCacheabilityChecker(oooThreshold int64) cacheabilityChecker {
 	return func(r Range) (bool, error) {
 		// The threshold and the end of the left-open, right-closed range are both inclusive.
-		return oooThreshold > 0 && r.End >= oooThreshold, nil
+		return oooThreshold <= 0 || r.End < oooThreshold, nil
 	}
 }
 
@@ -83,7 +83,7 @@ func newOOOThresholdChecker(oooThreshold int64) boundaryChecker {
 // The main results cache does cache results within the OOO window with a short TTL. If we also cached OOO results in
 // the intermediate cache, we could end up serving stale results for longer as a cached result returned from the
 // intermediate cache can end up in a result that's then cached in the result cache.
-func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, checkBoundary boundaryChecker) ([]Range, error) {
+func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, isCacheable cacheabilityChecker) ([]Range, error) {
 	splitIntervalMs := splitInterval.Milliseconds()
 	alignedStart := computeBlockAlignedStart(startTs, splitInterval)
 
@@ -100,11 +100,11 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, check
 			End:       alignedStart,
 			Cacheable: false,
 		}
-		crosses, err := checkBoundary(head)
+		cacheable, err := isCacheable(head)
 		if err != nil {
 			return nil, err
 		}
-		if crosses {
+		if !cacheable {
 			return []Range{{Start: startTs, End: endTs, Cacheable: false}}, nil
 		}
 		ranges = append(ranges, head)
@@ -115,11 +115,11 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, check
 		splitEnd := splitStart + splitIntervalMs
 		splitRange := Range{Start: splitStart, End: splitEnd, Cacheable: true}
 
-		crosses, err := checkBoundary(splitRange)
+		cacheable, err := isCacheable(splitRange)
 		if err != nil {
 			return nil, err
 		}
-		if crosses {
+		if !cacheable {
 			ranges = append(ranges, Range{Start: splitStart, End: endTs, Cacheable: false})
 			return ranges, nil
 		}

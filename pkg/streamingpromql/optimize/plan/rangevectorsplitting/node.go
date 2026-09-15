@@ -247,26 +247,26 @@ func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNod
 	// zero OOO window, using the current time as the threshold.
 	oooThreshold := m.timeNow().Add(-oooWindow).UnixMilli()
 	innerIsSubquery := containsSubquery(inner)
-	var rangeBoundaryChecker boundaryChecker
+	var isRangeCacheable cacheabilityChecker
 
 	if innerIsSubquery {
-		rangeBoundaryChecker = func(splitRange Range) (bool, error) {
+		isRangeCacheable = func(splitRange Range) (bool, error) {
 			splitTimeRange, overrideRangeParams := queryTimeRangeForSplit(splitRange.Start, splitRange.End, splitRange.End-splitRange.Start)
 			queriedTimeRange, err := inner.QueriedTimeRangeWithSubRange(splitTimeRange, overrideRangeParams, lookbackDelta)
 			if err != nil {
 				return false, fmt.Errorf("computing queried time range for split (%d, %d]: %w", splitRange.Start, splitRange.End, err)
 			}
 
-			return queriedTimeRange.AnyDataQueried && queriedTimeRange.MaxT.UnixMilli() >= oooThreshold, nil
+			return !queriedTimeRange.AnyDataQueried || queriedTimeRange.MaxT.UnixMilli() < oooThreshold, nil
 		}
 	} else {
 		if oooWindow == 0 {
 			oooThreshold = 0
 		}
-		rangeBoundaryChecker = newOOOThresholdChecker(oooThreshold)
+		isRangeCacheable = newOOOCacheabilityChecker(oooThreshold)
 	}
 
-	ranges, err = computeSplitRanges(startTs, endTs, m.splitInterval, rangeBoundaryChecker)
+	ranges, err = computeSplitRanges(startTs, endTs, m.splitInterval, isRangeCacheable)
 	if err != nil {
 		return nil, "", err
 	}
