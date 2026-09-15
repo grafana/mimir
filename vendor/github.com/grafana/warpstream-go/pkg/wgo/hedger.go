@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -30,19 +31,17 @@ type HedgerConfig struct {
 // (TrackingProducer → KafkaDirectProducer) is a single per-attempt
 // produce with no retry of its own.
 //
-// Mental model: ProduceSync fires the primary leg (a straight
-// passthrough to inner.ProduceSync) and then waits for one of three
-// outcomes:
+// ProduceSync fires the primary leg and then waits for one of three outcomes:
 //
 //  1. Primary returns first with full success → return its response
 //     verbatim. No hedging machinery is touched.
 //  2. Primary returns first with a failure or partial result → call
 //     runHedgingAttempts, which retries the partitions across other
 //     agents.
-//  3. The hedge timer fires before primary returns → call
-//     runHedgingAttemptsAndRaceWithPrimary, which runs the fallback
-//     waves alongside the still-in-flight primary and merges whichever
-//     finishes first.
+//  3. delay is 0 (probe) or the hedge timer fires before primary returns
+//     → call runHedgingAttemptsAndRaceWithPrimary, which runs the
+//     fallback waves alongside the still-in-flight primary and merges
+//     whichever finishes first.
 //
 // Per-partition fanout lives inside runHedgingAttempt: each wave picks
 // the next per-partition candidate (so partitions whose strategy
@@ -73,6 +72,7 @@ type Hedger struct {
 	health   HealthCheckConfig
 	cfg      HedgerConfig
 	metrics  *metrics
+	logger   kgo.Logger
 
 	// hedgeBuffer batches per-wave per-agent groups across concurrent
 	// ProduceSync calls heading to the same agent. Its flush hands each wave
@@ -82,7 +82,10 @@ type Hedger struct {
 }
 
 // NewHedger wraps inner with the orchestration described on Hedger.
-func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, batchMaxBytes int32, m *metrics) *Hedger {
+func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, batchMaxBytes int32, m *metrics, logger kgo.Logger) *Hedger {
+	if logger == nil {
+		logger = nopLogger{}
+	}
 	h := &Hedger{
 		inner:    inner,
 		tracker:  tracker,
@@ -90,6 +93,7 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		health:   health,
 		cfg:      cfg,
 		metrics:  m,
+		logger:   logger,
 	}
 	h.hedgeBuffer = NewClusterBuffer[routedEncodedTopicPartitionRecords](linger, batchMaxBytes, func(ctx context.Context, nodeID int32, parts []routedEncodedTopicPartitionRecords) ProduceResult {
 		// Every hedge-buffer flush is one hedge wire request (possibly
@@ -97,8 +101,9 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		// incremented in ProduceSync.
 		m.produceRequestsHedgeTotal.Inc()
 
-		// DirectProducer takes unrouted partitions (the nodeID is specified separately), so we strip the routing.
-		return inner.ProduceSync(ctx, nodeID, unrouteEncodedTopicPartitionRecords(parts))
+		// DirectProducer takes unrouted partitions (the target Agent is specified
+		// separately), so we strip the routing.
+		return inner.ProduceSync(ctx, agentFromRouted(nodeID, parts), unrouteEncodedTopicPartitionRecords(parts))
 	}, m, nil) // nil reg: the client's main buffer owns the buffered-producer gauges.
 	return h
 }
@@ -152,19 +157,35 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	workCtx, cancelWorkCtx := context.WithCancel(ctx)
 	defer cancelWorkCtx()
 
-	// Primary leg: straight passthrough to inner.ProduceSync. The result
-	// lands on primaryCh whenever the call completes; the buffered slot
+	// Validate the primary response before publishing it. The buffered slot
 	// guarantees the goroutine doesn't block on send when ProduceSync has
 	// already moved on to the fallback path.
 	primaryCh := make(chan ProduceResult, 1)
 	go func() {
 		h.metrics.produceRequestsPrimaryTotal.Inc()
-		primaryCh <- h.inner.ProduceSync(workCtx, primaryID, partitions)
+		primaryCh <- h.withCoverageCheck(h.inner.ProduceSync(workCtx, agentFromRouted(primaryID, routedPartitions), partitions), primaryID, partitions)
 	}()
 
 	candidates := newHedgerCandidates(h.strategy, h.cfg.MaxHedgeAgents)
 
+	// raceWithPrimary starts the fallback cascade alongside the still-in-flight
+	// primary and returns whichever produces a usable outcome first. Shared by
+	// the delay==0 fast path and the timer.C branch below, so a future edit to
+	// this behavior can't land in only one of them.
+	raceWithPrimary := func() ProduceResult {
+		hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
+		observeAttempts(hedged.result, hedged.attempts)
+		return hedged.result
+	}
+
 	if shouldHedge {
+		// NewTimer(0) is already fired, so a select against a ready
+		// primaryCh is a coin flip. Skip the timer and always start
+		// the fallback race; either leg can still win.
+		if delay == 0 {
+			return raceWithPrimary()
+		}
+
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 
@@ -180,9 +201,7 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 			observeAttempts(result, hedged.attempts)
 			return result
 		case <-timer.C:
-			hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
-			observeAttempts(hedged.result, hedged.attempts)
-			return hedged.result
+			return raceWithPrimary()
 		}
 	}
 
@@ -198,6 +217,19 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	result := selectProduceResult(primaryResult, hedged.result)
 	observeAttempts(result, hedged.attempts)
 	return result
+}
+
+func (h *Hedger) withCoverageCheck(res ProduceResult, nodeID int32, requested []encodedTopicPartitionRecords) ProduceResult {
+	if res.err != nil {
+		return res
+	}
+	if missing, ok := firstMissingProducePartition(res.resp, requested); ok {
+		// A successful retry would otherwise hide the incomplete response.
+		log(h.logger, kgo.LogLevelWarn, "warpstream produce response omits requested partitions",
+			"node_id", nodeID, "first_missing_topic", missing.topic, "first_missing_partition", missing.partition)
+		res.err = errIncompleteProduceResponse
+	}
+	return res
 }
 
 // runHedgingAttemptsAndRaceWithPrimary races the hedge fallback against
