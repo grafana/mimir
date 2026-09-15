@@ -338,10 +338,10 @@ func readIndexSymbolTableSize(indexPath string) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("parse index TOC: %w", err)
 	}
-	if toc.Series < toc.Symbols {
+	// The symbols section spans from its start offset to the beginning of the series section.
+	if toc.Series <= toc.Symbols {
 		return 0, fmt.Errorf("invalid TOC: series offset (%d) before symbols offset (%d)", toc.Series, toc.Symbols)
 	}
-	// The symbols section spans from its start offset to the beginning of the series section.
 	return toc.Series - toc.Symbols, nil
 }
 
