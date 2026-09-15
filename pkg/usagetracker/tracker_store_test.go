@@ -18,7 +18,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -757,43 +756,10 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 }
 
 func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
-	snapshot := encoding.Decbuf{B: data}
-	version := snapshot.Byte()
-	require.NoError(t, snapshot.Err())
-	require.Equal(t, uint8(snapshotEncodingVersion), version)
-	numShards := snapshot.Uvarint64()
-	require.NoError(t, snapshot.Err())
-	require.Equal(t, uint64(shards), numShards)
-	shard := snapshot.Byte()
-	require.NoError(t, snapshot.Err())
-	require.Less(t, uint64(shard), numShards)
-
-	_ = time.Unix(int64(snapshot.Be64()), 0)
-	require.NoError(t, snapshot.Err())
-
-	tenantsLen := snapshot.Uvarint64()
-	require.NoError(t, snapshot.Err())
-
-	res := make(map[string]map[uint64]clock.Minutes, tenantsLen)
-	for i := 0; i < int(tenantsLen); i++ {
-		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
-		tenantID := snapshot.UvarintStr()
-		require.NoErrorf(t, snapshot.Err(), "can't read userID %d", i)
-
-		seriesLen := int(snapshot.Uvarint64())
-		require.NoError(t, snapshot.Err())
-		shard := make(map[uint64]clock.Minutes, seriesLen)
-
-		for i := 0; i < seriesLen; i++ {
-			series := snapshot.Be64()
-			require.NoError(t, snapshot.Err())
-			ts := clock.Minutes(snapshot.Byte())
-			require.NoError(t, snapshot.Err())
-			shard[series] = ts
-		}
-		res[tenantID] = shard
-	}
-	return res
+	t.Helper()
+	header, tenants := decodeSnapshotHeader(t, data)
+	require.Less(t, uint64(header.shard), header.numShards)
+	return tenants
 }
 
 func BenchmarkGroupByModuloShards(b *testing.B) {
