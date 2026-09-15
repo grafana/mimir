@@ -39,30 +39,28 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 // Passing a nil verifier is equivalent to passing verify.NewVerifier(logger)
 // (no checks registered, every block trivially passes).
 func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, sleepTime time.Duration, verifier *verify.Verifier, dryRun bool) error {
-	if verifier == nil {
-		verifier = verify.NewVerifier(c.logger)
-	}
-
-	report := verifier.Run(ctx, blocks)
-	if report.HasFailures() {
-		for _, f := range report.Failures() {
-			var logger log.Logger
-			switch {
-			case f.BlockULID != "":
-				logger = log.With(c.logger, "block", f.BlockULID)
-			case f.BlockDir != "":
-				logger = log.With(c.logger, "blockdir", f.BlockDir)
-			default:
-				logger = c.logger
+	if verifier != nil {
+		report := verifier.Run(ctx, blocks)
+		if report.HasFailures() {
+			for _, f := range report.Failures() {
+				var logger log.Logger
+				switch {
+				case f.BlockULID != "":
+					logger = log.With(c.logger, "block", f.BlockULID)
+				case f.BlockDir != "":
+					logger = log.With(c.logger, "blockdir", f.BlockDir)
+				default:
+					logger = c.logger
+				}
+				level.Error(logger).Log("check", f.Check, "msg", f.Err.Error())
 			}
-			level.Error(logger).Log("check", f.Check, "msg", f.Err.Error())
+			return report.Err()
 		}
-		return report.Err()
-	}
 
-	if dryRun {
-		level.Info(c.logger).Log("msg", "dry-run: verification passed, skipping uploads", "blocks", len(blocks))
-		return nil
+		if dryRun {
+			level.Info(c.logger).Log("msg", "dry-run: verification passed, skipping uploads", "blocks", len(blocks))
+			return nil
+		}
 	}
 
 	// Upload each block

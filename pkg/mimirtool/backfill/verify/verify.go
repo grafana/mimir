@@ -93,6 +93,9 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 				return nil
 			}
 
+			// TODO: The uploader fixes thanos.files during upload, so we could
+			// fail verification for blocks that would be automatically fixed for
+			// upload.
 			meta, err := block.ReadMetaFromDir(dir)
 			if err != nil {
 				report.Add("", "meta", dir, fmt.Errorf("failed to read meta.json: %w", err))
@@ -103,6 +106,8 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			}
 
 			refsMu.Lock()
+			// TODO: could save memory by zeroing out meta we don't need,
+			// like slices of files and compaction details.
 			refs = append(refs, BlockRef{Dir: dir, Meta: *meta})
 			refsMu.Unlock()
 
