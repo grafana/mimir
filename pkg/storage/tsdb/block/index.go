@@ -326,8 +326,8 @@ func readIndexSymbolTableSize(indexPath string) (uint64, error) {
 	if _, err := io.ReadFull(f, buf[:]); err != nil {
 		return 0, fmt.Errorf("read index header: %w", err)
 	}
-	if binary.BigEndian.Uint32(buf[:4]) != index.MagicIndex {
-		return 0, fmt.Errorf("invalid index magic")
+	if magic := binary.BigEndian.Uint32(buf[:4]); magic != index.MagicIndex {
+		return 0, fmt.Errorf("invalid index magic: %x", magic)
 	}
 	// we check V1 and V2 as both have symbol table at the beginning with the same format
 	if buf[4] != index.FormatV1 && buf[4] != index.FormatV2 {
