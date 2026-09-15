@@ -20,11 +20,11 @@ func TestWellFormedVerifier_ValidBlock(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	deep := NewWellFormedVerifier(log.NewNopLogger(), Deep)
-	medium := NewWellFormedVerifier(log.NewNopLogger(), Medium)
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
 
-	require.NoError(t, deep.Verify(ctx, dir, *meta))
-	require.NoError(t, medium.Verify(ctx, dir, *meta))
+	require.NoError(t, true.Verify(ctx, dir, *meta))
+	require.NoError(t, false.Verify(ctx, dir, *meta))
 }
 
 func TestWellFormedVerifier_TruncatedChunk(t *testing.T) {
@@ -36,8 +36,8 @@ func TestWellFormedVerifier_TruncatedChunk(t *testing.T) {
 	corruptChunkSegment(t, dir)
 
 	ctx := context.Background()
-	deep := NewWellFormedVerifier(log.NewNopLogger(), Deep)
-	err := deep.Verify(ctx, dir, *meta)
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	err := true.Verify(ctx, dir, *meta)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "well-formed check failed")
 }
@@ -51,14 +51,14 @@ func TestWellFormedVerifier_MangledIndex(t *testing.T) {
 	mangleIndex(t, dir)
 
 	ctx := context.Background()
-	deep := NewWellFormedVerifier(log.NewNopLogger(), Deep)
-	medium := NewWellFormedVerifier(log.NewNopLogger(), Medium)
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
 
-	require.Error(t, deep.Verify(ctx, dir, *meta))
-	require.Error(t, medium.Verify(ctx, dir, *meta))
+	require.Error(t, true.Verify(ctx, dir, *meta))
+	require.Error(t, false.Verify(ctx, dir, *meta))
 }
 
-func TestWellFormedVerifier_ChecksumMismatch_DeepFailsMediumPasses(t *testing.T) {
+func TestWellFormedVerifier_ChecksumMismatch_trueFailsfalsePasses(t *testing.T) {
 	// Flip a byte inside the first chunk's data region, with the intent to break
 	// full-depth checks while allowing header-level checks to pass.
 	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
@@ -71,11 +71,11 @@ func TestWellFormedVerifier_ChecksumMismatch_DeepFailsMediumPasses(t *testing.T)
 	flipChunkByte(t, dir, 10)
 
 	ctx := context.Background()
-	deep := NewWellFormedVerifier(log.NewNopLogger(), Deep)
-	medium := NewWellFormedVerifier(log.NewNopLogger(), Medium)
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
 
-	require.Error(t, deep.Verify(ctx, dir, *meta),
-		"deep mode must catch chunk checksum mismatch")
-	require.NoError(t, medium.Verify(ctx, dir, *meta),
-		"medium mode must NOT catch silent checksum mismatch (by design)")
+	require.Error(t, true.Verify(ctx, dir, *meta),
+		"true mode must catch chunk checksum mismatch")
+	require.NoError(t, false.Verify(ctx, dir, *meta),
+		"false mode must NOT catch silent checksum mismatch (by design)")
 }

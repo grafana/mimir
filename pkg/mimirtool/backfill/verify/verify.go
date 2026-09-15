@@ -17,16 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// Mode controls the depth of per-block verification.
-type Mode int
-
-const (
-	// Deep runs include more expensive checks.
-	Deep Mode = iota
-	// Medium runs only header-level / quick checks.
-	Medium
-)
-
 // BlockVerifier runs a single check against one block.
 type BlockVerifier interface {
 	// Name return the name of this check, for reporting and identification.
@@ -43,7 +33,7 @@ type BatchVerifier interface {
 	// Verify runs the verification for the batch. It should return nil on
 	// success, and error if the verification fails. Verifiers should record
 	// individual failures to the provided Report, and the error text will be
-	// recorded as an failure summary in the Report.
+	// recorded as a failure summary in the Report.
 	Verify(ctx context.Context, blocks []BlockRef, report *Report) error
 }
 
@@ -116,7 +106,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			refs = append(refs, BlockRef{Dir: dir, Meta: *meta})
 			refsMu.Unlock()
 
-			// XXX: We should probably add a verifier for duplicate block ULID
+			// TODO: We should probably add a verifier for duplicate block ULID
 			blockULID := meta.ULID.String()
 			blockLogger := log.With(v.logger, "block", blockULID)
 			level.Info(blockLogger).Log("msg", "verifying block")
@@ -155,7 +145,7 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			err := bcheck.Verify(ctx, refs, report)
 			if err != nil {
 				// Batch verifiers are expected to write their own reports, but failure
-				// to do so will cause verification to incorrectly pass. Instead, add
+				// to do so would cause verification to incorrectly pass. Instead, add
 				// a report item for the error summary.
 				report.Add("", bcheck.Name(), "", err)
 				if v.opts.failFast {
@@ -164,8 +154,13 @@ func (v *Verifier) Run(ctx context.Context, blockDirs []string) *Report {
 			}
 		}
 	} else if len(v.opts.batchChecks) > 0 {
+		reason := "per-block fail-fast"
+		if ctx.Err() != nil {
+			reason = "context canceled"
+		}
 		level.Info(v.logger).Log(
-			"msg", "skipping batch checks due to per-block fail-fast",
+			"msg", "skipping batch checks",
+			"reason", reason,
 			"batch_check_count", len(v.opts.batchChecks),
 		)
 	}

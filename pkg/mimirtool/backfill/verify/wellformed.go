@@ -13,20 +13,20 @@ import (
 )
 
 // WellFormedVerifier checks that a block on disk is structurally valid by
-// delegating to blockvalidation.CheckBlockOnDisk. In Deep mode the structural
-// walk performs a full CRC32 check over every chunk; in Medium mode it
+// delegating to blockvalidation.CheckBlockOnDisk. With checkChunks set, the
+// structural walk performs a full CRC32 check over every chunk; otherwise it
 // validates only the index structure and chunk segment headers.
 type WellFormedVerifier struct {
 	logger      log.Logger
 	checkChunks bool
 }
 
-// NewWellFormedVerifier constructs a WellFormedVerifier configured for the
-// given Mode.
-func NewWellFormedVerifier(logger log.Logger, mode Mode) *WellFormedVerifier {
+// NewWellFormedVerifier constructs a WellFormedVerifier. checkChunks enables
+// the full per-chunk CRC32 walk.
+func NewWellFormedVerifier(logger log.Logger, checkChunks bool) *WellFormedVerifier {
 	return &WellFormedVerifier{
 		logger:      logger,
-		checkChunks: mode == Deep,
+		checkChunks: checkChunks,
 	}
 }
 

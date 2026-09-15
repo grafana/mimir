@@ -117,23 +117,23 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("false").
 		BoolVar(&c.verifyBlocks)
 
-	cmd.Flag("dry-run", "Verify blocks without uploading any of them; implies --verify. Exits 0 if all blocks pass verification, non-zero otherwise.").
+	cmd.Flag("dry-run", "Verify blocks without uploading any of them; implies --verify. Exits 0 if all blocks pass verification, non-zero otherwise. Should be combined with --no-fail-fast for a complete report of existing problems.").
 		Default("false").
 		BoolVar(&c.dryRun)
 
-	cmd.Flag("fail-fast", "Aborts verification after the first failure.").
+	cmd.Flag("fail-fast", "When verifying, aborts verification after the first failure.").
 		Default("true").
 		BoolVar(&c.failFast)
 
-	cmd.Flag("deep-verification", "Use high verification depth, including slow per-chunk CRC32 walks.").
+	cmd.Flag("deep-verification", "When verifying, use high verification depth, including slow per-chunk CRC32 walks.").
 		Default("true").
 		BoolVar(&c.deepVerification)
 
-	cmd.Flag("single-block-per-day", "Enforce at most one block per UTC day. If false, allow multiple blocks per day as long as they don't overlap. Either way, no block may span two UTC days.").
+	cmd.Flag("single-block-per-day", "When verifying, enforce at most one block per UTC day. If false, allow multiple blocks per day as long as they don't overlap. Either way, no block may span two UTC days.").
 		Default("false").
 		BoolVar(&c.singleBlockPerDay)
 
-	cmd.Flag("verify-concurrency", "Number of blocks to verify in parallel. 0 selects min(GOMAXPROCS, 4); 1 forces serial execution.").
+	cmd.Flag("verify-concurrency", "When verifying, number of blocks to verify in parallel. 0 selects min(GOMAXPROCS, 4); 1 forces serial execution.").
 		Default("0").
 		IntVar(&c.verifyConcurrency)
 
@@ -167,11 +167,6 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 	// impossible to ask for.
 	var verifier *verify.Verifier
 	if c.verifyBlocks || c.dryRun {
-		mode := verify.Medium
-		if c.deepVerification {
-			mode = verify.Deep
-		}
-
 		// Block-level checks run in registration order, so run cheap checks first
 		// so fail-fast skips expensive walks when the meta is already bad.
 		opts := []verify.Option{
@@ -190,7 +185,7 @@ func (c *BackfillCommand) backfill(logger log.Logger) error {
 			// of blocks some tools produce.
 			opts = append(opts, verify.WithBatchCheck(verify.NewOverlappingBlockVerifier(logger)))
 		}
-		opts = append(opts, verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, mode)))
+		opts = append(opts, verify.WithBlockCheck(verify.NewWellFormedVerifier(logger, c.deepVerification)))
 		verifier = verify.NewVerifier(logger, opts...)
 	}
 

@@ -21,7 +21,7 @@ type Report struct {
 	mu           sync.Mutex
 	totalBlocks  int
 	failures     []Failure
-	failedBlocks map[string]struct{} // keyed by blockULID; "" (meta/batch) counted once under empty key
+	failedBlocks map[string]struct{} // keyed by blockULID, or by blockDir when the ULID is unknown; batch-level failures are not counted
 }
 
 func newReport(totalBlocks int) *Report {
@@ -68,7 +68,8 @@ func (r *Report) Failures() []Failure {
 }
 
 // Summary returns (totalBlocks, failedBlocks, totalFailures). failedBlocks
-// includes the empty-ULID bucket used for batch/meta failures.
+// counts distinct blocks, so it excludes batch-level failures, which describe
+// the batch rather than any one block.
 func (r *Report) Summary() (int, int, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -22,8 +22,8 @@ type SingleUTCDayVerifier struct {
 	logger log.Logger
 }
 
-// NewSingleUTCDayVerifier constructs a SingleUTCDayVerifier. Depth mode has
-// no effect on this verifier — it always does the same header arithmetic.
+// NewSingleUTCDayVerifier constructs a SingleUTCDayVerifier. Verification depth
+// has no effect on this verifier: it always does the same header arithmetic.
 func NewSingleUTCDayVerifier(logger log.Logger) *SingleUTCDayVerifier {
 	return &SingleUTCDayVerifier{logger: logger}
 }

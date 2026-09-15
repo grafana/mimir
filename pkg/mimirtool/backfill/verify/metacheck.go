@@ -21,9 +21,8 @@ type MetaCheckVerifier struct {
 	logger log.Logger
 }
 
-// NewMetaCheckVerifier constructs a MetaCheckVerifier. Mode has no effect
-// on this verifier — meta-only checks are the same in Deep and Medium
-// mode.
+// NewMetaCheckVerifier constructs a MetaCheckVerifier. Verification depth has
+// no effect on this verifier: meta-only checks never read block contents.
 func NewMetaCheckVerifier(logger log.Logger) *MetaCheckVerifier {
 	return &MetaCheckVerifier{logger: logger}
 }
