@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -194,6 +195,7 @@ func newFilterAnd(filters ...storage.Filter) *filterAnd {
 
 func (a *filterAnd) Accept(value string) (bool, float64) {
 	if len(a.filters) == 0 {
+		assert.Unreachable("empty AND filter", map[string]any{"num_filters": len(a.filters)})
 		return false, 0
 	}
 
