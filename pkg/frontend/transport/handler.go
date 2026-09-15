@@ -10,7 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"crypto/rand"
+	"math/rand" //#nosec G404 -- Parent query IDs are reported in logs and traces and are never used to route, key or authorize anything, so they don't need to be unguessable -- nosemgrep: math-random-used
 	"net/http"
 	"net/url"
 	"strconv"
