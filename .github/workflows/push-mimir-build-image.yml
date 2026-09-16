@@ -20,7 +20,7 @@ concurrency:
 jobs:
   prepare:
     name: Prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     permissions:
       contents: read
       pull-requests: write # So we can post comments on the PR.
@@ -86,9 +86,12 @@ jobs:
       - name: Check if image is already built
         if: steps.check_if_files_modified.outputs.modified == 'true'
         id: check_if_image_is_built
+        # Make sure to run skopeo ignoring any credential helpers and auth since the build image
+        # must be able to be pulled anonymously. This also avoid permissions errors in the Grafana
+        # runner when the `ubuntu` user tries to load Docker credentials owned by `root`.
         run: |
           echo "Checking if image has already been built"
-          if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
+          if skopeo inspect --no-creds --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
             echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} exists"
             echo "need_to_build=false" >> $GITHUB_OUTPUT
           else
@@ -146,7 +149,7 @@ jobs:
   # Renaming it would mean backporting a large number of changes to old release branches, so we're keeping it as-is for now.
   # Once all active release branches use this workflow, it'll be much easier to rename it and backport just that rename.
   build_and_push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - build-push-multiarch
