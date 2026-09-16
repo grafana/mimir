@@ -66,6 +66,12 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return mapSeriesError(err)
+	}
+	defer done()
+
 	g, gctx := errgroup.WithContext(ctx)
 
 	var (
@@ -104,10 +110,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	})
 
 	if err := g.Wait(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return status.Error(codes.Canceled, err.Error())
-		}
-		return status.Error(codes.Internal, err.Error())
+		return mapSeriesError(err)
 	}
 
 	// Single-set fast path: no merge wrapper. The per-block search already
@@ -149,6 +152,12 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	stats := newSafeQueryStats()
 	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return mapSeriesError(err)
+	}
+	defer done()
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -192,10 +201,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	})
 
 	if err := g.Wait(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return status.Error(codes.Canceled, err.Error())
-		}
-		return status.Error(codes.Internal, err.Error())
+		return mapSeriesError(err)
 	}
 
 	// Single-set fast path: see SearchLabelNames above.

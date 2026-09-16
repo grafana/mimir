@@ -11293,6 +11293,17 @@
             },
             {
               "kind": "field",
+              "name": "gate_label_requests",
+              "required": false,
+              "desc": "When enabled, label names, label values and their search variants are subject to -blocks-storage.bucket-store.max-concurrent, like series requests. When disabled, those endpoints are not concurrency-limited.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.gate-label-requests",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tenant_sync_concurrency",
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",

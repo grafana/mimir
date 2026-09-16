@@ -423,6 +423,7 @@ type BucketStoreConfig struct {
 	SyncInterval                           time.Duration               `yaml:"sync_interval" category:"advanced"`
 	MaxConcurrent                          int                         `yaml:"max_concurrent" category:"advanced"`
 	MaxConcurrentQueueTimeout              time.Duration               `yaml:"max_concurrent_queue_timeout" category:"advanced"`
+	GateLabelRequests                      bool                        `yaml:"gate_label_requests" category:"experimental"`
 	TenantSyncConcurrency                  int                         `yaml:"tenant_sync_concurrency" category:"advanced"`
 	BlockSyncConcurrency                   int                         `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency                    int                         `yaml:"meta_sync_concurrency" category:"advanced"`
@@ -472,6 +473,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 200, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.DurationVar(&cfg.MaxConcurrentQueueTimeout, "blocks-storage.bucket-store.max-concurrent-queue-timeout", 5*time.Second, "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.")
+	f.BoolVar(&cfg.GateLabelRequests, "blocks-storage.bucket-store.gate-label-requests", false, "When enabled, label names, label values and their search variants are subject to -blocks-storage.bucket-store.max-concurrent, like series requests. When disabled, those endpoints are not concurrency-limited.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from object storage per tenant.")

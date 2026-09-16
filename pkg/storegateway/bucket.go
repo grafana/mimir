@@ -115,6 +115,10 @@ type BucketStore struct {
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
 
+	// gateLabelRequests controls whether LabelNames, LabelValues and their search variants
+	// acquire queryGate. Series always does. See -blocks-storage.bucket-store.gate-label-requests.
+	gateLabelRequests bool
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -228,6 +232,7 @@ func NewBucketStore(
 		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
 		lazyLoadingGate:             gate.NewNoop(),
+		gateLabelRequests:           bucketStoreConfig.GateLabelRequests,
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
@@ -710,6 +715,11 @@ func buildSeriesResponseHints(blocks []*bucketBlock) *storepb.SeriesResponseHint
 	return resHints
 }
 
+// mapSeriesError translates an error into the gRPC status returned to the caller. Despite the
+// name it is used by every read RPC (Series, LabelNames, LabelValues and their search
+// variants), so that a capacity condition such as a query-gate timeout is reported as
+// Unavailable rather than Internal, and is therefore retried elsewhere rather than alerting
+// as a server bug.
 func mapSeriesError(err error) error {
 	if err == nil {
 		return err
@@ -753,6 +763,18 @@ func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQue
 		return nil, errors.Wrapf(err, "failed to wait for turn")
 	}
 	return s.queryGate.Done, nil
+}
+
+// limitConcurrentLabelRequests acquires the query gate for the label and search endpoints, but
+// only when -blocks-storage.bucket-store.gate-label-requests is enabled. Series has always
+// acquired the gate via limitConcurrentQueries; these endpoints historically did not, so
+// subjecting them to it is opt-in to keep the default behaviour unchanged.
+// The returned function is always non-nil and safe to defer.
+func (s *BucketStore) limitConcurrentLabelRequests(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	if !s.gateLabelRequests {
+		return func() {}, nil
+	}
+	return s.limitConcurrentQueries(ctx, stats)
 }
 
 // sendStreamingSeriesLabelsAndStats sends the labels of the streaming series.
@@ -1305,6 +1327,12 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return nil, mapSeriesError(err)
+	}
+	defer done()
+
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
@@ -1363,11 +1391,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	})
 
 	if err := g.Wait(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, status.Error(codes.Canceled, err.Error())
-		}
-
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, mapSeriesError(err)
 	}
 
 	stats.update(func(stats *queryStats) {
@@ -1498,6 +1522,12 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return nil, mapSeriesError(err)
+	}
+	defer done()
+
 	resHints := &storepb.LabelValuesResponseHints{}
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1553,11 +1583,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	})
 
 	if err := g.Wait(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, status.Error(codes.Canceled, err.Error())
-		}
-
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, mapSeriesError(err)
 	}
 
 	values := util.MergeSlices(sets...)

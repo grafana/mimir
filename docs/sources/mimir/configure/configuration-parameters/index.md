@@ -6117,6 +6117,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
   [max_concurrent_queue_timeout: <duration> | default = 5s]
 
+  # (experimental) When enabled, label names, label values and their search
+  # variants are subject to -blocks-storage.bucket-store.max-concurrent, like
+  # series requests. When disabled, those endpoints are not concurrency-limited.
+  # CLI flag: -blocks-storage.bucket-store.gate-label-requests
+  [gate_label_requests: <boolean> | default = false]
+
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
   [tenant_sync_concurrency: <int> | default = 1]
