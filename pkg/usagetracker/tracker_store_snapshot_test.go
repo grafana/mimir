@@ -34,7 +34,7 @@ func TestSnapshotEncodingVersion(t *testing.T) {
 	require.Equal(t, byte(snapshotEncodingVersionV1), snapshotEncodingVersion(legacySnapshotNumShards))
 
 	// Any other count needs the format that records it.
-	for _, numShards := range []int{1, 2, 15, 17, 32, tenantshard.MaxNumShards} {
+	for _, numShards := range []int{1, 2, 4, 32, tenantshard.MaxNumShards} {
 		require.Equalf(t, byte(snapshotEncodingVersionV2), snapshotEncodingVersion(numShards), "numShards=%d", numShards)
 	}
 }

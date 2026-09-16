@@ -23,6 +23,14 @@ import (
 
 var refsPool zeropool.Pool[[]uint64]
 
+// groupScratch holds the per-shard scratch counters that groupByModuloShards needs.
+// See the note there for why it is pooled and why it is one array rather than two.
+type groupScratch struct {
+	buf [2 * tenantshard.MaxNumShards]int
+}
+
+var groupScratchPool = sync.Pool{New: func() any { return &groupScratch{} }}
+
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
@@ -96,14 +104,14 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	groupByModuloShards(series, t.numShards)
 
 	now := clock.ToMinutes(timeNow)
-	numShards := uint64(t.numShards)
+	shardMask := t.shardMask()
 
 	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
 	createdRefs := refsPool.Get()[:0]
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
-		if shard := uint8(series[i0] % numShards); i == len(series) || shard != uint8(series[i]%numShards) {
+		if shard := uint8(series[i0] & shardMask); i == len(series) || shard != uint8(series[i]&shardMask) {
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
@@ -154,11 +162,11 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	groupByModuloShards(series, t.numShards)
 
 	timestamp := clock.ToMinutes(eventTimestamp)
-	numShards := uint64(t.numShards)
+	shardMask := t.shardMask()
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
-		if shard := uint8(series[i0] % numShards); i == len(series) || shard != uint8(series[i]%numShards) {
+		if shard := uint8(series[i0] & shardMask); i == len(series) || shard != uint8(series[i]&shardMask) {
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
@@ -430,19 +438,40 @@ func zeroAsNoLimit(v uint64) uint64 {
 	return v
 }
 
+// shardMask returns the mask that turns a series hash into its shard index.
+// numShards is a power of 2, so hash&mask == hash%numShards.
+func (t *trackerStore) shardMask() uint64 {
+	return uint64(t.numShards - 1)
+}
+
 // groupByModuloShards sorts series by shard to minimize lock contention by taking mutex once for each shard.
 // It arranges the series hashes into contiguous groups of hashes of same modulo numShards.
 // This is O(N), specifically it iterates all series twice, and makes the re-arrangement in place.
-// The scratch arrays are sized to tenantshard.MaxNumShards and used up to numShards, so this
-// is allocation-free regardless of the configured shard count.
+//
+// Two things here exist to keep a runtime shard count as cheap as the compile-time constant it
+// replaced, because this runs on every write:
+//
+//   - numShards is a power of 2, which the configuration enforces, so the modulo is a mask.
+//     With a runtime count the compiler can't turn a modulo into a mask itself, and the divide
+//     it emits instead nearly doubles the cost of this function.
+//   - The scratch counters live in one pooled array instead of two stack ones. They have to be
+//     sized for MaxNumShards to hold any configured count, and two 2KB stack arrays cost about a
+//     third of this function even though only their first numShards entries are ever used. The
+//     cost is locality, not the zeroing: pooling alone changed nothing, and what recovered it was
+//     carving both windows out of one array so they sit adjacent. At the default shard count that
+//     is 256 contiguous bytes instead of two 128-byte windows 2KB apart.
 func groupByModuloShards(series []uint64, numShards int) {
-	var counts, pos [tenantshard.MaxNumShards]int
-	mod64 := uint64(numShards)
+	scratch := groupScratchPool.Get().(*groupScratch)
+	counts, pos := scratch.buf[:numShards], scratch.buf[numShards:2*numShards]
+	clear(counts)
+	clear(pos)
+
+	mask := uint64(numShards - 1)
 	// count how many series belong to each shard.
 	// This will be later "the number of series from each shard correctly placed"
 	// This is the first O(series)
 	for _, ref := range series {
-		counts[ref%mod64]++
+		counts[ref&mask]++
 	}
 	// pos is where each shard's next element should be
 	// We'll update this as we check the elements.
@@ -451,7 +480,7 @@ func groupByModuloShards(series []uint64, numShards int) {
 	}
 
 	for i := 0; i < len(series); i++ {
-		for mod := series[i] % mod64; counts[mod] > 0; mod = series[i] % mod64 {
+		for mod := series[i] & mask; counts[mod] > 0; mod = series[i] & mask {
 			// put this element where it should be, swap them
 			series[pos[mod]], series[i] = series[i], series[pos[mod]]
 			// if there's next element for this mod, it's on the next position
@@ -460,4 +489,6 @@ func groupByModuloShards(series []uint64, numShards int) {
 			counts[mod]--
 		}
 	}
+
+	groupScratchPool.Put(scratch)
 }

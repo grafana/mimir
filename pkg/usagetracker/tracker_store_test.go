@@ -782,9 +782,9 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 }
 
 func TestGroupByModuloShards(t *testing.T) {
-	// The shard count is configurable, so the grouping has to hold for any of them, including the
-	// degenerate single-shard case and the maximum.
-	for _, numShards := range []int{1, 2, 3, 16, 100, tenantshard.MaxNumShards} {
+	// The shard count is configurable, so the grouping has to hold for every power of 2 it can
+	// take, including the degenerate single-shard case and the maximum.
+	for _, numShards := range []int{1, 2, 4, 16, 64, tenantshard.MaxNumShards} {
 		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
 			t.Run("empty", func(t *testing.T) {
 				var series []uint64

@@ -53,10 +53,12 @@ func TestNewFactory(t *testing.T) {
 		require.Zero(t, newMap.NumShards())
 	})
 
-	t.Run("shard count out of range", func(t *testing.T) {
-		for _, numShards := range []int{-1, 0, MaxNumShards + 1} {
+	t.Run("invalid shard count", func(t *testing.T) {
+		// Out of range, and in range but not a power of 2: the tracker store masks a series hash
+		// to get its shard, so anything but a power of 2 would leave shards unreachable.
+		for _, numShards := range []int{-1, 0, MaxNumShards * 2, 3, 100, 255} {
 			_, err := NewFactory(DefaultImplVersion, numShards)
-			require.EqualError(t, err, fmt.Sprintf("invalid number of tenant shards %d, must be between 1 and %d", numShards, MaxNumShards))
+			require.EqualError(t, err, fmt.Sprintf("invalid number of tenant shards %d, must be a power of 2 between 1 and %d", numShards, MaxNumShards))
 		}
 	})
 

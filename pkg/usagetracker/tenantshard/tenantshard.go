@@ -31,6 +31,9 @@ const (
 	// MaxNumShards is the maximum number of shards allowed per tenant.
 	// The shard index is stored as a single byte (uint8) in snapshots and used to index
 	// per-tenant shard slices, so it must fit in [0, 256).
+	//
+	// The count must also be a power of 2: the tracker store picks a series' shard by masking
+	// its hash, which only matches hash % count when the count is a power of 2.
 	MaxNumShards = 256
 
 	// DefaultImplVersion is the implementation used unless it is configured otherwise.
@@ -108,8 +111,8 @@ func (f Factory) NumShards() int {
 // NewFactory returns a Factory that builds maps of the given implementation version,
 // for tenants split into numShards shards.
 func NewFactory(version int, numShards int) (Factory, error) {
-	if numShards < 1 || numShards > MaxNumShards {
-		return Factory{}, fmt.Errorf("invalid number of tenant shards %d, must be between 1 and %d", numShards, MaxNumShards)
+	if !isPowerOfTwo(numShards) || numShards > MaxNumShards {
+		return Factory{}, fmt.Errorf("invalid number of tenant shards %d, must be a power of 2 between 1 and %d", numShards, MaxNumShards)
 	}
 	f := Factory{numShards: numShards}
 	switch version {
@@ -121,6 +124,12 @@ func NewFactory(version int, numShards int) (Factory, error) {
 		return Factory{}, fmt.Errorf("unsupported tenant shard map implementation version %d, supported versions are 1 and 2", version)
 	}
 	return f, nil
+}
+
+// isPowerOfTwo is a local copy of the usagetracker helper: this package can't import the one
+// that validates the configuration, because that package imports this one.
+func isPowerOfTwo(n int) bool {
+	return n > 0 && n&(n-1) == 0
 }
 
 // v1Map adapts v1.Map to the Map interface, and v2Map does the same for v2.Map.
