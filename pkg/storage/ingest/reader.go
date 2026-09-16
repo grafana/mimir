@@ -283,7 +283,7 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 			// and always reads from the partition leader. Rack-aware consumption is silently a no-op in this case, and
 			// it's expensive to notice, so tell the operator about it.
 			level.Warn(r.logger).Log(
-				"msg", "the configured Kafka client rack has no effect because concurrent fetching is enabled: records are always fetched from the partition leader. Set fetch concurrency to 0 to read from the closest replica.",
+				"msg", "the configured Kafka client rack has no effect because concurrent fetching is enabled: records are always fetched from the partition leader, regardless of the configured rack",
 				"client_rack", r.kafkaCfg.ClientRack,
 				"fetch_concurrency_max", r.kafkaCfg.FetchConcurrencyMax,
 			)
