@@ -3,14 +3,70 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
+
+func TestNewKafkaReaderClient_ClientRackWithConcurrentFetching(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	tests := map[string]struct {
+		clientRack          string
+		fetchConcurrencyMax int
+		expectWarning       bool
+	}{
+		"no rack configured": {
+			clientRack:          "",
+			fetchConcurrencyMax: 12,
+			expectWarning:       false,
+		},
+		"rack configured and concurrent fetching enabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 12,
+			expectWarning:       true,
+		},
+		"rack configured and concurrent fetching disabled": {
+			clientRack:          "zone-a",
+			fetchConcurrencyMax: 0,
+			expectWarning:       false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			logs := bytes.NewBuffer(nil)
+			logger := log.NewLogfmtLogger(logs)
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.ClientRack = testData.clientRack
+			cfg.FetchConcurrencyMax = testData.fetchConcurrencyMax
+
+			client, err := NewKafkaReaderClient(cfg, nil, logger)
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			if testData.expectWarning {
+				assert.Contains(t, logs.String(), "the configured Kafka client rack has no effect because concurrent fetching is enabled")
+			} else {
+				assert.NotContains(t, logs.String(), "has no effect because concurrent fetching is enabled")
+			}
+		})
+	}
+}
 
 func TestNewKafkaReaderClient(t *testing.T) {
 	t.Run("should support SASL plain authentication", func(t *testing.T) {
