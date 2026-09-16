@@ -32,6 +32,37 @@ func TestNewParamsAcceptsValid(t *testing.T) {
 	}
 }
 
+func TestNewExpressionParamsAcceptsValid(t *testing.T) {
+	got, err := NewExpressionParams("foo AND NOT old", false, FuzzAlgSubsequence, 80)
+	require.NoError(t, err)
+	assert.Equal(t, &Params{
+		Expression:    "foo AND NOT old",
+		CaseSensitive: false,
+		FuzzAlg:       FuzzAlgSubsequence,
+		FuzzThreshold: 80,
+	}, got)
+}
+
+func TestNewExpressionParamsRejectsInvalid(t *testing.T) {
+	got, err := NewExpressionParams("", true, FuzzAlgSubsequence, 0)
+	require.EqualError(t, err, "search expression is empty")
+	assert.Nil(t, got)
+
+	got, err = NewExpressionParams("  \t", true, FuzzAlgSubsequence, 0)
+	require.EqualError(t, err, "search expression is empty")
+	assert.Nil(t, got)
+
+	got, err = NewExpressionParams("foo AND", true, FuzzAlgSubsequence, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "search expression:")
+	assert.Nil(t, got)
+}
+
+func TestParamsRejectsTermsAndExpression(t *testing.T) {
+	p := &Params{Terms: []string{"foo"}, Expression: "NOT old"}
+	require.EqualError(t, p.validate(), "search terms and search expression are mutually exclusive")
+}
+
 func TestNewParamsRejectsInvalid(t *testing.T) {
 	tests := []struct {
 		name      string
