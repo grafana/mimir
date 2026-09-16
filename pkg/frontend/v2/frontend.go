@@ -78,12 +78,11 @@ type Config struct {
 	RemoteExecutionBatchSize               uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
 	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
-	MaxInflightDispatchedMetricsEnabled bool `yaml:"max_inflight_dispatched_metrics_enabled" category:"experimental"`
-
 	// These configuration options are injected internally.
-	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
-	LookBackDelta           time.Duration             `yaml:"-"`
-	QueryStoreAfter         time.Duration             `yaml:"-"`
+	QuerySchedulerDiscovery   schedulerdiscovery.Config `yaml:"-"`
+	LookBackDelta             time.Duration             `yaml:"-"`
+	MaxInflightMetricsEnabled bool                      `yaml:"-"`
+	QueryStoreAfter           time.Duration             `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -99,7 +98,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
 	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
-	f.BoolVar(&cfg.MaxInflightDispatchedMetricsEnabled, "query-frontend.max-inflight-dispatched-metrics-enabled", false, "Enable the cortex_query_frontend_max_inflight_dispatched_queries and cortex_query_frontend_max_inflight_dispatched_query_age_seconds metrics, which report the per-tenant peak number of concurrent queries this frontend had dispatched and the greatest age a dispatched query reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every dispatched query.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -250,13 +248,8 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
 
-	if cfg.MaxInflightDispatchedMetricsEnabled {
-		f.maxInflight = inflight.NewMaxInflightCollector(
-			"cortex_query_frontend_max_inflight_dispatched_queries",
-			"Peak number of concurrent queries a tenant had dispatched by this frontend and not yet finished, since the last metric collection (reset on each scrape). One API request can dispatch many queries when query sharding or splitting is enabled.",
-			"cortex_query_frontend_max_inflight_dispatched_query_age_seconds",
-			"Greatest age reached by a query dispatched by this frontend for a tenant since the last metric collection (reset on each scrape). Queries that finished within the window are included.",
-		)
+	if cfg.MaxInflightMetricsEnabled {
+		f.maxInflight = inflight.NewMaxInflightCollector("dispatched")
 		if reg != nil {
 			reg.MustRegister(f.maxInflight)
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 func newBenchCollector() *MaxInflightCollector {
-	return NewMaxInflightCollector(countName, countHelp, ageName, ageHelp)
+	return NewMaxInflightCollector(testType)
 }
 
 // BenchmarkAddRemove measures what the tracker adds to the query admission path. The

@@ -2300,19 +2300,19 @@ func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
 }
 
 const (
-	maxInflightDispatchedMetric    = "cortex_query_frontend_max_inflight_dispatched_queries"
-	maxInflightDispatchedAgeMetric = "cortex_query_frontend_max_inflight_dispatched_query_age_seconds"
+	maxInflightRequestsMetric   = "cortex_query_frontend_max_inflight_requests"
+	maxInflightRequestAgeMetric = "cortex_query_frontend_max_inflight_request_age_seconds"
 )
 
-func maxInflightDispatchedExpected(series string) string {
+func maxInflightRequestsExpected(series string) string {
 	return `
-		# HELP cortex_query_frontend_max_inflight_dispatched_queries Peak number of concurrent queries a tenant had dispatched by this frontend and not yet finished, since the last metric collection (reset on each scrape). One API request can dispatch many queries when query sharding or splitting is enabled.
-		# TYPE cortex_query_frontend_max_inflight_dispatched_queries gauge
+		# HELP cortex_query_frontend_max_inflight_requests Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). The type label is "http" for requests entering the query-frontend, or "dispatched" for the sub-requests sent on to query-schedulers, of which one request can produce many.
+		# TYPE cortex_query_frontend_max_inflight_requests gauge
 	` + series
 }
 
-func enableMaxInflightDispatchedMetrics(cfg *Config) {
-	cfg.MaxInflightDispatchedMetricsEnabled = true
+func enableMaxInflightMetrics(cfg *Config) {
+	cfg.MaxInflightMetricsEnabled = true
 }
 
 func TestFrontend_MaxInflightDispatchedMetricsDisabledByDefault(t *testing.T) {
@@ -2320,7 +2320,7 @@ func TestFrontend_MaxInflightDispatchedMetricsDisabledByDefault(t *testing.T) {
 
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	require.False(t, cfg.MaxInflightDispatchedMetricsEnabled)
+	require.False(t, cfg.MaxInflightMetricsEnabled)
 
 	reg := prometheus.NewPedanticRegistry()
 	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -2336,7 +2336,7 @@ func TestFrontend_MaxInflightDispatchedMetricsDisabledByDefault(t *testing.T) {
 	require.NoError(t, respBody.Close())
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-		maxInflightDispatchedMetric, maxInflightDispatchedAgeMetric))
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 }
 
 func TestFrontend_MaxInflightDispatchedMetrics(t *testing.T) {
@@ -2361,7 +2361,7 @@ func TestFrontend_MaxInflightDispatchedMetrics(t *testing.T) {
 			}()
 		}
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	}, enableMaxInflightDispatchedMetrics)
+	}, enableMaxInflightMetrics)
 
 	var wg sync.WaitGroup
 	for range concurrency {
@@ -2381,11 +2381,11 @@ func TestFrontend_MaxInflightDispatchedMetrics(t *testing.T) {
 		<-started
 	}
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightDispatchedExpected(
-		maxInflightDispatchedMetric+`{user="`+userID+`"} 3`+"\n",
-	)), maxInflightDispatchedMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 3`+"\n",
+	)), maxInflightRequestsMetric))
 
-	count, err := testutil.GatherAndCount(reg, maxInflightDispatchedAgeMetric)
+	count, err := testutil.GatherAndCount(reg, maxInflightRequestAgeMetric)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 
@@ -2394,11 +2394,11 @@ func TestFrontend_MaxInflightDispatchedMetrics(t *testing.T) {
 
 	// The window the queries spanned still reports the peak, and the next one is empty
 	// because nothing is left in flight.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightDispatchedExpected(
-		maxInflightDispatchedMetric+`{user="`+userID+`"} 3`+"\n",
-	)), maxInflightDispatchedMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 3`+"\n",
+	)), maxInflightRequestsMetric))
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-		maxInflightDispatchedMetric, maxInflightDispatchedAgeMetric))
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 }
 
 // The middleware chain closes the response body more than once, which used to drive
@@ -2415,7 +2415,7 @@ func TestFrontend_MaxInflightDispatchedMetrics_ClosingResponseBodyMoreThanOnce(t
 			_ = sendResponseWithDelay(f, 0, userID, msg.QueryID, &httpgrpc.HTTPResponse{Code: 200})
 		}()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	}, enableMaxInflightDispatchedMetrics)
+	}, enableMaxInflightMetrics)
 
 	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
 	_, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
@@ -2424,11 +2424,11 @@ func TestFrontend_MaxInflightDispatchedMetrics_ClosingResponseBodyMoreThanOnce(t
 	require.NoError(t, respBody.Close())
 	require.NoError(t, respBody.Close())
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightDispatchedExpected(
-		maxInflightDispatchedMetric+`{user="`+userID+`"} 1`+"\n",
-	)), maxInflightDispatchedMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+	)), maxInflightRequestsMetric))
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-		maxInflightDispatchedMetric, maxInflightDispatchedAgeMetric))
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 }
 
 // A dispatched query that never succeeds must not leak its in-flight entry. As in the
@@ -2452,7 +2452,7 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenQueryFails(t *testing.T
 			reg := prometheus.NewPedanticRegistry()
 			f, _ := setupFrontendWithConfig(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 				return &schedulerpb.SchedulerToFrontend{Status: status}
-			}, enableMaxInflightDispatchedMetrics)
+			}, enableMaxInflightMetrics)
 
 			req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
 			resp, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
@@ -2461,11 +2461,11 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenQueryFails(t *testing.T
 				require.NoError(t, respBody.Close())
 			}
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightDispatchedExpected(
-				maxInflightDispatchedMetric+`{user="`+userID+`"} 1`+"\n",
-			)), maxInflightDispatchedMetric))
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+				maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+			)), maxInflightRequestsMetric))
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-				maxInflightDispatchedMetric, maxInflightDispatchedAgeMetric))
+				maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 
 			// The pre-existing gauge must agree that nothing is left in flight.
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -2489,7 +2489,7 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenCallerCancels(t *testin
 		// unwinds it.
 		signalOnce.Do(func() { close(enqueued) })
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	}, enableMaxInflightDispatchedMetrics)
+	}, enableMaxInflightMetrics)
 
 	ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), userID))
 	done := make(chan struct{})
@@ -2505,9 +2505,9 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenCallerCancels(t *testin
 	cancel()
 	<-done
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightDispatchedExpected(
-		maxInflightDispatchedMetric+`{user="`+userID+`"} 1`+"\n",
-	)), maxInflightDispatchedMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+	)), maxInflightRequestsMetric))
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-		maxInflightDispatchedMetric, maxInflightDispatchedAgeMetric))
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 }

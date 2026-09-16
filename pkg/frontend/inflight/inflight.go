@@ -44,13 +44,28 @@ type tenantInflight struct {
 	maxAge time.Duration
 }
 
-// NewMaxInflightCollector returns a MaxInflightCollector exposing the two given metric names
-// and help strings. The variable label is always "user". The caller is responsible for
-// registering it with a prometheus.Registerer.
-func NewMaxInflightCollector(countName, countHelp, ageName, ageHelp string) *MaxInflightCollector {
+const (
+	countMetricName = "cortex_query_frontend_max_inflight_requests"
+	ageMetricName   = "cortex_query_frontend_max_inflight_request_age_seconds"
+
+	typeLabel = "type"
+	userLabel = "user"
+
+	typeHelp = "The type label is \"http\" for requests entering the query-frontend, or \"dispatched\" for the sub-requests sent on to query-schedulers."
+
+	countMetricHelp = "Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). " + typeHelp
+	ageMetricHelp   = "Greatest age reached by an in-flight request for a tenant since the last metric collection (reset on each scrape). Requests that finished within the window are included. " + typeHelp
+)
+
+// NewMaxInflightCollector returns a MaxInflightCollector reporting the in-flight requests of
+// one part of the query-frontend, identified by requestType. The variable label is always
+// "user". The caller is responsible for registering it with a prometheus.Registerer.
+func NewMaxInflightCollector(requestType string) *MaxInflightCollector {
+	constLabels := prometheus.Labels{typeLabel: requestType}
+
 	return &MaxInflightCollector{
-		countDesc: prometheus.NewDesc(countName, countHelp, []string{"user"}, nil),
-		ageDesc:   prometheus.NewDesc(ageName, ageHelp, []string{"user"}, nil),
+		countDesc: prometheus.NewDesc(countMetricName, countMetricHelp, []string{userLabel}, constLabels),
+		ageDesc:   prometheus.NewDesc(ageMetricName, ageMetricHelp, []string{userLabel}, constLabels),
 		now:       time.Now,
 		entries:   map[uint64]entry{},
 		tenants:   map[string]*tenantInflight{},

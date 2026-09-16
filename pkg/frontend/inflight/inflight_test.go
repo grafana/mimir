@@ -13,10 +13,12 @@ import (
 )
 
 const (
-	countName = "test_max_inflight_queries"
-	countHelp = "Peak in-flight queries."
-	ageName   = "test_max_inflight_query_age_seconds"
-	ageHelp   = "Greatest in-flight query age."
+	countName = countMetricName
+	countHelp = countMetricHelp
+	ageName   = ageMetricName
+	ageHelp   = ageMetricHelp
+
+	testType = "test"
 )
 
 type fakeClock struct {
@@ -33,7 +35,7 @@ func newTestCollector(t *testing.T) (*MaxInflightCollector, *fakeClock, *prometh
 	t.Helper()
 
 	clock := &fakeClock{t: time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)}
-	c := NewMaxInflightCollector(countName, countHelp, ageName, ageHelp)
+	c := NewMaxInflightCollector(testType)
 	c.now = func() time.Time { return clock.t }
 
 	reg := prometheus.NewPedanticRegistry()
@@ -58,7 +60,7 @@ func TestMaxInflightCollector_ReportsPeakNotInstantaneousCount(t *testing.T) {
 
 	// One query is left in flight, but the peak during the window was three.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 3`+"\n",
+		countName+`{type="test",user="tenant-1"} 3`+"\n",
 	)), countName))
 }
 
@@ -68,22 +70,22 @@ func TestMaxInflightCollector_ResetsToCurrentNotZero(t *testing.T) {
 	c.Add("tenant-1")
 	id := c.Add("tenant-1")
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 2`+"\n",
+		countName+`{type="test",user="tenant-1"} 2`+"\n",
 	)), countName))
 
 	// The second window starts from the standing concurrency of two, not from zero.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 2`+"\n",
+		countName+`{type="test",user="tenant-1"} 2`+"\n",
 	)), countName))
 
 	c.Remove(id)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 2`+"\n",
+		countName+`{type="test",user="tenant-1"} 2`+"\n",
 	)), countName))
 
 	// Only now, with no drop during the window, does it fall to the standing one.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 1`+"\n",
+		countName+`{type="test",user="tenant-1"} 1`+"\n",
 	)), countName))
 }
 
@@ -99,7 +101,7 @@ func TestMaxInflightCollector_AgeOfQueryThatFinishedInWindow(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 7`+"\n",
+			ageName+`{type="test",user="tenant-1"} 7`+"\n",
 	), ageName))
 }
 
@@ -112,14 +114,14 @@ func TestMaxInflightCollector_AgeOfQueryStillRunningKeepsRising(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 5`+"\n",
+			ageName+`{type="test",user="tenant-1"} 5`+"\n",
 	), ageName))
 
 	clock.advance(11 * time.Second)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 16`+"\n",
+			ageName+`{type="test",user="tenant-1"} 16`+"\n",
 	), ageName))
 }
 
@@ -137,7 +139,7 @@ func TestMaxInflightCollector_LongestOfFinishedAndRunningWins(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 20`+"\n",
+			ageName+`{type="test",user="tenant-1"} 20`+"\n",
 	), ageName))
 
 	// The finished query belongs to the previous window; only the running one remains.
@@ -145,7 +147,7 @@ func TestMaxInflightCollector_LongestOfFinishedAndRunningWins(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 3`+"\n",
+			ageName+`{type="test",user="tenant-1"} 3`+"\n",
 	), ageName))
 }
 
@@ -160,7 +162,7 @@ func TestMaxInflightCollector_RemoveIsIdempotent(t *testing.T) {
 	c.Remove(99999)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 1`+"\n",
+		countName+`{type="test",user="tenant-1"} 1`+"\n",
 	)), countName))
 
 	// Nothing is left in flight, so the tenant reports nothing at all from here on.
@@ -175,7 +177,7 @@ func TestMaxInflightCollector_PrunesTenantWithNothingInFlight(t *testing.T) {
 
 	// The window in which the query ran still reports it.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 1`+"\n",
+		countName+`{type="test",user="tenant-1"} 1`+"\n",
 	)), countName))
 	require.Empty(t, c.tenants, "tenant should be dropped once it has nothing in flight")
 
@@ -184,7 +186,7 @@ func TestMaxInflightCollector_PrunesTenantWithNothingInFlight(t *testing.T) {
 	// A later query recreates the tenant.
 	c.Add("tenant-1")
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 1`+"\n",
+		countName+`{type="test",user="tenant-1"} 1`+"\n",
 	)), countName))
 }
 
@@ -198,15 +200,15 @@ func TestMaxInflightCollector_TenantsAreIndependent(t *testing.T) {
 	clock.advance(1 * time.Second)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{user="tenant-1"} 1`+"\n"+
-			countName+`{user="tenant-2"} 2`+"\n",
+		countName+`{type="test",user="tenant-1"} 1`+"\n"+
+			countName+`{type="test",user="tenant-2"} 2`+"\n",
 	)), countName))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
 		"# HELP "+ageName+" "+ageHelp+"\n"+
 			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{user="tenant-1"} 10`+"\n"+
-			ageName+`{user="tenant-2"} 1`+"\n",
+			ageName+`{type="test",user="tenant-1"} 10`+"\n"+
+			ageName+`{type="test",user="tenant-2"} 1`+"\n",
 	), ageName))
 }
 
@@ -214,4 +216,25 @@ func TestMaxInflightCollector_NoQueriesReportsNothing(t *testing.T) {
 	_, _, reg := newTestCollector(t)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), countName, ageName))
+}
+
+// The two request types share one metric name and are told apart by the "type" const label,
+// so both collectors have to coexist in a single registry.
+func TestMaxInflightCollector_RequestTypesShareOneMetricName(t *testing.T) {
+	http, dispatched := NewMaxInflightCollector("http"), NewMaxInflightCollector("dispatched")
+
+	reg := prometheus.NewPedanticRegistry()
+	require.NoError(t, reg.Register(http))
+	require.NoError(t, reg.Register(dispatched), "both request types must register the same metric name")
+
+	http.Add("tenant-1")
+	dispatched.Add("tenant-1")
+	dispatched.Add("tenant-1")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+		"# HELP "+countName+" "+countHelp+"\n"+
+			"# TYPE "+countName+" gauge\n"+
+			countName+`{type="dispatched",user="tenant-1"} 2`+"\n"+
+			countName+`{type="http",user="tenant-1"} 1`+"\n",
+	), countName))
 }

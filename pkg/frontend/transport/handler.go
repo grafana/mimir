@@ -102,7 +102,8 @@ type HandlerConfig struct {
 	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
 	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
 
-	MaxInflightHTTPMetricsEnabled bool `yaml:"max_inflight_http_metrics_enabled" category:"experimental"`
+	// MaxInflightMetricsEnabled is injected internally from the query-frontend config.
+	MaxInflightMetricsEnabled bool `yaml:"-"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -111,7 +112,6 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
-	f.BoolVar(&cfg.MaxInflightHTTPMetricsEnabled, "query-frontend.max-inflight-http-metrics-enabled", false, "Enable the cortex_query_frontend_max_inflight_http_requests and cortex_query_frontend_max_inflight_http_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.")
 }
 
 // Validate the HandlerConfig.
@@ -166,13 +166,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 	}
 	h.cond = sync.NewCond(&h.mtx)
 
-	if cfg.MaxInflightHTTPMetricsEnabled {
-		h.maxInflight = inflight.NewMaxInflightCollector(
-			"cortex_query_frontend_max_inflight_http_requests",
-			"Peak number of concurrent in-flight HTTP requests for a tenant since the last metric collection (reset on each scrape). Counts every query-frontend API request, not only range and instant queries.",
-			"cortex_query_frontend_max_inflight_http_request_age_seconds",
-			"Greatest age reached by an in-flight HTTP request for a tenant since the last metric collection (reset on each scrape). Requests that finished within the window are included.",
-		)
+	if cfg.MaxInflightMetricsEnabled {
+		h.maxInflight = inflight.NewMaxInflightCollector("http")
 		if reg != nil {
 			reg.MustRegister(h.maxInflight)
 		}

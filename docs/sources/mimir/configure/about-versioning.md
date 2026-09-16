@@ -269,8 +269,7 @@ The following features are currently experimental:
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
-  - Peak in-flight HTTP request count and age metrics: `-query-frontend.max-inflight-http-metrics-enabled`
-  - Peak dispatched in-flight query count and age metrics: `-query-frontend.max-inflight-dispatched-metrics-enabled`
+  - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
