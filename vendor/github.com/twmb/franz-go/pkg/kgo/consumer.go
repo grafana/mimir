@@ -232,6 +232,14 @@ type consumer struct {
 	sourcesReadyForDraining []*source
 	fakeReadyForDraining    []Fetch
 
+	// deferredFetchHooks collects unbuffered fetch-record hook
+	// dispatches captured while c.mu/sourcesReadyMu are held (see
+	// source.hookDeferUnbuffered for the deadlock walkthrough). Guarded
+	// by sourcesReadyMu. Pollers drain it synchronously after their fill
+	// critical section releases the locks; stopSession's discard path
+	// drains it asynchronously because its callers still hold c.mu.
+	deferredFetchHooks []func()
+
 	pollWaitMu    xsync.Mutex
 	pollWaitC     *sync.Cond
 	pollWaitState uint64 // 0 == nothing, low 32 bits: # pollers, high 32: # waiting rebalances
@@ -382,6 +390,23 @@ func (c *consumer) init(cl *Client) {
 
 func (c *consumer) consuming() bool {
 	return c.g != nil || c.d != nil || c.s != nil
+}
+
+// runDeferredFetchHooks dispatches unbuffered fetch-record hooks that were
+// captured under the consumer locks. Called by pollers with no locks held,
+// after their fill critical section; each queued dispatch runs exactly once
+// (the swap under sourcesReadyMu is the ownership handoff). A concurrent
+// poller or invalidation may have queued more dispatches since ours were
+// captured; running them here too is fine -- ordering across concurrent
+// pollers is inherently unordered.
+func (c *consumer) runDeferredFetchHooks() {
+	c.sourcesReadyMu.Lock()
+	fns := c.deferredFetchHooks
+	c.deferredFetchHooks = nil
+	c.sourcesReadyMu.Unlock()
+	for _, fn := range fns {
+		fn()
+	}
 }
 
 // addSourceReadyForDraining tracks that a source needs its buffered fetch
@@ -591,6 +616,7 @@ func (cl *Client) PollRecords(ctx context.Context, maxPollRecords int) Fetches {
 	// We try filling fetches once before waiting. If we have no context,
 	// we guarantee that we just drain anything available and return.
 	fill()
+	c.runDeferredFetchHooks()
 	if len(fetches) > 0 || ctx == nil {
 		return fetches
 	}
@@ -627,6 +653,7 @@ func (cl *Client) PollRecords(ctx context.Context, maxPollRecords int) Fetches {
 	}
 
 	fill()
+	c.runDeferredFetchHooks()
 	return fetches
 }
 
@@ -1176,6 +1203,15 @@ func (c *consumer) assignPartitions(assignments map[string]map[int32]Offset, how
 			// a partition that never finished loading; SetOffsets
 			// documents those are skipped, so we keep their loads
 			// untouched.
+			//
+			// NOTE: the direct consumer's applySetOffsets translates
+			// ALL user input blindly (unlike the group path, which
+			// filters to g.uncommitted); the "extra partitions are
+			// skipped" contract holds only because this arm touches
+			// nothing beyond usingCursors and returns before the
+			// offset-loading section below. If setMatching ever gains
+			// load handling, filter never-consumed direct partitions
+			// first or they will silently start loading.
 		case assignInvalidateMatching:
 			loadOffsets.keepFilter(func(t string, p int32) bool {
 				if assignTopic, ok := assignments[t]; ok {
@@ -1883,6 +1919,20 @@ func (c *consumer) stopSession() (listOrEpochLoads, *topicsPartitions) {
 		ready.discardBuffered()
 	}
 	c.sourcesReadyForDraining = nil
+
+	// The discards above deferred their unbuffered-hook dispatches, and
+	// they cannot run synchronously here: our callers hold c.mu (and
+	// sessionChangeMu), the very locks a re-entrant hook needs. The
+	// discarded records were never polled, so there is no user-visible
+	// ordering to preserve; dispatch async.
+	if fns := c.deferredFetchHooks; len(fns) > 0 {
+		c.deferredFetchHooks = nil
+		go func() {
+			for _, fn := range fns {
+				fn()
+			}
+		}()
+	}
 
 	// At this point, we have invalidated any buffered data from the prior
 	// session. We deliberately leave c.fakeReadyForDraining so the user can

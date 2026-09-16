@@ -422,9 +422,25 @@ func (cl *Client) storePartitionsUpdate(topic string, l *topicPartitions, lv *to
 	// the waiting goroutine that a try happened. It is possible the
 	// goroutine is quitting and will not be draining unknownWait, so we do
 	// not require the send.
-	if len(lv.partitions) == 0 && kerr.IsRetriable(lv.loadErr) {
+	//
+	// A load with NO error and NO partitions gets the same treatment with
+	// a synthesized error. Conformant brokers answer unknown topics with
+	// an error and existing topics with at least one partition, but a
+	// buggy broker or proxy can reply ErrorCode 0 with an empty partition
+	// array; the comprehensive-partition check in fetchTopicMetadata
+	// passes vacuously on empty, so loadErr is nil here. Falling through
+	// would hit the fatal-or-partition arm below and promise every
+	// buffered record with a NIL error: fabricated success (offset 0..n,
+	// producer id 0) for records that were never sent anywhere. We
+	// synthesize UnknownTopicOrPartition so the waiter both retries and
+	// counts the try against the max-unknown-failures bound.
+	if len(lv.partitions) == 0 && (lv.loadErr == nil || kerr.IsRetriable(lv.loadErr)) {
+		err := lv.loadErr
+		if err == nil {
+			err = kerr.UnknownTopicOrPartition
+		}
 		select {
-		case unknown.wait <- lv.loadErr:
+		case unknown.wait <- err:
 		default:
 		}
 		return
@@ -834,6 +850,17 @@ func (k *kip951move) ensureBrokers(cl *Client) {
 	// new objects with new connections, which breaks the single-
 	// connection-per-broker ordering guarantee that Kafka requires
 	// for idempotent/transactional produce.
+	// Replaced brokers are stopped after brokersMu is released: stopForever
+	// fires the user's OnBrokerDisconnect hook synchronously, and a hook
+	// re-entering the client would deadlock on the held write lock (see
+	// updateBrokers for the walkthrough).
+	var stopped []*broker
+	defer func() {
+		for _, b := range stopped {
+			b.stopForever()
+		}
+	}()
+
 	cl.brokersMu.Lock()
 	defer cl.brokersMu.Unlock()
 
@@ -856,7 +883,7 @@ func (k *kip951move) ensureBrokers(cl *Client) {
 			}
 			found = true
 			if !existing.meta.equals(nb) {
-				existing.stopForever()
+				stopped = append(stopped, existing)
 				cl.brokers[i] = cl.newBroker(b.NodeID, b.Host, b.Port, b.Rack)
 				changed = true
 			}
