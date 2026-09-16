@@ -48,17 +48,21 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 		}
 		return pred.singleMatchCost
 	case labels.MatchRegexp, labels.MatchNotRegexp:
-		// Prometheus doesn't optimize if the matcher has a prefix, so we don't take it into account for this cost estimation.
-		// https://github.com/prometheus/prometheus/issues/16889
-		// The store-gateway has this optimization in PostingOffsetTableV2.LabelValuesOffsets,
-		// so if this planner is used in the store-gateway we might want to account for it.
 		if setMatches := m.SetMatches(); len(setMatches) > 0 {
 			// If we know the exact matches, then we will go ~directly to them.
 			// This excludes the calculations for the postings offset table sampling with tsdb.DefaultPostingOffsetInMemorySampling
 			// because we don't know the distribution of the matches in the postings offset table and to keep the code simpler.
 			return pred.singleMatchCost * float64(len(setMatches))
 		}
-		// Assume we will have to scan all label values to find a match.
+		if pred.config.PrefixScanOptimisation && m.Prefix() != "" {
+			// A non-empty prefix lets the store-gateway's PostingsOffsetsTableV2.LabelValuesOffsets
+			// binary-search the sparse offset table and read only the prefix-bounded region,
+			// scanning approximately uniqueVals × selectivity values instead of all uniqueVals.
+			// Prometheus's TSDB index.Reader has no equivalent prefix seek optimisation
+			// (https://github.com/prometheus/prometheus/issues/16889).
+			return pred.singleMatchCost * float64(pred.labelNameUniqueVals) * pred.selectivity
+		}
+		// Generic regex with no prefix or set matches: must scan all label values.
 		return pred.singleMatchCost * float64(pred.labelNameUniqueVals)
 	}
 

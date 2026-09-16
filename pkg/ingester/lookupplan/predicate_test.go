@@ -99,6 +99,59 @@ func TestIndexLookupCost(t *testing.T) {
 	}
 }
 
+func TestIndexLookupCost_CostConfig(t *testing.T) {
+	ctx := t.Context()
+	stats := newMockStatistics()
+
+	// The method label has these unique values in the mock: GET, POST, PUT, DELETE.
+	// method=~"P.*" has prefix "P", selectivity=0.1, singleMatchCost=1.0.
+	//
+	// indexLookupCost = indexScanCost + RetrievedPostingListCost × uniqueVals × selectivity
+	//
+	// Without PrefixScanOptimisation (ingester):
+	//   indexScanCost = singleMatchCost × uniqueVals = 1 × 4 = 4
+	//   indexLookupCost = 4 + 10 × 4 × 0.1 = 8
+	//
+	// With PrefixScanOptimisation (store-gateway):
+	//   indexScanCost = singleMatchCost × uniqueVals × selectivity = 1 × 4 × 0.1 = 0.4
+	//   indexLookupCost = 0.4 + 10 × 4 × 0.1 = 4.4
+	m := labels.MustNewMatcher(labels.MatchRegexp, "method", "P.*")
+
+	tests := []struct {
+		name          string
+		newConfigFunc func() CostConfig
+		assertionFunc func(t *testing.T, config CostConfig)
+	}{
+		{
+			name:          "default config",
+			newConfigFunc: func() CostConfig { return defaultCostConfig },
+			assertionFunc: func(t *testing.T, testConfig CostConfig) {
+				pred := newPlanPredicate(ctx, m, stats, testConfig)
+				assert.Equal(t, 8.0, pred.indexLookupCost())
+			},
+		},
+		{
+			name: "with PrefixScanOptimisation",
+			newConfigFunc: func() CostConfig {
+				config := defaultCostConfig
+				config.PrefixScanOptimisation = true
+				return config
+			},
+			assertionFunc: func(t *testing.T, testConfig CostConfig) {
+				pred := newPlanPredicate(ctx, m, stats, testConfig)
+				assert.Equal(t, 4.4, pred.indexLookupCost())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := tt.newConfigFunc()
+			tt.assertionFunc(t, config)
+		})
+	}
+}
+
 func TestCardinalityEstimation(t *testing.T) {
 	ctx := t.Context()
 	stats := newMockStatistics()
