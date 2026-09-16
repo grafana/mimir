@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -827,8 +828,9 @@ func TestTripperware_RemoteRead(t *testing.T) {
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", jsonMimeType)
-				_, err := w.Write([]byte("{}"))
+				w.Header().Set("Content-Type", "application/x-protobuf")
+				w.Header().Set("Content-Encoding", "snappy")
+				_, err := w.Write(snappy.Encode(nil, nil))
 				require.NoError(t, err)
 			}),
 		),
@@ -843,50 +845,61 @@ func TestTripperware_RemoteRead(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
-			reg := prometheus.NewPedanticRegistry()
+	for _, implementation := range []struct {
+		name  string
+		useV2 bool
+	}{
+		{name: "v1"},
+		{name: "v2", useV2: true},
+	} {
+		t.Run(implementation.name, func(t *testing.T) {
+			for name, tc := range testCases {
+				t.Run(name, func(t *testing.T) {
+					engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+					reg := prometheus.NewPedanticRegistry()
+					cfg := makeTestConfig()
+					cfg.UseRemoteReadRoundTripperV2 = implementation.useV2
 
-			tw, err := NewTripperware(
-				makeTestConfig(),
-				log.NewNopLogger(),
-				tc.limits,
-				newMockQueryLimitsProvider(&tc.limits),
-				newTestCodec(),
-				nil,
-				nil,
-				engine,
-				engineOpts,
-				nil,
-				false,
-				nil,
-				reg,
-				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
-			)
+					tw, err := NewTripperware(
+						cfg,
+						log.NewNopLogger(),
+						tc.limits,
+						newMockQueryLimitsProvider(&tc.limits),
+						newTestCodec(),
+						nil,
+						nil,
+						engine,
+						engineOpts,
+						nil,
+						false,
+						nil,
+						reg,
+						limiter.NewInflightMemoryConsumptionTracker(reg, nil),
+					)
 
-			require.NoError(t, err)
+					require.NoError(t, err)
 
-			req := tc.makeRequest()
-			require.NoError(t, err)
+					req := tc.makeRequest()
+					ctx := user.InjectOrgID(context.Background(), "user-1")
+					req = req.WithContext(ctx)
+					require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
-			ctx := user.InjectOrgID(context.Background(), "user-1")
-			req = req.WithContext(ctx)
-			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
-
-			resp, err := tw(downstream).RoundTrip(req)
-			if tc.expectError {
-				require.Error(t, err)
-				if tc.expectAPIError {
-					require.True(t, apierror.IsAPIError(err))
-				}
-				if tc.expectErrorContains != "" {
-					require.Contains(t, err.Error(), tc.expectErrorContains)
-				}
-			} else {
-				require.NoError(t, err)
-				_, err := io.ReadAll(resp.Body)
-				require.NoError(t, err)
+					resp, err := tw(downstream).RoundTrip(req)
+					if tc.expectError {
+						require.Error(t, err)
+						if tc.expectAPIError {
+							require.True(t, apierror.IsAPIError(err))
+						}
+						if tc.expectErrorContains != "" {
+							require.Contains(t, err.Error(), tc.expectErrorContains)
+						}
+					} else {
+						require.NoError(t, err)
+						_, err := io.ReadAll(resp.Body)
+						require.NoError(t, err)
+						require.NoError(t, resp.Body.Close())
+					}
+				})
 			}
 		})
 	}

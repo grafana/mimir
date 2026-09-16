@@ -2457,6 +2457,11 @@ results_cache:
 # CLI flag: -query-frontend.enable-remote-execution
 [enable_remote_execution: <boolean> | default = true]
 
+# (experimental) Use a remote-read roundtripper that executes the middleware
+# chain for each remote read query and merges the results.
+# CLI flag: -query-frontend.use-remote-read-round-tripper-v2
+[use_remote_read_round_tripper_v2: <boolean> | default = false]
+
 # (experimental) Set to true to enable performing query sharding inside the
 # Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has
 # no effect if sharding is not enabled with

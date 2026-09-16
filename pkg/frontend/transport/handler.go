@@ -340,6 +340,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"bytes_written", queryResponseSize, "err", err)
 		panic(http.ErrAbortHandler)
 	}
+
+	if err != nil {
+		level.Error(util_log.WithContext(r.Context(), f.log)).Log(
+			"msg", "failed to write query response; aborting connection to signal truncation",
+			"bytes_written", queryResponseSize, "err", err)
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // reportSlowQuery reports slow queries.
