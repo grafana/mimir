@@ -276,6 +276,7 @@ The following features are currently experimental:
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
   - Subject label names, label values and their search variants to the query concurrency limit `-blocks-storage.bucket-store.gate-label-requests`
   - Limit how many blocks are queried concurrently `-blocks-storage.bucket-store.max-concurrent-blocks` and `-blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout`
+  - Run CPU-bound postings computation on a shared tenant-fair worker pool `-blocks-storage.bucket-store.compute-workers`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`

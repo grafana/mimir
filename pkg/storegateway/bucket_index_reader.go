@@ -47,6 +47,10 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, []*
 
 // bucketIndexReader is a custom index reader (not conforming index.Reader interface) that reads index that is stored in
 // object storage without having to fully download it.
+// dimensionExpandPostings groups postings-expansion tasks on the compute worker pool, so they
+// cannot starve other kinds of work submitted to the same pool.
+const dimensionExpandPostings = "expand-postings"
+
 type bucketIndexReader struct {
 	block             *bucketBlock
 	postingsStrategy  postingsSelectionStrategy
@@ -234,9 +238,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
-	result := index.Without(index.Intersect(groupAdds...), index.Merge(ctx, groupRemovals...))
-
-	ps, err := index.ExpandPostings(result)
+	ps, err := r.expandPostings(ctx, groupAdds, groupRemovals)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expand")
 	}
@@ -451,6 +453,49 @@ func (r *bucketIndexReader) padPostings(ctx context.Context, keysOffsets []label
 // fetchPostings is the version-unaware private implementation of FetchPostingsIndexV2.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
+// expandPostings applies the posting groups' set algebra and materialises the result.
+//
+// Unlike the rest of expandedPostings this is pure CPU over postings already fetched into
+// memory, with no I/O and no branching on the context, which is what makes it safe to hand to
+// the compute worker pool. index.Merge, Intersect and Without only build an iterator tree; the
+// work happens in ExpandPostings when it drives that tree.
+//
+// A nil pool runs the work inline, preserving the behaviour from before the pool existed.
+func (r *bucketIndexReader) expandPostings(ctx context.Context, groupAdds, groupRemovals []index.Postings) ([]storage.SeriesRef, error) {
+	run := func() ([]storage.SeriesRef, error) {
+		result := index.Without(index.Intersect(groupAdds...), index.Merge(ctx, groupRemovals...))
+		return index.ExpandPostings(result)
+	}
+
+	pool := r.block.computeWorkerPool
+	if pool == nil {
+		return run()
+	}
+
+	type result struct {
+		refs []storage.SeriesRef
+		err  error
+	}
+	// Buffered, so the worker's send can never block even if we stop reading below.
+	resCh := make(chan result, 1)
+
+	if err := pool.Submit(dimensionExpandPostings, r.block.userID, func() {
+		refs, err := run()
+		resCh <- result{refs: refs, err: err}
+	}); err != nil {
+		return nil, err
+	}
+
+	select {
+	case res := <-resCh:
+		return res.refs, res.err
+	case <-ctx.Done():
+		// Abandon the task rather than wait for it. resCh is buffered, so the worker is still
+		// able to finish and move on to other work.
+		return nil, ctx.Err()
+	}
+}
+
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keysOffsets []labelPostingOffset, stats *safeQueryStats) (output []index.Postings, returnErr error) {
 	ctx, span := tracer.Start(ctx, "fetchPostings()")
 	defer func() {

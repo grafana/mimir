@@ -11326,6 +11326,17 @@
             },
             {
               "kind": "field",
+              "name": "compute_workers",
+              "required": false,
+              "desc": "Number of worker goroutines in the store-gateway's shared tenant-fair compute worker pool, which runs CPU-bound postings computation so one tenant cannot monopolise every core. 0 disables the pool and runs that work inline on the request goroutine. Note this differs from -ingester.compute-workers, where 0 means GOMAXPROCS.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.compute-workers",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tenant_sync_concurrency",
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",

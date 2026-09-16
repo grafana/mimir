@@ -783,6 +783,7 @@
   "blocks-storage.bucket-store.max-concurrent-queue-timeout": 5000000000,
   "blocks-storage.bucket-store.max-concurrent-blocks": 0,
   "blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout": 0,
+  "blocks-storage.bucket-store.compute-workers": 0,
   "blocks-storage.bucket-store.tenant-sync-concurrency": 1,
   "blocks-storage.bucket-store.block-sync-concurrency": 4,
   "blocks-storage.bucket-store.meta-sync-concurrency": 20,

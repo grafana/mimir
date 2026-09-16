@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/workerpool"
 )
 
 const (
@@ -118,6 +119,15 @@ type BucketStore struct {
 	// gateLabelRequests controls whether LabelNames, LabelValues and their search variants
 	// acquire queryGate. Series always does. See -blocks-storage.bucket-store.gate-label-requests.
 	gateLabelRequests bool
+
+	// computeWorkerPool runs CPU-bound postings computation on a fixed set of workers shared by
+	// all tenants, so one tenant's expensive matchers cannot monopolise every core. It is only
+	// given work that is pure CPU over already-fetched, in-memory postings; the I/O phases stay
+	// on the request goroutine, bounded by blockGate instead.
+	//
+	// nil means the pool is disabled and that work runs inline. See
+	// -blocks-storage.bucket-store.compute-workers.
+	computeWorkerPool *workerpool.Pool
 
 	// blockGate limits how many blocks are queried concurrently, across all tenants and all
 	// in-flight requests. It is acquired per block inside a request, so it bounds the fan-out a
@@ -209,6 +219,14 @@ func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.queryGate = queryGate
+	}
+}
+
+// WithComputeWorkerPool sets the pool used to run CPU-bound postings computation. A nil pool
+// runs that work inline.
+func WithComputeWorkerPool(pool *workerpool.Pool) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.computeWorkerPool = pool
 	}
 }
 
@@ -525,6 +543,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 		s.indexCache,
 		indexHeaderReader,
 		s.partitioners,
+		s.computeWorkerPool,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -1803,17 +1822,98 @@ func labelValuesFromPostings(
 		return nil, errors.Wrap(err, "get postings")
 	}
 
+	isMatch, err := intersectLabelValuePostings(ctx, indexr, p, fetchedPostings, allValues)
+	if err != nil {
+		return nil, err
+	}
+
 	matched := make([]string, 0, len(allValues))
 	for i, value := range allValues {
-		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
-		if intersection.Next() {
+		if isMatch[i] {
 			matched = append(matched, value.LabelValue)
-		}
-		if err = intersection.Err(); err != nil {
-			return nil, errors.Wrapf(err, "intersecting value %q postings", value.LabelValue)
 		}
 	}
 	return matched, nil
+}
+
+// labelValuesPostingsChunkSize is how many label values one compute-pool task intersects. It
+// trades scheduling overhead against how evenly work spreads over the pool's workers; the
+// ingester's equivalent uses the same default.
+const labelValuesPostingsChunkSize = 32
+
+// dimensionLabelValuesPostings groups label-values intersection tasks on the compute worker
+// pool, so they cannot starve other kinds of work submitted to the same pool.
+const dimensionLabelValuesPostings = "label-values-postings"
+
+// intersectLabelValuePostings reports, for each of allValues, whether its postings intersect p.
+//
+// This is pure CPU over postings already fetched into memory, so it is offloaded to the store's
+// compute worker pool in chunks. Results are written into a preallocated slice indexed by value
+// rather than streamed, so chunks can complete in any order without affecting the output.
+//
+// A nil pool runs the work inline, preserving the behaviour from before the pool existed.
+func intersectLabelValuePostings(
+	ctx context.Context,
+	indexr *bucketIndexReader,
+	p []storage.SeriesRef,
+	fetchedPostings []index.Postings,
+	allValues []streamindex.PostingListOffset,
+) ([]bool, error) {
+	isMatch := make([]bool, len(allValues))
+
+	// Each task reads p (never mutating it) and owns its own slice of fetchedPostings, so the
+	// chunks do not share mutable state.
+	processChunk := func(start, end int) error {
+		for i := start; i < end; i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
+			if intersection.Next() {
+				isMatch[i] = true
+			}
+			if err := intersection.Err(); err != nil {
+				return errors.Wrapf(err, "intersecting value %q postings", allValues[i].LabelValue)
+			}
+		}
+		return nil
+	}
+
+	pool := indexr.block.computeWorkerPool
+	if pool == nil || len(allValues) <= labelValuesPostingsChunkSize {
+		return isMatch, processChunk(0, len(allValues))
+	}
+
+	// Buffered to the number of chunks, so a task's error send can never block.
+	numChunks := (len(allValues) + labelValuesPostingsChunkSize - 1) / labelValuesPostingsChunkSize
+	errCh := make(chan error, numChunks)
+
+	var wg sync.WaitGroup
+	for start := 0; start < len(allValues); start += labelValuesPostingsChunkSize {
+		end := min(start+labelValuesPostingsChunkSize, len(allValues))
+
+		wg.Add(1)
+		if err := pool.Submit(dimensionLabelValuesPostings, indexr.block.userID, func() {
+			defer wg.Done()
+			if err := processChunk(start, end); err != nil {
+				errCh <- err
+			}
+		}); err != nil {
+			// Undo the Add for the task that was never submitted, then let the already-submitted
+			// ones finish before returning, so nothing is still writing to isMatch.
+			wg.Done()
+			wg.Wait()
+			return nil, err
+		}
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	if err := <-errCh; err != nil {
+		return nil, err
+	}
+	return isMatch, nil
 }
 
 type labelValuesCacheEntry struct {
@@ -2077,9 +2177,13 @@ type bucketBlock struct {
 	indexCache indexcache.IndexCache
 
 	indexHeaderReader indexheader.Reader
-	pendingReaders    sync.WaitGroup
-	closedMtx         sync.RWMutex
-	closed            bool
+
+	// computeWorkerPool is the store's shared CPU pool, or nil to run that work inline.
+	computeWorkerPool *workerpool.Pool
+
+	pendingReaders sync.WaitGroup
+	closedMtx      sync.RWMutex
+	closed         bool
 
 	chunkObjs []string
 
@@ -2109,6 +2213,7 @@ func newBucketBlock(
 	indexCache indexcache.IndexCache,
 	indexHeadReader indexheader.Reader,
 	p blockPartitioners,
+	computeWorkerPool *workerpool.Pool,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
 		userID:            userID,
@@ -2120,6 +2225,7 @@ func newBucketBlock(
 		partitioners:      p,
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
+		computeWorkerPool: computeWorkerPool,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}

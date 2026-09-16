@@ -23,11 +23,13 @@ import (
 func exhaustedQueryGate(t *testing.T) gate.Gate {
 	t.Helper()
 
-	g := timeoutGate{timeout: time.Millisecond, delegate: gate.NewBlocking(1)}
-	require.NoError(t, g.Start(context.Background()))
-	t.Cleanup(g.Done)
+	blocking := gate.NewBlocking(1)
+	// Take the only slot through the delegate, without a timeout, so filling the gate cannot
+	// itself time out on a loaded machine. Only the caller's acquisition is meant to time out.
+	require.NoError(t, blocking.Start(context.Background()))
+	t.Cleanup(blocking.Done)
 
-	return g
+	return timeoutGate{timeout: time.Millisecond, delegate: blocking}
 }
 
 // TestBucketStore_LabelRequests_QueryGate asserts that the label and search endpoints acquire

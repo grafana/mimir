@@ -39,6 +39,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/workerpool"
 )
 
 const (
@@ -79,6 +80,9 @@ type BucketStores struct {
 
 	// Gate used to limit how many blocks are queried concurrently across all tenants.
 	blockGate gate.Gate
+
+	// Shared tenant-fair pool running CPU-bound postings computation, or nil when disabled.
+	computeWorkerPool *workerpool.Pool
 
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
@@ -157,6 +161,21 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		blockGate = timeoutGate{delegate: blockGate, timeout: cfg.BucketStore.MaxConcurrentBlocksQueueTimeout}
 	}
 
+	// CPU-bound postings computation is offloaded to a shared, tenant-fair pool so that one
+	// tenant's expensive matchers cannot monopolise every core. A nil pool runs that work inline.
+	var computeWorkerPool *workerpool.Pool
+	if cfg.BucketStore.ComputeWorkers > 0 {
+		computeWorkerPool, err = workerpool.New(
+			workerpool.Config{Size: cfg.BucketStore.ComputeWorkers},
+			"storegateway-compute",
+			reg,
+			logger,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("creating store-gateway compute worker pool: %w", err)
+		}
+	}
+
 	maxGapBytesChunks := cfg.BucketStore.PartitionerMaxGapBytesChunks
 	if maxGapBytesChunks == 0 {
 		maxGapBytesChunks = cfg.BucketStore.PartitionerMaxGapBytes
@@ -176,6 +195,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		blockGate:          blockGate,
+		computeWorkerPool:  computeWorkerPool,
 		partitioners: newGapBasedPartitioners(
 			maxGapBytesChunks,
 			cfg.BucketStore.PartitionerMaxGapBytes,
@@ -238,12 +258,30 @@ func (u *BucketStores) stopBucketStores(error) error {
 			errs.Add(fmt.Errorf("closing bucket store for user %s: %w", userID, err))
 		}
 	}
+
+	// Stop the pool only once every tenant store is stopped, so in-flight block work cannot be
+	// rejected with ErrPoolStopped during a graceful shutdown.
+	if u.computeWorkerPool != nil {
+		if err := services.StopAndAwaitTerminated(context.Background(), u.computeWorkerPool); err != nil {
+			errs.Add(fmt.Errorf("stopping compute worker pool: %w", err))
+		}
+	}
+
 	return errs.Err()
 }
 
 // initialSync does an initial synchronization of blocks for all users.
 func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
+
+	// Start the pool before any tenant store exists, so no block work can be submitted to a
+	// pool that is not running yet. A pool that fails to start fails store-gateway startup,
+	// rather than silently leaving the work to run inline.
+	if u.computeWorkerPool != nil {
+		if err := services.StartAndAwaitRunning(ctx, u.computeWorkerPool); err != nil {
+			return fmt.Errorf("starting compute worker pool: %w", err)
+		}
+	}
 
 	if err := os.MkdirAll(u.cfg.BucketStore.SyncDir, 0750); err != nil {
 		return fmt.Errorf("create sync-dir: %w", err)
@@ -531,6 +569,9 @@ func (u *BucketStores) closeBucketStore(userID string) error {
 	u.storesMu.Unlock()
 
 	u.metaFetcherMetrics.RemoveUserRegistry(userID)
+	if u.computeWorkerPool != nil {
+		u.computeWorkerPool.RemoveTenant(userID)
+	}
 	return bs.RemoveBlocksAndClose()
 }
 
@@ -624,6 +665,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 		WithBlockGate(u.blockGate),
+		WithComputeWorkerPool(u.computeWorkerPool),
 	}
 
 	bs, err := NewBucketStore(

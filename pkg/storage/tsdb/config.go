@@ -110,6 +110,7 @@ var (
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
 	errInvalidMaxConcurrentBlocks                   = errors.New("invalid store-gateway max concurrent blocks; must be non-negative")
+	errInvalidComputeWorkers                        = errors.New("invalid store-gateway compute workers; must be non-negative")
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
@@ -427,6 +428,7 @@ type BucketStoreConfig struct {
 	GateLabelRequests                      bool                        `yaml:"gate_label_requests" category:"experimental"`
 	MaxConcurrentBlocks                    int                         `yaml:"max_concurrent_blocks" category:"experimental"`
 	MaxConcurrentBlocksQueueTimeout        time.Duration               `yaml:"max_concurrent_blocks_queue_timeout" category:"experimental"`
+	ComputeWorkers                         int                         `yaml:"compute_workers" category:"experimental"`
 	TenantSyncConcurrency                  int                         `yaml:"tenant_sync_concurrency" category:"advanced"`
 	BlockSyncConcurrency                   int                         `yaml:"block_sync_concurrency" category:"advanced"`
 	MetaSyncConcurrency                    int                         `yaml:"meta_sync_concurrency" category:"advanced"`
@@ -479,6 +481,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.GateLabelRequests, "blocks-storage.bucket-store.gate-label-requests", false, "When enabled, label names, label values and their search variants are subject to -blocks-storage.bucket-store.max-concurrent, like series requests. When disabled, those endpoints are not concurrency-limited.")
 	f.IntVar(&cfg.MaxConcurrentBlocks, "blocks-storage.bucket-store.max-concurrent-blocks", 0, "Maximum number of blocks queried concurrently, shared across all tenants and all in-flight requests. Unlike -blocks-storage.bucket-store.max-concurrent, which limits whole requests, this bounds the per-block work a request fans out into. 0 means no limit.")
 	f.DurationVar(&cfg.MaxConcurrentBlocksQueueTimeout, "blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout", 0, "Timeout for a block waiting its turn to be queried. Reaching it fails the request. 0 means no timeout and blocks wait indefinitely for their turn. Only used when -blocks-storage.bucket-store.max-concurrent-blocks is greater than 0.")
+	f.IntVar(&cfg.ComputeWorkers, "blocks-storage.bucket-store.compute-workers", 0, "Number of worker goroutines in the store-gateway's shared tenant-fair compute worker pool, which runs CPU-bound postings computation so one tenant cannot monopolise every core. 0 disables the pool and runs that work inline on the request goroutine. Note this differs from -ingester.compute-workers, where 0 means GOMAXPROCS.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from object storage per tenant.")
@@ -501,6 +504,9 @@ func (cfg *BucketStoreConfig) Validate() error {
 	}
 	if cfg.MaxConcurrentBlocks < 0 {
 		return errInvalidMaxConcurrentBlocks
+	}
+	if cfg.ComputeWorkers < 0 {
+		return errInvalidComputeWorkers
 	}
 	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
 		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have

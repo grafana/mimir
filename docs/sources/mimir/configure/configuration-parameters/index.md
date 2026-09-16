@@ -6137,6 +6137,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout
   [max_concurrent_blocks_queue_timeout: <duration> | default = 0s]
 
+  # (experimental) Number of worker goroutines in the store-gateway's shared
+  # tenant-fair compute worker pool, which runs CPU-bound postings computation
+  # so one tenant cannot monopolise every core. 0 disables the pool and runs
+  # that work inline on the request goroutine. Note this differs from
+  # -ingester.compute-workers, where 0 means GOMAXPROCS.
+  # CLI flag: -blocks-storage.bucket-store.compute-workers
+  [compute_workers: <int> | default = 0]
+
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
   [tenant_sync_concurrency: <int> | default = 1]
