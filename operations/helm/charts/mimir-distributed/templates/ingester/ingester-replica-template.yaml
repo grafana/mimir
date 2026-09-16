@@ -1,0 +1,24 @@
+{{- if .Values.ingester.enabled }}
+{{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- $readOnlyDownscaleDelay := .Values.ingester.zoneAwareReplication.readOnlyDownscaleDelay -}}
+{{- if and $readOnlyDownscaleDelay .Values.ingester.zoneAwareReplication.enabled -}}
+{{- $primaryZoneName := keys $zonesMap | sortAlpha | compact | first -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- if eq $zoneName $primaryZoneName }}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
+apiVersion: rollout-operator.grafana.com/v1
+kind: ReplicaTemplate
+metadata:
+  name: {{ include "mimir.resourceName" $args }}
+  labels:
+    {{- include "mimir.labels" $args | nindent 4 }}
+  namespace: {{ $.Release.Namespace | quote }}
+spec:
+  labelSelector: name=ingester-{{ $zoneName }}
+  replicas: {{ $rolloutZone.replicas }}
+---
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
