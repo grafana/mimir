@@ -166,7 +166,7 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 
 	// Live partition: a TSDB this pod is actively ingesting into.
 	activeDB, err := openPartitionTSDB(activeTenant, activePID, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 	appendSample(activeDB, "active_metric", time.Now().Add(-1*time.Minute).UnixMilli())
 
@@ -180,7 +180,7 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 
 	// A second partition that we freeze, leaving a read-only epoch.
 	frozenDB, err := openPartitionTSDB(frozenTenant, frozenPID, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 	frozenSampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
 	appendSample(frozenDB, "frozen_metric", frozenSampleTS)
@@ -268,7 +268,7 @@ func TestReadcache_AdminPage_ShowsBlockDetails(t *testing.T) {
 	}
 
 	db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 
 	app := db.Appender(context.Background())

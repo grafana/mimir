@@ -165,7 +165,7 @@ type userTSDB struct {
 
 	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
 	// Other blocks' stats are immutable and the prometheus TSDB caches them itself.
-	plannerProvider *plannerProvider
+	plannerProvider *lookupplan.PlannerProvider
 }
 
 // generateHeadStatistics generates statistics for this user's head block.
@@ -182,7 +182,7 @@ func (u *userTSDB) generateHeadStatistics() error {
 	blockMeta := head.Meta()
 
 	// Generate statistics
-	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
+	u.plannerProvider.GenerateAndStorePlanner(blockMeta, indexReader)
 	return nil
 }
 
@@ -198,7 +198,7 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 			return lookupplan.NoopPlanner{}
 		}
 
-		return u.plannerProvider.getPlanner(blockMeta, indexReader)
+		return u.plannerProvider.GetPlanner(blockMeta, indexReader)
 	}
 }
 

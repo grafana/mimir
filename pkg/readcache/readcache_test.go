@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
@@ -67,6 +68,10 @@ func newTestConfig(t *testing.T, withKafka bool, numPartitions int32) Config {
 	}
 
 	return cfg
+}
+
+func newTestLookupPlanMetrics() lookupplan.Metrics {
+	return lookupplan.NewMetrics(nil)
 }
 
 func TestConfig_Validate(t *testing.T) {

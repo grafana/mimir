@@ -43,6 +43,7 @@ func TestPartitionTSDB_SharedPostingsCacheIsIsolatedAndInvalidated(t *testing.T)
 			r.seriesHashCache,
 			r.headPostingsForMatchersCacheFactory,
 			r.blockPostingsForMatchersCacheFactory,
+			newTestLookupPlanMetrics(),
 			prometheus.NewRegistry(),
 			log.NewNopLogger(),
 		)

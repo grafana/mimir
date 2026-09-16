@@ -72,7 +72,7 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 	// Stand up a live partition with one committed sample two minutes
 	// in the past, then publish it into r.partitions as epoch 0.
 	db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 
 	sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
@@ -139,7 +139,7 @@ func freezeTestPartition(t *testing.T, r *Readcache, limits *validation.Override
 	t.Helper()
 
 	db, err := openPartitionTSDB(tenantID, pid, epoch, r.cfg.DataDir, r.cfg.BlocksStorage.TSDB,
-		r.cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		r.cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 
 	if sampleTS != 0 {
@@ -285,7 +285,7 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		// binary or an abrupt crash. It must remain queryable even if
 		// the first post-restart assignment moves the partition away.
 		db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+			cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 		require.NoError(t, err)
 		sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
 		app := db.Appender(context.Background())
@@ -321,7 +321,7 @@ func TestReadcache_RestoreFrozenEpochsOnStartup(t *testing.T) {
 		p := newPartitionState(pid)
 		for _, tenant := range []string{"tenant-a", "tenant-b"} {
 			db, err := openPartitionTSDB(tenant, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-				cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+				cfg.LocalBlockRetention, limits, 0, nil, nil, nil, newTestLookupPlanMetrics(), prometheus.NewRegistry(), log.NewNopLogger())
 			require.NoError(t, err)
 			app := db.Appender(context.Background())
 			_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)

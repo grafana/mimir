@@ -65,6 +65,7 @@ func TestPartitionTSDB_MaxExemplarsCap(t *testing.T) {
 		limits,
 		perTSDBCap,
 		nil, nil, nil,
+		newTestLookupPlanMetrics(),
 		reg,
 		log.NewNopLogger(),
 	)

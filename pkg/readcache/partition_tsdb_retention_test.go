@@ -56,6 +56,7 @@ func TestPartitionTSDB_LocalBlockRetention_DeletesOldBlocks(t *testing.T) {
 		limits,
 		0,
 		nil, nil, nil,
+		newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(),
 		log.NewNopLogger(),
 	)
@@ -127,6 +128,7 @@ func TestPartitionTSDB_LocalBlockRetention_Zero_DisablesRetention(t *testing.T) 
 		limits,
 		0,
 		nil, nil, nil,
+		newTestLookupPlanMetrics(),
 		prometheus.NewRegistry(),
 		log.NewNopLogger(),
 	)
