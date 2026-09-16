@@ -2164,6 +2164,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-remove-statically-empty-expressions
   [enable_remove_statically_empty_expressions: <boolean> | default = true]
 
+  # (experimental) Enable generating a unique ID for each node in a query to
+  # enable detailed cost information.
+  # CLI flag: -querier.mimir-query-engine.enable-node-identifiers
+  [enable_node_identifiers: <boolean> | default = false]
+
   range_vector_splitting:
     # (experimental) Enable splitting function over range vectors queries into
     # smaller blocks for caching.

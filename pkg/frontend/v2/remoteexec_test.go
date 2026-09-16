@@ -1985,6 +1985,7 @@ func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 }
 
 type nodeWithOverriddenVersion struct {
+	core.NodeIdentifier
 	version planning.QueryPlanVersion
 	child   planning.Node
 }

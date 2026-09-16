@@ -18,13 +18,14 @@ import (
 )
 
 func TestSplittingCacheKey_RoundTrip(t *testing.T) {
-	node := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-		},
-		Range: time.Hour,
-	}}
+	node := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			},
+			Range: time.Hour,
+		}}
 	params := &planning.QueryParameters{
 		OriginalExpression:       "some_query{env=\"prod\"}[1h]",
 		TimeRange:                types.QueryTimeRange{StartT: 100, EndT: 200, IntervalMilliseconds: 1, StepCount: 1},

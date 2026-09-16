@@ -2703,6 +2703,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "enable_node_identifiers",
+              "required": false,
+              "desc": "Enable generating a unique ID for each node in a query to enable detailed cost information.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-node-identifiers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "range_vector_splitting",
               "required": false,

@@ -1722,7 +1722,9 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+		return &versioningTestNode{
+			NumberLiteralDetails: &core.NumberLiteralDetails{},
+		}
 	})
 
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
@@ -2184,6 +2186,7 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 // It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
 // Note that most of the Node interface functions return dummy values, and it does not support children.
 type versioningTestNode struct {
+	core.NodeIdentifier
 	*core.NumberLiteralDetails
 }
 

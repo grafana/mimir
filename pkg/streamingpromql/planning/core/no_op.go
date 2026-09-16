@@ -21,6 +21,7 @@ import (
 //
 //node:generate
 type NoOp struct {
+	NodeIdentifier
 	*NoOpDetails
 }
 

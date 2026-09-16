@@ -45,7 +45,8 @@ type comparison struct {
 
 // ignoredTypes are types whose fields never participate in equality.
 var ignoredTypes = map[string]struct{}{
-	"PositionRange": {},
+	"PositionRange":  {},
+	"NodeIdentifier": {},
 }
 
 // predefinedComparisons maps a type to how its values are compared, instead of recursing into its fields.
@@ -144,6 +145,12 @@ func (g *equalsGenerator) collectEqualityFields(s *Struct, reg *TypeRegistry) ([
 			return nil, fmt.Errorf("%s.%s: unsupported field type", s.Name, f.Name)
 		}
 
+		// Check if this field should be included in the equality method before
+		// potentially collecting nested fields in an embedded struct.
+		if !shouldCompareField(f, nil) {
+			continue
+		}
+
 		if f.Embedded {
 			embedFields, err := g.collectEmbedFields(s, f, reg)
 			if err != nil {
@@ -151,10 +158,7 @@ func (g *equalsGenerator) collectEqualityFields(s *Struct, reg *TypeRegistry) ([
 			}
 
 			fields = append(fields, embedFields...)
-			continue
-		}
-
-		if shouldCompareField(f, nil) {
+		} else {
 			fields = append(fields, f)
 		}
 	}

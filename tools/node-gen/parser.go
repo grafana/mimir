@@ -275,7 +275,8 @@ func parseField(field *ast.Field, imports map[string]string) ([]Field, error) {
 	fieldType := resolveFieldType(field.Type, imports)
 
 	if embedded {
-		return []Field{{Tag: tag, Embedded: true, Type: fieldType}}, nil
+		// Embedded fields don't have a real name so use the type name.
+		return []Field{{Name: fieldType.Name, Tag: tag, Embedded: true, Type: fieldType}}, nil
 	}
 	result := make([]Field, len(field.Names))
 	for i, name := range field.Names {
