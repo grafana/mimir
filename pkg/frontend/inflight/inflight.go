@@ -23,7 +23,6 @@ import (
 type MaxInflightCollector struct {
 	countDesc *prometheus.Desc
 	ageDesc   *prometheus.Desc
-	now       func() time.Time
 	mtx       sync.Mutex
 	nextID    InflightRequest
 	entries   map[InflightRequest]entry
@@ -71,7 +70,6 @@ func NewMaxInflightCollector(requestType string) *MaxInflightCollector {
 	return &MaxInflightCollector{
 		countDesc: prometheus.NewDesc(countMetricName, countMetricHelp, []string{userLabel}, constLabels),
 		ageDesc:   prometheus.NewDesc(ageMetricName, ageMetricHelp, []string{userLabel}, constLabels),
-		now:       time.Now,
 		entries:   map[InflightRequest]entry{},
 		tenants:   map[string]*tenantInflight{},
 		pool:      sync.Pool{New: func() any { return &tenantInflight{} }},
@@ -91,7 +89,7 @@ func (c *MaxInflightCollector) Add(tenantID string) InflightRequest {
 	}
 
 	c.nextID++
-	c.entries[c.nextID] = entry{tenant: t, start: c.now()}
+	c.entries[c.nextID] = entry{tenant: t, start: time.Now()}
 
 	t.current++
 	if t.current > t.maxCount {
@@ -116,7 +114,7 @@ func (c *MaxInflightCollector) Remove(id InflightRequest) {
 	delete(c.entries, id)
 
 	e.tenant.current--
-	if age := c.now().Sub(e.start); age > e.tenant.maxAge {
+	if age := time.Since(e.start); age > e.tenant.maxAge {
 		e.tenant.maxAge = age
 	}
 }
@@ -137,7 +135,7 @@ func (c *MaxInflightCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Fold in the age of every query still in flight, so a query that has not finished yet
 	// still contributes to the age reported for the window it spans.
-	now := c.now()
+	now := time.Now()
 	for _, e := range c.entries {
 		if age := now.Sub(e.start); age > e.tenant.maxAge {
 			e.tenant.maxAge = age

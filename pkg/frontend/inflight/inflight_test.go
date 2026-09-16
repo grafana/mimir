@@ -5,6 +5,7 @@ package inflight
 import (
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,27 +22,17 @@ const (
 	testType = "test"
 )
 
-type fakeClock struct {
-	t time.Time
-}
-
-func (c *fakeClock) advance(d time.Duration) {
-	c.t = c.t.Add(d)
-}
-
-// newTestCollector returns a collector driven by a clock the test controls, plus a registry
-// it is registered with.
-func newTestCollector(t *testing.T) (*MaxInflightCollector, *fakeClock, *prometheus.Registry) {
+// newTestCollector returns a collector and the registry it is registered with. Tests that
+// need to control time run inside synctest.Test, whose fake clock reaches time.Now.
+func newTestCollector(t *testing.T) (*MaxInflightCollector, *prometheus.Registry) {
 	t.Helper()
 
-	clock := &fakeClock{t: time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)}
 	c := NewMaxInflightCollector(testType)
-	c.now = func() time.Time { return clock.t }
 
 	reg := prometheus.NewPedanticRegistry()
 	reg.MustRegister(c)
 
-	return c, clock, reg
+	return c, reg
 }
 
 func expected(series string) string {
@@ -51,7 +42,7 @@ func expected(series string) string {
 }
 
 func TestMaxInflightCollector_ReportsPeakNotInstantaneousCount(t *testing.T) {
-	c, _, reg := newTestCollector(t)
+	c, reg := newTestCollector(t)
 
 	a, b := c.Add("tenant-1"), c.Add("tenant-1")
 	c.Add("tenant-1")
@@ -65,7 +56,7 @@ func TestMaxInflightCollector_ReportsPeakNotInstantaneousCount(t *testing.T) {
 }
 
 func TestMaxInflightCollector_ResetsToCurrentNotZero(t *testing.T) {
-	c, _, reg := newTestCollector(t)
+	c, reg := newTestCollector(t)
 
 	c.Add("tenant-1")
 	id := c.Add("tenant-1")
@@ -90,87 +81,95 @@ func TestMaxInflightCollector_ResetsToCurrentNotZero(t *testing.T) {
 }
 
 func TestMaxInflightCollector_AgeOfQueryThatFinishedInWindow(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	// A query that starts and finishes entirely between two collections is still reported.
-	id := c.Add("tenant-1")
-	clock.advance(7 * time.Second)
-	c.Remove(id)
-	clock.advance(3 * time.Second)
+		// A query that starts and finishes entirely between two collections is still reported.
+		id := c.Add("tenant-1")
+		time.Sleep(7 * time.Second)
+		c.Remove(id)
+		time.Sleep(3 * time.Second)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 7`+"\n",
-	), ageName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 7`+"\n",
+		), ageName))
+	})
 }
 
 func TestMaxInflightCollector_AgeOfQueryStillRunningKeepsRising(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	c.Add("tenant-1")
+		c.Add("tenant-1")
 
-	clock.advance(5 * time.Second)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 5`+"\n",
-	), ageName))
+		time.Sleep(5 * time.Second)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 5`+"\n",
+		), ageName))
 
-	clock.advance(11 * time.Second)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 16`+"\n",
-	), ageName))
+		time.Sleep(11 * time.Second)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 16`+"\n",
+		), ageName))
+	})
 }
 
 func TestMaxInflightCollector_LongestOfFinishedAndRunningWins(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	slow := c.Add("tenant-1")
-	clock.advance(20 * time.Second)
-	c.Remove(slow)
+		slow := c.Add("tenant-1")
+		time.Sleep(20 * time.Second)
+		c.Remove(slow)
 
-	// A younger query is still in flight, so the finished query's age is the one reported.
-	c.Add("tenant-1")
-	clock.advance(2 * time.Second)
+		// A younger query is still in flight, so the finished query's age is the one reported.
+		c.Add("tenant-1")
+		time.Sleep(2 * time.Second)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 20`+"\n",
-	), ageName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 20`+"\n",
+		), ageName))
 
-	// The finished query belongs to the previous window; only the running one remains.
-	clock.advance(1 * time.Second)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 3`+"\n",
-	), ageName))
+		// The finished query belongs to the previous window; only the running one remains.
+		time.Sleep(1 * time.Second)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 3`+"\n",
+		), ageName))
+	})
 }
 
 func TestMaxInflightCollector_RemoveIsIdempotent(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	id := c.Add("tenant-1")
-	clock.advance(4 * time.Second)
-	c.Remove(id)
-	// A cleanup that runs twice, and an ID that was never issued, must both be no-ops.
-	c.Remove(id)
-	c.Remove(99999)
+		id := c.Add("tenant-1")
+		time.Sleep(4 * time.Second)
+		c.Remove(id)
+		// A cleanup that runs twice, and an ID that was never issued, must both be no-ops.
+		c.Remove(id)
+		c.Remove(99999)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{type="test",user="tenant-1"} 1`+"\n",
-	)), countName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+			countName+`{type="test",user="tenant-1"} 1`+"\n",
+		)), countName))
 
-	// Nothing is left in flight, so the tenant reports nothing at all from here on.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), countName, ageName))
+		// Nothing is left in flight, so the tenant reports nothing at all from here on.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), countName, ageName))
+	})
 }
 
 func TestMaxInflightCollector_PrunesTenantWithNothingInFlight(t *testing.T) {
-	c, _, reg := newTestCollector(t)
+	c, reg := newTestCollector(t)
 
 	id := c.Add("tenant-1")
 	c.Remove(id)
@@ -191,29 +190,31 @@ func TestMaxInflightCollector_PrunesTenantWithNothingInFlight(t *testing.T) {
 }
 
 func TestMaxInflightCollector_TenantsAreIndependent(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	c.Add("tenant-1")
-	clock.advance(9 * time.Second)
-	c.Add("tenant-2")
-	c.Add("tenant-2")
-	clock.advance(1 * time.Second)
+		c.Add("tenant-1")
+		time.Sleep(9 * time.Second)
+		c.Add("tenant-2")
+		c.Add("tenant-2")
+		time.Sleep(1 * time.Second)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{type="test",user="tenant-1"} 1`+"\n"+
-			countName+`{type="test",user="tenant-2"} 2`+"\n",
-	)), countName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+			countName+`{type="test",user="tenant-1"} 1`+"\n"+
+				countName+`{type="test",user="tenant-2"} 2`+"\n",
+		)), countName))
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-1"} 10`+"\n"+
-			ageName+`{type="test",user="tenant-2"} 1`+"\n",
-	), ageName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-1"} 10`+"\n"+
+				ageName+`{type="test",user="tenant-2"} 1`+"\n",
+		), ageName))
+	})
 }
 
 func TestMaxInflightCollector_NoQueriesReportsNothing(t *testing.T) {
-	_, _, reg := newTestCollector(t)
+	_, reg := newTestCollector(t)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), countName, ageName))
 }
@@ -242,31 +243,33 @@ func TestMaxInflightCollector_RequestTypesShareOneMetricName(t *testing.T) {
 // Collect returns pruned tenant counters to a pool, so a later tenant can be handed a
 // recycled object. It must not inherit the previous tenant's peak or age.
 func TestMaxInflightCollector_RecycledTenantStartsClean(t *testing.T) {
-	c, clock, reg := newTestCollector(t)
+	synctest.Test(t, func(t *testing.T) {
+		c, reg := newTestCollector(t)
 
-	// tenant-1 runs two queries, the longer for 50s, then goes idle.
-	a, b := c.Add("tenant-1"), c.Add("tenant-1")
-	clock.advance(50 * time.Second)
-	c.Remove(a)
-	c.Remove(b)
+		// tenant-1 runs two queries, the longer for 50s, then goes idle.
+		a, b := c.Add("tenant-1"), c.Add("tenant-1")
+		time.Sleep(50 * time.Second)
+		c.Remove(a)
+		c.Remove(b)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{type="test",user="tenant-1"} 2`+"\n",
-	)), countName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+			countName+`{type="test",user="tenant-1"} 2`+"\n",
+		)), countName))
 
-	// That collection pruned tenant-1 and pooled its counters.
-	require.Empty(t, c.tenants)
+		// That collection pruned tenant-1 and pooled its counters.
+		require.Empty(t, c.tenants)
 
-	// tenant-2 now takes the recycled object.
-	c.Add("tenant-2")
-	clock.advance(1 * time.Second)
+		// tenant-2 now takes the recycled object.
+		c.Add("tenant-2")
+		time.Sleep(1 * time.Second)
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
-		countName+`{type="test",user="tenant-2"} 1`+"\n",
-	)), countName))
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
-		"# HELP "+ageName+" "+ageHelp+"\n"+
-			"# TYPE "+ageName+" gauge\n"+
-			ageName+`{type="test",user="tenant-2"} 1`+"\n",
-	), ageName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+			countName+`{type="test",user="tenant-2"} 1`+"\n",
+		)), countName))
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+			"# HELP "+ageName+" "+ageHelp+"\n"+
+				"# TYPE "+ageName+" gauge\n"+
+				ageName+`{type="test",user="tenant-2"} 1`+"\n",
+		), ageName))
+	})
 }
