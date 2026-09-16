@@ -277,6 +277,18 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 	}
 
 	if r.kafkaCfg.FetchConcurrencyMax > 0 {
+		if r.kafkaCfg.ClientRack != "" {
+			// commonKafkaClientOptions() passes the rack to the Kafka client, but with concurrent fetching enabled the
+			// client doesn't fetch any record: ConcurrentFetchers builds its own Fetch requests, doesn't send a rack
+			// and always reads from the partition leader. Rack-aware consumption is silently a no-op in this case, and
+			// it's expensive to notice, so tell the operator about it.
+			level.Warn(r.logger).Log(
+				"msg", "the configured Kafka client rack has no effect because concurrent fetching is enabled: records are always fetched from the partition leader. Set fetch concurrency to 0 to read from the closest replica.",
+				"client_rack", r.kafkaCfg.ClientRack,
+				"fetch_concurrency_max", r.kafkaCfg.FetchConcurrencyMax,
+			)
+		}
+
 		// When concurrent fetch is enabled we manually fetch from the partition so we don't want the Kafka
 		// client to buffer any record. However, we still want to configure partition consumption so that
 		// the partition metadata is kept updated by the client (our concurrent fetcher requires metadata to

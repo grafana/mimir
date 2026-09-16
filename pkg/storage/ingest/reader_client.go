@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -14,18 +13,6 @@ import (
 // NewKafkaReaderClient returns the kgo.Client that should be used by the Reader.
 func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger, opts ...kgo.Opt) (*kgo.Client, error) {
 	const fetchMaxBytes = 100_000_000
-
-	if cfg.ClientRack != "" && cfg.FetchConcurrencyMax > 0 {
-		// commonKafkaClientOptions() passes the rack to the Kafka client, but with concurrent fetching enabled the
-		// client doesn't fetch any record: ConcurrentFetchers builds its own Fetch requests, doesn't send a rack and
-		// always reads from the partition leader. Rack-aware consumption is silently a no-op in this case, and it's
-		// expensive to notice, so tell the operator about it.
-		level.Warn(logger).Log(
-			"msg", "the configured Kafka client rack has no effect because concurrent fetching is enabled: records are always fetched from the partition leader. Set fetch concurrency to 0 to read from the closest replica.",
-			"client_rack", cfg.ClientRack,
-			"fetch_concurrency_max", cfg.FetchConcurrencyMax,
-		)
-	}
 
 	opts = append(opts, commonKafkaClientOptions(cfg, metrics, logger)...)
 	opts = append(opts,
