@@ -1195,7 +1195,7 @@ If block upload is not enabled for the user, `mimirtool backfill` will fail.
 ##### Backfill verification
 
 {{< admonition type="note" >}}
-Backfill verification is an experimental feature in Grafana Mimir, and is not enabled by default.
+Backfill verification via `--verify` is an experimental feature in Grafana Mimir, and is not enabled by default.
 {{< /admonition >}}
 
 The `backfill` command can optionally run a pre-verification step on blocks intended for upload. Verification performs a number of checks, including:
