@@ -20,6 +20,8 @@
     multi_zone_store_gateway_zone_c_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
 
     // Available for overriding as part of migration to multi_az, e.g: from zone's [a, b, c] to [a, a-backup, b, b-backup].
+    multi_zone_store_gateway_zone_a_enabled: $._config.multi_zone_store_gateway_enabled,
+    multi_zone_store_gateway_zone_b_enabled: $._config.multi_zone_store_gateway_enabled,
     multi_zone_store_gateway_zone_c_enabled: $._config.multi_zone_store_gateway_enabled,
 
     multi_zone_store_gateway_backup_zones_enabled: false,
@@ -168,10 +170,10 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  store_gateway_zone_a_container:: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_a_container:: if !$._config.multi_zone_store_gateway_zone_a_enabled then null else
     $.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
-  store_gateway_zone_b_container:: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_b_container:: if !$._config.multi_zone_store_gateway_zone_b_enabled then null else
     $.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
   store_gateway_zone_c_container:: if !$._config.multi_zone_store_gateway_zone_c_enabled then null else
@@ -183,11 +185,11 @@
   store_gateway_zone_b_backup_container:: if !$._config.multi_zone_store_gateway_zone_b_backup_enabled then null else
     $.newStoreGatewayZoneContainer('b-backup', $.store_gateway_zone_b_backup_args, $.store_gateway_zone_b_backup_env_map),
 
-  store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_zone_b_enabled then null else
     $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $._config.store_gateway_zone_b_data_disk_class, $.store_gateway_zone_b_node_affinity_matchers) +
     (if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
-  store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_zone_a_enabled then null else
     $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $._config.store_gateway_zone_a_data_disk_class, $.store_gateway_zone_a_node_affinity_matchers) +
     (if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
@@ -207,10 +209,10 @@
     // Default to 0 replicas because we expect to use autoscaling and follow other zone replicas.
     statefulSet.mixin.spec.withReplicas(0),
 
-  store_gateway_zone_a_service: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_a_service: if !$._config.multi_zone_store_gateway_zone_a_enabled then null else
     $.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
 
-  store_gateway_zone_b_service: if !$._config.multi_zone_store_gateway_enabled then null else
+  store_gateway_zone_b_service: if !$._config.multi_zone_store_gateway_zone_b_enabled then null else
     $.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
 
   store_gateway_zone_c_service: if !$._config.multi_zone_store_gateway_zone_c_enabled then null else

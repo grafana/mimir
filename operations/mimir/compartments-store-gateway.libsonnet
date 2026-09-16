@@ -22,8 +22,8 @@
   // Primary zones (a/b/c) plus the optional multi-AZ backup zones (a-backup/b-backup), used for the RF-4
   // topology [a, a-backup, b, b-backup] (zone-c disabled). Backups follow their primary zone, mirroring the
   // non-compartment multi-zone-store-gateway / store-gateway-autoscaling libs.
-  local isZoneAEnabled = $._config.multi_zone_store_gateway_enabled,
-  local isZoneBEnabled = $._config.multi_zone_store_gateway_enabled,
+  local isZoneAEnabled = $._config.multi_zone_store_gateway_zone_a_enabled,
+  local isZoneBEnabled = $._config.multi_zone_store_gateway_zone_b_enabled,
   local isZoneCEnabled = $._config.multi_zone_store_gateway_zone_c_enabled,
   local isZoneABackupEnabled = $._config.multi_zone_store_gateway_zone_a_backup_enabled,
   local isZoneBBackupEnabled = $._config.multi_zone_store_gateway_zone_b_backup_enabled,
