@@ -37,42 +37,42 @@ ones too, and the same-request flows will need `-ingester-address` to be reachab
 
 ## Shapes
 
-| `-shape` | Duplicate placement | Accounted at |
-| :- | :- | :- |
-| `same-object` | two samples, one timestamp, inside one `TimeSeries` object | distributor |
-| `ooo-same-object` | same, at an out-of-order timestamp | distributor |
-| `same-request` | two objects with identical labels in one request | ingester |
-| `ooo-same-request` | same, at an out-of-order timestamp | ingester |
-| `across-requests` | same series and timestamp in two separate requests | ingester |
-| `ooo` | duplicate of an out-of-order sample, in a separate request | ingester |
+| `-shape`           | Duplicate placement                                        | Accounted at |
+| :----------------- | :--------------------------------------------------------- | :----------- |
+| `same-object`      | two samples, one timestamp, inside one `TimeSeries` object | distributor  |
+| `ooo-same-object`  | same, at an out-of-order timestamp                         | distributor  |
+| `same-request`     | two objects with identical labels in one request           | ingester     |
+| `ooo-same-request` | same, at an out-of-order timestamp                         | ingester     |
+| `across-requests`  | same series and timestamp in two separate requests         | ingester     |
+| `ooo`              | duplicate of an out-of-order sample, in a separate request | ingester     |
 
 `-conflict` gives the duplicate a different value instead of the same one; `-shape all` runs
 both. Every line of output names the design-doc flow it covers.
 
 ## Flags
 
-| Flag | Default | Meaning |
-| :- | :- | :- |
-| `-address` | `http://localhost:8080` | remote-write endpoint |
-| `-push-path` | `/api/v1/push` | use `/api/prom/push` for a GEM gateway |
-| `-ingester-address` | unset | ingester gRPC endpoint; ingester flows go here |
-| `-tenant-id` | `anonymous` | `X-Scope-OrgID`, or the basic-auth username with `-auth-token` |
-| `-auth-token` | unset | basic-auth token |
-| `-shape` | `all` | one of the shapes above, or `all` |
-| `-conflict` | `false` | give the duplicate a different value |
-| `-sample-type` | `both` | `float`, `histogram`, or `both` |
-| `-metric-name` | `duplicate_samples_generator` | metric name prefix |
-| `-labels` | none | extra `key=value` labels; use a cost-attribution label here |
-| `-metrics` | `50` | distinct metrics, and therefore series |
-| `-samples-per-metric` | `2` | distinct timestamps per metric per iteration, each duplicated |
-| `-count` | `5` | iterations (scrapes) |
-| `-series-per-request` | `100` | maximum `TimeSeries` objects per request |
-| `-interval` | `0` | pause between iterations |
-| `-ooo-delay` | `5m` | how far back out-of-order samples sit; must be inside the OOO window |
-| `-verify` | `true` | assert the counters; false only generates traffic |
-| `-metrics-url` | derived from `-address` | `/metrics` endpoints to scrape, comma-separated |
-| `-verify-delay` | `5s` | wait before the post-run scrape |
-| `-replication-factor` | `1` | match the cell's `-distributor.replication-factor` |
+| Flag                  | Default                       | Meaning                                                              |
+| :-------------------- | :---------------------------- | :------------------------------------------------------------------- |
+| `-address`            | `http://localhost:8080`       | remote-write endpoint                                                |
+| `-push-path`          | `/api/v1/push`                | use `/api/prom/push` for a GEM gateway                               |
+| `-ingester-address`   | unset                         | ingester gRPC endpoint; ingester flows go here                       |
+| `-tenant-id`          | `anonymous`                   | `X-Scope-OrgID`, or the basic-auth username with `-auth-token`       |
+| `-auth-token`         | unset                         | basic-auth token                                                     |
+| `-shape`              | `all`                         | one of the shapes above, or `all`                                    |
+| `-conflict`           | `false`                       | give the duplicate a different value                                 |
+| `-sample-type`        | `both`                        | `float`, `histogram`, or `both`                                      |
+| `-metric-name`        | `duplicate_samples_generator` | metric name prefix                                                   |
+| `-labels`             | none                          | extra `key=value` labels; use a cost-attribution label here          |
+| `-metrics`            | `50`                          | distinct metrics, and therefore series                               |
+| `-samples-per-metric` | `2`                           | distinct timestamps per metric per iteration, each duplicated        |
+| `-count`              | `5`                           | iterations (scrapes)                                                 |
+| `-series-per-request` | `100`                         | maximum `TimeSeries` objects per request                             |
+| `-interval`           | `0`                           | pause between iterations                                             |
+| `-ooo-delay`          | `5m`                          | how far back out-of-order samples sit; must be inside the OOO window |
+| `-verify`             | `true`                        | assert the counters; false only generates traffic                    |
+| `-metrics-url`        | derived from `-address`       | `/metrics` endpoints to scrape, comma-separated                      |
+| `-verify-delay`       | `5s`                          | wait before the post-run scrape                                      |
+| `-replication-factor` | `1`                           | match the cell's `-distributor.replication-factor`                   |
 
 Duplicates per flow is `-count` x `-metrics` x `-samples-per-metric`, 500 at the defaults.
 
