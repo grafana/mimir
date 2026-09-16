@@ -158,8 +158,7 @@ func NewStreamBinaryReader(
 	)
 	indexHeaderTOC, indexHeaderVersion, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	// If we can't read the index header, or it's an unsupported version for the current config, we need to rebuild it
-	needPostingsOffsetsOnDisk := !cfg.BucketReader.Enabled
-	if err != nil || (indexHeaderVersion == BinaryFormatV2 && needPostingsOffsetsOnDisk) {
+	if err != nil || ((indexHeaderVersion == BinaryFormatV2) != cfg.BucketReader.Enabled) {
 		// TOC read checks CRC32; assume a failure here is either due to a file corruption.
 		level.Debug(spanLog).Log(
 			"msg", "failed to read table of contents from index-header on disk; will recreate from bucket block index",
