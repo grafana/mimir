@@ -61,6 +61,7 @@ type EngineOpts struct {
 	EnableReduceMatchers                                      bool `yaml:"enable_reduce_matchers" category:"experimental"`
 	EnableMultiAggregation                                    bool `yaml:"enable_multi_aggregation" category:"experimental"`
 	EnableRemoveStaticallyEmptyExpressions                    bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
+	EnableNodeIdentifiers                                     bool `yaml:"enable_node_identifiers" category:"experimental"`
 
 	RangeVectorSplitting          RangeVectorSplittingConfig          `yaml:"range_vector_splitting" category:"experimental"`
 	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"time_splitting_and_caching" category:"experimental"`
@@ -138,6 +139,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
 	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableRemoveStaticallyEmptyExpressions, "querier.mimir-query-engine.enable-remove-statically-empty-expressions", true, "Enable removing expressions that are guaranteed to produce no results.")
+	f.BoolVar(&o.EnableNodeIdentifiers, "querier.mimir-query-engine.enable-node-identifiers", false, "Enable generating a unique ID for each node in a query to enable detailed cost information.")
 
 	o.RangeVectorSplitting.RegisterFlags(f)
 	o.RangeQuerySplittingAndCaching.RegisterFlags(f)
@@ -256,6 +258,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableMultiAggregation:                                    true,
 		EnableRemoveStaticallyEmptyExpressions:                    true,
 		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
+		EnableNodeIdentifiers:                                     true,
 
 		CachePrefixGenerator: caching.TenantPrefixGenerator,
 

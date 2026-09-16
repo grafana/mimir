@@ -216,7 +216,12 @@ type Node interface {
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
 	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
-	// FIXME: implementations for many of the above methods can be generated automatically
+	// GetPlanningId returns the ID assigned to this node that uniquely identifies it within a query plan.
+	// The ID is 0 when unset.
+	GetPlanningId() int64
+
+	// SetPlanningId sets the ID for this node that uniquely identifies it within a query plan.
+	SetPlanningId(id int64)
 }
 
 // ChildrenIter returns an iterator over all children of n.
@@ -418,6 +423,8 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	encoded := &EncodedNode{}
+	encoded.PlanningId = n.GetPlanningId()
+
 	childCount := n.ChildCount()
 
 	if childCount > 0 {
@@ -534,6 +541,8 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 	}
 
 	node := nodeFactory()
+	node.SetPlanningId(encodedNode.PlanningId)
+
 	if err := proto.Unmarshal(encodedNode.Details, node.Details()); err != nil {
 		return nil, err
 	}

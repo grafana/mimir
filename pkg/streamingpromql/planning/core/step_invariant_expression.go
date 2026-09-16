@@ -22,6 +22,7 @@ import (
 //
 //node:generate
 type StepInvariantExpression struct {
+	NodeIdentifier
 	*StepInvariantExpressionDetails
 	Inner planning.Node `json:"-" node:"child"`
 }
