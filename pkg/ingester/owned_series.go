@@ -170,7 +170,10 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 			continue
 		}
 
-		if oss.updateTenant(userID, db, ringChanged) {
+		// The ring-lookup error, if any, was already logged inside updateTenant; the periodic
+		// ticker just needs to know whether a recompute happened, and a failed lookup already
+		// schedules its own retry on the next tick.
+		if updated, _ := oss.updateTenant(userID, db, ringChanged); updated {
 			updatedUsers++
 		}
 	}
@@ -185,6 +188,9 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 }
 
 // Updates token ranges and recomputes owned series for user, if necessary. If recomputation happened, true is returned.
+// err is non-nil only when the ring lookup itself failed, in which case token ranges and
+// pendingNonOwnedRefs were NOT reconciled -- callers that need that reconciliation to have
+// actually happened (as opposed to merely being retried on a future call) must check it.
 //
 // This method is complicated, because it takes many possible scenarios into consideration:
 // 1. Ring changed
@@ -196,7 +202,7 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 //
 // Ring and shard size changes require new check of the ring to see if token ranges for this ingester have changed. We also need to check ring if previous ring check has failed.
 // When doing computation of owned series, we make sure to pass up-to-date number of shards.
-func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) bool {
+func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) (updated bool, err error) {
 	shardSize := oss.ringStrategy.shardSizeForUser(userID)
 	localLimit := oss.getLocalSeriesLimit(userID, 0)
 
@@ -215,22 +221,22 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 
 	if !ringChanged && reason == "" {
 		// Nothing to do for this tenant.
-		return false
+		return false, nil
 	}
 
 	// We need to check for tokens even if ringChanged is false, because previous ring check may have failed.
 	// If this ingester doesn't own the tenant anymore, ringStrategy is expected to return nil ranges. In that case there will be no "owned" series.
-	ranges, err := oss.ringStrategy.tokenRangesForUser(userID, shardSize)
-	if err != nil {
+	ranges, tokenRangesErr := oss.ringStrategy.tokenRangesForUser(userID, shardSize)
+	if tokenRangesErr != nil {
 		ownerKey, ownerValue := oss.ringStrategy.ownerKeyAndValue()
-		level.Error(oss.logger).Log("msg", "failed to get token ranges from user's subring", "user", userID, ownerKey, ownerValue, "err", err)
+		level.Error(oss.logger).Log("msg", "failed to get token ranges from user's subring", "user", userID, ownerKey, ownerValue, "err", tokenRangesErr)
 
 		// If we failed to get token ranges, set the new reason, to make sure we do the check in next iteration.
 		if reason == "" {
 			reason = recomputeOwnedSeriesReasonGetTokenRangesFailed
 		}
 		db.triggerRecomputeOwnedSeries(reason)
-		return false
+		return false, tokenRangesErr
 	}
 
 	if db.updateTokenRanges(ranges) && reason == "" {
@@ -241,9 +247,9 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 		if !db.recomputeOwnedSeries(shardSize, reason, oss.logger) {
 			db.triggerRecomputeOwnedSeries(reason)
 		}
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func secondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
