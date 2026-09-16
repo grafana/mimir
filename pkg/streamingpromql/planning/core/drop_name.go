@@ -18,6 +18,7 @@ import (
 
 //node:generate
 type DropName struct {
+	NodeIdentifier
 	*DropNameDetails
 	Inner planning.Node `node:"child"`
 }
