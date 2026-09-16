@@ -45,7 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -1142,7 +1142,7 @@ func TestHandler_ParentQueryID(t *testing.T) {
 			// the query-scheduler and the queriers.
 			var contextParentQueryIDs []uint64
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				contextParentQueryIDs = append(contextParentQueryIDs, parentquery.IDFromContext(req.Context()))
+				contextParentQueryIDs = append(contextParentQueryIDs, parentqueryid.IDFromContext(req.Context()))
 
 				if testCase.downstreamErr != nil {
 					return nil, testCase.downstreamErr

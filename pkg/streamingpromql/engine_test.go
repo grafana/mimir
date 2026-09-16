@@ -53,7 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -6114,7 +6114,7 @@ func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 
 			ctx := context.Background()
 			if withParentQueryID {
-				ctx = parentquery.ContextWithID(ctx, parentQueryID)
+				ctx = parentqueryid.ContextWithID(ctx, parentQueryID)
 			}
 
 			q, err := engine.NewInstantQuery(ctx, storage, nil, "some_metric", timestamp.Time(0))

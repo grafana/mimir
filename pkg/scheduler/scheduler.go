@@ -47,7 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 )
 
 var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
@@ -313,7 +313,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			if msg.ParentQueryID != 0 {
 				// Reported as a string because the query-frontend seeds parent query IDs randomly,
 				// so roughly half of them are outside the range of an int64 attribute.
-				enqueueSpan.SetAttributes(attribute.String(parentquery.FieldName, strconv.FormatUint(msg.ParentQueryID, 10)))
+				enqueueSpan.SetAttributes(attribute.String(parentqueryid.FieldName, strconv.FormatUint(msg.ParentQueryID, 10)))
 			}
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)

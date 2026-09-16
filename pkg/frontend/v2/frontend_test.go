@@ -60,7 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2520,7 +2520,7 @@ func TestFrontendCreateNewRequestParentQueryID(t *testing.T) {
 	t.Run("parent query ID in context", func(t *testing.T) {
 		f, _ := setupFrontend(t, nil, nil)
 
-		ctx := parentquery.ContextWithID(user.InjectOrgID(t.Context(), "test"), parentQueryID)
+		ctx := parentqueryid.ContextWithID(user.InjectOrgID(t.Context(), "test"), parentQueryID)
 
 		freq, _, cancel, err := f.createNewRequest(ctx)
 		require.NoError(t, err)

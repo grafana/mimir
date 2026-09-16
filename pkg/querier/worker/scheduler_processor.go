@@ -42,7 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -270,8 +270,8 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 			if request.ParentQueryID != 0 {
-				ctx = parentquery.ContextWithID(ctx, request.ParentQueryID)
-				logger = log.With(logger, parentquery.FieldName, request.ParentQueryID)
+				ctx = parentqueryid.ContextWithID(ctx, request.ParentQueryID)
+				logger = log.With(logger, parentqueryid.FieldName, request.ParentQueryID)
 			}
 
 			var stats *querier_stats.SafeStats

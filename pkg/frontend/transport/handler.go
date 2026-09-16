@@ -40,7 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 )
 
 const (
@@ -293,7 +293,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Allocate a unique parent query id which can be referenced for all sub-requests which
 	// are related to this query. This parent_query_id will be logged on sub-requests running on the
 	// query-scheduler and querier components.
-	ctx := parentquery.ContextWithID(r.Context(), f.lastParentQueryID.Inc())
+	ctx := parentqueryid.ContextWithID(r.Context(), f.lastParentQueryID.Inc())
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
@@ -397,7 +397,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}
 
-	logMessage = parentquery.AppendLogFields(logMessage, parentquery.IDFromContext(r.Context()))
+	logMessage = parentqueryid.AppendLogFields(logMessage, parentqueryid.IDFromContext(r.Context()))
 
 	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
@@ -479,7 +479,7 @@ func (f *Handler) reportQueryStats(
 		"physical_samples_read", physicalSamplesRead,
 	}
 
-	logMessage = parentquery.AppendLogFields(logMessage, parentquery.IDFromContext(r.Context()))
+	logMessage = parentqueryid.AppendLogFields(logMessage, parentqueryid.IDFromContext(r.Context()))
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)

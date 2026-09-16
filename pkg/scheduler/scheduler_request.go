@@ -15,7 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 )
 
 type RequestKey struct {
@@ -70,7 +70,7 @@ func (sr *SchedulerRequest) LogFields() []any {
 // lines. parentQueryID is omitted when it is zero, so that an unknown parent is not reported as
 // query 0.
 func requestLogFields(userID string, queryID, parentQueryID uint64) []any {
-	return parentquery.AppendLogFields([]any{"user", userID, "query_id", queryID}, parentQueryID)
+	return parentqueryid.AppendLogFields([]any{"user", userID, "query_id", queryID}, parentQueryID)
 }
 
 // ExpectedQueryComponentName parses the expected query component from annotations by the frontend.

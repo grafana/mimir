@@ -48,7 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
-	"github.com/grafana/mimir/pkg/util/parentquery"
+	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -310,7 +310,7 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 
 	freq := &frontendRequest{
 		queryID:       f.lastQueryID.Inc(),
-		parentQueryID: parentquery.IDFromContext(ctx),
+		parentQueryID: parentqueryid.IDFromContext(ctx),
 		userID:        userID,
 		statsEnabled:  stats.IsEnabled(ctx),
 
