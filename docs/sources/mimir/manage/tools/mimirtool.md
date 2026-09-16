@@ -1209,14 +1209,14 @@ The `backfill` command can optionally run a pre-verification step on blocks inte
 If the blocks intended for upload fail these checks, it may be necessary to either regenerate the blocks with different options, or use a compaction tool to coerce them into the right shape.
 The process of correcting verification errors is outside the scope of this document.
 
-| Flag                     | Default | Description                                                                                                                                                                                                        |
-| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--verify`               | `false` | Enable verification of blocks before uploading.                                                                                                                                                                    |
-| `--dry-run`              | `false` | Only perform verification, do not upload. Implies `--verify`.                                                                                                                                                      |
-| `--fail-fast`            | `true`  | Abort verification on the first error encountered. When `false`, collects a report of all errors detected during verification.                                                                                       |
-| `--deep-verification`    | `true`  | When verifying, performs a deep introspection of individual chunks for consistency. Can be skipped for some workflows with high confidence in the integrity of created blocks.                                     |
+| Flag                     | Default | Description                                                                                                                                                                                                            |
+| ------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--verify`               | `false` | Enable verification of blocks before uploading.                                                                                                                                                                        |
+| `--dry-run`              | `false` | Only perform verification, do not upload. Implies `--verify`.                                                                                                                                                          |
+| `--fail-fast`            | `true`  | Abort verification on the first error encountered. When `false`, collects a report of all errors detected during verification.                                                                                         |
+| `--deep-verification`    | `true`  | When verifying, performs a deep introspection of individual chunks for consistency. Can be skipped for some workflows with high confidence in the integrity of created blocks.                                         |
 | `--single-block-per-day` | `false` | When `true`, enforces that each block covers at most a single UTC day, and each UTC day has at most one corresponding block. When `false`, only enforces that blocks do not cross the day boundary and do not overlap. |
-| `--verify-concurrency`   | `0`     | Sets the number of goroutines for performing verification. If `0`, defaults to `GOMAXPROCS` or `4`, whichever is smaller.                                                                                                |
+| `--verify-concurrency`   | `0`     | Sets the number of goroutines for performing verification. If `0`, defaults to `GOMAXPROCS` or `4`, whichever is smaller.                                                                                              |
 
 ##### Example
 
