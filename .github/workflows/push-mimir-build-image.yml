@@ -92,6 +92,7 @@ jobs:
         id: check_if_image_is_built
         run: |
           whoami
+          skopeo --version
           ls -lR /run
           echo "Checking if image has already been built"
           if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
