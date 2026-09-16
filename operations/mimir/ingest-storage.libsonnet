@@ -259,9 +259,9 @@
 + {
   _config+:: {
     // When true and ingest storage is enabled, automatically set -ingest-storage.kafka.client-rack
-    // on each ingester zone to its zone name. The flag only affects the read path when
-    // -ingest-storage.kafka.fetch-concurrency-max is set to 0. With the default concurrency,
-    // ingesters always read from the partition leader and the rack is ignored.
+    // on each ingester zone to its zone name. The rack is ignored while
+    // -ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching
+    // always reads from the partition leader.
     ingest_storage_set_client_rack: true,
   },
 
