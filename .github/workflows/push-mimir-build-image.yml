@@ -24,7 +24,7 @@ jobs:
     # of a Grafana hosted runner like most other changes. A permissions error checking if the
     # build image has already been pushed results in the check always thinking it needs to push
     # a new image.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     permissions:
       contents: read
       pull-requests: write # So we can post comments on the PR.
