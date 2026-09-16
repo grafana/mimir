@@ -122,7 +122,6 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				bucketCfg := Config{BucketReader: BucketReaderConfig{
 					Enabled:             true,
 					BucketIndexSections: SectionPostingsOffsetsTable,
-					WriteV2IndexHeader:  true,
 				}}
 				require.NoError(t, bucketCfg.Validate())
 				r3, err := NewStreamBinaryReader(ctx, blockID, bkt, bucketDir, bucketCfg, 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
@@ -356,7 +355,6 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 	writeV2Cfg := Config{BucketReader: BucketReaderConfig{
 		Enabled:             true,
 		BucketIndexSections: SectionPostingsOffsetsTable,
-		WriteV2IndexHeader:  true,
 	}}
 	require.NoError(t, writeV2Cfg.Validate())
 
@@ -368,11 +366,6 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 		expectRemote             bool
 	}{
 		{
-			name: "bucket reader enabled, write-v2 disabled", extantIndexHeaderVersion: "",
-			cfg:           Config{BucketReader: BucketReaderConfig{Enabled: true, BucketIndexSections: SectionPostingsOffsetsTable, WriteV2IndexHeader: false}},
-			expectVersion: BinaryFormatV1, expectRemote: true,
-		},
-		{
 			name: "write-v2 disabled, nothing on disk", extantIndexHeaderVersion: "", cfg: Config{},
 			expectVersion: BinaryFormatV1, expectRemote: false,
 		},
@@ -381,21 +374,20 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 			expectVersion: BinaryFormatV2, expectRemote: true,
 		},
 		{
-			name: "write-v2 enabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: writeV2Cfg,
-			expectVersion: BinaryFormatV2, expectRemote: true,
-		},
-		{
-			name: "vwrite-v2 enabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: writeV2Cfg,
-			expectVersion: BinaryFormatV2, expectRemote: true,
-		},
-
-		{
 			name: "write-v2 disabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: Config{},
 			expectVersion: BinaryFormatV1, expectRemote: false,
 		},
 		{
+			name: "write-v2 enabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: writeV2Cfg,
+			expectVersion: BinaryFormatV2, expectRemote: true,
+		},
+		{
 			name: "write-v2 disabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: Config{},
 			expectVersion: BinaryFormatV1, expectRemote: false,
+		},
+		{
+			name: "write-v2 enabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: writeV2Cfg,
+			expectVersion: BinaryFormatV2, expectRemote: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

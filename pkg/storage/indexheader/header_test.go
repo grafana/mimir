@@ -54,7 +54,7 @@ var implementations = []struct {
 			instrBkt := objstore.WithNoopInstr(bkt)
 			br, err := NewStreamBinaryReader(
 				ctx, id, instrBkt, dir,
-				Config{BucketReader: BucketReaderConfig{Enabled: true, WriteV2IndexHeader: true, BucketIndexSections: SectionPostingsOffsetsTable}},
+				Config{BucketReader: BucketReaderConfig{Enabled: true, BucketIndexSections: SectionPostingsOffsetsTable}},
 				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
 			)
 			require.NoError(t, err)

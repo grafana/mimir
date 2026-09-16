@@ -147,7 +147,7 @@ func NewLazyBinaryReader(
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, cfg.BucketReader.WriteV2IndexHeader, logger)
+		return ensureIndexHeaderOnDisk(ctx, id, bkt, localDir, cfg.BucketReader.Enabled, logger)
 	})
 
 	g.Go(func() error {
