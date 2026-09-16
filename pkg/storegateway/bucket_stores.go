@@ -77,6 +77,9 @@ type BucketStores struct {
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
 
+	// Gate used to limit how many blocks are queried concurrently across all tenants.
+	blockGate gate.Gate
+
 	// Keeps a bucket store for each tenant.
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
@@ -143,6 +146,17 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
+	// The number of blocks queried concurrently is limited across all tenants and all in-flight
+	// requests. This bounds the per-block work a single request fans out into, which queryGate
+	// (a limit on whole requests) does not.
+	blockGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "block"}, gateReg)
+	blockGate := gate.NewNoop()
+	if blockMax := cfg.BucketStore.MaxConcurrentBlocks; blockMax != 0 {
+		blockGate = gate.NewBlocking(blockMax)
+		blockGate = gate.NewInstrumented(blockGateReg, blockMax, blockGate)
+		blockGate = timeoutGate{delegate: blockGate, timeout: cfg.BucketStore.MaxConcurrentBlocksQueueTimeout}
+	}
+
 	maxGapBytesChunks := cfg.BucketStore.PartitionerMaxGapBytesChunks
 	if maxGapBytesChunks == 0 {
 		maxGapBytesChunks = cfg.BucketStore.PartitionerMaxGapBytes
@@ -161,6 +175,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
+		blockGate:          blockGate,
 		partitioners: newGapBasedPartitioners(
 			maxGapBytesChunks,
 			cfg.BucketStore.PartitionerMaxGapBytes,
@@ -608,6 +623,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
+		WithBlockGate(u.blockGate),
 	}
 
 	bs, err := NewBucketStore(

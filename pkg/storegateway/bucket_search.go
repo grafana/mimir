@@ -88,6 +88,11 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label names")
 
+			if err := s.blockGate.Start(gctx); err != nil {
+				return errors.Wrapf(err, "failed to wait for turn for block %s", b.meta.ULID)
+			}
+			defer s.blockGate.Done()
+
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelNames(gctx, indexr, matchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
@@ -178,6 +183,11 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 		blockID := b.meta.ULID
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "search label values")
+
+			if err := s.blockGate.Start(gctx); err != nil {
+				return errors.Wrapf(err, "failed to wait for turn for block %s", b.meta.ULID)
+			}
+			defer s.blockGate.Done()
 
 			b.ensureIndexHeaderLoaded(gctx, stats)
 

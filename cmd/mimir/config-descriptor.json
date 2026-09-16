@@ -11304,6 +11304,28 @@
             },
             {
               "kind": "field",
+              "name": "max_concurrent_blocks",
+              "required": false,
+              "desc": "Maximum number of blocks queried concurrently, shared across all tenants and all in-flight requests. Unlike -blocks-storage.bucket-store.max-concurrent, which limits whole requests, this bounds the per-block work a request fans out into. 0 means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-blocks",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_concurrent_blocks_queue_timeout",
+              "required": false,
+              "desc": "Timeout for a block waiting its turn to be queried. Reaching it fails the request. 0 means no timeout and blocks wait indefinitely for their turn. Only used when -blocks-storage.bucket-store.max-concurrent-blocks is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tenant_sync_concurrency",
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",

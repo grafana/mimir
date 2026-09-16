@@ -2090,6 +2090,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
 		queryGate:            gate.NewNoop(),
+		blockGate:            gate.NewNoop(),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,

@@ -6123,6 +6123,20 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.gate-label-requests
   [gate_label_requests: <boolean> | default = false]
 
+  # (experimental) Maximum number of blocks queried concurrently, shared across
+  # all tenants and all in-flight requests. Unlike
+  # -blocks-storage.bucket-store.max-concurrent, which limits whole requests,
+  # this bounds the per-block work a request fans out into. 0 means no limit.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-blocks
+  [max_concurrent_blocks: <int> | default = 0]
+
+  # (experimental) Timeout for a block waiting its turn to be queried. Reaching
+  # it fails the request. 0 means no timeout and blocks wait indefinitely for
+  # their turn. Only used when
+  # -blocks-storage.bucket-store.max-concurrent-blocks is greater than 0.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-blocks-queue-timeout
+  [max_concurrent_blocks_queue_timeout: <duration> | default = 0s]
+
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
   [tenant_sync_concurrency: <int> | default = 1]

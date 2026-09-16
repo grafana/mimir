@@ -119,6 +119,21 @@ type BucketStore struct {
 	// acquire queryGate. Series always does. See -blocks-storage.bucket-store.gate-label-requests.
 	gateLabelRequests bool
 
+	// blockGate limits how many blocks are queried concurrently, across all tenants and all
+	// in-flight requests. It is acquired per block inside a request, so it bounds the fan-out a
+	// single request can cause, which queryGate (a limit on whole requests) does not.
+	//
+	// Its coverage is not uniform across endpoints. For LabelNames, LabelValues and their search
+	// variants the per-block goroutine iterates the series set synchronously, so the gate holds
+	// for the whole per-block critical section. Series instead returns a lazy iterator, and its
+	// chunk reads run later under detached preload goroutines, after the gate has been released;
+	// there the gate bounds opening the block and expanding postings, not the chunk reads.
+	//
+	// blockGate is held while ensureIndexHeaderLoaded may block on lazyLoadingGate, so the two
+	// nest. That is only safe because nothing under indexheader ever acquires blockGate; if that
+	// ever changes, the two gates deadlock.
+	blockGate gate.Gate
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -197,6 +212,13 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
+// WithBlockGate sets a gate used to limit how many blocks are queried concurrently.
+func WithBlockGate(blockGate gate.Gate) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.blockGate = blockGate
+	}
+}
+
 // WithLazyLoadingGate sets a lazyLoadingGate to use instead of a gate.NewNoop().
 func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -233,6 +255,7 @@ func NewBucketStore(
 		queryGate:                   gate.NewNoop(),
 		lazyLoadingGate:             gate.NewNoop(),
 		gateLabelRequests:           bucketStoreConfig.GateLabelRequests,
+		blockGate:                   gate.NewNoop(),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
@@ -1065,7 +1088,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	var (
 		mtx                      = sync.Mutex{}
 		batches                  = make([]iterator[seriesChunkRefsSet], 0, len(blocks))
-		g, _                     = errgroup.WithContext(ctx)
+		g, gctx                  = errgroup.WithContext(ctx)
 		begin                    = time.Now()
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	)
@@ -1080,6 +1103,14 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
 		}
 		g.Go(func() error {
+			// gctx is only used to wait for a turn, so a sibling block failing releases us from
+			// the queue. It must not be handed to the iterator below: errgroup cancels gctx when
+			// Wait returns, and the iterator is lazy, so it is still being consumed after that.
+			if err := s.blockGate.Start(gctx); err != nil {
+				return errors.Wrapf(err, "failed to wait for turn for block %s", b.meta.ULID)
+			}
+			defer s.blockGate.Done()
+
 			part, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				s.maxSeriesPerBatch,
@@ -1373,6 +1404,11 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
 
+			if err := s.blockGate.Start(gctx); err != nil {
+				return errors.Wrapf(err, "failed to wait for turn for block %s", b.meta.ULID)
+			}
+			defer s.blockGate.Done()
+
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
@@ -1564,6 +1600,11 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+
+			if err := s.blockGate.Start(gctx); err != nil {
+				return errors.Wrapf(err, "failed to wait for turn for block %s", b.meta.ULID)
+			}
+			defer s.blockGate.Done()
 
 			b.ensureIndexHeaderLoaded(gctx, stats)
 
