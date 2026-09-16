@@ -79,7 +79,7 @@ const (
 // ingesterShapes cover its eight ingester flows.
 var (
 	distributorShapes = []string{"same-object", "ooo-same-object"}
-	ingesterShapes    = []string{"same-request", "ooo-same-request", "across-requests", "ooo"}
+	ingesterShapes    = []string{"same-request", "ooo-same-request", "across-requests", "ooo", "ooo-vs-inorder"}
 	allShapes         = append(append([]string{}, distributorShapes...), ingesterShapes...)
 )
 
@@ -247,7 +247,7 @@ func (f flow) String() string {
 // docFlow names the row this flow occupies in the design doc's flow tables.
 func (f flow) docFlow() string {
 	request := "same request"
-	if f.shape == "across-requests" || f.shape == "ooo" {
+	if f.shape == "across-requests" || f.shape == "ooo" || f.shape == "ooo-vs-inorder" {
 		request = "across requests"
 	}
 	order := "in order"
@@ -258,17 +258,30 @@ func (f flow) docFlow() string {
 	if f.conflict {
 		value = "different value"
 	}
+	if f.shape == "ooo-vs-inorder" {
+		return fmt.Sprintf("%s / %s / %s -- twin in in-order chunk, undetected", request, order, value)
+	}
 	return fmt.Sprintf("%s / %s / %s", request, order, value)
 }
 
 // expectation describes what a flow should do to the discard counters.
 type expectation struct {
-	reason    string // the reason cortex_discarded_samples_total should record
-	component string // "distributor" or "ingester", determines replication handling
+	// storedNotDropped marks a duplicate the TSDB does not detect: it is stored and counted
+	// as ingested, and no discard reason fires.
+	storedNotDropped bool
+	reason           string // the reason cortex_discarded_samples_total should record
+	component        string // "distributor" or "ingester", determines replication handling
 }
 
 // expect returns the accounting a flow is expected to produce.
 func expect(cfg config, f flow) expectation {
+	// An out-of-order re-send of a sample that lives in the in-order chunk. The OOO
+	// duplicate check only inspects the OOO chunk, so the twin is never seen and the
+	// sample is stored. Nothing fires; the compactor removes it later.
+	if f.shape == "ooo-vs-inorder" {
+		return expectation{component: "ingester", storedNotDropped: true}
+	}
+
 	// A direct gRPC write skips the distributor entirely, so every shape lands on the
 	// ingester.
 	if f.viaGRPC {
@@ -494,32 +507,41 @@ func buildIteration(cfg config, f flow, base int64, iteration int) [][]mimirpb.P
 		for m := 0; m < cfg.metrics; m++ {
 			switch f.shape {
 			case "same-object":
-				primary = append(primary, series(cfg, f, m, value(cfg, false, ts), value(cfg, f.conflict, ts)))
+				primary = append(primary, series(cfg, f, m, "", value(cfg, false, ts), value(cfg, f.conflict, ts)))
 
 			case "ooo-same-object":
-				advance = append(advance, series(cfg, f, m, value(cfg, false, ts)))
-				primary = append(primary, series(cfg, f, m, value(cfg, false, oooTS), value(cfg, f.conflict, oooTS)))
+				advance = append(advance, series(cfg, f, m, "", value(cfg, false, ts)))
+				primary = append(primary, series(cfg, f, m, "", value(cfg, false, oooTS), value(cfg, f.conflict, oooTS)))
 
 			case "same-request":
 				primary = append(primary,
-					series(cfg, f, m, value(cfg, false, ts)),
-					series(cfg, f, m, value(cfg, f.conflict, ts)))
+					series(cfg, f, m, "", value(cfg, false, ts)),
+					series(cfg, f, m, "", value(cfg, f.conflict, ts)))
 				groupSize = 2
 
 			case "across-requests":
-				primary = append(primary, series(cfg, f, m, value(cfg, false, ts)))
-				secondary = append(secondary, series(cfg, f, m, value(cfg, f.conflict, ts)))
+				primary = append(primary, series(cfg, f, m, "", value(cfg, false, ts)))
+				secondary = append(secondary, series(cfg, f, m, "", value(cfg, f.conflict, ts)))
 
 			case "ooo":
-				advance = append(advance, series(cfg, f, m, value(cfg, false, ts)))
-				primary = append(primary, series(cfg, f, m, value(cfg, false, oooTS)))
-				secondary = append(secondary, series(cfg, f, m, value(cfg, f.conflict, oooTS)))
+				advance = append(advance, series(cfg, f, m, "", value(cfg, false, ts)))
+				primary = append(primary, series(cfg, f, m, "", value(cfg, false, oooTS)))
+				secondary = append(secondary, series(cfg, f, m, "", value(cfg, f.conflict, oooTS)))
+
+			case "ooo-vs-inorder":
+				// The twin lands in-order first, then maxt moves past it, then the same
+				// timestamp arrives out of order. Its twin is in the in-order chunk, which
+				// the OOO duplicate check never inspects, so this one is stored, not dropped.
+				pair := fmt.Sprintf("%d-%d", iteration, k)
+				advance = append(advance, series(cfg, f, m, pair, value(cfg, false, oooTS)))
+				primary = append(primary, series(cfg, f, m, pair, value(cfg, false, ts)))
+				secondary = append(secondary, series(cfg, f, m, pair, value(cfg, f.conflict, oooTS)))
 
 			case "ooo-same-request":
-				advance = append(advance, series(cfg, f, m, value(cfg, false, ts)))
+				advance = append(advance, series(cfg, f, m, "", value(cfg, false, ts)))
 				primary = append(primary,
-					series(cfg, f, m, value(cfg, false, oooTS)),
-					series(cfg, f, m, value(cfg, f.conflict, oooTS)))
+					series(cfg, f, m, "", value(cfg, false, oooTS)),
+					series(cfg, f, m, "", value(cfg, f.conflict, oooTS)))
 				groupSize = 2
 			}
 		}
@@ -580,7 +602,7 @@ func value(cfg config, conflict bool, ts int64) sampleValue {
 	return sampleValue{sample: &mimirpb.Sample{TimestampMs: ts, Value: v}}
 }
 
-func series(cfg config, f flow, metric int, values ...sampleValue) mimirpb.PreallocTimeseries {
+func series(cfg config, f flow, metric int, pair string, values ...sampleValue) mimirpb.PreallocTimeseries {
 	name := cfg.metricName
 	if cfg.metrics > 1 {
 		name = fmt.Sprintf("%s_%d", cfg.metricName, metric)
@@ -596,6 +618,11 @@ func series(cfg config, f flow, metric int, values ...sampleValue) mimirpb.Preal
 		// decide whether another flow's duplicates are detected.
 		mimirpb.LabelAdapter{Name: "flow", Value: f.String()},
 	)
+	// Some shapes need a fresh series per pair: the in-order twin must be the series'
+	// newest sample when it lands, which a shared series cannot guarantee past the first pair.
+	if pair != "" {
+		labels = append(labels, mimirpb.LabelAdapter{Name: "pair", Value: pair})
+	}
 	sort.Slice(labels, func(i, j int) bool { return labels[i].Name < labels[j].Name })
 
 	ts := &mimirpb.TimeSeries{Labels: labels}
@@ -837,10 +864,17 @@ func report(cfg config, f flow, exp expectation, before, after snapshot, duplica
 		fmt.Printf("    %-28s want %8.0f  observed %8.0f  %s\n", reason, want, observed, verdict(observed == want))
 	}
 
+	if exp.storedNotDropped {
+		fmt.Printf("    %-28s no discard expected: TSDB stores this duplicate rather than dropping it\n", "(undetected)")
+	}
+
 	// The other half of the bug: a duplicate that never reached the head must not be
 	// counted as ingested.
 	if after.present[ingestedMetric] || before.present[ingestedMetric] {
 		want := float64((samplesSent - duplicates) * ingesterDivisor)
+		if exp.storedNotDropped {
+			want = float64(samplesSent * ingesterDivisor) // the duplicate was stored, so it counts
+		}
 		observed := after.delta(before, ingestedMetric)
 		if observed != want {
 			ok = false

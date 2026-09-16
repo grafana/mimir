@@ -22,9 +22,9 @@ histograms, with verification on. It exits non-zero if any flow's counters disag
 it should have produced.
 
 ```
-24 flows across float and histogram
+28 flows across float and histogram
    8 to the distributor at http://localhost:8080
-  16 to the ingester at localhost:9095 over gRPC
+  20 to the ingester at localhost:9095 over gRPC
 ```
 
 Routing is per shape: a shape that keeps the duplicate inside one `TimeSeries` object is
@@ -37,17 +37,28 @@ ones too, and the same-request flows will need `-ingester-address` to be reachab
 
 ## Shapes
 
-| `-shape`           | Duplicate placement                                        | Accounted at |
-| :----------------- | :--------------------------------------------------------- | :----------- |
-| `same-object`      | two samples, one timestamp, inside one `TimeSeries` object | distributor  |
-| `ooo-same-object`  | same, at an out-of-order timestamp                         | distributor  |
-| `same-request`     | two objects with identical labels in one request           | ingester     |
-| `ooo-same-request` | same, at an out-of-order timestamp                         | ingester     |
-| `across-requests`  | same series and timestamp in two separate requests         | ingester     |
-| `ooo`              | duplicate of an out-of-order sample, in a separate request | ingester     |
+| `-shape`           | Duplicate placement                                        | Accounted at          |
+| :----------------- | :--------------------------------------------------------- | :-------------------- |
+| `same-object`      | two samples, one timestamp, inside one `TimeSeries` object | distributor           |
+| `ooo-same-object`  | same, at an out-of-order timestamp                         | distributor           |
+| `same-request`     | two objects with identical labels in one request           | ingester              |
+| `ooo-same-request` | same, at an out-of-order timestamp                         | ingester              |
+| `across-requests`  | same series and timestamp in two separate requests         | ingester              |
+| `ooo`              | duplicate of an out-of-order sample, in a separate request | ingester              |
+| `ooo-vs-inorder`   | re-send, out of order, of a sample in the in-order chunk   | ingester (undetected) |
 
 `-conflict` gives the duplicate a different value instead of the same one; `-shape all` runs
 both. Every line of output names the design-doc flow it covers.
+
+`ooo-vs-inorder` is the one shape whose duplicate is **not** dropped. It writes a sample
+in-order, advances the series past it, then re-sends the same timestamp out of order. The
+TSDB's out-of-order duplicate check only inspects the OOO chunk, and the twin sits in the
+in-order chunk, so the re-send is stored as a new sample and nothing is signalled — the
+compactor removes it later. The shape asserts exactly that: no discard reason fires and the
+duplicate is counted as ingested. It exists to pin the behaviour, so a change that starts
+detecting this case shows up as a failure here rather than going unnoticed. Each pair uses
+a fresh series (a `pair` label), because the twin has to be the series' newest sample when
+it lands.
 
 ## Flags
 
@@ -83,6 +94,8 @@ Per flow, three assertions:
 1. The expected reason on `cortex_discarded_samples_total` gains exactly one count per duplicate.
 2. No other reason moved, so a drop cannot be miscategorised.
 3. `cortex_ingester_ingested_samples_total` grows by the non-duplicate samples only.
+   The exception is `ooo-vs-inorder`, whose duplicate the TSDB stores rather than drops, so
+   there it grows by every sample sent.
 
 The tool scrapes every `-metrics-url` before the flow, sends the traffic, waits
 `-verify-delay`, scrapes again and compares deltas, counting only series whose `user` label
@@ -123,6 +136,10 @@ duplicate whose original landed in an already-cut chunk is stored rather than co
 `-count` x `-samples-per-metric` at or below `-blocks-storage.tsdb.out-of-order-capacity-max`
 (default 32) and put volume into `-metrics` instead — the defaults do. The tool warns if a
 run would cross the boundary.
+
+That is one of two cases the TSDB does not detect. The other is an out-of-order re-send of a
+sample whose twin is in the _in-order_ chunk, which the OOO check never inspects; that one
+is not capacity-bounded and is pinned by the `ooo-vs-inorder` shape.
 
 Series carry a `run` label per invocation and a `flow` label per flow, so reruns and flows
 never share series.
