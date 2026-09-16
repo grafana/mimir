@@ -238,3 +238,35 @@ func TestMaxInflightCollector_RequestTypesShareOneMetricName(t *testing.T) {
 			countName+`{type="http",user="tenant-1"} 1`+"\n",
 	), countName))
 }
+
+// Collect returns pruned tenant counters to a pool, so a later tenant can be handed a
+// recycled object. It must not inherit the previous tenant's peak or age.
+func TestMaxInflightCollector_RecycledTenantStartsClean(t *testing.T) {
+	c, clock, reg := newTestCollector(t)
+
+	// tenant-1 runs two queries, the longer for 50s, then goes idle.
+	a, b := c.Add("tenant-1"), c.Add("tenant-1")
+	clock.advance(50 * time.Second)
+	c.Remove(a)
+	c.Remove(b)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+		countName+`{type="test",user="tenant-1"} 2`+"\n",
+	)), countName))
+
+	// That collection pruned tenant-1 and pooled its counters.
+	require.Empty(t, c.tenants)
+
+	// tenant-2 now takes the recycled object.
+	c.Add("tenant-2")
+	clock.advance(1 * time.Second)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected(
+		countName+`{type="test",user="tenant-2"} 1`+"\n",
+	)), countName))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(
+		"# HELP "+ageName+" "+ageHelp+"\n"+
+			"# TYPE "+ageName+" gauge\n"+
+			ageName+`{type="test",user="tenant-2"} 1`+"\n",
+	), ageName))
+}

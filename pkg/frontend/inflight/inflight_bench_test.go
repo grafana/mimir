@@ -67,3 +67,39 @@ func BenchmarkCollect(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkChurn covers a cell with many tenants that each query infrequently. Every tenant
+// goes idle between collections, so Collect prunes it and the next query needs its counters
+// back. This is the case the tenantInflight pool exists for.
+func BenchmarkChurn(b *testing.B) {
+	const tenants = 10000
+
+	ids := make([]string, tenants)
+	for i := range ids {
+		ids[i] = strconv.Itoa(i)
+	}
+
+	c := newBenchCollector()
+	ch := make(chan prometheus.Metric, 1024)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range ch {
+		}
+	}()
+
+	b.ReportAllocs()
+
+	i := 0
+	for b.Loop() {
+		c.Remove(c.Add(ids[i%tenants]))
+		i++
+		if i%tenants == 0 {
+			c.Collect(ch)
+		}
+	}
+
+	b.StopTimer()
+	close(ch)
+	<-done
+}

@@ -28,6 +28,7 @@ type MaxInflightCollector struct {
 	nextID    InflightRequest
 	entries   map[InflightRequest]entry
 	tenants   map[string]*tenantInflight
+	pool      sync.Pool
 }
 
 // InflightRequest identifies one in-flight request to a MaxInflightCollector.
@@ -73,6 +74,7 @@ func NewMaxInflightCollector(requestType string) *MaxInflightCollector {
 		now:       time.Now,
 		entries:   map[InflightRequest]entry{},
 		tenants:   map[string]*tenantInflight{},
+		pool:      sync.Pool{New: func() any { return &tenantInflight{} }},
 	}
 }
 
@@ -84,7 +86,7 @@ func (c *MaxInflightCollector) Add(tenantID string) InflightRequest {
 
 	t := c.tenants[tenantID]
 	if t == nil {
-		t = &tenantInflight{}
+		t = c.pool.Get().(*tenantInflight)
 		c.tenants[tenantID] = t
 	}
 
@@ -148,8 +150,10 @@ func (c *MaxInflightCollector) Collect(ch chan<- prometheus.Metric) {
 
 		if t.current == 0 {
 			// The tenant cannot contribute to the next window until it sends another query,
-			// and Add will recreate it then. Drop it to keep the map bounded.
+			// and Add will take it from the pool then. Drop it to keep the map bounded.
 			delete(c.tenants, tenantID)
+			*t = tenantInflight{}
+			c.pool.Put(t)
 			continue
 		}
 		t.maxCount = t.current
