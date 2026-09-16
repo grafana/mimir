@@ -300,6 +300,7 @@ func sgCostConfig() lookupplan.CostConfig {
 		// One series entry = ~512 bytes read from scattered locations in the index.
 		// Coalescing is poor (17 KB window, non-contiguous refs after intersection).
 		RetrievedSeriesCost:               512.0,
+		PrefixScanOptimisation:            true,
 		MinSeriesPerBlockForQueryPlanning: 0,
 		LabelCardinalityForLargerSketch:   lookupplan.DefaultLabelCardinalityForLargerSketch,
 		LabelCardinalityForSmallerSketch:  lookupplan.DefaultLabelCardinalityForSmallerSketch,
