@@ -255,22 +255,50 @@ func ingestCostConfig() lookupplan.CostConfig {
 //   - posting fetch:    cardinality × 4 bytes  (via RetrievedPostingCost, 4 bytes/ref)
 //   - series fetch:     numSelected × 512 bytes (EstimatedSeriesP99Size, scattered reads)
 //
-// indexScanCost (matcher against offset table values) is in-memory work on the
-// sparse index-header and is cheap relative to object-store I/O. It is zeroed
-// out by setting singleMatchCost's contribution to near-zero via the per-byte
-// framing — the existing formula still computes it but it is negligible compared
-// to the I/O terms.
+// Known limitation: indexScanCost is incommensurable with the byte-denominated costs:
+//
+// indexScanCost = singleMatchCost × uniqueVals, where singleMatchCost is a dimensionless
+// CPU complexity estimate from the regex engine (equality=1, prefix=1, .+=10, complex
+// alternation=45+). This models the cost of running the matcher against label value strings
+// in the postings offset table. In the store-gateway, that offset table scan is not
+// necessarily cheap:
+//
+//   - Default config: the postings offset table is read from a local index-header file on
+//     disk via a file pool. Reads are O(uniqueVals / sparseSampleFactor) random seeks into
+//     a potentially large file (the 25 GB block in these experiments has a 1.7 GB postings
+//     offset table). The file is not mmap'd; each sparse entry seek is a real file read.
+//
+//   - Experimental BucketReader config (cfg.BucketReader.Enabled=true): the postings offset
+//     table is read directly from object storage via GetRange calls. LabelValuesOffsets
+//     issues one GetRange per sparse section it needs to scan. This makes the offset table
+//     scan a genuine remote I/O operation.
+//
+// So "offset-table scanning is just CPU" is not accurate for the store-gateway. The scan
+// is disk I/O in the common case, and remote I/O in the experimental bucket-reader case.
+// indexScanCost is therefore not categorically wrong as a cost term — but it is still
+// incommensurable with the byte-denominated I/O costs, because singleMatchCost is a regex
+// engine complexity estimate with no byte or latency unit, making plan comparisons
+// sensitive to regex structure in ways that don't correspond to actual I/O.
+//
+// Observed effect: for job=~"((cortex|mimir)-.+)/((ingester.*|cortex|mimir))"
+// (singleMatchCost=45, 13892 unique job values), indexScanCost=625140 dominates the plan
+// comparison. The planner avoids resolving job via the index, which happens to be the
+// right call, but for a reason that doesn't generalise: a simpler regexp with the same
+// actual posting list size would have a lower singleMatchCost and potentially be chosen
+// for index lookup even when it shouldn't be.
+//
+// The correct fix requires a cost parameter that reflects actual offset-table I/O bytes
+// (bytes scanned = uniqueVals / sparseSampleFactor × avg entry size) rather than regex
+// CPU complexity. That is not yet available in CostConfig.
 func sgCostConfig() lookupplan.CostConfig {
 	return lookupplan.CostConfig{
-		// 1 unit = 4 bytes (one posting ref). indexScanCost uses singleMatchCost
-		// which is in absolute units; we accept it contributes a small amount.
+		// 1 unit = 4 bytes (one posting ref).
 		RetrievedPostingCost: 4.0,
-		// Posting list fetch cost is already captured by RetrievedPostingCost × cardinality.
-		// Per-list overhead (seeking, checksumming) is negligible thanks to coalescing.
+		// Per-list overhead is negligible; posting bytes are already captured by
+		// RetrievedPostingCost × cardinality via the intersectionCost term.
 		RetrievedPostingListCost: 0.0,
 		// One series entry = ~512 bytes read from scattered locations in the index.
-		// Coalescing is poor (17 KB window, refs are non-contiguous after intersection),
-		// so the effective per-series I/O cost is high relative to posting bytes.
+		// Coalescing is poor (17 KB window, non-contiguous refs after intersection).
 		RetrievedSeriesCost:               512.0,
 		MinSeriesPerBlockForQueryPlanning: 0,
 		LabelCardinalityForLargerSketch:   lookupplan.DefaultLabelCardinalityForLargerSketch,
