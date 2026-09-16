@@ -362,7 +362,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, parentqueryid.IDFromContext(r.Context()), queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -715,7 +715,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryD
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querydetails.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, parentQueryID uint64, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -744,6 +744,11 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		// streaming, so the encode time is not available until after the headers have been sent.
 		// We only insert this if we are in a non-streaming response.
 		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	if parentQueryID != 0 {
+		// Reported so that a caller can quote this value when it asks about a query it ran.
+		statsResponse = append(statsResponse, statsValue(parentqueryid.FieldName, parentQueryID))
 	}
 
 	return statsResponse

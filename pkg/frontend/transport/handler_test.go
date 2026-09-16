@@ -343,6 +343,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read")
+				// parent_query_id belongs to the opt-in response stats set only.
+				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "parent_query_id")
 			},
 		},
 		{
@@ -385,6 +387,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read;val=0")
+				assert.Regexp(t, `parent_query_id;val=[1-9][0-9]*`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 		{
@@ -421,6 +424,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
+				assert.Regexp(t, `parent_query_id;val=[1-9][0-9]*`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 	} {
