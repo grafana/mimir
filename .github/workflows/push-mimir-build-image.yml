@@ -91,7 +91,7 @@ jobs:
         if: steps.check_if_files_modified.outputs.modified == 'true'
         id: check_if_image_is_built
         run: |
-          ls -lR /run/containers
+          ls -lR /run
           echo "Checking if image has already been built"
           if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
             echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} exists"
