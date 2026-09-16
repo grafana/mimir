@@ -95,7 +95,7 @@ jobs:
           skopeo --version
           ls -lR /run
           echo "Checking if image has already been built"
-          if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
+          if skopeo --debug inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
             echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} exists"
             echo "need_to_build=false" >> $GITHUB_OUTPUT
           else
