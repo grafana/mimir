@@ -12,7 +12,7 @@ permissions: {}
 
 jobs:
   delete-pr-caches:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     # Fork PRs get a read-only token; leave theirs to the retention policy.
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:

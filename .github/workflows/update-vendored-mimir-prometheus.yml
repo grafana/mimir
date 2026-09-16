@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   update-mimir-prometheus:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       - name: Determine branch names (repository_dispatch)
         id: branch-names-dispatch

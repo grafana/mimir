@@ -21,7 +21,7 @@ jobs:
       kind_node_image: kindest/node:v1.32.0
 
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -34,7 +34,7 @@ jobs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
 
   conftest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
     container:

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   prepare:
     if: github.event.pull_request.user.login == 'renovate-sh-app[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -30,7 +30,7 @@ jobs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
 
   lint_and_update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
     container:
@@ -78,7 +78,7 @@ jobs:
           retention-days: 1
 
   commit_changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - lint_and_update
     if: needs.lint_and_update.outputs.has_changes == 'true'

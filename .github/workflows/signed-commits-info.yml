@@ -16,7 +16,7 @@ jobs:
     if: >
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       - uses: grafana/shared-workflows/actions/signed-commits-info@f7e20b4de846c5951fba99c43c0340e8d2147468 # signed-commits-info/v0.1.0
         continue-on-error: true

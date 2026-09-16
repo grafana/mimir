@@ -20,7 +20,7 @@ concurrency:
 jobs:
   prepare:
     name: Prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     permissions:
       contents: read
       pull-requests: write # So we can post comments on the PR.
@@ -146,7 +146,7 @@ jobs:
   # Renaming it would mean backporting a large number of changes to old release branches, so we're keeping it as-is for now.
   # Once all active release branches use this workflow, it'll be much easier to rename it and backport just that rename.
   build_and_push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     needs:
       - prepare
       - build-push-multiarch

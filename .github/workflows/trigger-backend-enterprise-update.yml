@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   trigger:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-x64
     steps:
       - name: Generate GitHub App Token
         id: app-token
