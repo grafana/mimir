@@ -42,6 +42,11 @@ image:
   #   - myRegistryKeySecretName
 
 global:
+  # -- IP family the whole installation runs on. One of `IPv4` or `IPv6`.
+  # Setting it to `IPv6` makes the chart enable IPv6 on every Mimir ring, on the memberlist transport
+  # and on the HTTP and gRPC listeners, and makes the gateway listen on IPv6 only.
+  # Anything set in `mimir.structuredConfig` still takes precedence over the derived configuration.
+  ipFamily: IPv4
   # -- Definitions to set up nginx resolver
   dnsService: kube-dns
   dnsNamespace: kube-system
@@ -3542,7 +3547,9 @@ gateway:
 
           proxy_read_timeout 300;
           server {
+            {{- if ne (include "mimir.ipv6Enabled" .) "true" }}
             listen {{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
             {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
             {{- end }}
