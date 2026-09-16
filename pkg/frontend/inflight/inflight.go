@@ -25,10 +25,14 @@ type MaxInflightCollector struct {
 	ageDesc   *prometheus.Desc
 	now       func() time.Time
 	mtx       sync.Mutex
-	nextID    uint64
-	entries   map[uint64]entry
+	nextID    InflightRequest
+	entries   map[InflightRequest]entry
 	tenants   map[string]*tenantInflight
 }
+
+// InflightRequest identifies one in-flight request to a MaxInflightCollector.
+// Add returns an InflightRequest and this should be passed to Remove
+type InflightRequest uint64
 
 // entry is one query that is currently in flight.
 type entry struct {
@@ -67,15 +71,14 @@ func NewMaxInflightCollector(requestType string) *MaxInflightCollector {
 		countDesc: prometheus.NewDesc(countMetricName, countMetricHelp, []string{userLabel}, constLabels),
 		ageDesc:   prometheus.NewDesc(ageMetricName, ageMetricHelp, []string{userLabel}, constLabels),
 		now:       time.Now,
-		entries:   map[uint64]entry{},
+		entries:   map[InflightRequest]entry{},
 		tenants:   map[string]*tenantInflight{},
 	}
 }
 
-// Add records the start of one in-flight query for tenantID and returns the ID to pass to
-// Remove when the query finishes. The returned ID is never zero, so callers can use zero to
-// mean "not tracked".
-func (c *MaxInflightCollector) Add(tenantID string) uint64 {
+// Add records the start of one in-flight query for tenantID and returns the handle to pass to
+// Remove when the query finishes.
+func (c *MaxInflightCollector) Add(tenantID string) InflightRequest {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -99,9 +102,8 @@ func (c *MaxInflightCollector) Add(tenantID string) uint64 {
 // Remove records the end of the in-flight query identified by id, folding its final age into
 // the tenant's peak for this window.
 //
-// Calling Remove more than once for the same ID, or with an ID that was never issued, is a
-// no-op.
-func (c *MaxInflightCollector) Remove(id uint64) {
+// Remove is idempotent.
+func (c *MaxInflightCollector) Remove(id InflightRequest) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 

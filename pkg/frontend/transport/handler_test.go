@@ -1414,7 +1414,7 @@ const (
 
 func maxInflightRequestsExpected(series string) string {
 	return `
-		# HELP cortex_query_frontend_max_inflight_requests Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). The type label is "http" for requests entering the query-frontend, or "dispatched" for the sub-requests sent on to query-schedulers, of which one request can produce many.
+		# HELP cortex_query_frontend_max_inflight_requests Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). The type label is "http" for requests entering the query-frontend, or "dispatched" for the sub-requests sent on to query-schedulers.
 		# TYPE cortex_query_frontend_max_inflight_requests gauge
 	` + series
 }

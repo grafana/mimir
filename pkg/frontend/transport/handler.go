@@ -259,7 +259,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// increment above and this defer leaks inflightRequests, which would make Stop() wait
 	// forever. inflightID is captured by reference, so the assignment below is visible here,
 	// and Remove ignores the zero value it holds until then.
-	var inflightID uint64
+	var inflightID inflight.InflightRequest
 	defer func() {
 		if f.maxInflight != nil {
 			f.maxInflight.Remove(inflightID)

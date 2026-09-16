@@ -173,7 +173,7 @@ type frontendRequest struct {
 
 	// maxInflightID identifies this request to Frontend.maxInflight. It is zero when the
 	// max in-flight metrics are disabled, which Remove treats as a no-op.
-	maxInflightID uint64
+	maxInflightID inflight.InflightRequest
 
 	// enqueuedAt is set once the scheduler has accepted this request into its queue.
 	// Used to approximate queue time if the request is cancelled before a querier
