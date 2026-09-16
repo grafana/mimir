@@ -13,6 +13,8 @@ import (
 	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
+
+	"github.com/grafana/mimir/pkg/streaminglabelvalues/internal/searchexpr"
 )
 
 // FilterContains accepts values that contain a fixed substring. Score is
@@ -239,8 +241,8 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 }
 
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
-// when Params is nil or has zero Terms — a nil storage.Filter accepts every
-// value with score 1.0 by Prometheus convention.
+// when Params is nil or has neither Terms nor Expression — a nil
+// storage.Filter accepts every value with score 1.0 by Prometheus convention.
 //
 // BuildFilter trusts that p has already been validated (via NewParams or
 // an equivalent caller-side check). Per-leaf constructors still reject
@@ -254,38 +256,68 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 //   - FuzzAlgJaroWinkler: FilterContains OR FilterJaro via filterFallback;
 //     the FilterJaro is omitted when threshold is 0 (substring only).
 //
-// Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
-// is divided by 100 internally.
+// Across legacy terms, combines with filterOr (OR-max). When Expression is
+// present, parses and compiles its boolean AST; positive term leaves reuse the
+// same matchers, while NOT affects acceptance without contributing a score.
+// FuzzThreshold (int 0-100) is divided by 100 internally.
 //
-// Case folding for !CaseSensitive is applied once per value at the OR root
+// Case folding for !CaseSensitive is applied once per value at the filter root
 // via caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil || len(p.Terms) == 0 && p.Expression == "" {
 		return nil, nil
 	}
+	if len(p.Terms) > 0 && p.Expression != "" {
+		return nil, fmt.Errorf("search terms and search expression are mutually exclusive")
+	}
+
 	threshold := float64(p.FuzzThreshold) / 100.0
-	perTerm := make([]storage.Filter, 0, len(p.Terms))
-	for _, term := range p.Terms {
+	newTermFilter := func(term string) (storage.Filter, error) {
 		if !p.CaseSensitive {
 			term = strings.ToLower(term)
 		}
-		f, err := buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
-		if err != nil {
-			return nil, err
-		}
-		perTerm = append(perTerm, f)
+		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
-	var inner storage.Filter
-	if len(perTerm) == 1 {
-		inner = perTerm[0]
-	} else {
-		inner = newFilterOr(perTerm...)
+
+	inner, err := buildRootFilter(p, newTermFilter)
+	if err != nil {
+		return nil, err
 	}
 	if p.CaseSensitive {
 		return inner, nil
 	}
 	return &caseFoldingFilter{inner: inner}, nil
+}
+
+type termFilterFactory func(term string) (storage.Filter, error)
+
+func buildRootFilter(p *Params, newTermFilter termFilterFactory) (storage.Filter, error) {
+	if p.Expression != "" {
+		expr, err := searchexpr.Parse(p.Expression)
+		if err != nil {
+			return nil, err
+		}
+		return searchexpr.Compile(expr, func(term string) (searchexpr.Filter, error) {
+			return newTermFilter(term)
+		})
+	}
+	return buildLegacyTermsFilter(p.Terms, newTermFilter)
+}
+
+func buildLegacyTermsFilter(terms []string, newTermFilter termFilterFactory) (storage.Filter, error) {
+	perTerm := make([]storage.Filter, 0, len(terms))
+	for _, term := range terms {
+		filter, err := newTermFilter(term)
+		if err != nil {
+			return nil, err
+		}
+		perTerm = append(perTerm, filter)
+	}
+	if len(perTerm) == 1 {
+		return perTerm[0], nil
+	}
+	return newFilterOr(perTerm...), nil
 }
 
 // buildPerTermFilter composes the per-term filter. fuzzThresholdInt is the

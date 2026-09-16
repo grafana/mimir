@@ -7,6 +7,9 @@ package streaminglabelvalues
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/grafana/mimir/pkg/streaminglabelvalues/internal/searchexpr"
 )
 
 // FuzzAlg identifies which fuzzy-matching algorithm a filter uses.
@@ -26,11 +29,15 @@ const (
 // server translates its proto request into this struct before invoking
 // BuildFilter, so this package does not depend on any proto.
 //
-// Use NewParams to construct a validated Params object.
+// Use NewParams or NewExpressionParams to construct a validated Params object.
 type Params struct {
 	// Terms are the search terms. An empty slice (or nil) yields a nil filter.
 	// Multiple terms are combined with OR semantics by filterOr.
 	Terms []string
+	// Expression is an optional boolean expression over search terms. Terms and
+	// Expression are mutually exclusive. The expression supports NOT, AND, OR,
+	// quoted terms, and parentheses.
+	Expression string
 	// CaseSensitive matches Prometheus URL param polarity. Prometheus's HTTP
 	// default is true; Mimir's gRPC wire default is the proto zero (false),
 	// and the gRPC clients (HTTP handler in PR #4) set this explicitly.
@@ -62,9 +69,30 @@ func NewParams(terms []string, caseSensitive bool, alg FuzzAlg, threshold int) (
 	return p, nil
 }
 
+// NewExpressionParams constructs and validates Params for a boolean search
+// expression. It is the expression counterpart to NewParams; API and wire
+// integration can choose between the two without changing BuildFilter.
+func NewExpressionParams(expression string, caseSensitive bool, alg FuzzAlg, threshold int) (*Params, error) {
+	if strings.TrimSpace(expression) == "" {
+		return nil, fmt.Errorf("search expression is empty")
+	}
+	p, err := NewParams(nil, caseSensitive, alg, threshold)
+	if err != nil {
+		return nil, err
+	}
+	p.Expression = expression
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // validate returns a non-nil error if Params has fields outside their
-// permitted ranges. Empty Terms is permitted (yields a nil filter).
-// Internal to the package — external callers should construct via NewParams.
+// permitted ranges. Empty Terms and Expression are permitted together (and
+// yield a nil filter), but a non-empty Expression is mutually exclusive with
+// Terms and must parse successfully.
+// Internal to the package — external callers should construct via NewParams or
+// NewExpressionParams.
 func (p *Params) validate() error {
 	if p == nil {
 		return nil
@@ -77,9 +105,17 @@ func (p *Params) validate() error {
 	if p.FuzzThreshold < 0 || p.FuzzThreshold > 100 {
 		return fmt.Errorf("fuzz threshold %d out of [0,100]", p.FuzzThreshold)
 	}
+	if len(p.Terms) > 0 && p.Expression != "" {
+		return fmt.Errorf("search terms and search expression are mutually exclusive")
+	}
 	for i, t := range p.Terms {
 		if t == "" {
 			return fmt.Errorf("search term %d is empty", i)
+		}
+	}
+	if p.Expression != "" {
+		if _, err := searchexpr.Parse(p.Expression); err != nil {
+			return err
 		}
 	}
 	return nil
