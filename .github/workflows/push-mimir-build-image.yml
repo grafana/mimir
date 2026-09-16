@@ -91,10 +91,10 @@ jobs:
         if: steps.check_if_files_modified.outputs.modified == 'true'
         id: check_if_image_is_built
         run: |
-          skopeo --debug inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"
+          skopeo --debug inspect --no-creds --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"
           
           echo "Checking if image has already been built"
-          if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
+          if skopeo inspect --no-creds --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
             echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} exists"
             echo "need_to_build=false" >> $GITHUB_OUTPUT
           else
