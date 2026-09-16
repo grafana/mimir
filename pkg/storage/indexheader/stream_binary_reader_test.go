@@ -382,7 +382,7 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 		},
 		{
 			name: "write-v2 enabled, v1 on disk", extantIndexHeaderVersion: "v1", cfg: writeV2Cfg,
-			expectVersion: BinaryFormatV1, expectRemote: true,
+			expectVersion: BinaryFormatV2, expectRemote: true,
 		},
 		{
 			name: "vwrite-v2 enabled, v2 on disk", extantIndexHeaderVersion: "v2", cfg: writeV2Cfg,

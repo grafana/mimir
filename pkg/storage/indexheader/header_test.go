@@ -35,12 +35,28 @@ var implementations = []struct {
 	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
 }{
 	{
-		name: "stream binary reader",
+		name: "stream binary reader with bucket reader disabled",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
 			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "stream binary reader with bucket reader enabled",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
+			br, err := NewStreamBinaryReader(
+				ctx, id, instrBkt, dir,
+				Config{BucketReader: BucketReaderConfig{Enabled: true, WriteV2IndexHeader: true, BucketIndexSections: SectionPostingsOffsetsTable}},
+				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
+			)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -97,15 +113,17 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, testBlock := range []struct {
-		version string
-		id      ulid.ULID
+		version       string
+		id            ulid.ULID
+		v2IndexHeader bool
 	}{
-		{version: "v2", id: idIndexV2},
+		{version: "v2_with_v2_index_header", id: idIndexV2, v2IndexHeader: true},
+		{version: "v2_with_v1_index_header", id: idIndexV2, v2IndexHeader: false},
 	} {
 		t.Run(testBlock.version, func(t *testing.T) {
 			id := testBlock.id
 			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-			require.NoError(t, WriteBinary(ctx, bkt, id, indexName, false))
+			require.NoError(t, WriteBinary(ctx, bkt, id, indexName, testBlock.v2IndexHeader))
 
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
