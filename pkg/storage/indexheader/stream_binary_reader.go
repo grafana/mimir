@@ -142,7 +142,7 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.Enabled); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
@@ -165,7 +165,7 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.WriteV2IndexHeader); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.Enabled); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
