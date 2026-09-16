@@ -5654,8 +5654,8 @@ kafka:
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
   # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
-  # It is ignored when consuming a partition with concurrent fetching enabled
-  # (ingest-storage.kafka.fetch-concurrency-max greater than 0), because
+  # Consumers that fetch concurrently ignore it while
+  # ingest-storage.kafka.fetch-concurrency-max is greater than 0, because
   # concurrent fetching always reads from the partition leader.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
