@@ -413,6 +413,48 @@ func TestBuildFilterMultipleTermsORed(t *testing.T) {
 	assert.False(t, accepted)
 }
 
+func TestBuildFilterExpressionExecutesNot(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		expression string
+		value      string
+		wantAccept bool
+		wantScore  float64
+	}{
+		{name: "negative-only match", expression: "NOT old", value: "new_metric", wantAccept: true, wantScore: 0},
+		{name: "negative-only rejection", expression: "NOT old", value: "old_metric", wantAccept: false, wantScore: 0},
+		{name: "positive score survives NOT", expression: "foo AND NOT old", value: "foo_new", wantAccept: true, wantScore: 1},
+		{name: "NOT excludes a positive match", expression: "foo AND NOT old", value: "foo_old", wantAccept: false, wantScore: 0},
+		{name: "double NOT preserves score", expression: "NOT NOT foo", value: "foo_new", wantAccept: true, wantScore: 1},
+		{name: "De Morgan excludes either term", expression: "NOT (foo OR old)", value: "foo_new", wantAccept: false, wantScore: 0},
+		{name: "De Morgan accepts when both miss", expression: "NOT (foo OR old)", value: "new_metric", wantAccept: true, wantScore: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			filter, err := BuildFilter(&Params{
+				Expression:    test.expression,
+				CaseSensitive: true,
+				FuzzAlg:       FuzzAlgSubsequence,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, filter)
+			accepted, score := filter.Accept(test.value)
+			assert.Equal(t, test.wantAccept, accepted)
+			assert.InDelta(t, test.wantScore, score, 1e-9)
+		})
+	}
+}
+
+func TestBuildFilterRejectsInvalidExpressionParams(t *testing.T) {
+	filter, err := BuildFilter(&Params{Terms: []string{"foo"}, Expression: "NOT old"})
+	require.EqualError(t, err, "search terms and search expression are mutually exclusive")
+	assert.Nil(t, filter)
+
+	filter, err = BuildFilter(&Params{Expression: "foo AND"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "search expression:")
+	assert.Nil(t, filter)
+}
+
 func TestBuildFilterDividesThresholdBy100(t *testing.T) {
 	// FuzzThreshold=80 should map to internal 0.8.
 	// Pick a value that scores > 0.8 against "metric" with Jaro-Winkler.
@@ -430,23 +472,42 @@ func TestBuildFilterDividesThresholdBy100(t *testing.T) {
 }
 
 func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
-	// CaseSensitive=false must wrap the root in caseFoldingFilter so each value
-	// is lowercased exactly once for the whole OR chain, not per-term per-Accept.
-	f, err := BuildFilter(&Params{
-		Terms:         []string{"FOO", "Bar"},
-		CaseSensitive: false,
-		FuzzAlg:       FuzzAlgSubsequence,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+	for _, test := range []struct {
+		name     string
+		params   *Params
+		accepted string
+		rejected string
+	}{
+		{
+			name:     "legacy terms",
+			params:   &Params{Terms: []string{"FOO", "Bar"}, FuzzAlg: FuzzAlgSubsequence},
+			accepted: "FOOBAR",
+		},
+		{
+			name:     "expression with NOT",
+			params:   &Params{Expression: "FOO AND NOT OLD", FuzzAlg: FuzzAlgSubsequence},
+			accepted: "Foo_New",
+			rejected: "FOO_OLD",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// CaseSensitive=false must wrap the root once so every leaf sees the
+			// same pre-lowered candidate, including leaves below NOT.
+			filter, err := BuildFilter(test.params)
+			require.NoError(t, err)
+			require.NotNil(t, filter)
+			_, ok := filter.(*caseFoldingFilter)
+			require.True(t, ok)
 
-	// Functional check: the wrapper folds the value before delegating, and the
-	// inner per-term filters were built against pre-lowered terms, so an
-	// uppercase value still matches.
-	accepted, _ := f.Accept("FOOBAR")
-	assert.True(t, accepted, "case-insensitive filter should match uppercase value")
+			accepted, _ := filter.Accept(test.accepted)
+			assert.True(t, accepted)
+			if test.rejected != "" {
+				accepted, score := filter.Accept(test.rejected)
+				assert.False(t, accepted)
+				assert.Zero(t, score)
+			}
+		})
+	}
 }
 
 func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
