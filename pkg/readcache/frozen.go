@@ -439,6 +439,7 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 					r.seriesHashCache,
 					r.headPostingsForMatchersCacheFactory,
 					r.blockPostingsForMatchersCacheFactory,
+					r.lookupPlanMetrics,
 					prometheus.NewRegistry(),
 					r.logger,
 				)
@@ -529,6 +530,7 @@ func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
 				r.seriesHashCache,
 				r.headPostingsForMatchersCacheFactory,
 				r.blockPostingsForMatchersCacheFactory,
+				r.lookupPlanMetrics,
 				prometheus.NewRegistry(),
 				r.logger,
 			)

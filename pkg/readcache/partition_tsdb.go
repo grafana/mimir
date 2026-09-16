@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -49,7 +50,8 @@ type partitionTSDB struct {
 	dir              string
 	postingsCacheKey string
 
-	db *tsdb.DB
+	db              *tsdb.DB
+	plannerProvider *lookupplan.PlannerProvider
 
 	mu     sync.RWMutex
 	closed bool
@@ -136,6 +138,7 @@ func openPartitionTSDB(
 	maxExemplarsCap int,
 	seriesHashCache *hashcache.SeriesHashCache,
 	headPostingsForMatchersCacheFactory, blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory,
+	lookupPlanMetrics lookupplan.Metrics,
 	tsdbPromReg prometheus.Registerer,
 	logger log.Logger,
 ) (*partitionTSDB, error) {
@@ -159,6 +162,22 @@ func openPartitionTSDB(
 		}
 	}
 	maxExemplars := effectiveMaxExemplars(limits, tenantID, maxExemplarsCap)
+
+	partitionDB := &partitionTSDB{
+		tenantID:         tenantID,
+		partitionID:      partitionID,
+		dir:              dir,
+		postingsCacheKey: postingsKey,
+	}
+	if cfg.IndexLookupPlanning.Enabled {
+		plannerFactory := lookupplan.NewPlannerFactory(
+			lookupPlanMetrics.ForUser(tenantID),
+			userLogger,
+			lookupplan.NewStatisticsGenerator(userLogger),
+			cfg.IndexLookupPlanning.CostConfig,
+		)
+		partitionDB.plannerProvider = lookupplan.NewPlannerProvider(plannerFactory)
+	}
 
 	// BlockReloadInterval is explicit because Prometheus clamps its zero value to one second.
 	opts := &tsdb.Options{
@@ -195,6 +214,7 @@ func openPartitionTSDB(
 		BlockPostingsForMatchersCacheFactory: blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
 		SecondaryHashFunction:                mimirpb.ShardByMetricNameLocalityLabelsFunc(tenantID),
+		IndexLookupPlannerFunc:               partitionDB.getIndexLookupPlannerFunc(),
 	}
 
 	db, err := tsdb.Open(dir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, opts, nil)
@@ -205,17 +225,46 @@ func openPartitionTSDB(
 	// compactions kicked off by Prometheus). The readcache Service
 	// calls CompactHead on its own ticker.
 	db.DisableCompactions()
+	partitionDB.db = db
 	if cfg.SharedPostingsForMatchersCache && cfg.HeadPostingsForMatchersCacheInvalidation {
 		seriesLifecycleCallback.postingsCache = db.Head().PostingsForMatchersCache()
 	}
 
-	return &partitionTSDB{
-		tenantID:         tenantID,
-		partitionID:      partitionID,
-		dir:              dir,
-		postingsCacheKey: postingsKey,
-		db:               db,
-	}, nil
+	if cfg.IndexLookupPlanning.Enabled {
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		if err := partitionDB.generateHeadStatistics(); err != nil {
+			level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+		}
+	}
+
+	return partitionDB, nil
+}
+
+// getIndexLookupPlannerFunc returns the configured lookup planner for a block.
+func (p *partitionTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
+	return func(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+		if p.plannerProvider == nil {
+			return lookupplan.NoopPlanner{}
+		}
+		return p.plannerProvider.GetPlanner(blockMeta, indexReader)
+	}
+}
+
+// generateHeadStatistics refreshes the lookup planner for this TSDB's mutable Head.
+func (p *partitionTSDB) generateHeadStatistics() error {
+	if p.plannerProvider == nil {
+		return nil
+	}
+
+	head := p.db.Head()
+	indexReader, err := head.Index()
+	if err != nil {
+		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
+	}
+	defer indexReader.Close()
+
+	p.plannerProvider.GenerateAndStorePlanner(head.Meta(), indexReader)
+	return nil
 }
 
 // partitionEpochDir is the on-disk directory for a (tenant, partition,

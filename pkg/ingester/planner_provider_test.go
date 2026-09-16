@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 )
 
-// mockPlannerFactory is a hand-written mock implementation of iPlannerFactory
+// mockPlannerFactory is a hand-written lookupplan.PlannerCreator.
 type mockPlannerFactory struct {
 	createPlannerFunc func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
@@ -23,7 +23,7 @@ func (m *mockPlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.Inde
 	return m.createPlannerFunc(meta, reader)
 }
 
-func TestPlannerProvider_getPlanner_DoesNotCachePlanners(t *testing.T) {
+func TestPlannerProvider_GetPlanner_DoesNotCachePlanners(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	expectedPlanner := &lookupplan.CostBasedPlanner{}
 	callCount := 0
@@ -42,19 +42,19 @@ func TestPlannerProvider_getPlanner_DoesNotCachePlanners(t *testing.T) {
 		},
 	}
 
-	provider := newPlannerProvider(mockFactory)
-	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
+	provider := lookupplan.NewPlannerProvider(mockFactory)
+	resultPlanner := provider.GetPlanner(blockMeta, &mockIndex{})
 	require.NotNil(t, resultPlanner, "should return a planner")
 	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
 
-	resultPlanner = provider.getPlanner(blockMeta, &mockIndex{})
+	resultPlanner = provider.GetPlanner(blockMeta, &mockIndex{})
 	require.NotNil(t, resultPlanner, "should return a planner")
 	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
 
 	assert.Equal(t, 2, callCount, "CreatePlanner should be called twice (no caching)")
 }
 
-func TestPlannerProvider_generateAndStorePlanner_CachesPlanners(t *testing.T) {
+func TestPlannerProvider_GenerateAndStorePlanner_CachesPlanners(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 	expectedPlanner := &lookupplan.CostBasedPlanner{}
 	callCount := 0
@@ -73,9 +73,9 @@ func TestPlannerProvider_generateAndStorePlanner_CachesPlanners(t *testing.T) {
 		},
 	}
 
-	provider := newPlannerProvider(mockFactory)
-	provider.generateAndStorePlanner(blockMeta, &mockIndex{})
-	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
+	provider := lookupplan.NewPlannerProvider(mockFactory)
+	provider.GenerateAndStorePlanner(blockMeta, &mockIndex{})
+	resultPlanner := provider.GetPlanner(blockMeta, &mockIndex{})
 
 	require.NotNil(t, resultPlanner, "should return a planner")
 	assert.Equal(t, expectedPlanner, resultPlanner, "should return cached planner")

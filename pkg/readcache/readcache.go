@@ -155,6 +155,7 @@ type Readcache struct {
 	seriesHashCache                      *hashcache.SeriesHashCache
 	headPostingsForMatchersCacheFactory  tsdb.PostingsForMatchersCacheFactory
 	blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory
+	lookupPlanMetrics                    lookupplan.Metrics
 
 	// pushErrSamplers rate-limits logging of soft append errors on the Kafka path,
 	// matching the ingester push pipeline (ingester.PushWriteRequestTimeseries).
@@ -371,6 +372,7 @@ func New(
 	if metricReg == nil {
 		metricReg = prometheus.NewRegistry()
 	}
+	r.lookupPlanMetrics = lookupplan.NewMetricsForComponent(metricReg, "readcache")
 
 	r.samplesIngestedTotal = promauto.With(metricReg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_readcache_samples_ingested_total",
@@ -526,6 +528,13 @@ func (r *Readcache) running(ctx context.Context) error {
 	tsdbUpdateT := time.NewTicker(r.cfg.TSDBConfigUpdatePeriod)
 	defer tsdbUpdateT.Stop()
 
+	var statisticsC <-chan time.Time
+	if r.cfg.BlocksStorage.TSDB.IndexLookupPlanning.Enabled {
+		statisticsT := time.NewTicker(r.cfg.BlocksStorage.TSDB.IndexLookupPlanning.StatisticsCollectionFrequency)
+		defer statisticsT.Stop()
+		statisticsC = statisticsT.C
+	}
+
 	loadStatsTickT := time.NewTicker(loadstats.TickInterval)
 	defer loadStatsTickT.Stop()
 
@@ -554,6 +563,8 @@ func (r *Readcache) running(ctx context.Context) error {
 			r.compactHeads()
 		case <-tsdbUpdateT.C:
 			r.applyPartitionTSDBTenantSettings()
+		case <-statisticsC:
+			r.generateHeadStatistics()
 		case <-loadStatsTickT.C:
 			r.queryLoad.Tick()
 			r.tickSampleRates()
@@ -947,6 +958,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		r.seriesHashCache,
 		r.headPostingsForMatchersCacheFactory,
 		r.blockPostingsForMatchersCacheFactory,
+		r.lookupPlanMetrics,
 		tsdbPromReg,
 		r.logger,
 	)
@@ -1048,6 +1060,36 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 	}
 
 	return out, nil
+}
+
+// generateHeadStatistics refreshes lookup planners for all live partition TSDB heads.
+func (r *Readcache) generateHeadStatistics() {
+	r.partitionMu.RLock()
+	parts := make([]*partitionState, 0, len(r.partitions))
+	for _, p := range r.partitions {
+		parts = append(parts, p)
+	}
+	r.partitionMu.RUnlock()
+
+	for _, p := range parts {
+		p.tenantsMu.RLock()
+		dbs := make([]*partitionTSDB, 0, len(p.tenants))
+		for _, db := range p.tenants {
+			dbs = append(dbs, db)
+		}
+		p.tenantsMu.RUnlock()
+
+		for _, db := range dbs {
+			if err := db.generateHeadStatistics(); err != nil {
+				level.Warn(r.logger).Log(
+					"msg", "failed to generate head statistics; previous statistics will be used for queries if they have been computed since startup",
+					"user", db.tenantID,
+					"partition", db.partitionID,
+					"err", err,
+				)
+			}
+		}
+	}
 }
 
 func (r *Readcache) applyPartitionTSDBTenantSettings() {
