@@ -37,42 +37,55 @@ type iterator interface {
 	Err() error
 }
 
+// IteratorOptions controls optional metadata collection while iterating over
+// chunks.
+type IteratorOptions struct {
+	// CollectStartTimestamps enables per-sample start timestamp collection.
+	// When false, AtST returns zero for every sample and no ST decoding or
+	// sidecar allocation occurs.
+	CollectStartTimestamps bool
+}
+
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
-func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk) chunkenc.Iterator {
+// The options parameter selects optional metadata to collect while iterating.
+func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk, options IteratorOptions) chunkenc.Iterator {
 	var iter *mergeIterator
 
 	adapter, ok := it.(*iteratorAdapter)
 	if ok {
-		iter = newMergeIterator(adapter.underlying, chunks)
+		iter = newMergeIterator(adapter.underlying, chunks, options)
 	} else {
-		iter = newMergeIterator(nil, chunks)
+		iter = newMergeIterator(nil, chunks, options)
 	}
 
-	return newIteratorAdapter(adapter, iter, lbls)
+	return newIteratorAdapter(adapter, iter, lbls, options)
 }
 
 // iteratorAdapter turns a batchIterator into a chunkenc.Iterator.
 // It fetches ever increasing batchSizes (up to promchunk.BatchSize) on each
 // call to Next; on calls to Seek, resets batch size to 1.
 type iteratorAdapter struct {
-	batchSize  int
-	curr       chunk.Batch
-	underlying iterator
-	labels     labels.Labels
+	batchSize              int
+	curr                   chunk.Batch
+	underlying             iterator
+	labels                 labels.Labels
+	collectStartTimestamps bool
 }
 
-func newIteratorAdapter(it *iteratorAdapter, underlying iterator, lbls labels.Labels) chunkenc.Iterator {
+func newIteratorAdapter(it *iteratorAdapter, underlying iterator, lbls labels.Labels, options IteratorOptions) chunkenc.Iterator {
 	if it != nil {
 		it.batchSize = 1
 		it.underlying = underlying
 		it.curr = chunk.Batch{}
 		it.labels = lbls
+		it.collectStartTimestamps = options.CollectStartTimestamps
 		return it
 	}
 	return &iteratorAdapter{
-		batchSize:  1,
-		underlying: underlying,
-		labels:     lbls,
+		batchSize:              1,
+		underlying:             underlying,
+		labels:                 lbls,
+		collectStartTimestamps: options.CollectStartTimestamps,
 	}
 }
 
@@ -172,8 +185,13 @@ func (a *iteratorAdapter) AtT() int64 {
 	return a.curr.Timestamps[a.curr.Index]
 }
 
-// AtST returns the start timestamp for the current sample, or 0 if it is unknown.
+// AtST returns the start timestamp for the current sample, or 0 if the
+// iterator was constructed without start timestamp collection or the sample's
+// start timestamp is unknown.
 func (a *iteratorAdapter) AtST() int64 {
+	if !a.collectStartTimestamps {
+		return 0
+	}
 	return a.curr.AtST()
 }
 

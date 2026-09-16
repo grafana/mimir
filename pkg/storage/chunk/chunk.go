@@ -83,7 +83,12 @@ type Iterator interface {
 	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
 	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
 	// the hPool or fhPool pool will be used instead of creating new ones.
-	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
+	// A non-nil stPool enables start timestamp collection and supplies sidecars,
+	// allocated lazily on the first non-zero start timestamp in a batch.
+	// Unlike hPool and fhPool, a nil stPool disables collection entirely.
+	// The caller owns the returned sidecar and must release it to the same pool
+	// once the batch and any borrowed copies are no longer being read.
+	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram], stPool *zeropool.Pool[*[BatchSize]int64]) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error
@@ -94,12 +99,17 @@ type Iterator interface {
 const BatchSize = 12
 
 // Batches are sorted sets of (start timestamp, timestamp, value) tuples, where all values are of the same type
-// (i.e. floats/histograms). A start timestamp of 0 means it is unknown or absent.
+// (i.e. floats/histograms). A start timestamp of 0 means it is unknown, absent, or was not collected.
 //
 // Batch is intended to be small, and passed by value!
 type Batch struct {
-	Timestamps      [BatchSize]int64
-	StartTimestamps [BatchSize]int64
+	Timestamps [BatchSize]int64
+	// StartTimestamps points to an optional sidecar array holding per-sample
+	// start timestamps. A nil pointer means every sample's start timestamp is
+	// unknown or absent. Copies of Batch borrow the same sidecar; the sidecar
+	// must not be mutated after the producing batch has been returned to
+	// downstream consumers.
+	StartTimestamps *[BatchSize]int64
 	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
 	// If ValueType is chunkenc.ValHistogram or chunkenc.ValFloatHistogram, it is used to store the iteratorID the
 	// pointer value at the same index comes from. The iteratorID is required to ensure the counter reset is calculated
@@ -133,8 +143,12 @@ func (b *Batch) AtTime() int64 {
 }
 
 // AtST returns the start timestamp for the current sample. A value of 0 means
-// that the start timestamp is unknown or absent.
+// that the start timestamp is unknown, absent, or was not collected for this
+// batch.
 func (b *Batch) AtST() int64 {
+	if b.StartTimestamps == nil {
+		return 0
+	}
 	return b.StartTimestamps[b.Index]
 }
 

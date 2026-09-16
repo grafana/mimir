@@ -286,7 +286,7 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 	return p.it.AtT()
 }
 
-func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch {
+func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram], stPool *zeropool.Pool[*[BatchSize]int64]) Batch {
 	var batch Batch
 	batch.ValueType = valueType
 	var populate func(j int)
@@ -333,7 +333,9 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 	j := 0
 	for j < size {
 		populate(j)
-		batch.StartTimestamps[j] = p.it.AtST()
+		if stPool != nil {
+			SetStartTimestamp(&batch, j, p.it.AtST(), stPool)
+		}
 		j++
 		if j < size {
 			vt := p.it.Next()
@@ -366,7 +368,7 @@ func (e ErrorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *hist
 	panic("no float histograms")
 }
 func (e ErrorIterator) Timestamp() int64 { panic("no samples") }
-func (e ErrorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) Batch {
+func (e ErrorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram], _ *zeropool.Pool[*[BatchSize]int64]) Batch {
 	panic("no values")
 }
 func (e ErrorIterator) Err() error { return errors.New(string(e)) }

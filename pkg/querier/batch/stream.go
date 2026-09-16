@@ -26,9 +26,13 @@ type batchStream struct {
 
 	hPool  *zeropool.Pool[*histogram.Histogram]
 	fhPool *zeropool.Pool[*histogram.FloatHistogram]
+	// stPool is nil when start timestamp collection is disabled. When non-nil,
+	// merge output batches may attach a sidecar drawn from this pool and
+	// returned when the batch is evicted.
+	stPool *zeropool.Pool[*[chunk.BatchSize]int64]
 }
 
-func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) *batchStream {
+func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram], stPool *zeropool.Pool[*[chunk.BatchSize]int64]) *batchStream {
 	batches := make([]chunk.Batch, 0, size)
 	batchesBuf := make([]chunk.Batch, size)
 	return &batchStream{
@@ -37,7 +41,15 @@ func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool
 		prevIteratorID: -1,
 		hPool:          hPool,
 		fhPool:         fhPool,
+		stPool:         stPool,
 	}
+}
+
+// setStartTimestampPool replaces the current start timestamp pool. It is used
+// when an existing batchStream is reused for a new mergeIterator that toggles
+// start timestamp collection.
+func (bs *batchStream) setStartTimestampPool(stPool *zeropool.Pool[*[chunk.BatchSize]int64]) {
+	bs.stPool = stPool
 }
 
 func (bs *batchStream) putPointerValuesToThePool(batch *chunk.Batch) {
@@ -54,13 +66,18 @@ func (bs *batchStream) putPointerValuesToThePool(batch *chunk.Batch) {
 
 func (bs *batchStream) removeFirst() {
 	bs.putPointerValuesToThePool(bs.curr())
+	chunk.ReleaseStartTimestampSidecar(bs.curr(), bs.stPool)
 	copy(bs.batches, bs.batches[1:])
+	// Clear the trailing slot so a subsequent slice growth does not reuse a
+	// pointer that was released above.
+	bs.batches[len(bs.batches)-1].StartTimestamps = nil
 	bs.batches = bs.batches[:len(bs.batches)-1]
 }
 
 func (bs *batchStream) empty() {
 	for i := range bs.batches {
 		bs.putPointerValuesToThePool(&bs.batches[i])
+		chunk.ReleaseStartTimestampSidecar(&bs.batches[i], bs.stPool)
 	}
 	bs.batches = bs.batches[:0]
 	bs.prevIteratorID = -1
@@ -157,12 +174,22 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 	// the cap(bs.batches) will be 0, so in order to save some allocations,
 	// we will use origBatches, i.e., bs.bathces' capacity from the beginning of
 	// the merge method.
+	// Capture the batch count before iteration shifts bs.batches. After the
+	// merge we release each original batch's sidecar because its start
+	// timestamps have been copied into freshly allocated output sidecars.
+	// origBatches shares the underlying array with bs.batches, so
+	// origBatches[:originalLen] still refers to the original slots even after
+	// bs.next() shifts bs.batches forward during iteration.
+	originalLen := len(bs.batches)
 	origBatches := bs.batches[:0]
 
-	// Reset the Index and Length of existing batches.
+	// Reset the Index and Length of existing batches. Also detach any sidecar
+	// borrowed from a previous merge so we do not accidentally reuse it as a
+	// fresh output.
 	for i := range bs.batchesBuf {
 		bs.batchesBuf[i].Index = 0
 		bs.batchesBuf[i].Length = 0
+		bs.batchesBuf[i].StartTimestamps = nil
 	}
 
 	resultLen := 1 // Number of batches in the final result.
@@ -184,6 +211,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 	}
 
 	prevIteratorID := bs.prevIteratorID
+	stPool := bs.stPool
 
 	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType, itID int) {
 		if b.Index == 0 {
@@ -195,7 +223,9 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			nextBatch(valueType)
 		}
 
-		b.StartTimestamps[b.Index] = batch.AtST()
+		if stPool != nil {
+			chunk.SetStartTimestamp(b, b.Index, batch.AtST(), stPool)
+		}
 
 		switch valueType {
 		case chunkenc.ValFloat:
@@ -289,6 +319,14 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 
 	// Store the last iterator id.
 	bs.prevIteratorID = prevIteratorID
+
+	// Release the sidecars of the original stream batches. Their start
+	// timestamps have been copied into the output batches by populate, which
+	// allocates fresh sidecars via SetStartTimestamp.
+	original := origBatches[:originalLen]
+	for i := range original {
+		chunk.ReleaseStartTimestampSidecar(&original[i], stPool)
+	}
 
 	bs.batches = append(origBatches, bs.batchesBuf[:resultLen]...)
 	bs.reset()
