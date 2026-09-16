@@ -387,7 +387,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read;val=0")
-				assert.Regexp(t, `parent_query_id;val=[1-9][0-9]*`, headers.Get(ServiceTimingHeaderName))
+				assert.Regexp(t, `parent_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 		{
@@ -424,7 +424,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
-				assert.Regexp(t, `parent_query_id;val=[1-9][0-9]*`, headers.Get(ServiceTimingHeaderName))
+				assert.Regexp(t, `parent_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 	} {
@@ -1144,7 +1144,7 @@ func TestHandler_ParentQueryID(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// The ID must reach the request context, so that the query-frontend can pass it on to
 			// the query-scheduler and the queriers.
-			var contextParentQueryIDs []uint64
+			var contextParentQueryIDs []string
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 				contextParentQueryIDs = append(contextParentQueryIDs, parentqueryid.IDFromContext(req.Context()))
 
@@ -1166,9 +1166,9 @@ func TestHandler_ParentQueryID(t *testing.T) {
 			}
 
 			require.Len(t, contextParentQueryIDs, queries)
-			distinctParentQueryIDs := make(map[uint64]struct{}, queries)
+			distinctParentQueryIDs := make(map[string]struct{}, queries)
 			for _, parentQueryID := range contextParentQueryIDs {
-				require.NotZero(t, parentQueryID)
+				require.NotEmpty(t, parentQueryID)
 				distinctParentQueryIDs[parentQueryID] = struct{}{}
 			}
 			require.Len(t, distinctParentQueryIDs, queries, "each query should get a distinct parent query ID")
@@ -1182,8 +1182,8 @@ func TestHandler_ParentQueryID(t *testing.T) {
 			for i, msg := range logger.logMessages {
 				require.Equal(t, "query stats", msg["msg"])
 
-				loggedParentQueryID, ok := msg["parent_query_id"].(uint64)
-				require.True(t, ok, "parent_query_id should be logged as a uint64")
+				loggedParentQueryID, ok := msg["parent_query_id"].(string)
+				require.True(t, ok, "parent_query_id should be logged as a string")
 				require.Equal(t, contextParentQueryIDs[i], loggedParentQueryID)
 			}
 		})

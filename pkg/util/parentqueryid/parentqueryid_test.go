@@ -3,16 +3,28 @@
 package parentqueryid
 
 import (
-	"math"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-func TestIDFromContext(t *testing.T) {
-	// Parent query IDs are seeded from rand.Uint64(), so roughly half are above math.MaxInt64.
-	const parentQueryID = uint64(math.MaxUint64) - 12345
+const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
+func TestNew(t *testing.T) {
+	first := New()
+	second := New()
+
+	require.NotEqual(t, first, second, "each query must get its own ID")
+
+	// A parsable random UUID, rather than a counter value, so that reporting the ID to one tenant
+	// does not disclose how many queries the query-frontend served for other tenants.
+	parsed, err := uuid.Parse(first)
+	require.NoError(t, err)
+	require.Equal(t, uuid.Version(4), parsed.Version())
+}
+
+func TestIDFromContext(t *testing.T) {
 	t.Run("round trips a parent query ID", func(t *testing.T) {
 		ctx := ContextWithID(t.Context(), parentQueryID)
 		require.Equal(t, parentQueryID, IDFromContext(ctx))
@@ -21,22 +33,22 @@ func TestIDFromContext(t *testing.T) {
 			AppendLogFields([]any{"existing", 1}, IDFromContext(ctx)))
 	})
 
-	t.Run("reports zero when the context carries no parent query ID", func(t *testing.T) {
-		require.Zero(t, IDFromContext(t.Context()))
+	t.Run("reports an empty ID when the context carries none", func(t *testing.T) {
+		require.Empty(t, IDFromContext(t.Context()))
 		require.Equal(t,
 			[]any{"existing", 1},
 			AppendLogFields([]any{"existing", 1}, IDFromContext(t.Context())),
-			"an unknown parent must not be reported as parent query 0")
+			"an unknown parent must not read as a real query")
 	})
 
-	t.Run("treats an explicit zero as unknown", func(t *testing.T) {
-		ctx := ContextWithID(t.Context(), 0)
-		require.Zero(t, IDFromContext(ctx))
+	t.Run("treats an explicitly empty ID as unknown", func(t *testing.T) {
+		ctx := ContextWithID(t.Context(), "")
+		require.Empty(t, IDFromContext(ctx))
 		require.Empty(t, AppendLogFields(nil, IDFromContext(ctx)))
 	})
 
 	t.Run("the innermost value wins", func(t *testing.T) {
-		ctx := ContextWithID(ContextWithID(t.Context(), 1), parentQueryID)
+		ctx := ContextWithID(ContextWithID(t.Context(), "outer"), parentQueryID)
 		require.Equal(t, parentQueryID, IDFromContext(ctx))
 	})
 }

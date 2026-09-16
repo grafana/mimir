@@ -9,10 +9,14 @@
 // sub-request then carries it. Log lines and trace spans in the read path report it, so you can
 // attribute them to the query the user sent.
 //
-// The ID is unique within one query-frontend process only. Zero means unknown.
+// An empty ID means unknown.
 package parentqueryid
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 // FieldName is the name to be used as a log field and as a trace span attribute
 const FieldName = "parent_query_id"
@@ -21,24 +25,34 @@ type contextKey int
 
 var ctxKey = contextKey(0)
 
+// New returns a new parent query ID.
+//
+// The ID is a random UUID rather than a counter value. The query-frontend reports the ID to the
+// caller in the query stats response header, so a counter would tell one tenant how many queries
+// the query-frontend served for all other tenants.
+func New() string {
+	return uuid.NewString()
+}
+
 // ContextWithID returns a context carrying the given parent query ID.
-func ContextWithID(ctx context.Context, parentQueryID uint64) context.Context {
+func ContextWithID(ctx context.Context, parentQueryID string) context.Context {
 	return context.WithValue(ctx, ctxKey, parentQueryID)
 }
 
-// IDFromContext returns the parent query ID held in the context, or zero if there is none.
-func IDFromContext(ctx context.Context) uint64 {
-	parentQueryID, ok := ctx.Value(ctxKey).(uint64)
+// IDFromContext returns the parent query ID held in the context, or an empty string if there is
+// none.
+func IDFromContext(ctx context.Context) string {
+	parentQueryID, ok := ctx.Value(ctxKey).(string)
 	if !ok {
-		return 0
+		return ""
 	}
 	return parentQueryID
 }
 
 // AppendLogFields appends the parent query ID to fields. It returns fields unchanged when the ID is
-// zero, because zero means unknown. An unknown parent must not read as query 0.
-func AppendLogFields(fields []any, parentQueryID uint64) []any {
-	if parentQueryID == 0 {
+// empty, because an empty ID means unknown. An unknown parent must not read as a real query.
+func AppendLogFields(fields []any, parentQueryID string) []any {
+	if parentQueryID == "" {
 		return fields
 	}
 	return append(fields, FieldName, parentQueryID)

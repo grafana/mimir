@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -6090,7 +6089,7 @@ func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
 func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 	// A parent query ID above math.MaxInt64: the query-frontend seeds them from rand.Uint64(), so
 	// roughly half are in that range.
-	const parentQueryID = uint64(math.MaxUint64) - 4242
+	const parentQueryID = "9c5b94b1-35ad-49bb-b118-8e8fc24abf80"
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -6127,9 +6126,9 @@ func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 			require.Contains(t, logs.String(), `msg="evaluation stats"`)
 
 			if withParentQueryID {
-				require.Contains(t, logs.String(), fmt.Sprintf("parent_query_id=%d", parentQueryID))
+				require.Contains(t, logs.String(), "parent_query_id="+parentQueryID)
 			} else {
-				// Absent rather than reported as parent query 0.
+				// Absent rather than reported as an empty value.
 				require.NotContains(t, logs.String(), "parent_query_id")
 			}
 		})

@@ -10,10 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -255,13 +253,11 @@ func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 }
 
 func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
-	// Pick a value above math.MaxInt64, since the frontend seeds parent query IDs from
-	// rand.Uint64() and roughly half of them are in that range.
-	const parentQueryID = uint64(math.MaxUint64) - 12345
+	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	testCases := map[string]struct {
-		parentQueryID         uint64
-		expectedParentQueryID uint64
+		parentQueryID         string
+		expectedParentQueryID string
 		expectedLogFields     []any
 	}{
 		"frontend reports a parent query ID": {
@@ -270,8 +266,8 @@ func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
 			expectedLogFields:     []any{"user", "test", "query_id", uint64(1), "parent_query_id", parentQueryID},
 		},
 		"frontend reports no parent query ID": {
-			parentQueryID:         0,
-			expectedParentQueryID: 0,
+			parentQueryID:         "",
+			expectedParentQueryID: "",
 			expectedLogFields:     []any{"user", "test", "query_id", uint64(1)},
 		},
 	}
@@ -312,16 +308,16 @@ func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
 }
 
 func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
-	const parentQueryID = uint64(math.MaxUint64) - 12345
+	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	testCases := map[string]struct {
-		parentQueryID uint64
+		parentQueryID string
 		// expectParentQueryIDLogged is false when the frontend reported no parent query, in which
-		// case the field must be absent rather than reported as parent query 0.
+		// case the field must be absent rather than reported as an empty value.
 		expectParentQueryIDLogged bool
 	}{
 		"frontend reports a parent query ID":  {parentQueryID: parentQueryID, expectParentQueryIDLogged: true},
-		"frontend reports no parent query ID": {parentQueryID: 0, expectParentQueryIDLogged: false},
+		"frontend reports no parent query ID": {parentQueryID: "", expectParentQueryIDLogged: false},
 	}
 
 	for name, testCase := range testCases {
@@ -375,7 +371,7 @@ func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
 			require.Contains(t, rejection, "user=test")
 
 			if testCase.expectParentQueryIDLogged {
-				require.Contains(t, rejection, fmt.Sprintf("parent_query_id=%d", parentQueryID))
+				require.Contains(t, rejection, "parent_query_id="+parentQueryID)
 			} else {
 				require.NotContains(t, rejection, "parent_query_id")
 			}
@@ -729,7 +725,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 
-	const rejectedParentQueryID = uint64(math.MaxUint64) - 777
+	const rejectedParentQueryID = "b81d4fae-7dec-41d1-b2fb-00a0c91e6bf6"
 
 	req := schedulerpb.FrontendToScheduler{
 		Type:          schedulerpb.ENQUEUE,
@@ -767,7 +763,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, []string{strconv.FormatUint(rejectedParentQueryID, 10)}, enqueueSpanParentQueryIDs,
+	require.Equal(t, []string{rejectedParentQueryID}, enqueueSpanParentQueryIDs,
 		"the rejected request's enqueue span must carry the parent query ID")
 }
 

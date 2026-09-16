@@ -2515,7 +2515,7 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenCallerCancels(t *testin
 func TestFrontendCreateNewRequestParentQueryID(t *testing.T) {
 	// Pick a value above math.MaxInt64: the transport handler seeds parent query IDs from
 	// rand.Uint64(), so roughly half of them are in that range.
-	const parentQueryID = uint64(math.MaxUint64) - 999
+	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	t.Run("parent query ID in context", func(t *testing.T) {
 		f, _ := setupFrontend(t, nil, nil)
@@ -2545,13 +2545,13 @@ func TestFrontendCreateNewRequestParentQueryID(t *testing.T) {
 }
 
 func TestFrontendToSchedulerEnqueueRequestParentQueryID(t *testing.T) {
-	const parentQueryID = uint64(math.MaxUint64) - 999
+	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	adapter := &frontendToSchedulerAdapter{}
 
-	for name, expectedParentQueryID := range map[string]uint64{
+	for name, expectedParentQueryID := range map[string]string{
 		"parent query ID known":   parentQueryID,
-		"parent query ID unknown": 0,
+		"parent query ID unknown": "",
 	} {
 		t.Run(name, func(t *testing.T) {
 			freq := &frontendRequest{

@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand" //#nosec G404 -- Parent query IDs are reported in logs and traces and are never used to route, key or authorize anything, so they don't need to be unguessable -- nosemgrep: math-random-used
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,7 +28,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/inflight"
@@ -152,8 +150,6 @@ type Handler struct {
 
 	// maxInflight is nil when -query-frontend.max-inflight-http-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
-	// lastParentQueryID is the source of the parent query ID assigned to each user query.
-	lastParentQueryID atomic.Uint64
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -170,9 +166,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
-	// Randomize the starting point so that parent query IDs logged before a restart are unlikely
-	// to be reused for a different query after it.
-	h.lastParentQueryID.Store(rand.Uint64())
 
 	if cfg.MaxInflightMetricsEnabled {
 		h.maxInflight = inflight.NewMaxInflightCollector("http")
@@ -293,7 +286,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Allocate a unique parent query id which can be referenced for all sub-requests which
 	// are related to this query. This parent_query_id will be logged on sub-requests running on the
 	// query-scheduler and querier components.
-	ctx := parentqueryid.ContextWithID(r.Context(), f.lastParentQueryID.Inc())
+	ctx := parentqueryid.ContextWithID(r.Context(), parentqueryid.New())
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
@@ -715,7 +708,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryD
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, parentQueryID uint64, details *querydetails.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, parentQueryID string, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -746,7 +739,7 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
 	}
 
-	if parentQueryID != 0 {
+	if parentQueryID != "" {
 		// Reported so that a caller can quote this value when it asks about a query it ran.
 		statsResponse = append(statsResponse, statsValue(parentqueryid.FieldName, parentQueryID))
 	}

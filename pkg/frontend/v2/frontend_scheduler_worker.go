@@ -447,7 +447,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		logger := log.With(spanLogger, "queryID", req.queryID)
-		if req.parentQueryID != 0 {
+		if req.parentQueryID != "" {
 			logger = log.With(logger, parentqueryid.FieldName, req.parentQueryID)
 		}
 		level.Warn(logger).Log("msg", "scheduler reported it has too many outstanding requests")

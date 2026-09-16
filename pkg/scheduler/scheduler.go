@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -310,10 +309,8 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			}
 
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
-			if msg.ParentQueryID != 0 {
-				// Reported as a string because the query-frontend seeds parent query IDs randomly,
-				// so roughly half of them are outside the range of an int64 attribute.
-				enqueueSpan.SetAttributes(attribute.String(parentqueryid.FieldName, strconv.FormatUint(msg.ParentQueryID, 10)))
+			if msg.ParentQueryID != "" {
+				enqueueSpan.SetAttributes(attribute.String(parentqueryid.FieldName, msg.ParentQueryID))
 			}
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)

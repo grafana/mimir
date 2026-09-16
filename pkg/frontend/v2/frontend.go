@@ -170,7 +170,7 @@ type frontendRequest struct {
 	// parentQueryID identifies the user query this request is a sub-request of. Many sub-requests
 	// of one user query share it, each with its own queryID. It is zero when the request did not
 	// come through the query-frontend's HTTP transport handler.
-	parentQueryID          uint64
+	parentQueryID          string
 	userID                 string
 	statsEnabled           bool
 	touchedQueryComponents []string

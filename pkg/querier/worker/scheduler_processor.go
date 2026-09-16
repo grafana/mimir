@@ -269,7 +269,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				defer queueSpan.End()
 			}
 			logger := util_log.WithContext(ctx, sp.log)
-			if request.ParentQueryID != 0 {
+			if request.ParentQueryID != "" {
 				ctx = parentqueryid.ContextWithID(ctx, request.ParentQueryID)
 				logger = log.With(logger, parentqueryid.FieldName, request.ParentQueryID)
 			}
