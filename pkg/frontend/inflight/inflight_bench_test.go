@@ -29,8 +29,8 @@ func BenchmarkAddRemove(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			var n int
 			b.RunParallel(func(pb *testing.PB) {
+				var n int
 				for pb.Next() {
 					n++
 					c.Remove(c.Add(ids[n%tenants]))
@@ -59,9 +59,8 @@ func BenchmarkCollect(b *testing.B) {
 			defer close(ch)
 
 			b.ReportAllocs()
-			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				c.Collect(ch)
 			}
 		})
