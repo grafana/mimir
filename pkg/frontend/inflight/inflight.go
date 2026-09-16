@@ -19,39 +19,18 @@ import (
 // query still in flight. A query that was running at any point during the window therefore
 // contributes to the reported age, whether or not it has finished.
 //
-// Both values are reset on collection. The peak count resets to the number of queries
-// currently in flight, so the next window starts from standing concurrency rather than
-// zero. The age resets to zero, because the age of a query still running is recomputed from
-// its start time on every collection.
-//
-// Since the reset happens in Collect, every scrape consumes the window: a second scraper,
-// such as another Prometheus or a manual request to /metrics, takes a share of the peaks
-// away from the first.
-//
-// One mutex covers all tenants, and Add and Remove run on the query hot path, so it sees
-// contention proportional to query concurrency. Note that queue.MaxQueueLengthGauge looks
-// like the same design but is not comparable: its inc and dec are only reached from the
-// scheduler's single dispatcherLoop goroutine, so its lock only ever contends with the
-// scrape. Collect additionally walks every in-flight query to fold in its current age,
-// holding that same lock, so its cost grows with the number of in-flight queries. See
-// BenchmarkAddRemove and BenchmarkCollect before changing either.
+// Note that both values are reset on collection.
 type MaxInflightCollector struct {
 	countDesc *prometheus.Desc
 	ageDesc   *prometheus.Desc
-
-	// now returns the current time. It is overridable so unit tests can deterministically
-	// stamp start times and compute ages. Production code uses time.Now.
-	now func() time.Time
-
-	mtx     sync.Mutex
-	nextID  uint64
-	entries map[uint64]entry
-	tenants map[string]*tenantInflight
+	now       func() time.Time
+	mtx       sync.Mutex
+	nextID    uint64
+	entries   map[uint64]entry
+	tenants   map[string]*tenantInflight
 }
 
-// entry is one query that is currently in flight. It holds the tenant's counters directly
-// rather than the tenant ID, so neither Remove nor Collect has to hash a string to find
-// them, and an in-flight query does not retain a reference to the tenant ID string.
+// entry is one query that is currently in flight.
 type entry struct {
 	tenant *tenantInflight
 	start  time.Time
@@ -106,7 +85,7 @@ func (c *MaxInflightCollector) Add(tenantID string) uint64 {
 // the tenant's peak for this window.
 //
 // Calling Remove more than once for the same ID, or with an ID that was never issued, is a
-// no-op. Callers whose cleanup can run twice rely on this.
+// no-op.
 func (c *MaxInflightCollector) Remove(id uint64) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -128,13 +107,6 @@ func (c *MaxInflightCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.ageDesc
 }
 
-// Collect emits the peak in-flight count and the greatest in-flight query age observed for
-// each tenant since the last collection, then opens a new window.
-//
-// The snapshot is taken, and the window reset, under a short lock and emitted to ch
-// afterwards: sending to ch can block until prometheus drains the metric channel, and
-// Add/Remove share this lock on the request hot path, so the lock must not be held across
-// the channel sends.
 func (c *MaxInflightCollector) Collect(ch chan<- prometheus.Metric) {
 	type tenantPeak struct {
 		tenantID string
