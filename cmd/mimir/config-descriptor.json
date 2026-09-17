@@ -6666,7 +6666,7 @@
           "kind": "field",
           "name": "enabled_promql_extended_range_selectors",
           "required": false,
-          "desc": "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.",
+          "desc": "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-extended-range-selectors",
