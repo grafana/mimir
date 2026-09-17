@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	countName = countMetricName
-	countHelp = countMetricHelp
-	ageName   = ageMetricName
-	ageHelp   = ageMetricHelp
+	countName = "cortex_query_frontend_max_inflight_requests"
+	countHelp = "Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). " + typeHelp
+	ageName   = "cortex_query_frontend_max_inflight_request_age_seconds"
+	ageHelp   = "Greatest age reached by an in-flight request for a tenant since the last metric collection (reset on each scrape). Requests that finished within the window are included. " + typeHelp
 
 	testType = "test"
 )
