@@ -311,6 +311,9 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	}
 
 	h, err := SumHistograms(hHead, hTail, emitAnnotation)
+	if err != nil {
+		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+	}
 	return 0, false, h, err
 }
 
@@ -329,6 +332,24 @@ func sumFloats(head, tail []promql.FPoint) float64 {
 }
 
 func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	sum, compensation, err := KahanSumHistograms(head, tail, emitAnnotation)
+	if err != nil {
+		return sum, err
+	}
+
+	// Apply Kahan compensation to get the final accurate result
+	if compensation != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		sum, _, _, err = sum.Add(compensation)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return sum, nil
+}
+
+func KahanSumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, *histogram.FloatHistogram, error) {
 	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 
@@ -353,11 +374,12 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		for _, p := range points {
 			trackCounterReset(p.H)
 
-			var nhcbBoundsReconciled bool
-			var err error
+			var (
+				nhcbBoundsReconciled bool
+				err                  error
+			)
 			compensation, _, nhcbBoundsReconciled, err = sum.KahanAdd(p.H, compensation)
 			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return false, err
 			}
 			if nhcbBoundsReconciled {
@@ -369,11 +391,11 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	}
 
 	if ok, err := accumulate(head); err != nil || !ok {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if ok, err := accumulate(tail); err != nil || !ok {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if counterResetSeen && notCounterResetSeen {
@@ -383,17 +405,7 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
-	// Apply Kahan compensation to get the final accurate result
-	if compensation != nil {
-		// Use regular Add (not KahanAdd) to apply the final compensation
-		sum, _, _, err := sum.Add(compensation)
-		if err != nil {
-			return nil, err
-		}
-		return sum, nil
-	}
-
-	return sum, nil
+	return sum, compensation, nil
 }
 
 func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
@@ -495,6 +507,23 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 }
 
 func AvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	avg, compensation, err := KahanAvgHistograms(head, tail, emitAnnotation)
+	if err != nil {
+		return avg, err
+	}
+
+	if compensation != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation
+		avg, _, _, err = avg.Add(compensation)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return avg, nil
+}
+
+func KahanAvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, *histogram.FloatHistogram, error) {
 	avgSoFar := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 	count := 1.0
@@ -540,11 +569,11 @@ func AvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	}
 
 	if err := accumulate(head); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := accumulate(tail); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if counterResetSeen && notCounterResetSeen {
@@ -555,17 +584,7 @@ func AvgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		emitAnnotation(NewAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
-	// Apply Kahan compensation to get the final accurate result
-	if kahanC != nil {
-		// Use regular Add (not KahanAdd) to apply the final compensation
-		avgSoFar, _, _, err := avgSoFar.Add(kahanC)
-		if err != nil {
-			return nil, err
-		}
-		return avgSoFar, nil
-	}
-
-	return avgSoFar, nil
+	return avgSoFar, kahanC, nil
 }
 
 var Changes = FunctionOverRangeVectorDefinition{
@@ -576,6 +595,54 @@ var Changes = FunctionOverRangeVectorDefinition{
 var Resets = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               resetsChanges(true),
+}
+
+// pickAnchorStartIndices selects the float and histogram cursor start indices for an anchored
+// resets()/changes() evaluation. The anchor is the most recent sample at or before rangeStart, chosen
+// across both floats and histograms. This mirrors Prometheus's pickFirstSampleIndices (promql/functions.go).
+func pickAnchorStartIndices(
+	loadFloat func(int) (float64, int64, bool, int),
+	loadHist func(int) (*histogram.FloatHistogram, int64, bool, int),
+	nFloats, nHists int,
+	rangeStart int64,
+) (fIdx, hIdx int, hasInRange bool) {
+	// Index of the last float / histogram with timestamp <= rangeStart, or -1 if none.
+	lastFloatLE, lastHistLE := -1, -1
+	for i := 0; i < nFloats; i++ {
+		if _, t, _, _ := loadFloat(i); t <= rangeStart {
+			lastFloatLE = i
+		} else {
+			break
+		}
+	}
+	for i := 0; i < nHists; i++ {
+		if _, t, _, _ := loadHist(i); t <= rangeStart {
+			lastHistLE = i
+		} else {
+			break
+		}
+	}
+
+	if lastFloatLE+1 >= nFloats && lastHistLE+1 >= nHists {
+		return 0, 0, false
+	}
+
+	if lastFloatLE < 0 && lastHistLE < 0 {
+		// Every sample is after rangeStart; there is no anchor, so include all samples.
+		return 0, 0, true
+	}
+
+	// The anchor is the later (by timestamp) of the two candidates.
+	floatIsAnchor := lastHistLE < 0
+	if !floatIsAnchor && lastFloatLE >= 0 {
+		_, fT, _, _ := loadFloat(lastFloatLE)
+		_, hT, _, _ := loadHist(lastHistLE)
+		floatIsAnchor = fT >= hT
+	}
+	if floatIsAnchor {
+		return lastFloatLE, lastHistLE + 1, true
+	}
+	return lastFloatLE + 1, lastHistLE, true
 }
 
 func resetsChanges(isReset bool) RangeVectorStepFunction {
@@ -620,6 +687,20 @@ func resetsChanges(isReset bool) RangeVectorStepFunction {
 		var hValue *histogram.FloatHistogram
 		var fTime, hTime int64
 		var fOk, hOk bool
+
+		if step.Anchored {
+			// Anchored resets()/changes(): the anchor is the most recent sample at or before rangeStart,
+			// chosen across both floats and histograms. Skip every sample before the anchor, then count
+			// transitions from the anchor through the samples in (rangeStart, rangeEnd]. This mirrors
+			// Prometheus's pickFirstSampleIndices (promql/functions.go).
+			var hasInRange bool
+			fIdx, hIdx, hasInRange = pickAnchorStartIndices(loadFloat, loadHist, len(fHead)+len(fTail), len(hHead)+len(hTail), step.RangeStart)
+			if !hasInRange {
+				// No sample lies strictly after rangeStart: the (rangeStart, rangeEnd] window is empty,
+				// so there is nothing to measure.
+				return 0, false, nil, nil
+			}
+		}
 
 		fValue, fTime, fOk, fIdx = loadFloat(fIdx)
 		hValue, hTime, hOk, hIdx = loadHist(hIdx)
@@ -1147,10 +1228,18 @@ func madOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	// MAD = median( | xᵢ - median(x) | )
 
 	for _, p := range head {
+		if math.IsNaN(p.F) {
+			return math.NaN(), true, nil, nil
+		}
+
 		values = append(values, p.F)
 	}
 
 	for _, p := range tail {
+		if math.IsNaN(p.F) {
+			return math.NaN(), true, nil, nil
+		}
+
 		values = append(values, p.F)
 	}
 

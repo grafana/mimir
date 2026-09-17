@@ -24,10 +24,11 @@ type TenantDiscoverer struct {
 	logger                         log.Logger
 	metrics                        *schedulerMetrics
 	clock                          clock.Clock
+	lanePolicy                     lanePolicy
 	allowedTenants                 *util.AllowList
 	bkt                            objstore.Bucket
 	jpm                            JobPersistenceManager
-	userDiscoveryBackoff           backoff.Config
+	tenantDiscoveryBackoff         backoff.Config
 	rotator                        *Rotator
 	maxLeases                      int
 	repeatedFailureReportThreshold int
@@ -36,6 +37,7 @@ type TenantDiscoverer struct {
 
 func NewTenantDiscoverer(
 	cfg Config,
+	lanePolicy lanePolicy,
 	allowList *util.AllowList,
 	rotator *Rotator,
 	bkt objstore.Bucket,
@@ -46,10 +48,11 @@ func NewTenantDiscoverer(
 		logger:                         logger,
 		metrics:                        metrics,
 		clock:                          clock.New(),
+		lanePolicy:                     lanePolicy,
 		allowedTenants:                 allowList,
 		bkt:                            bkt,
 		jpm:                            jpm,
-		userDiscoveryBackoff:           cfg.UserDiscoveryBackoff,
+		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
 		rotator:                        rotator,
 		maxLeases:                      cfg.MaxLeases,
 		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
@@ -60,15 +63,15 @@ func NewTenantDiscoverer(
 }
 
 // RecoverFrom populates the tenant discoverer with known tenants from recovered state.
-// Must be called before the service is started.
 func (s *TenantDiscoverer) RecoverFrom(jobTrackers map[string]*JobTracker) {
 	for tenant := range jobTrackers {
 		s.knownTenants[tenant] = struct{}{}
 	}
 }
 
+// start starts the tenant discovery service. It is expected that RecoverFrom is called before starting the service.
 func (s *TenantDiscoverer) start(ctx context.Context) error {
-	b := backoff.New(ctx, s.userDiscoveryBackoff)
+	b := backoff.New(ctx, s.tenantDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
 		err = s.discoverTenants(ctx)
@@ -108,7 +111,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker := NewJobTracker(persister, tenant, s.clock, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker := NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = struct{}{}
 		}
@@ -131,7 +134,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				continue
 			}
 			delete(s.knownTenants, tenant)
-			s.metrics.deleteTenantMetrics(tenant)
+			tracker.CleanupMetrics()
 			level.Info(logger).Log("msg", "removed empty tenant from compactor scheduler")
 		}
 	}

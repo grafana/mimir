@@ -16,23 +16,19 @@ Several parameters that were available in versions 2.x of the mimir-distributed 
 **To migrate from Helm chart 2.x to 3.0:**
 
 1. Understand the improvements that we made to the Mimir configuration in the Helm chart:
-
    - The Mimir configuration is now stored in a Kubernetes ConfigMap by default, instead of a Kubernetes Secret.
    - You can override individual properties without copying the entire `mimir.config` block. Specify properties you want to override under the `mimir.structuredConfig`.
    - You can move secrets outside the Mimir configuration via external secrets and environment variables. Environment variables can be used to externalize secrets from the configuration file.
 
 1. Decide whether or not you need to update the Mimir configuration:
-
    - If you are using external configuration (`useExternalConfig: true`), then you must set `configStorageType: Secret`.
 
      > **Note:** It is now possible to use a ConfigMap to manage your external configuration instead.
      > If your external configuration contains secrets, then you can externalize them and use a ConfigMap. See _Externalize secrets_.
 
    - If you are not using external configuration (`useExternalConfig: false`), and your Mimir configuration contains secrets, chose one of two options:
-
      - Keep the previous location as-is by setting `configStorageType: Secret`.
      - Externalize secrets:
-
        1. Move secrets from the Mimir configuration to a [Kubernetes Secret](https://kubernetes.io/docs/concepts/configuration/secret/#working-with-secrets).
        2. Mount the Kubernetes Secret via `global.extraEnvFrom`:
 
@@ -72,7 +68,6 @@ Several parameters that were available in versions 2.x of the mimir-distributed 
    then you do not need to update the memcached configuration.
 
    Otherwise, check to see if you need to change any of the following configuration parameters:
-
    - The `memcached` section was repurposed, and `chunks-cache` was added.
    - The contents of the `memcached` section now contain the following common values that are shared across all memcached instances: `image`, `podSecurityContext`, and `containerSecurityContext`.
    - The following sections were renamed:
@@ -100,18 +95,15 @@ Several parameters that were available in versions 2.x of the mimir-distributed 
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
 1. Update the `rbac` section, based on the following changes:
-
    - If you are not overriding the value of anything under the `rbac` section, then skip this step.
    - The `rbac.pspEnabled` value was removed.
    - To continue using Pod Security Policy (PSP), set `rbac.create` to `true` and `rbac.type` to `psp`.
    - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
 
 1. Update the `mimir.config` value, based on the following information:
-
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
 
 1. Decide whether or not to update the `nginx` configuration:
-
    - Unless you have overridden the value of `nginx.nginxConfig.file`,
      and you are using the default `mimir.config`, then skip this step.
    - Otherwise, compare the overridden `nginx.nginxConfig.file` value

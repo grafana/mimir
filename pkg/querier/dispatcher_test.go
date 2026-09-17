@@ -63,11 +63,25 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	require.NoError(t, err)
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, 1, nil)
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, true, 1, nil)
+	}
+
+	createQueryRequestWithPerNodeAnnotationsDisabled := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, false, 1, nil)
 	}
 
 	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, batchSize, nil)
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, true, batchSize, nil)
+	}
+
+	createQueryRequestWithSeriesMetadataBatchSize := func(expr string, timeRange types.QueryTimeRange, seriesMetadataBatchSize uint64) *prototypes.Any {
+		reqAny := createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, true, 128, nil)
+		req := &querierpb.EvaluateQueryRequest{}
+		require.NoError(t, prototypes.UnmarshalAny(reqAny, req))
+		req.SeriesMetadataBatchSize = seriesMetadataBatchSize
+		result, err := prototypes.MarshalAny(req)
+		require.NoError(t, err)
+		return result
 	}
 
 	createQueryRequestWithNoNodes := func() *prototypes.Any {
@@ -82,6 +96,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 	startT := timestamp.Time(0)
 	expectedQueryWallTime := 2 * time.Second
+	rangeQueryTimeRange := types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)
+	instantQueryTimeRange := types.NewInstantQueryTimeRange(startT)
 
 	testCases := map[string]struct {
 		req                                          *prototypes.Any
@@ -115,7 +131,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request without tenant ID": {
-			req:                              createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
+			req:                              createQueryRequest(`my_series`, instantQueryTimeRange),
 			dontSetTenantID:                  true,
 			isNotValidQueryEvaluationRequest: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
@@ -133,7 +149,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request with the same node provided multiple times": {
-			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, types.NewInstantQueryTimeRange(startT), enableDelayedNameRemoval, 1, nil, nil),
+			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, instantQueryTimeRange, enableDelayedNameRemoval, true, 1, nil, nil),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `request contains at least one node multiple times: have 2 requested node(s), but only 1 unique node(s)`),
 			},
@@ -141,7 +157,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"query that returns an instant vector": {
-			req: createQueryRequest(`my_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
+			req: createQueryRequest(`my_series + 0.123`, rangeQueryTimeRange),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					3,
@@ -151,7 +167,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0.123},
 							{TimestampMs: 10_000, Value: 1.123},
 							{TimestampMs: 20_000, Value: 2.123},
@@ -161,28 +177,44 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1.123},
 							{TimestampMs: 10_000, Value: 3.123},
 							{TimestampMs: 20_000, Value: 5.123},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   6,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    6,
+						PhysicalSamplesRead: 6,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{2, 2, 2},
+								SamplesReadIfSubsequentStep: []int64{2, 2, 2},
+								SamplesReadIfFirstStep:      []int64{2, 2, 2},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns an instant vector with batching, where all series fit into one batch with space to spare": {
-			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 4),
+			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 4),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					3,
@@ -193,42 +225,58 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns an instant vector with batching, where all series fit exactly into one batch": {
-			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 3),
+			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 3),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					3,
@@ -239,42 +287,58 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns an instant vector with batching, where the last batch is not completely full": {
-			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 2),
+			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 2),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					3,
@@ -285,14 +349,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3.123},
 							{TimestampMs: 10_000, Value: 7.123},
 							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4.123},
 							{TimestampMs: 10_000, Value: 9.123},
 							{TimestampMs: 20_000, Value: 14.123},
@@ -302,21 +366,37 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5.123},
 							{TimestampMs: 10_000, Value: 11.123},
 							{TimestampMs: 20_000, Value: 17.123},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -326,8 +406,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`max_over_time(my_series[11s:10s])`,
-				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				rangeQueryTimeRange,
 				enableDelayedNameRemoval,
+				true,
 				1,
 				[]string{"FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
 			),
@@ -343,7 +424,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 					},
 				}),
@@ -353,7 +434,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 						{TimestampMs: 10_000, Value: 1},
 					},
@@ -364,7 +445,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 1},
 						{TimestampMs: 20_000, Value: 2},
 					},
@@ -375,7 +456,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 					},
 				}),
@@ -385,7 +466,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 						{TimestampMs: 10_000, Value: 3},
 					},
@@ -396,61 +477,101 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 3},
 						{TimestampMs: 20_000, Value: 5},
 					},
 				}),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   6,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    10,
+						PhysicalSamplesRead: 6,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						1: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{2, 4, 4},
+								SamplesReadIfSubsequentStep: []int64{2, 2, 2},
+								SamplesReadIfFirstStep:      []int64{2, 4, 4},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns a scalar": {
-			req: createQueryRequest(`time() + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
+			req: createQueryRequest(`time() + 0.123`, rangeQueryTimeRange),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(
 					2,
-					mimirpb.Sample{TimestampMs: 0, Value: 0.123},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 10.123},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 20.123},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 0.123},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 10.123},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 20.123},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						2: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode: "OK",
 		},
 
 		"query that returns a string": {
-			req: createQueryRequest(`"the string"`, types.NewInstantQueryTimeRange(startT)),
+			req: createQueryRequest(`"the string"`, instantQueryTimeRange),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newStringMessage(0, "the string"),
-				newEvaluationCompletedMessage(stats.Stats{
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: instantQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0},
+								SamplesReadIfSubsequentStep: []int64{0},
+								SamplesReadIfFirstStep:      []int64{0},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode: "OK",
 		},
 
-		"query that returns annotations": {
-			req: createQueryRequest(`sum by (idx) (rate(my_series{idx="0"}[11s])) + quantile by (idx) (2, my_series{idx="0"})`, types.NewInstantQueryTimeRange(startT.Add(30*time.Second))),
+		"query that returns annotations with per-node annotations disabled": {
+			req: createQueryRequestWithPerNodeAnnotationsDisabled(`sum by (idx) (rate(my_series{idx="0"}[11s] offset -30s)) + quantile by (idx) (2, my_series{idx="0"})`, instantQueryTimeRange),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					6,
@@ -459,22 +580,88 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					6,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
-							{TimestampMs: 30_000, Value: math.Inf(1)},
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: math.Inf(1)},
 						},
 					},
 				),
 				newEvaluationCompletedMessageWithAnnotations(
 					stats.Stats{
-						SamplesProcessed:   3,
-						QueueTime:          3 * time.Second,
-						WallTime:           expectedQueryWallTime,
-						FetchedSeriesCount: 123,
-						FetchedChunksCount: 456,
-						FetchedChunkBytes:  789,
+						SamplesProcessed:    3,
+						PhysicalSamplesRead: 3,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						6: {
+							TimeRange: instantQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3},
+								SamplesReadIfSubsequentStep: []int64{3},
+								SamplesReadIfFirstStep:      []int64{3},
+							},
+						},
 					},
 					[]string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_series" (1:20)`},
-					[]string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:67)`},
+					[]string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:79)`},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns annotations with per-node annotations enabled": {
+			req: createQueryRequest(`sum by (idx) (rate(my_series{idx="0"}[11s] offset -30s)) + quantile by (idx) (2, my_series{idx="0"})`, instantQueryTimeRange),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newSeriesMetadataMessage(
+					6,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					6,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: math.Inf(1)},
+						},
+					},
+				),
+				newEvaluationCompletedMessageWithPerNodeAnnotations(
+					stats.Stats{
+						SamplesProcessed:    3,
+						PhysicalSamplesRead: 3,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: 19001, MaxT: 30000, SeriesCount: 1},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}, {Type: labels.MatchEqual, Name: "idx", Value: "0"}}, MinT: -299999, MaxT: 0, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						6: {
+							TimeRange: instantQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3},
+								SamplesReadIfSubsequentStep: []int64{3},
+								SamplesReadIfFirstStep:      []int64{3},
+							},
+						},
+					},
+					map[int64]querierpb.Annotations{
+						6: {
+							Infos:    []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_series" (1:20)`},
+							Warnings: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:79)`},
+						},
+					},
 				),
 			},
 			expectedStatusCode:                           "OK",
@@ -482,7 +669,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"query that fails with an error": {
-			req: createQueryRequest(`abs({__name__=~"(my_series|my_other_series)"})`, types.NewInstantQueryTimeRange(startT)),
+			req: createQueryRequest(`abs({__name__=~"(my_series|my_other_series)"})`, instantQueryTimeRange),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					2,
@@ -499,11 +686,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`my_series + my_other_series`,
-				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				rangeQueryTimeRange,
 				enableDelayedNameRemoval,
+				true,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_other_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", `LHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", `RHS: VectorSelector: {__name__="my_other_series"}`},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -518,7 +706,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					0,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0},
 							{TimestampMs: 10_000, Value: 1},
 							{TimestampMs: 20_000, Value: 2},
@@ -528,7 +716,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 2},
 							{TimestampMs: 10_000, Value: 5},
 							{TimestampMs: 20_000, Value: 8},
@@ -538,21 +726,46 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					0,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1},
 							{TimestampMs: 10_000, Value: 3},
 							{TimestampMs: 20_000, Value: 5},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{2, 2, 2},
+								SamplesReadIfSubsequentStep: []int64{2, 2, 2},
+								SamplesReadIfFirstStep:      []int64{2, 2, 2},
+							},
+						},
+						1: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{1, 1, 1},
+								SamplesReadIfSubsequentStep: []int64{1, 1, 1},
+								SamplesReadIfFirstStep:      []int64{1, 1, 1},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -561,37 +774,40 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"request with multiple instant vector operators with batching enabled": {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
-				`my_three_item_series{idx=~"(0|1|2)"} + my_three_item_series{idx=~".*"}`, // Make the selectors different so that CSE doesn't deduplicate them.
+				`abs(my_three_item_series{idx=~"(0|1|2)"}) + ceil(my_three_item_series{idx=~".*"})`, // Different function calls on the same metric: CSE deduplicates the underlying selector as the labels become identical after matcher propagation and reduction, but the two function-call plan nodes are distinct and can be requested independently.
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				enableDelayedNameRemoval,
+				true,
 				2,
-				[]string{"BinaryExpression: LHS + RHS", `LHS: DuplicateFilter: {idx=~"(0|1|2)"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: Duplicate`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "LHS: FunctionCall: abs(...)"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "RHS: FunctionCall: ceil(...)"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					2,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+					// abs() drops __name__, so labels only contain non-name labels.
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
 				newSeriesMetadataMessage(
-					1,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+					3,
+					// ceil() drops __name__, so labels only contain non-name labels.
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
 				newInstantVectorSeriesDataMessage(
 					2,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3},
 							{TimestampMs: 10_000, Value: 7},
 							{TimestampMs: 20_000, Value: 11},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4},
 							{TimestampMs: 10_000, Value: 9},
 							{TimestampMs: 20_000, Value: 14},
@@ -599,16 +815,16 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					1,
+					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 3},
 							{TimestampMs: 10_000, Value: 7},
 							{TimestampMs: 20_000, Value: 11},
 						},
 					},
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 4},
 							{TimestampMs: 10_000, Value: 9},
 							{TimestampMs: 20_000, Value: 14},
@@ -618,7 +834,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					2,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5},
 							{TimestampMs: 10_000, Value: 11},
 							{TimestampMs: 20_000, Value: 17},
@@ -626,23 +842,49 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					1,
+					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 5},
 							{TimestampMs: 10_000, Value: 11},
 							{TimestampMs: 20_000, Value: 17},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    18,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							// After matcher propagation and reduction both function arguments share the same
+							// selector, so CSE deduplicates it and only a single selector is seen at storage.
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}, {Type: labels.MatchRegexp, Name: "idx", Value: "(0|1|2)"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						2: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -652,11 +894,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`max_over_time(my_series[11s:10s]) + min_over_time(my_other_series[11s:10s])`,
-				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				rangeQueryTimeRange,
 				enableDelayedNameRemoval,
+				true,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -674,7 +917,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 					},
 				}),
@@ -684,7 +927,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 0},
 						{TimestampMs: 10_000, Value: 1},
 					},
@@ -695,7 +938,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 1},
 						{TimestampMs: 20_000, Value: 2},
 					},
@@ -706,7 +949,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 					},
 				}),
@@ -716,7 +959,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 						{TimestampMs: 10_000, Value: 5},
 					},
@@ -727,7 +970,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 5},
 						{TimestampMs: 20_000, Value: 8},
 					},
@@ -738,7 +981,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 					},
 				}),
@@ -748,7 +991,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 1},
 						{TimestampMs: 10_000, Value: 3},
 					},
@@ -759,19 +1002,44 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 3},
 						{TimestampMs: 20_000, Value: 5},
 					},
 				}),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    15,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						1: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{2, 4, 4},
+								SamplesReadIfSubsequentStep: []int64{2, 2, 2},
+								SamplesReadIfFirstStep:      []int64{2, 4, 4},
+							},
+						},
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{1, 2, 2},
+								SamplesReadIfSubsequentStep: []int64{1, 1, 1},
+								SamplesReadIfFirstStep:      []int64{1, 2, 2},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -781,30 +1049,51 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`10 + foo + 20`, // We can't just use '10 + 20' here because the planner will collapse that to a constant.
-				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				rangeQueryTimeRange,
 				enableDelayedNameRemoval,
+				true,
 				1,
 				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 10"},
 				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "RHS: NumberLiteral: 20"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
-					mimirpb.Sample{TimestampMs: 0, Value: 10},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 10},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 10},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 10},
 				),
 				newScalarMessage(1,
-					mimirpb.Sample{TimestampMs: 0, Value: 20},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 20},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 20},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 20},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+						1: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode: "OK",
 		},
@@ -813,18 +1102,19 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`12 + my_series + min_over_time(my_other_series[11s:10s])`,
-				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				rangeQueryTimeRange,
 				enableDelayedNameRemoval,
+				true,
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS, hints exclude ()", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
-					mimirpb.Sample{TimestampMs: 0, Value: 12},
-					mimirpb.Sample{TimestampMs: 10_000, Value: 12},
-					mimirpb.Sample{TimestampMs: 20_000, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 0, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 10_000, Value: 12},
+					mimirpb.FloatSample{TimestampMs: 20_000, Value: 12},
 				),
 				newSeriesMetadataMessage(
 					1,
@@ -838,7 +1128,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 0},
 							{TimestampMs: 10_000, Value: 1},
 							{TimestampMs: 20_000, Value: 2},
@@ -851,7 +1141,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       0,
 					RangeStart:  -11_000,
 					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 					},
 				}),
@@ -861,7 +1151,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       10_000,
 					RangeStart:  -1_000,
 					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 0, Value: 2},
 						{TimestampMs: 10_000, Value: 5},
 					},
@@ -872,7 +1162,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					StepT:       20_000,
 					RangeStart:  9_000,
 					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
+					Floats: []mimirpb.FloatSample{
 						{TimestampMs: 10_000, Value: 5},
 						{TimestampMs: 20_000, Value: 8},
 					},
@@ -880,21 +1170,439 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 0, Value: 1},
 							{TimestampMs: 10_000, Value: 3},
 							{TimestampMs: 20_000, Value: 5},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed:   9,
-					QueueTime:          3 * time.Second,
-					WallTime:           expectedQueryWallTime,
-					FetchedSeriesCount: 123,
-					FetchedChunksCount: 456,
-					FetchedChunkBytes:  789,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    11,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 2},
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_other_series"}}, MinT: -309999, MaxT: 20000, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+						1: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{2, 2, 2},
+								SamplesReadIfSubsequentStep: []int64{2, 2, 2},
+								SamplesReadIfFirstStep:      []int64{2, 2, 2},
+							},
+						},
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{1, 2, 2},
+								SamplesReadIfSubsequentStep: []int64{1, 1, 1},
+								SamplesReadIfFirstStep:      []int64{1, 2, 2},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where all series fit exactly into one batch": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where all series fit into one batch with space to spare": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 4),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where the last batch is not completely full": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 2),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with series metadata batching, where each series gets its own batch": {
+			req: createQueryRequestWithSeriesMetadataBatchSize(`my_three_item_series + 0.123`, rangeQueryTimeRange, 1),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
+				newBatchedSeriesMetadataMessage(
+					3, 3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.FloatSample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    9,
+						PhysicalSamplesRead: 9,
+						QueueTime:           3 * time.Second,
+						WallTime:            expectedQueryWallTime,
+						FetchedSeriesCount:  123,
+						FetchedChunksCount:  456,
+						FetchedChunkBytes:   789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_three_item_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 3},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{3, 3, 3},
+								SamplesReadIfSubsequentStep: []int64{3, 3, 3},
+								SamplesReadIfFirstStep:      []int64{3, 3, 3},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series + 0.123`, rangeQueryTimeRange),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:   0,
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an instant vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series + 0.123`, rangeQueryTimeRange, 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(3, 0),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:   0,
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -299999, MaxT: 20000, SeriesCount: 0},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: rangeQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0, 0, 0},
+								SamplesReadIfSubsequentStep: []int64{0, 0, 0},
+								SamplesReadIfFirstStep:      []int64{0, 0, 0},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns a range vector with no series, metadata batching disabled": {
+			req: createQueryRequest(`my_non_existent_series[2h]`, instantQueryTimeRange),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:   0,
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: instantQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0},
+								SamplesReadIfSubsequentStep: []int64{0},
+								SamplesReadIfFirstStep:      []int64{0},
+							},
+						},
+					},
+				),
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query that returns an range vector with no series, metadata batching enabled": {
+			req: createQueryRequestWithBatchSize(`my_non_existent_series[2h]`, instantQueryTimeRange, 3),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				newBatchedSeriesMetadataMessage(0, 0),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:   0,
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "my_non_existent_series"}}, MinT: -7199999, MaxT: 0, SeriesCount: 0},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						0: {
+							TimeRange: instantQueryTimeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{0},
+								SamplesReadIfSubsequentStep: []int64{0},
+								SamplesReadIfFirstStep:      []int64{0},
+							},
+						},
+					},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -1024,7 +1732,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 }
 
-func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
+func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, enablePerNodeAnnotations bool, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
 	require.NotEmpty(t, nodePaths, "invalid test case: must provide at least one node path to evaluate")
 
 	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, streamingpromql.NoopPlanningObserver{})
@@ -1048,9 +1756,10 @@ func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, plann
 	}
 
 	body := &querierpb.EvaluateQueryRequest{
-		Plan:      *encodedPlan,
-		Nodes:     evaluationNodes,
-		BatchSize: batchSize,
+		Plan:                     *encodedPlan,
+		Nodes:                    evaluationNodes,
+		BatchSize:                batchSize,
+		EnablePerNodeAnnotations: enablePerNodeAnnotations,
 	}
 
 	req, err := prototypes.MarshalAny(body)
@@ -1132,6 +1841,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 
 	startT := timestamp.Time(0)
 	expectedQueryWallTime := 3 * time.Second
+	timeRange := types.NewInstantQueryTimeRange(startT.Add(9 * time.Second))
 
 	testCases := map[string]struct {
 		req                      *prototypes.Any
@@ -1141,8 +1851,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`rate(some_total[5s])`,
-				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				timeRange,
 				limits.EnableDelayedNameRemoval,
+				true,
 				1,
 				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
@@ -1154,23 +1865,40 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 9_000, Value: 1},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed: 5,
-					WallTime:         expectedQueryWallTime,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    5,
+						PhysicalSamplesRead: 5,
+						WallTime:            expectedQueryWallTime,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						1: {
+							TimeRange: timeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{5},
+								SamplesReadIfSubsequentStep: []int64{5},
+								SamplesReadIfFirstStep:      []int64{5},
+							},
+						},
+					},
+				),
 			},
 		},
 		"root of query": {
 			req: createQueryRequestForSpecificNodes(
 				t, ctx, planner,
 				`rate(some_total[5s])`,
-				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				timeRange,
 				limits.EnableDelayedNameRemoval,
+				true,
 				1,
 				nil, // The root of the query
 			),
@@ -1182,15 +1910,31 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				newInstantVectorSeriesDataMessage(
 					3,
 					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
+						Floats: []mimirpb.FloatSample{
 							{TimestampMs: 9_000, Value: 1},
 						},
 					},
 				),
-				newEvaluationCompletedMessage(stats.Stats{
-					SamplesProcessed: 5,
-					WallTime:         expectedQueryWallTime,
-				}),
+				newEvaluationCompletedMessage(
+					stats.Stats{
+						SamplesProcessed:    5,
+						PhysicalSamplesRead: 5,
+						WallTime:            expectedQueryWallTime,
+						SeenSelectorCardinalities: []stats.SelectorCardinality{
+							{Matchers: []stats.LabelMatcher{{Type: labels.MatchEqual, Name: "__name__", Value: "some_total"}}, MinT: 4001, MaxT: 9000, SeriesCount: 1},
+						},
+					},
+					map[int64]types.EncodedOperatorEvaluationStats{
+						3: {
+							TimeRange: timeRange.Encode(),
+							AllSeries: types.EncodedSubsetStats{
+								SamplesProcessedPerStep:     []int64{5},
+								SamplesReadIfSubsequentStep: []int64{5},
+								SamplesReadIfFirstStep:      []int64{5},
+							},
+						},
+					},
+				),
 			},
 		},
 	}
@@ -1421,13 +2165,18 @@ func newErrorMessage(typ mimirpb.QueryErrorType, message string) *frontendv2pb.Q
 }
 
 func newSeriesMetadataMessage(nodeIndex int64, series ...querierpb.SeriesMetadata) *frontendv2pb.QueryResultStreamRequest {
+	return newBatchedSeriesMetadataMessage(nodeIndex, int64(len(series)), series...)
+}
+
+func newBatchedSeriesMetadataMessage(nodeIndex int64, totalSeriesCount int64, series ...querierpb.SeriesMetadata) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-						NodeIndex: nodeIndex,
-						Series:    series,
+						NodeIndex:               nodeIndex,
+						Series:                  series,
+						TotalSeriesCountForNode: totalSeriesCount,
 					},
 				},
 			},
@@ -1435,21 +2184,37 @@ func newSeriesMetadataMessage(nodeIndex int64, series ...querierpb.SeriesMetadat
 	}
 }
 
-func newEvaluationCompletedMessage(stats stats.Stats) *frontendv2pb.QueryResultStreamRequest {
-	return newEvaluationCompletedMessageWithAnnotations(stats, nil, nil)
+func newEvaluationCompletedMessage(stats stats.Stats, perNodeStats map[int64]types.EncodedOperatorEvaluationStats) *frontendv2pb.QueryResultStreamRequest {
+	return newEvaluationCompletedMessageWithAnnotations(stats, perNodeStats, nil, nil)
 }
 
-func newEvaluationCompletedMessageWithAnnotations(stats stats.Stats, infos []string, warnings []string) *frontendv2pb.QueryResultStreamRequest {
+func newEvaluationCompletedMessageWithAnnotations(stats stats.Stats, perNodeStats map[int64]types.EncodedOperatorEvaluationStats, infos []string, warnings []string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-						Stats: stats,
+						Stats:        stats,
+						PerNodeStats: perNodeStats,
 						Annotations: querierpb.Annotations{
 							Infos:    infos,
 							Warnings: warnings,
 						},
+					},
+				},
+			},
+		},
+	}
+}
+func newEvaluationCompletedMessageWithPerNodeAnnotations(stats stats.Stats, perNodeStats map[int64]types.EncodedOperatorEvaluationStats, perNodeAnnotations map[int64]querierpb.Annotations) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+						Stats:              stats,
+						PerNodeStats:       perNodeStats,
+						PerNodeAnnotations: perNodeAnnotations,
 					},
 				},
 			},
@@ -1472,7 +2237,7 @@ func newStringMessage(nodeIndex int64, s string) *frontendv2pb.QueryResultStream
 	}
 }
 
-func newScalarMessage(nodeIndex int64, values ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
+func newScalarMessage(nodeIndex int64, values ...mimirpb.FloatSample) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{

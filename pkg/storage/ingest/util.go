@@ -20,7 +20,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
+	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -54,13 +56,86 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 	return int32(ingesterSeq), nil
 }
 
-type onlySampledTraces struct {
+// Compile-time checks to ensure sampledOnlyTracer implements the same hook interfaces as kotel.Tracer.
+var (
+	_ kgo.HookProduceRecordBuffered   = new(sampledOnlyTracer)
+	_ kgo.HookProduceRecordUnbuffered = new(sampledOnlyTracer)
+	_ kgo.HookFetchRecordBuffered     = new(sampledOnlyTracer)
+	_ kgo.HookFetchRecordUnbuffered   = new(sampledOnlyTracer)
+)
+
+// sampledOnlyTracer wraps a kotel.Tracer and skips span creation and header
+// injection for unsampled traces, on both the produce and the fetch path.
+// Without this wrapper, kotel creates a span with attributes for every Kafka
+// record regardless of sampling, which is expensive at high volume.
+//
+// On the fetch path the trace context is still extracted from record headers
+// for every record — consumers rely on the record context carrying the
+// producer's span context (see pusher.go) — but the per-record "receive" span
+// and its attributes are only created when the producer trace was sampled.
+type sampledOnlyTracer struct {
+	parent     *kotel.Tracer
+	propagator propagation.TextMapPropagator
+}
+
+func newSampledOnlyTracer() *sampledOnlyTracer {
+	return &sampledOnlyTracer{parent: recordsTracer(), propagator: recordsPropagator()}
+}
+
+func (t *sampledOnlyTracer) OnProduceRecordBuffered(r *kgo.Record) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
+	t.parent.OnProduceRecordBuffered(r)
+}
+
+// OnProduceRecordUnbuffered is safe to skip when OnProduceRecordBuffered was also skipped:
+// the record's context still has the original unsampled span, so the parent's
+// OnProduceRecordUnbuffered would only call End() on a no-op span.
+func (t *sampledOnlyTracer) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
+	t.parent.OnProduceRecordUnbuffered(r, err)
+}
+
+func (t *sampledOnlyTracer) OnFetchRecordBuffered(r *kgo.Record) {
+	if r.Context == nil {
+		r.Context = context.Background()
+	}
+	// Always extract the trace context from the record headers (cheap), so that
+	// the consume side observes the producer's span context even when we skip
+	// the "receive" span below.
+	ctx := t.propagator.Extract(r.Context, kotel.NewRecordCarrier(r))
+	if !trace.SpanContextFromContext(ctx).IsSampled() {
+		r.Context = ctx
+		return
+	}
+	// Sampled: delegate to kotel for the full "receive" span. The parent
+	// re-extracts from headers, which is redundant but only paid for the
+	// sampled fraction of records.
+	t.parent.OnFetchRecordBuffered(r)
+}
+
+// OnFetchRecordUnbuffered is safe to skip when OnFetchRecordBuffered was also skipped:
+// the record's context carries the (unsampled) remote span context, so the parent's
+// OnFetchRecordUnbuffered would only call End() on a no-op span.
+func (t *sampledOnlyTracer) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
+	if !trace.SpanContextFromContext(r.Context).IsSampled() {
+		return
+	}
+	t.parent.OnFetchRecordUnbuffered(r, polled)
+}
+
+// sampledOnlyPropagator is a propagation wrapper that only injects trace context
+// into Kafka record headers when the trace is sampled. This avoids adding
+// headers to every record when the trace won't be collected.
+type sampledOnlyPropagator struct {
 	propagation.TextMapPropagator
 }
 
-func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
-	sc := trace.SpanContextFromContext(ctx)
-	if !sc.IsSampled() {
+func (o sampledOnlyPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	if !trace.SpanContextFromContext(ctx).IsSampled() {
 		return
 	}
 	o.TextMapPropagator.Inject(ctx, carrier)
@@ -71,6 +146,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address...),
 		kgo.DialTimeout(cfg.DialTimeout),
+
+		// Mimir 3.1 and earlier doesn't fully support the newest Kafka protocols, resulting in failures to commit the offsets.
+		// As a workaround, we cap the maximum Kafka protocol version to negotiate with the broker to the older one.
+		// Ref to https://github.com/grafana/mimir/issues/15319
+		kgo.MaxVersions(kversion.V3_9_0()),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
 		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
@@ -90,8 +170,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		//
 		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
 		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(10 * time.Second),
-		kgo.MetadataMaxAge(10 * time.Second),
+		kgo.MetadataMinAge(DefaultMetadataRefreshInterval),
+		kgo.MetadataMaxAge(DefaultMetadataRefreshInterval),
 
 		kgo.WithLogger(NewKafkaLogger(logger)),
 
@@ -120,7 +200,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
-	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
+	if cfg.Dialer != nil {
+		opts = append(opts, kgo.Dialer(cfg.Dialer))
+	}
+
+	opts = append(opts, kgo.WithHooks(newSampledOnlyTracer()))
 
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))
@@ -152,30 +236,9 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 			Pass: cfg.Password.String(),
 		}.AsMechanism()
 	case SASLMechanismOauthbearer:
-		switch {
-		case cfg.OauthbearerToken.String() != "":
-			m = oauth.Auth{
-				Token:      cfg.OauthbearerToken.String(),
-				Zid:        cfg.OauthbearerZid,
-				Extensions: cfg.OauthbearerExtensions.Read(),
-			}.AsMechanism()
-		case cfg.OauthbearerFilePath != "":
-			m = oauth.Oauth(func(context.Context) (oauth.Auth, error) {
-				f, err := os.ReadFile(cfg.OauthbearerFilePath)
-				if err != nil {
-					return oauth.Auth{}, err
-				}
-				var a oauth.Auth
-				err = json.Unmarshal(f, &a)
-				return a, err
-			})
-		case cfg.OauthbearerHTTPSocketPath != "":
-			m = oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
-				return requestOAuthToken(ctx, cfg.OauthbearerHTTPSocketPath, cfg.OauthbearerHTTPSocketTimeout)
-			})
-		default:
-			panic(fmt.Errorf("SASL mechanism is %s but no way to get token defined", SASLMechanismOauthbearer))
-		}
+		m = cfg.Oauthbearer.mechanism()
+	case SASLMechanismMSKIAM:
+		m = cfg.MSKIAM.mechanism()
 	default:
 		panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.Mechanism))
 	}
@@ -183,7 +246,72 @@ func kafkaAuthOptions(cfg KafkaAuthConfig) []kgo.Opt {
 	return []kgo.Opt{kgo.SASL(m)}
 }
 
-func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Duration) (oauth.Auth, error) {
+// saslSecretConfig configures a static secret. It may be empty.
+type saslSecretConfig interface {
+	// Validate returns errNoSecret when no static secret are set.
+	// It may return other validation errors.
+	Validate() error
+	// mechanism constructs a sasl.Mechanism from the static secret, if it exists.
+	mechanism() (sasl.Mechanism, bool)
+}
+
+func (cfg KafkaAuthOauthbearerConfig) mechanism() sasl.Mechanism {
+	return saslMechanism((kafkaSASLConfig[KafkaOauthbearerStaticConfig])(cfg), oauth.Oauth)
+}
+
+func (s KafkaOauthbearerStaticConfig) mechanism() (sasl.Mechanism, bool) {
+	if err := s.Validate(); err != nil {
+		return nil, false
+	}
+	return oauth.Auth{
+		Token:      s.Token.String(),
+		Zid:        s.Zid,
+		Extensions: s.Extensions.Read(),
+	}.AsMechanism(), true
+}
+
+func (cfg KafkaAuthMSKIAMConfig) mechanism() sasl.Mechanism {
+	return saslMechanism((kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg), awssasl.ManagedStreamingIAM)
+}
+
+func (s KafkaMSKIAMStaticConfig) mechanism() (sasl.Mechanism, bool) {
+	if err := s.Validate(); err != nil {
+		return nil, false
+	}
+	return awssasl.Auth{
+		AccessKey:    s.AccessKey.String(),
+		SecretKey:    s.SecretKey.String(),
+		SessionToken: s.SessionToken.String(),
+		UserAgent:    s.UserAgent,
+	}.AsManagedStreamingIAMMechanism(), true
+}
+
+// saslMechanism returns the sasl.Mechanism to be passed to the Kafka client.
+func saslMechanism[T saslSecretConfig, A any](cfg kafkaSASLConfig[T], fromCallback func(func(context.Context) (A, error)) sasl.Mechanism) sasl.Mechanism {
+	if m, ok := cfg.Secret.mechanism(); ok {
+		return m
+	}
+	if cfg.FilePath != "" {
+		return fromCallback(func(ctx context.Context) (A, error) {
+			f, err := os.ReadFile(cfg.FilePath)
+			if err != nil {
+				var zero A
+				return zero, err
+			}
+			var a A
+			err = json.Unmarshal(f, &a)
+			return a, err
+		})
+	}
+	if cfg.HTTPSocketPath != "" {
+		return fromCallback(func(ctx context.Context) (A, error) {
+			return requestJSONFromSocket[A](ctx, cfg.HTTPSocketPath, cfg.HTTPSocketTimeout)
+		})
+	}
+	panic("invalid kafkaSecretConfig; Validate must have been called first")
+}
+
+func requestJSONFromSocket[T any](ctx context.Context, socketPath string, timeout time.Duration) (T, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -198,30 +326,41 @@ func requestOAuthToken(ctx context.Context, socketPath string, timeout time.Dura
 		Transport: transport,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://token/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://credentials/", nil)
 	if err != nil {
-		return oauth.Auth{}, fmt.Errorf("creating request for OAuth HTTP socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("creating request for HTTP socket %s: %w", socketPath, err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("requesting credentials from HTTP socket %s: %w", socketPath, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return oauth.Auth{}, fmt.Errorf("requesting token from OAuth HTTP socket %s: unexpected status %s", socketPath, resp.Status)
+		var zero T
+		return zero, fmt.Errorf("requesting credentials from HTTP socket %s: unexpected status %s", socketPath, resp.Status)
 	}
 
-	var a oauth.Auth
+	var a T
 	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
-		return oauth.Auth{}, fmt.Errorf("parsing OAuth token from socket %s: %w", socketPath, err)
+		var zero T
+		return zero, fmt.Errorf("parsing credentials from HTTP socket %s: %w", socketPath, err)
 	}
 	return a, nil
 }
 
+// recordsPropagator returns the propagator used for Kafka record headers. It must be
+// shared by recordsTracer and sampledOnlyTracer so that header injection and extraction
+// stay in sync.
+func recordsPropagator() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(sampledOnlyPropagator{propagation.TraceContext{}})
+}
+
 func recordsTracer() *kotel.Tracer {
-	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(onlySampledTraces{propagation.TraceContext{}})))
+	return kotel.NewTracer(kotel.TracerPropagator(recordsPropagator()))
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
@@ -257,9 +396,9 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	}
 }
 
-// CreateTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
-// If the topic already exists, then the function logs a message and returns nil.
-func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
+// CreateTopics creates the given topics in the Kafka cluster. A topic that already exists is treated as
+// success. If creating any topic fails for another reason, then an error is returned.
+func CreateTopics(cfg KafkaConfig, logger log.Logger, topics ...string) error {
 	logger = log.With(logger, "task", "autocreate_topic")
 
 	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
@@ -273,28 +412,32 @@ func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
 
 	// As of kafka 2.4 we can pass -1 and the broker will use its default configuration.
 	const defaultReplication = -1
-	resp, err := adm.CreateTopic(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, cfg.Topic)
-	if err == nil {
-		err = resp.Err
-	}
+	resps, err := adm.CreateTopics(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, topics...)
 	if err != nil {
-		if errors.Is(err, kerr.TopicAlreadyExists) {
-			level.Info(logger).Log(
-				"msg", "topic already exists",
-				"topic", resp.Topic,
-				"num_partitions", resp.NumPartitions,
-				"replication_factor", resp.ReplicationFactor,
-			)
-			return nil
-		}
-		return fmt.Errorf("failed to create topic %s: %w", cfg.Topic, err)
+		return fmt.Errorf("failed to create topics %v: %w", topics, err)
 	}
 
-	level.Info(logger).Log(
-		"msg", "successfully created topic",
-		"topic", resp.Topic,
-		"num_partitions", resp.NumPartitions,
-		"replication_factor", resp.ReplicationFactor,
-	)
+	for _, topic := range topics {
+		resp, ok := resps[topic]
+		if !ok {
+			// The broker should return a response for every requested topic; a missing one means we
+			// can't confirm it was created, so fail rather than report a success we didn't observe.
+			return fmt.Errorf("failed to create topic %s: not part of the create topics response", topic)
+		}
+		if resp.Err != nil {
+			if errors.Is(resp.Err, kerr.TopicAlreadyExists) {
+				level.Info(logger).Log("msg", "skipped Kafka topic creation because it already exists", "topic", topic)
+				continue
+			}
+			return fmt.Errorf("failed to create topic %s: %w", topic, resp.Err)
+		}
+
+		level.Info(logger).Log(
+			"msg", "successfully created Kafka topic",
+			"topic", resp.Topic,
+			"num_partitions", resp.NumPartitions,
+			"replication_factor", resp.ReplicationFactor,
+		)
+	}
 	return nil
 }

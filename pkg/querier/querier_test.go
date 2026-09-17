@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -232,12 +233,7 @@ func TestQuerier(t *testing.T) {
 		t.Run(qName, func(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
-			dbQueryable := TimeRangeQueryable{
-				Queryable: &increaseMemoryConsumptionLabelsQueryable{db},
-				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
-					return true
-				},
-			}
+			dbQueryable := &increaseMemoryConsumptionLabelsQueryable{db}
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
@@ -247,7 +243,7 @@ func TestQuerier(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
+			queryable, _, _, _, err := New(cfg, overrides, distributor, dbQueryable, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -580,7 +576,8 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),
@@ -1427,7 +1424,8 @@ func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	from, through, step := time.Unix(0, 0), end.Time(), q.step
 	engine := promql.NewEngine(promql.EngineOpts{
@@ -1469,7 +1467,7 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, bool, []string, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -1499,6 +1497,14 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 
 func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
 	return nil, errDistributorError
+}
+
+func (m *errDistributor) SearchLabelNames(context.Context, model.Time, model.Time, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
+}
+
+func (m *errDistributor) SearchLabelValues(context.Context, model.Time, model.Time, string, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
@@ -1540,7 +1546,8 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	queryTracker, err := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:             promslog.NewNopLogger(),
@@ -1566,14 +1573,11 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")}
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
-
-			querierQueryables := []TimeRangeQueryable{
-				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
-			}
+			blockStore := newMockBlocksStorageQueryable(querier)
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
+			queryable, _, _, _, err := New(cfg, overrides, distributor, blockStore, prometheus.NewRegistry(), log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))

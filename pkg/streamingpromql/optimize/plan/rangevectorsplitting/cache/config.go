@@ -14,7 +14,10 @@ import (
 
 const (
 	// resultsCacheVersion should be increased every time the cache format changes.
-	resultsCacheVersion = 1
+	resultsCacheVersion = 3
+
+	// cacheItemTypePrefix identifies range vector splitting intermediate-result entries.
+	cacheItemTypePrefix = "MQERVSIR"
 )
 
 var (
@@ -26,6 +29,8 @@ var (
 type Config struct {
 	cache.BackendConfig `yaml:",inline"`
 	Compression         cache.CompressionConfig `yaml:",inline"`
+
+	CacheClient cache.Cache `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

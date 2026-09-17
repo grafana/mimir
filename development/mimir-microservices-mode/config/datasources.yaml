@@ -35,6 +35,13 @@ datasources:
   secureJsonData:
     httpHeaderValue1: no-store
 
+- name: Mimir (Querier)
+  type: prometheus
+  access: proxy
+  uid: mimir-querier
+  orgID: 1
+  url: http://querier:8005/prometheus
+
 - name: Jaeger
   type: jaeger
   access: proxy

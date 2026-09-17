@@ -82,4 +82,5 @@ spec:
             claimName: test-requests-and-limits-values-minio
         - name: minio-user
           secret:
-            secretName: test-requests-and-limits-values-minio
+            secretName: test-requests-and-limits-values-minio        
+

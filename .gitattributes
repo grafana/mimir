@@ -1,2 +1,14 @@
 **/*.pb.go linguist-generated=true
 vendor/**/* linguist-generated=true
+cmd/mimir/config-descriptor.json linguist-generated=true
+cmd/mimir/*.txt.tmpl linguist-generated=true
+docs/sources/mimir/configure/configuration-parameters/index.md linguist-generated=true
+operations/mimir/mimir-flags-defaults.json linguist-generated=true
+operations/helm/tests/*-values-generated/** linguist-generated=true
+operations/mimir-mixin-compiled*/** linguist-generated=true
+operations/mimir-tests/*-generated.yaml linguist-generated=true
+# Resolve conflicts in changelogs by merging both sides together.
+# This can cause misleading resolutions, with duplicated records in the changelog. But it allows the bakporting CI job to pass
+# and let the human to resolve it later, rather than failing.
+CHANGELOG.md merge=union
+operations/**/CHANGELOG.md merge=union

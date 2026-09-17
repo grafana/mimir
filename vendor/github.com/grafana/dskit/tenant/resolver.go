@@ -22,19 +22,18 @@ import (
 //
 //nolint:revive
 func TenantID(ctx context.Context) (string, error) {
-	//lint:ignore faillint wrapper around upstream method
 	orgIDs, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return "", err
 	}
 	orgID, remaining, hasMoreIDs := stringsCut(orgIDs, tenantIDsSeparator)
-	tenantID := trimMetadata(orgID)
+	tenantID := TrimMetadata(orgID)
 	if err := ValidTenantID(tenantID); err != nil {
 		return "", err
 	}
 	for hasMoreIDs {
 		orgID, remaining, hasMoreIDs = stringsCut(remaining, tenantIDsSeparator)
-		if tenantID != trimMetadata(orgID) {
+		if tenantID != TrimMetadata(orgID) {
 			return "", user.ErrTooManyOrgIDs
 		}
 	}
@@ -56,7 +55,6 @@ func TenantID(ctx context.Context) (string, error) {
 //
 //nolint:revive
 func TenantIDs(ctx context.Context) ([]string, error) {
-	//lint:ignore faillint wrapper around upstream method
 	orgID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return nil, err
@@ -67,7 +65,7 @@ func TenantIDs(ctx context.Context) ([]string, error) {
 func parseTenantIDs(orgID string) ([]string, error) {
 	orgIDs := strings.Split(orgID, string(tenantIDsSeparator))
 	for i, part := range orgIDs {
-		tenantId := trimMetadata(part)
+		tenantId := TrimMetadata(part)
 		if err := ValidTenantID(tenantId); err != nil {
 			return nil, err
 		}
@@ -82,7 +80,6 @@ func parseTenantIDs(orgID string) ([]string, error) {
 //
 //nolint:revive
 func ExtractWithMetadata(ctx context.Context) (tenantID string, m Metadata, err error) {
-	//lint:ignore faillint wrapper around upstream method
 	orgIDs, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return "", Metadata{}, err
@@ -102,9 +99,6 @@ func ParseWithMetadata(orgIDs string) (tenantID string, m Metadata, err error) {
 	orgID, remaining, hasMoreIDs := stringsCut(orgIDs, tenantIDsSeparator)
 	tenantID, metadataString := splitTenantAndMetadata(orgID)
 	if err := ValidTenantID(tenantID); err != nil {
-		return "", Metadata{}, err
-	}
-	if err := ValidMetadata(metadataString); err != nil {
 		return "", Metadata{}, err
 	}
 	var nextOrgID string

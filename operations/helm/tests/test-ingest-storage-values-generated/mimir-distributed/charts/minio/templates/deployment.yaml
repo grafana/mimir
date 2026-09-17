@@ -82,4 +82,5 @@ spec:
             claimName: test-ingest-storage-values-minio
         - name: minio-user
           secret:
-            secretName: test-ingest-storage-values-minio
+            secretName: test-ingest-storage-values-minio        
+

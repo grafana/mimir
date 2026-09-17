@@ -1,0 +1,16 @@
+{{- with (.Values.metaMonitoring).grafanaAgent }}
+{{- if and .enabled (.serviceAccount).create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "mimir.metaMonitoring.grafanaAgent.serviceAccountName" $ }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
+    {{- with (.serviceAccount).labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml (.serviceAccount).annotations | nindent 4 }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+{{- end }}
+{{- end }}

@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
@@ -135,14 +136,18 @@ func (s *metaSyncer) GarbageCollect(ctx context.Context) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
+	return garbageCollectBlocks(ctx, s.logger, s.bkt, duplicateIDs, s.metrics, s.blocks)
+}
+
+// garbageCollectBlocks marks duplicate blocks for deletion and removes them from the provided meta map.
+func garbageCollectBlocks(ctx context.Context, logger log.Logger, bkt objstore.Bucket, duplicateIDs []ulid.ULID, metrics *syncerMetrics, metas map[ulid.ULID]*block.Meta) error {
 	begin := time.Now()
 
 	// The deduplication filter is applied after all blocks marked for deletion have been excluded
 	// (with no deletion delay), so we expect that all duplicated blocks have not been marked for
 	// deletion yet. Even in the remote case these blocks have already been marked for deletion,
 	// the block.MarkForDeletion() call will correctly handle it.
-	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
-
 	for _, id := range duplicateIDs {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -151,20 +156,20 @@ func (s *metaSyncer) GarbageCollect(ctx context.Context) error {
 		// Spawn a new context so we always mark a block for deletion in full on shutdown.
 		delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
-		level.Info(s.logger).Log("msg", "marking outdated block for deletion", "block", id)
-		err := block.MarkForDeletion(delCtx, s.logger, s.bkt, id, "outdated block", s.metrics.blocksMarkedForDeletion)
+		level.Info(logger).Log("msg", "marking outdated block for deletion", "block", id)
+		err := block.MarkForDeletion(delCtx, logger, bkt, id, "outdated block", metrics.blocksMarkedForDeletion)
 		cancel()
 		if err != nil {
-			s.metrics.garbageCollectionFailures.Inc()
+			metrics.garbageCollectionFailures.Inc()
 			return fmt.Errorf("mark block %s for deletion: %w", id, err)
 		}
 
 		// Immediately update our in-memory state so no further call to SyncMetas is needed
 		// after running garbage collection.
-		delete(s.blocks, id)
+		delete(metas, id)
 	}
-	s.metrics.garbageCollections.Inc()
-	s.metrics.garbageCollectionDuration.Observe(time.Since(begin).Seconds())
+	metrics.garbageCollections.Inc()
+	metrics.garbageCollectionDuration.Observe(time.Since(begin).Seconds())
 	return nil
 }
 
@@ -311,6 +316,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
+	healthValidationGate := newBlockHealthValidationGate(c.blockHealthValidationConcurrency)
+
 	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		meta := toCompact[idx]
 
@@ -318,11 +325,14 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+			if c.bkt.IsObjNotFoundErr(err) {
+				return blockFileNotFoundError{err: err, id: meta.ULID}
+			}
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
 		// Ensure all source blocks are valid.
-		stats, err := block.GatherBlockHealthStats(ctx, jobLogger, bdir, meta.MinTime, meta.MaxTime, false)
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, meta.MinTime, meta.MaxTime)
 		if err != nil {
 			return fmt.Errorf("gather index issues for block %s: %w", bdir, err)
 		}
@@ -413,6 +423,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	uploadBlocksCount := len(blocksToUpload)
 
+	blocksHealthStats := make([]block.HealthStats, uploadBlocksCount)
+
 	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
@@ -440,9 +452,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("remove tombstones: %w", err)
 		}
 
-		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
+		// Verify block is healthy.
+		stats, err := gatherBlockHealthStats(ctx, healthValidationGate, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime)
+		if err != nil {
+			return fmt.Errorf("gather health stats for result block %s: %w", bdir, err)
+		}
+		if err := stats.AnyErr(); err != nil {
 			return fmt.Errorf("invalid result block %s: %w", bdir, err)
 		}
+		// Per-block health stats are used below after the block was successfully uploaded.
+		blocksHealthStats[idx] = stats
+
 		return nil
 	})
 	if err != nil {
@@ -495,6 +515,22 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("upload of %s failed: %w", blockToUpload.ulid, err)
 		}
 
+		blockStats := blocksHealthStats[idx]
+		if c.blockSymbolTableSizeThreshold > 0 && blockStats.SymbolTableSize > c.blockSymbolTableSizeThreshold {
+			// Block is oversized. Preemptively mark it as no-compact, in order to skip it on the next compaction cycle.
+			if err := block.MarkForNoCompact(
+				ctx,
+				jobLogger,
+				c.bkt,
+				blockToUpload.ulid,
+				block.PreemptiveNoCompactReason,
+				"block exceeds configured size threshold",
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)),
+			); err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to preemptively mark block as no-compact", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			}
+		}
+
 		elapsed := time.Since(begin)
 		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
 
@@ -517,6 +553,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			"size_bytes", blockSize,
 			"series_count", seriesCount,
 			"sample_count", sampleCount,
+			"symbol_table_size_bytes", blockStats.SymbolTableSize,
 			"compaction_level", compactionLevel,
 			"duration", elapsed,
 			"duration_ms", elapsed.Milliseconds(),
@@ -548,11 +585,28 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
+func newBlockHealthValidationGate(maxConcurrency int) gate.Gate {
+	if maxConcurrency <= 0 {
+		return gate.NewNoop()
+	}
+
+	return gate.NewBlocking(maxConcurrency)
+}
+
+func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger, bdir string, minTime, maxTime int64) (block.HealthStats, error) {
+	if err := g.Start(ctx); err != nil {
+		return block.HealthStats{}, err
+	}
+	defer g.Done()
+
+	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
+}
+
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
 	logger = log.With(logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
+	br, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, dir, cfg, sampling, logger, mets)
 	if err != nil {
 		return err
 	}
@@ -646,6 +700,27 @@ func isIssue347Error(err error) (bool, issue347Error) {
 	var ie issue347Error
 	ok := errors.As(err, &ie)
 	return ok, ie
+}
+
+// blockFileNotFoundError is a type wrapper for when a file of a source block is missing from object storage.
+type blockFileNotFoundError struct {
+	err error
+	id  ulid.ULID
+}
+
+func (e blockFileNotFoundError) Error() string {
+	return fmt.Sprintf("block file not found in bucket: %s (block: %s)", e.err.Error(), e.id.String())
+}
+
+func (e blockFileNotFoundError) Unwrap() error {
+	return e.err
+}
+
+// isBlockFileNotFoundError returns true if the base error is a blockFileNotFoundError.
+func isBlockFileNotFoundError(err error) (bool, blockFileNotFoundError) {
+	var notFoundErr blockFileNotFoundError
+	ok := errors.As(err, &notFoundErr)
+	return ok, notFoundErr
 }
 
 // OutOfOrderChunksError is a type wrapper for OOO chunk error from validating block index.
@@ -860,6 +935,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.IndexExceeds64GiBNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.SymbolTableTooLargeNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)).Add(0)
 
 	return bcm
 }
@@ -873,24 +949,26 @@ var ownAllJobs = func(*Job) (bool, error) {
 
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
-	logger                        log.Logger
-	grouper                       Grouper
-	comp                          Compactor
-	planner                       Planner
-	compactDir                    string
-	bkt                           objstore.Bucket
-	concurrency                   int
-	skipUnhealthyBlocks           bool
-	sparseIndexHeaderSamplingRate int
-	maxPerBlockUploadConcurrency  int
-	sparseIndexHeaderconfig       indexheader.Config
-	ownJob                        ownCompactionJobFunc
-	sortJobs                      JobsOrderFunc
-	waitPeriod                    time.Duration
-	oooWaitPeriod                 time.Duration
-	skipFutureMaxTime             bool
-	blockSyncConcurrency          int
-	metrics                       *BucketCompactorMetrics
+	logger                           log.Logger
+	grouper                          Grouper
+	comp                             Compactor
+	planner                          Planner
+	compactDir                       string
+	bkt                              objstore.Bucket
+	concurrency                      int
+	skipUnhealthyBlocks              bool
+	blockSymbolTableSizeThreshold    uint64
+	sparseIndexHeaderSamplingRate    int
+	maxPerBlockUploadConcurrency     int
+	sparseIndexHeaderconfig          indexheader.Config
+	ownJob                           ownCompactionJobFunc
+	sortJobs                         JobsOrderFunc
+	waitPeriod                       time.Duration
+	oooWaitPeriod                    time.Duration
+	skipFutureMaxTime                bool
+	blockSyncConcurrency             int
+	blockHealthValidationConcurrency int
+	metrics                          *BucketCompactorMetrics
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -903,12 +981,14 @@ func NewBucketCompactor(
 	bkt objstore.Bucket,
 	concurrency int,
 	skipUnhealthyBlocks bool,
+	blockSymbolTableSizeThreshold uint64,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
 	oooWaitPeriod time.Duration,
 	skipFutureMaxTime bool,
 	blockSyncConcurrency int,
+	blockHealthValidationConcurrency int,
 	metrics *BucketCompactorMetrics,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
@@ -923,24 +1003,26 @@ func NewBucketCompactor(
 	}
 
 	return &BucketCompactor{
-		logger:                        logger,
-		grouper:                       grouper,
-		planner:                       planner,
-		comp:                          comp,
-		compactDir:                    compactDir,
-		bkt:                           bkt,
-		concurrency:                   concurrency,
-		skipUnhealthyBlocks:           skipUnhealthyBlocks,
-		ownJob:                        ownJob,
-		sortJobs:                      sortJobs,
-		waitPeriod:                    waitPeriod,
-		oooWaitPeriod:                 oooWaitPeriod,
-		skipFutureMaxTime:             skipFutureMaxTime,
-		blockSyncConcurrency:          blockSyncConcurrency,
-		metrics:                       metrics,
-		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
-		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
-		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
+		logger:                           logger,
+		grouper:                          grouper,
+		planner:                          planner,
+		comp:                             comp,
+		compactDir:                       compactDir,
+		bkt:                              bkt,
+		concurrency:                      concurrency,
+		skipUnhealthyBlocks:              skipUnhealthyBlocks,
+		blockSymbolTableSizeThreshold:    blockSymbolTableSizeThreshold,
+		ownJob:                           ownJob,
+		sortJobs:                         sortJobs,
+		waitPeriod:                       waitPeriod,
+		oooWaitPeriod:                    oooWaitPeriod,
+		skipFutureMaxTime:                skipFutureMaxTime,
+		blockSyncConcurrency:             blockSyncConcurrency,
+		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
+		metrics:                          metrics,
+		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
+		sparseIndexHeaderconfig:          sparseIndexHeaderconfig,
+		maxPerBlockUploadConcurrency:     maxPerBlockUploadConcurrency,
 	}, nil
 }
 
@@ -967,163 +1049,190 @@ func (c *BucketCompactor) Compact(ctx context.Context, syncer *metaSyncer, maxCo
 	// Loop over bucket and compact until there's no work left.
 	for {
 		var (
-			wg                     sync.WaitGroup
-			workCtx, workCtxCancel = context.WithCancelCause(ctx)
-			jobChan                = make(chan *Job)
-			errChan                = make(chan error, c.concurrency)
-			finishedAllJobs        = true
-			mtx                    sync.Mutex
+			shouldContinue bool
+			err            error
 		)
-
-		defer workCtxCancel(errCompactionIterationCancelled)
-
-		// Set up workers which will compact the jobs when the jobs are ready.
-		// They will compact available jobs until they encounter an error, after which they will stop.
-		for i := 0; i < c.concurrency; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for g := range jobChan {
-					// Ensure the job is still owned by the current compactor instance.
-					// If not, we shouldn't run it because another compactor instance may already
-					// process it (or will do it soon).
-					if ok, err := c.ownJob(g); err != nil {
-						level.Info(c.logger).Log("msg", "skipped compaction because unable to check whether the job is owned by the compactor instance", "groupKey", g.Key(), "err", err)
-						continue
-					} else if !ok {
-						level.Info(c.logger).Log("msg", "skipped compaction because job is not owned by the compactor instance anymore", "groupKey", g.Key())
-						continue
-					}
-
-					c.metrics.groupCompactionRunsStarted.Inc()
-
-					shouldRerunJob, compactedBlockIDs, err := c.runCompactionJob(workCtx, g)
-					if err == nil {
-						c.metrics.groupCompactionRunsCompleted.Inc()
-						if hasNonZeroULIDs(compactedBlockIDs) {
-							c.metrics.groupCompactions.Inc()
-						}
-
-						if shouldRerunJob {
-							mtx.Lock()
-							finishedAllJobs = false
-							mtx.Unlock()
-						}
-						continue
-					}
-
-					// At this point the compaction has failed.
-					c.metrics.groupCompactionRunsFailed.Inc()
-
-					if handleErr := c.handleKnownCompactionErrors(workCtx, g, err); handleErr == nil {
-						mtx.Lock()
-						finishedAllJobs = false
-						mtx.Unlock()
-						continue
-					}
-
-					errChan <- fmt.Errorf("group %s: %w", g.Key(), err)
-					return
-				}
-			}()
-		}
-
-		level.Info(c.logger).Log("msg", "start sync of metas")
-		if err := syncer.SyncMetas(ctx); err != nil {
-			return fmt.Errorf("sync: %w", err)
-		}
-
-		level.Info(c.logger).Log("msg", "start of GC")
-		// Blocks that were compacted are garbage collected after each Compaction.
-		// However if compactor crashes we need to resolve those on startup.
-		if err := syncer.GarbageCollect(ctx); err != nil {
-			return fmt.Errorf("blocks garbage collect: %w", err)
-		}
-
-		jobs, err := c.grouper.Groups(syncer.Metas())
-		if err != nil {
-			return fmt.Errorf("build compaction jobs: %w", err)
-		}
-
-		// There is another check just before we start processing the job, but we can avoid sending it
-		// to the goroutine in the first place.
-		jobs, err = c.filterOwnJobs(jobs)
+		shouldContinue, maxCompactionTimeChan, err = c.compactOnce(ctx, syncer, maxCompactionTime, maxCompactionTimeChan)
 		if err != nil {
 			return err
 		}
-
-		// Record the difference between now and the max time for a block being compacted. This
-		// is used to detect compactors not being able to keep up with the rate of blocks being
-		// created. The idea is that most blocks should be for within 24h or 48h.
-		now := time.Now()
-		for _, delta := range c.blockMaxTimeDeltas(now, jobs) {
-			c.metrics.blocksMaxTimeDelta.Observe(delta)
-		}
-
-		// Skip jobs for which the wait period hasn't been honored yet.
-		jobs = c.filterJobsByWaitPeriod(ctx, jobs)
-
-		// Sort jobs based on the configured ordering algorithm.
-		jobs = c.sortJobs(jobs)
-
-		ignoreDirs := []string{}
-		for _, gr := range jobs {
-			for _, grID := range gr.IDs() {
-				ignoreDirs = append(ignoreDirs, filepath.Join(gr.Key(), grID.String()))
-			}
-		}
-
-		if err := runutil.DeleteAll(c.compactDir, ignoreDirs...); err != nil {
-			level.Warn(c.logger).Log("msg", "failed deleting non-compaction job directories/files, some disk space usage might have leaked. Continuing", "err", err, "dir", c.compactDir)
-		}
-
-		level.Info(c.logger).Log("msg", "start of compactions")
-
-		// Start the max compaction timer only after the first planning has been completed. This is important
-		// in case the metas syncing (or planning in general) is slow. If did start the timer before the first
-		// planning we could end up in a situation where the planning takes longer than "max compaction time"
-		// and we would never run compactions at all for a given tenant.
-		if maxCompactionTimeChan == nil && maxCompactionTime > 0 {
-			maxCompactionTimeChan = time.After(maxCompactionTime)
-		}
-
-		maxCompactionTimeReached := false
-		// Send all jobs found during this pass to the compaction workers.
-		var jobErrs multierror.MultiError
-	jobLoop:
-		for _, g := range jobs {
-			select {
-			case jobErr := <-errChan:
-				jobErrs.Add(jobErr)
-				break jobLoop
-			case jobChan <- g:
-			case <-maxCompactionTimeChan:
-				maxCompactionTimeReached = true
-				level.Info(c.logger).Log("msg", "max compaction time reached, no more compactions will be started")
-				break jobLoop
-			}
-		}
-		close(jobChan)
-		wg.Wait()
-
-		// Collect any other error reported by the workers, or any error reported
-		// while we were waiting for the last batch of jobs to run the compaction.
-		close(errChan)
-		for jobErr := range errChan {
-			jobErrs.Add(jobErr)
-		}
-
-		workCtxCancel(errCompactionIterationStopped)
-		if len(jobErrs) > 0 {
-			return jobErrs.Err()
-		}
-
-		if maxCompactionTimeReached || finishedAllJobs {
+		if !shouldContinue {
 			break
 		}
 	}
 	level.Info(c.logger).Log("msg", "compaction iterations done")
 	return nil
+}
+
+// compactOnce runs a single compaction iteration: syncs metadata, plans jobs,
+// and dispatches them to worker goroutines. It returns whether the caller should
+// continue with another iteration and the (possibly initialised) max compaction
+// time channel.
+func (c *BucketCompactor) compactOnce(ctx context.Context, syncer *metaSyncer, maxCompactionTime time.Duration, maxCompactionTimeChan <-chan time.Time) (bool, <-chan time.Time, error) {
+	var (
+		wg                     sync.WaitGroup
+		workCtx, workCtxCancel = context.WithCancelCause(ctx)
+		jobChan                = make(chan *Job)
+		jobChanClosed          = false
+		errChan                = make(chan error, c.concurrency)
+		finishedAllJobs        = true
+		mtx                    sync.Mutex
+	)
+
+	defer func() {
+		workCtxCancel(errCompactionIterationCancelled)
+		if !jobChanClosed {
+			close(jobChan)
+			wg.Wait()
+		}
+	}()
+
+	// Set up workers which will compact the jobs when the jobs are ready.
+	// They will compact available jobs until they encounter an error, after which they will stop.
+	for i := 0; i < c.concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for g := range jobChan {
+				// Ensure the job is still owned by the current compactor instance.
+				// If not, we shouldn't run it because another compactor instance may already
+				// process it (or will do it soon).
+				if ok, err := c.ownJob(g); err != nil {
+					level.Info(c.logger).Log("msg", "skipped compaction because unable to check whether the job is owned by the compactor instance", "groupKey", g.Key(), "err", err)
+					continue
+				} else if !ok {
+					level.Info(c.logger).Log("msg", "skipped compaction because job is not owned by the compactor instance anymore", "groupKey", g.Key())
+					continue
+				}
+
+				c.metrics.groupCompactionRunsStarted.Inc()
+
+				shouldRerunJob, compactedBlockIDs, err := c.runCompactionJob(workCtx, g)
+				if err == nil {
+					c.metrics.groupCompactionRunsCompleted.Inc()
+					if hasNonZeroULIDs(compactedBlockIDs) {
+						c.metrics.groupCompactions.Inc()
+					}
+
+					if shouldRerunJob {
+						mtx.Lock()
+						finishedAllJobs = false
+						mtx.Unlock()
+					}
+					continue
+				}
+
+				// At this point the compaction has failed.
+				c.metrics.groupCompactionRunsFailed.Inc()
+
+				if handleErr := c.handleKnownCompactionErrors(workCtx, g, err); handleErr == nil {
+					mtx.Lock()
+					finishedAllJobs = false
+					mtx.Unlock()
+					continue
+				}
+
+				errChan <- fmt.Errorf("group %s: %w", g.Key(), err)
+				return
+			}
+		}()
+	}
+
+	level.Info(c.logger).Log("msg", "start sync of metas")
+	if err := syncer.SyncMetas(ctx); err != nil {
+		return false, maxCompactionTimeChan, fmt.Errorf("sync: %w", err)
+	}
+
+	level.Info(c.logger).Log("msg", "start of GC")
+	// Blocks that were compacted are garbage collected after each Compaction.
+	// However if compactor crashes we need to resolve those on startup.
+	if err := syncer.GarbageCollect(ctx); err != nil {
+		return false, maxCompactionTimeChan, fmt.Errorf("blocks garbage collect: %w", err)
+	}
+
+	jobs, err := c.grouper.Groups(syncer.Metas())
+	if err != nil {
+		return false, maxCompactionTimeChan, fmt.Errorf("build compaction jobs: %w", err)
+	}
+
+	// There is another check just before we start processing the job, but we can avoid sending it
+	// to the goroutine in the first place.
+	jobs, err = c.filterOwnJobs(jobs)
+	if err != nil {
+		return false, maxCompactionTimeChan, err
+	}
+
+	// Record the difference between now and the max time for a block being compacted. This
+	// is used to detect compactors not being able to keep up with the rate of blocks being
+	// created. The idea is that most blocks should be for within 24h or 48h.
+	now := time.Now()
+	for _, delta := range c.blockMaxTimeDeltas(now, jobs) {
+		c.metrics.blocksMaxTimeDelta.Observe(delta)
+	}
+
+	// Skip jobs for which the wait period hasn't been honored yet.
+	jobs = c.filterJobsByWaitPeriod(ctx, jobs)
+
+	// Sort jobs based on the configured ordering algorithm.
+	jobs = c.sortJobs(jobs)
+
+	ignoreDirs := []string{}
+	for _, gr := range jobs {
+		for _, grID := range gr.IDs() {
+			ignoreDirs = append(ignoreDirs, filepath.Join(gr.Key(), grID.String()))
+		}
+	}
+
+	if err := runutil.DeleteAll(c.compactDir, ignoreDirs...); err != nil {
+		level.Warn(c.logger).Log("msg", "failed deleting non-compaction job directories/files, some disk space usage might have leaked. Continuing", "err", err, "dir", c.compactDir)
+	}
+
+	level.Info(c.logger).Log("msg", "start of compactions")
+
+	// Start the max compaction timer only after the first planning has been completed. This is important
+	// in case the metas syncing (or planning in general) is slow. If did start the timer before the first
+	// planning we could end up in a situation where the planning takes longer than "max compaction time"
+	// and we would never run compactions at all for a given tenant.
+	if maxCompactionTimeChan == nil && maxCompactionTime > 0 {
+		maxCompactionTimeChan = time.After(maxCompactionTime)
+	}
+
+	maxCompactionTimeReached := false
+	// Send all jobs found during this pass to the compaction workers.
+	var jobErrs multierror.MultiError
+jobLoop:
+	for _, g := range jobs {
+		select {
+		case jobErr := <-errChan:
+			jobErrs.Add(jobErr)
+			break jobLoop
+		case jobChan <- g:
+		case <-maxCompactionTimeChan:
+			maxCompactionTimeReached = true
+			level.Info(c.logger).Log("msg", "max compaction time reached, no more compactions will be started")
+			break jobLoop
+		}
+	}
+	close(jobChan)
+	jobChanClosed = true
+	wg.Wait()
+
+	// Collect any other error reported by the workers, or any error reported
+	// while we were waiting for the last batch of jobs to run the compaction.
+	close(errChan)
+	for jobErr := range errChan {
+		jobErrs.Add(jobErr)
+	}
+
+	workCtxCancel(errCompactionIterationStopped)
+	if len(jobErrs) > 0 {
+		return false, maxCompactionTimeChan, jobErrs.Err()
+	}
+
+	if maxCompactionTimeReached || finishedAllJobs {
+		return false, maxCompactionTimeChan, nil
+	}
+	return true, maxCompactionTimeChan, nil
 }
 
 // handleKnownCompactionErrors handles errors that have known mitigations such as marking blocks as no-compact.

@@ -8,6 +8,7 @@ package ruler
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
@@ -149,7 +151,7 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 		return strings.Compare(b.Name, a.Name)
 	})
 
-	rgs := rulefmt.RuleGroups{Groups: groups}
+	rgs := rulefmt.RuleGroups{Groups: cleanRuleGroupExprs(groups)}
 
 	d, err := yaml.Marshal(&rgs)
 	if err != nil {
@@ -182,12 +184,14 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 type FSLoader struct {
 	fs     afero.Fs
 	parser parser.Parser
+	logger *slog.Logger
 }
 
 func NewFSLoader(fs afero.Fs) FSLoader {
 	return FSLoader{
 		fs:     fs,
 		parser: promqlext.NewPromQLParser(),
+		logger: promslog.NewNopLogger(),
 	}
 }
 
@@ -206,9 +210,26 @@ func (f FSLoader) parseFile(fs afero.Fs, file string, ignoreUnknownFields bool, 
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser)
+	rgs, errs := rulefmt.Parse(b, ignoreUnknownFields, nameValidationScheme, f.parser, f.logger)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
 	return rgs, errs
+}
+
+// cleanRuleGroupExprs returns a copy of groups with leading/trailing whitespace
+// trimmed from rule expressions. This avoids yaml.v3 emitting explicit
+// indentation indicators (e.g. "|4") for expressions that start with newlines
+// or whitespace, which can cause parsing failures when the file is read back.
+func cleanRuleGroupExprs(groups []rulefmt.RuleGroup) []rulefmt.RuleGroup {
+	cleaned := make([]rulefmt.RuleGroup, len(groups))
+	for i, g := range groups {
+		cleaned[i] = g
+		cleaned[i].Rules = make([]rulefmt.Rule, len(g.Rules))
+		for j, r := range g.Rules {
+			cleaned[i].Rules[j] = r
+			cleaned[i].Rules[j].Expr = strings.TrimSpace(r.Expr)
+		}
+	}
+	return cleaned
 }

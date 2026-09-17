@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -129,6 +130,96 @@ func NewRing(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*rin
 	return r, nil
 }
 
+// RingStartupWaitTimeout is how long processes running a query-frontend wait, during startup, for the
+// querier ring to be populated before starting to serve queries anyway.
+const RingStartupWaitTimeout = 30 * time.Second
+
+// NewRingService returns a service that runs the querier ring client r, and doesn't reach the
+// running state until the ring holds at least one querier reporting a supported query plan
+// version, or waitTimeout elapses.
+//
+// Query-frontends can't plan any query before they've seen the querier ring (see
+// RingQueryPlanVersionProvider), so a query-frontend that reaches the running state earlier
+// reports itself ready and then fails every query it receives until the ring is populated.
+func NewRingService(r *ring.Ring, waitTimeout time.Duration, logger log.Logger) services.Service {
+	watcher := services.NewFailureWatcher()
+
+	return services.NewBasicService(
+		func(ctx context.Context) error {
+			watcher.WatchService(r)
+
+			if err := services.StartAndAwaitRunning(ctx, r); err != nil {
+				return fmt.Errorf("failed to start querier ring client: %w", err)
+			}
+
+			return waitForQueriersInRing(ctx, r, waitTimeout, watcher.Chan(), logger)
+		},
+		func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return nil
+			case err := <-watcher.Chan():
+				return fmt.Errorf("querier ring client failed: %w", err)
+			}
+		},
+		func(error) error {
+			return services.StopAndAwaitTerminated(context.Background(), r)
+		},
+	)
+}
+
+// waitForQueriersInRing blocks until r holds at least one querier reporting a supported query plan
+// version, the ring client fails, waitTimeout elapses or ctx is cancelled.
+//
+// ringFailures must be the channel of the failure watcher watching the ring client.
+//
+// Timing out does not an error: we prefer starting up anyway and eventually
+// fail queries over never starting up at all, for example when all queriers
+// are down.
+func waitForQueriersInRing(ctx context.Context, r ring.ReadRing, waitTimeout time.Duration, ringFailures <-chan error, logger log.Logger) error {
+	// The provider is what query-frontends use to plan queries, so it holds the exact condition we need to wait for.
+	provider := RingQueryPlanVersionProvider{ring: r, logger: logger}
+
+	waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+
+	for {
+		version, err := provider.GetMaximumSupportedQueryPlanVersion(waitCtx)
+		if err == nil {
+			level.Info(logger).Log("msg", "querier ring is populated", "maximum_supported_query_plan_version", version)
+			return nil
+		}
+
+		lastErr = err
+
+		select {
+		case <-ticker.C:
+		case err := <-ringFailures:
+			return fmt.Errorf("querier ring client failed: %w", err)
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				// The service is stopping. Return nil rather than the context error: services.BasicService
+				// skips the stopping function entirely if the starting function fails, which would leave the
+				// ring client running.
+				return nil
+			}
+
+			level.Warn(logger).Log(
+				"msg", "timed out waiting for the querier ring to be populated, queries may fail until it is",
+				"timeout", waitTimeout,
+				"err", lastErr,
+			)
+
+			return nil
+		}
+	}
+}
+
 type RingQueryPlanVersionProvider struct {
 	ring   ring.ReadRing
 	logger log.Logger
@@ -164,6 +255,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 
 var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)
 var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("at least one querier in the ring is not reporting a supported query plan version")
+var errNoHealthyQueriersInRing = fmt.Errorf("no healthy queriers in the ring")
 
 func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	logger := spanlogger.FromContext(ctx, r.logger)
@@ -171,6 +263,12 @@ func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx c
 	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
 	if err != nil {
 		return 0, fmt.Errorf("could not compute maximum supported query plan version: could not get all queriers from the ring: %w", err)
+	}
+
+	// GetAllHealthy only fails if the ring is empty: a ring holding nothing but unhealthy queriers
+	// returns no instances and no error, and we can't compute a version from that.
+	if len(instances.Instances) == 0 {
+		return 0, fmt.Errorf("could not compute maximum supported query plan version: %w", errNoHealthyQueriersInRing)
 	}
 
 	lowestVersionSeen := uint64(math.MaxUint64)

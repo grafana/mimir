@@ -27,6 +27,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1114,7 +1115,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	}
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
-		10000000, nil, nil, limits, nil, nil,
+		10000000, nil, nil, false, limits, nil, nil,
 		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
@@ -1205,7 +1206,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	}
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
-		200000000, nil, nil, limits, nil, nil,
+		200000000, nil, nil, false, limits, nil, nil,
 		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
@@ -1325,6 +1326,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 			Unit:             "metric_unit",
 		},
 	}
+
+	now := time.Now()
 
 	const (
 		jsonContentType = "application/json"
@@ -1719,6 +1722,151 @@ func TestHandlerOTLPPush(t *testing.T) {
 				ErrorMessage:       "unexpected ingester error",
 			},
 		},
+		{
+			name:       "Soft ingesterPushError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "some samples rejected", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true, rejectedSamples: 3}
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 3,
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
+			// Locks in the validationError branch in handlePartialOTLPPush in
+			// isolation from the full distributor pipeline.
+			name:       "Soft validationError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newSoftValidationError(fmt.Errorf("some samples rejected"), 3)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 3,
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
+			name:       "Soft activeSeriesLimitedError with rejected samples",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 321,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 5,
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+			},
+		},
+		{
+			name:       "Hard activeSeriesLimitedError when all series rejected",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15)
+			},
+			responseCode:          http.StatusTooManyRequests,
+			responseContentType:   pbContentType,
+			responseContentLength: 319,
+			errMessage:            newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error(),
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="` + newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15).Error() + `" insight=true`},
+			expectedRetryHeader:   true,
+		},
+		{
+			// Drives prePushValidationMiddleware end-to-end with one too-old sample
+			// (rejected by validation) and one valid sample. The stub `next` returns
+			// a soft ingesterPushError for an unrelated partial ingester rejection.
+			// The middleware must fold its own rejection count into the ingester
+			// error so the OTLP partial_success body reports the combined total.
+			name:       "Combine validation rejection with soft ingesterPushError",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "too_old"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+				},
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "valid"}},
+					Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+				},
+			},
+			metadata: []mimirpb.MetricMetadata{{MetricFamilyName: "too_old"}, {MetricFamilyName: "valid"}},
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.PastGracePeriod = model.Duration(time.Hour)
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				stubNext := func(context.Context, *Request) error {
+					return ingesterPushError{message: "some samples rejected", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true, rejectedSamples: 5}
+				}
+				return distributors[0].prePushValidationMiddleware(stubNext)(ctx, pushReq)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 27,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 6, // 5 from ingester + 1 from validation
+				ErrorMessage:       "some samples rejected",
+			},
+		},
+		{
+			// Drives prePushValidationMiddleware end-to-end with one too-old sample
+			// (rejected by validation) and one valid sample. The stub `next` mimics
+			// prePushMaxSeriesLimitMiddleware returning a soft activeSeriesLimitedError
+			// for an unrelated partial active-series rejection. The middleware must
+			// fold its own rejection count into the active-series error so the OTLP
+			// partial_success body reports the combined total.
+			name:       "Combine validation rejection with soft activeSeriesLimitedError",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "too_old"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+				},
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "valid"}},
+					Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+				},
+			},
+			metadata: []mimirpb.MetricMetadata{{MetricFamilyName: "too_old"}, {MetricFamilyName: "valid"}},
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.PastGracePeriod = model.Duration(time.Hour)
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				stubNext := func(context.Context, *Request) error {
+					return newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5)
+				}
+				return distributors[0].prePushValidationMiddleware(stubNext)(ctx, pushReq)
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 321,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 6, // 5 from active-series + 1 from validation
+				ErrorMessage:       newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5).Error(),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1741,7 +1889,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
 				NameValidationScheme:          model.LegacyValidation,
-				OTelMetricSuffixesEnabled:     false,
+				OTelMetricSuffixesEnabled:     boolPtr(false),
 			}
 			limits := validation.NewOverrides(
 				validation.Limits{},
@@ -1764,7 +1912,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
 			handler := OTLPHandler(
-				tt.maxMsgSize, nil, nil, limits,
+				tt.maxMsgSize, nil, nil, false, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
 				retryConfig, nil, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
@@ -1806,6 +1954,368 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			retryAfter := resp.Header().Get("Retry-After")
 			assert.Equal(t, tt.expectedRetryHeader, retryAfter != "")
+		})
+	}
+}
+
+// TestOTLPHandler_TooFarInPast covers the OTLP partial-success behavior for
+// distributor-level too_far_in_past validation rejections.
+//
+// Per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#partial-success-1), a
+// partially-accepted request must respond with HTTP 200 and a partial_success body
+// listing the rejected count; a fully-rejected request keeps HTTP 400.
+func TestOTLPHandler_TooFarInPast(t *testing.T) {
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.PastGracePeriod = model.Duration(time.Hour)
+
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          &limits,
+	})
+
+	handler := OTLPHandler(
+		100000, nil, nil, false, ds[0].limits,
+		nil, nil, RetryConfig{}, nil,
+		ds[0].PushWithMiddlewares,
+		nil, nil, log.NewNopLogger(),
+	)
+
+	sendOTLP := func(t *testing.T, series []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) *httptest.ResponseRecorder {
+		t.Helper()
+		exportReq := TimeseriesToOTLPRequest(series, metadata)
+		body, err := exportReq.MarshalProto()
+		require.NoError(t, err)
+		httpReq := createOTLPRequest(t, body, "", "application/x-protobuf")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, httpReq)
+		return resp
+	}
+
+	t.Run("partial rejection returns HTTP 200 with partial_success", func(t *testing.T) {
+		now := time.Now()
+		// One sample 2 hours old → triggers too_far_in_past at the distributor
+		// (past_grace_period=1h, ooo_window=0). One sample at "now" → passes
+		// validation and is pushed to the (mock) ingesters.
+		series := []prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric"}},
+				Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "valid_metric"}},
+				Samples: []prompb.Sample{{Value: 2, Timestamp: now.UnixMilli()}},
+			},
+		}
+		metadata := []mimirpb.MetricMetadata{
+			{MetricFamilyName: "too_old_metric"},
+			{MetricFamilyName: "valid_metric"},
+		}
+
+		resp := sendOTLP(t, series, metadata)
+		require.Equal(t, http.StatusOK, resp.Code, "body: %s", resp.Body.String())
+
+		var exportResp colmetricpb.ExportMetricsServiceResponse
+		require.NoError(t, proto.Unmarshal(resp.Body.Bytes(), &exportResp))
+		require.NotNil(t, exportResp.PartialSuccess, "expected partial_success in response, got: %+v", &exportResp)
+		assert.Equal(t, int64(1), exportResp.PartialSuccess.RejectedDataPoints)
+		assert.Contains(t, exportResp.PartialSuccess.ErrorMessage, "too far in the past")
+	})
+
+	t.Run("all samples rejected returns HTTP 400", func(t *testing.T) {
+		// When every sample in an OTLP request is rejected by distributor-level
+		// validation, the response is a hard HTTP 400 (not partial-success).
+		// Guards against regressions where the soft-promotion logic accidentally
+		// treats the all-rejected case as partial.
+		now := time.Now()
+		series := []prompb.TimeSeries{
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric_a"}},
+				Samples: []prompb.Sample{{Value: 1, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+			{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "too_old_metric_b"}},
+				Samples: []prompb.Sample{{Value: 2, Timestamp: now.Add(-2 * time.Hour).UnixMilli()}},
+			},
+		}
+		metadata := []mimirpb.MetricMetadata{
+			{MetricFamilyName: "too_old_metric_a"},
+			{MetricFamilyName: "too_old_metric_b"},
+		}
+
+		resp := sendOTLP(t, series, metadata)
+		require.Equal(t, http.StatusBadRequest, resp.Code, "body: %s", resp.Body.String())
+
+		respStatus := &status.Status{}
+		require.NoError(t, proto.Unmarshal(resp.Body.Bytes(), respStatus))
+		assert.Contains(t, respStatus.GetMessage(), "too far in the past")
+	})
+}
+
+// TestOTLPHandler_TranslationHeaders tests OTLPHandler with HTTP handlers controlling
+// translation aspects.
+func TestOTLPHandler_TranslationHeaders(t *testing.T) {
+	// Build a simple gauge metric named "test.metric" (OTel-style name with dot).
+	// With underscore escaping + suffixes, the Prometheus name will be "test_metric".
+	// With no escaping + suffixes, the Prometheus name will stay "test.metric".
+	sampleSeries := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test.metric"},
+			},
+			Samples: []prompb.Sample{
+				{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixMilli()},
+			},
+		},
+	}
+	sampleMetadata := []mimirpb.MetricMetadata{
+		{MetricFamilyName: "test.metric", Help: "help", Unit: "unit"},
+	}
+
+	type testCase struct {
+		name                    string
+		allowTranslationHeaders bool
+		strategyHeader          string
+		suffixesHeader          string
+		tenantValidationScheme  model.ValidationScheme
+		tenantSuffixesEnabled   *bool
+		tenantStrategy          validation.OTelTranslationStrategyValue
+		expectedResponseCode    int
+		expectedErrMessage      string
+		verifyMetricName        string                  // if set, verify the first series has this metric name
+		expectedSchemeOverride  *model.ValidationScheme // if set, verify the scheme override on the Request
+	}
+
+	utf8Scheme := model.UTF8Validation
+
+	tests := []testCase{
+		{
+			name:                    "strategy header overrides tenant config",
+			allowTranslationHeaders: true,
+			strategyHeader:          string(otlptranslator.UnderscoreEscapingWithSuffixes),
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric_unit",
+		},
+		{
+			name:                    "suffixes header true with legacy escaping",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric_unit",
+		},
+		{
+			name:                    "suffixes header false with legacy escaping",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "false",
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(true),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric",
+		},
+		{
+			name:                    "both headers present, strategy wins",
+			allowTranslationHeaders: true,
+			strategyHeader:          string(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+			suffixesHeader:          "true", // would conflict, but strategy takes precedence
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(true),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric",
+		},
+		{
+			name:                    "invalid suffixes header value returns 400",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "notabool",
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusBadRequest,
+			expectedErrMessage:      "invalid value for X-Mimir-OTLP-AddSuffixes header",
+		},
+		{
+			name:                    "unrecognized strategy header returns 400",
+			allowTranslationHeaders: true,
+			strategyHeader:          "InvalidStrategy",
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusBadRequest,
+			expectedErrMessage:      "invalid value for X-Mimir-OTLP-TranslationStrategy header",
+		},
+		{
+			name:                    "strategy header overrides tenant validation scheme",
+			allowTranslationHeaders: true,
+			strategyHeader:          string(otlptranslator.NoUTF8EscapingWithSuffixes),
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric_unit",
+			expectedSchemeOverride:  &utf8Scheme,
+		},
+		{
+			name:                    "headers ignored when config flag is disabled",
+			allowTranslationHeaders: false,
+			strategyHeader:          string(otlptranslator.UnderscoreEscapingWithSuffixes), // would change behavior
+			tenantValidationScheme:  model.LegacyValidation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric",
+		},
+		{
+			name:                    "suffixes header with UTF-8 validation keeps dots",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantSuffixesEnabled:   boolPtr(false),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric_unit",
+		},
+		{
+			name:                    "strategy header overrides tenant strategy",
+			allowTranslationHeaders: true,
+			strategyHeader:          string(otlptranslator.NoTranslation),
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric",
+		},
+		{
+			name:                    "suffix header false combines with tenant strategy NoUTF8EscapingWithSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "false",
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric",
+		},
+		{
+			name:                    "suffix header true combines with tenant strategy NoUTF8EscapingWithSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoUTF8EscapingWithSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric_unit",
+		},
+		{
+			name:                    "suffix header false combines with tenant strategy NoTranslation",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "false",
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoTranslation),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric",
+		},
+		{
+			name:                    "suffix header true combines with tenant strategy NoTranslation",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantValidationScheme:  model.UTF8Validation,
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.NoTranslation),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test.metric_unit",
+		},
+		{
+			name:                    "suffix header false combines with tenant strategy UnderscoreEscapingWithSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "false",
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric",
+		},
+		{
+			name:                    "suffix header true combines with tenant strategy UnderscoreEscapingWithSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric_unit",
+		},
+		{
+			name:                    "suffix header false combines with tenant strategy UnderscoreEscapingWithoutSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "false",
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric",
+		},
+		{
+			name:                    "suffix header true combines with tenant strategy UnderscoreEscapingWithoutSuffixes",
+			allowTranslationHeaders: true,
+			suffixesHeader:          "true",
+			tenantStrategy:          validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+			expectedResponseCode:    http.StatusOK,
+			verifyMetricName:        "test_metric_unit",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
+			reqBody, err := exportReq.MarshalProto()
+			require.NoError(t, err)
+			req := createOTLPRequest(t, reqBody, "", pbContentType)
+
+			if tt.strategyHeader != "" {
+				req.Header.Set(otlpTranslationStrategyHeader, tt.strategyHeader)
+			}
+			if tt.suffixesHeader != "" {
+				req.Header.Set(otlpAddSuffixesHeader, tt.suffixesHeader)
+			}
+
+			testLimits := &validation.Limits{
+				NameValidationScheme:      tt.tenantValidationScheme,
+				OTelMetricSuffixesEnabled: tt.tenantSuffixesEnabled,
+				OTelTranslationStrategy:   tt.tenantStrategy,
+			}
+			limits := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(map[string]*validation.Limits{
+					"test": testLimits,
+				}),
+			)
+
+			pusher := func(_ context.Context, pushReq *Request) error {
+				t.Cleanup(pushReq.CleanUp)
+				request, err := pushReq.WriteRequest()
+				if err != nil {
+					return err
+				}
+				if tt.verifyMetricName != "" {
+					require.NotEmpty(t, request.Timeseries)
+					require.Equal(t, tt.verifyMetricName, request.Timeseries[0].Labels[0].Value)
+				}
+				if tt.expectedSchemeOverride != nil {
+					require.NotNil(t, pushReq.nameValidationSchemeOverride)
+					require.Equal(t, *tt.expectedSchemeOverride, *pushReq.nameValidationSchemeOverride)
+				} else {
+					require.Nil(t, pushReq.nameValidationSchemeOverride)
+				}
+				return nil
+			}
+
+			handler := OTLPHandler(
+				100000, nil, nil, tt.allowTranslationHeaders, limits,
+				nil, nil,
+				RetryConfig{}, nil, pusher, nil, nil,
+				log.NewNopLogger(),
+			)
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			assert.Equal(t, tt.expectedResponseCode, resp.Code)
+			if tt.expectedErrMessage != "" {
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				respStatus := &status.Status{}
+				err = proto.Unmarshal(body, respStatus)
+				require.NoError(t, err)
+				assert.Contains(t, respStatus.GetMessage(), tt.expectedErrMessage)
+			}
 		})
 	}
 }
@@ -1859,7 +2369,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
-		100000, nil, nil, limits, nil, nil,
+		100000, nil, nil, false, limits, nil, nil,
 		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
@@ -1870,7 +2380,9 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
@@ -1904,7 +2416,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
-		100000, nil, nil, limits, nil, nil,
+		100000, nil, nil, false, limits, nil, nil,
 		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
@@ -1915,7 +2427,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -1933,7 +2447,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
-		100000, nil, nil, limits, nil, nil,
+		100000, nil, nil, false, limits, nil, nil,
 		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
@@ -1944,7 +2458,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		}, nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusBadRequest, resp.Code)
+	// Metrics with empty data points are now dropped with a warning annotation rather than
+	// rejected as a translation error, so the request succeeds.
+	assert.Equal(t, http.StatusOK, resp.Code)
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
@@ -1964,7 +2480,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	handler := OTLPHandler(
-		140, nil, nil, nil, nil, nil,
+		140, nil, nil, false, nil, nil, nil,
 		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
@@ -2174,6 +2690,24 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.InvalidArgument,
 			expectedSoft:       true,
 		},
+		"an activeSeriesLimitedError with all series rejected gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
+			err:                newActiveSeriesLimitedError(10, 10, 100, http.StatusTooManyRequests, 15),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
+		},
+		"an activeSeriesLimitedError with overridden 400 gets translated into gRPC codes.ResourceExhausted and HTTP 400 statuses": {
+			err:                newActiveSeriesLimitedError(100, 100, 50, http.StatusBadRequest, 0),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
+		},
+		"an activeSeriesLimitedError with some series rejected gets translated into soft": {
+			err:                newActiveSeriesLimitedError(10, 3, 100, http.StatusTooManyRequests, 5),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       true,
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -2272,10 +2806,10 @@ func TestOTLPResponseContentType(t *testing.T) {
 			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(map[string]*validation.Limits{
-					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
+					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: boolPtr(false)},
 				}),
 			)
-			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
+			handler := OTLPHandler(100000, nil, nil, false, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest()
 				return err
 			}, nil, nil, log.NewNopLogger())
@@ -2296,10 +2830,72 @@ func TestOTLPJSONEnumEncoding(t *testing.T) {
 	assert.Contains(t, string(data), `"code":13`, "code field must be encoded as integer (13), not string")
 }
 
+func TestInspectOTLPResourceMetrics(t *testing.T) {
+	tests := map[string]struct {
+		attrsPerResource []map[string]string
+		expected         bool
+	}{
+		"empty request": {
+			attrsPerResource: nil,
+			expected:         false,
+		},
+		"no matching attributes": {
+			attrsPerResource: []map[string]string{
+				{"service.name": "s1", "service.instance.id": "i1"},
+			},
+			expected: false,
+		},
+		"job resource attribute set": {
+			attrsPerResource: []map[string]string{
+				{"job": "s1"},
+			},
+			expected: true,
+		},
+		"instance resource attribute set": {
+			attrsPerResource: []map[string]string{
+				{"instance": "i1"},
+			},
+			expected: true,
+		},
+		"both job and instance set": {
+			attrsPerResource: []map[string]string{
+				{"job": "s1", "instance": "i1"},
+			},
+			expected: true,
+		},
+		"match on later resource": {
+			attrsPerResource: []map[string]string{
+				{"service.name": "s1"},
+				{"instance": "i2"},
+			},
+			expected: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			req := pmetricotlp.NewExportRequest()
+			metrics := req.Metrics()
+			for _, attrs := range tc.attrsPerResource {
+				rm := metrics.ResourceMetrics().AppendEmpty()
+				for k, v := range attrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+			}
+			pushMetrics := newPushMetrics(prometheus.NewRegistry())
+			require.Equal(t, tc.expected, inspectOTLPResourceMetrics(pushMetrics, req))
+		})
+	}
+}
+
 type fakeResourceAttributePromotionConfig struct {
 	promote []string
 }
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return c.promote
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }

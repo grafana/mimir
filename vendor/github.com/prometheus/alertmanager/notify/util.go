@@ -19,15 +19,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/alertmanager/template"
+	"github.com/prometheus/alertmanager/tracing"
 	"github.com/prometheus/alertmanager/types"
 )
 
@@ -35,7 +37,19 @@ import (
 const truncationMarker = "…"
 
 // UserAgentHeader is the default User-Agent for notification requests.
-var UserAgentHeader = fmt.Sprintf("Alertmanager/%s", version.Version)
+var UserAgentHeader = version.ComponentUserAgent("Alertmanager")
+
+// NewClientWithTracing creates a new HTTP client with tracing included
+// Clients are reused across requests, so tracing is configured once at creation
+// rather than on each request.
+func NewClientWithTracing(cfg commoncfg.HTTPClientConfig, name string, httpOpts ...commoncfg.HTTPClientOption) (*http.Client, error) {
+	client, err := commoncfg.NewClientFromConfig(cfg, name, httpOpts...)
+	if err != nil {
+		return nil, err
+	}
+	client.Transport = tracing.Transport(client.Transport)
+	return client, nil
+}
 
 // RedactURL removes the URL part from an error of *url.Error type.
 func RedactURL(err error) error {
@@ -75,6 +89,7 @@ func request(ctx context.Context, client *http.Client, method, url, bodyType str
 	if bodyType != "" {
 		req.Header.Set("Content-Type", bodyType)
 	}
+
 	return client.Do(req.WithContext(ctx))
 }
 
@@ -180,16 +195,27 @@ func (k Key) String() string {
 }
 
 // GetTemplateData creates the template data from the context and the alerts.
-func GetTemplateData(ctx context.Context, tmpl *template.Template, alerts []*types.Alert, l log.Logger) *template.Data {
+func GetTemplateData(ctx context.Context, tmpl *template.Template, alerts []*types.Alert, l *slog.Logger) *template.Data {
 	recv, ok := ReceiverName(ctx)
 	if !ok {
-		level.Error(l).Log("msg", "Missing receiver")
+		l.Error("Missing receiver")
 	}
 	groupLabels, ok := GroupLabels(ctx)
 	if !ok {
-		level.Error(l).Log("msg", "Missing group labels")
+		l.Error("Missing group labels")
 	}
-	return tmpl.Data(recv, groupLabels, alerts...)
+	// Route labels are optional (a route may have none, and some callers omit
+	// them); absence is not an error and a nil LabelSet is handled downstream.
+	routeLabels, _ := RouteLabels(ctx)
+	notificationReason, ok := NotificationReason(ctx)
+	if !ok {
+		l.Error("Missing notification reason")
+		notificationReason = ReasonUnknown
+	}
+	data := tmpl.Data(recv, groupLabels, routeLabels, notificationReason.String(), alerts...)
+	// Route labels are pre-rendered by the dispatcher; don't execute them again.
+	template.MarkRouteLabelsRendered(data)
+	return data
 }
 
 func readAll(r io.Reader) string {
@@ -223,15 +249,7 @@ func (r *Retrier) Check(statusCode int, body io.Reader) (bool, error) {
 	}
 
 	// 5xx responses are considered to be always retried.
-	retry := statusCode/100 == 5
-	if !retry {
-		for _, code := range r.RetryCodes {
-			if code == statusCode {
-				retry = true
-				break
-			}
-		}
-	}
+	retry := statusCode/100 == 5 || slices.Contains(r.RetryCodes, statusCode)
 
 	s := fmt.Sprintf("unexpected status code %v", statusCode)
 	var details string
@@ -272,6 +290,8 @@ const (
 	ServerErrorReason
 	ContextCanceledReason
 	ContextDeadlineExceededReason
+	AuthErrorReason
+	RateLimitedReason
 )
 
 func (s Reason) String() string {
@@ -286,16 +306,34 @@ func (s Reason) String() string {
 		return "contextCanceled"
 	case ContextDeadlineExceededReason:
 		return "contextDeadlineExceeded"
+	case AuthErrorReason:
+		return "authError"
+	case RateLimitedReason:
+		return "rateLimited"
 	default:
 		panic(fmt.Sprintf("unknown Reason: %d", s))
 	}
 }
 
 // possibleFailureReasonCategory is a list of possible failure reason.
-var possibleFailureReasonCategory = []string{DefaultReason.String(), ClientErrorReason.String(), ServerErrorReason.String(), ContextCanceledReason.String(), ContextDeadlineExceededReason.String()}
+var possibleFailureReasonCategory = []string{
+	DefaultReason.String(),
+	ClientErrorReason.String(),
+	ServerErrorReason.String(),
+	ContextCanceledReason.String(),
+	ContextDeadlineExceededReason.String(),
+	AuthErrorReason.String(),
+	RateLimitedReason.String(),
+}
 
 // GetFailureReasonFromStatusCode returns the reason for the failure based on the status code provided.
 func GetFailureReasonFromStatusCode(statusCode int) Reason {
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return AuthErrorReason
+	case http.StatusTooManyRequests:
+		return RateLimitedReason
+	}
 	if statusCode/100 == 4 {
 		return ClientErrorReason
 	}

@@ -70,6 +70,22 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 						- param 2: VectorSelector: {__name__="some_metric"}
 			`,
 		},
+		"single vector selector with histogram_stddev": {
+			expr: `histogram_stddev(some_metric)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_stddev(...)
+						- VectorSelector: {__name__="some_metric"}
+			`,
+		},
+		"single vector selector with histogram_stdvar": {
+			expr: `histogram_stdvar(some_metric)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_stdvar(...)
+						- VectorSelector: {__name__="some_metric"}
+			`,
+		},
 		"vector selector eligible for skipping decoding in binary expression": {
 			expr: `2 * histogram_sum(some_metric)`,
 			expectedPlan: `
@@ -124,6 +140,30 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 								- FunctionCall: histogram_quantile(...)
 									- param 0: NumberLiteral: 0.5
 									- param 1: VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
+		"inner vector selector not eligible for skipping decoding due to nesting inside histogram_stddev": {
+			expr: `histogram_sum(some_metric * histogram_stddev(some_other_metric))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS * RHS
+							- LHS: VectorSelector: {__name__="some_metric"}, skip histogram buckets
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: histogram_stddev(...)
+									- VectorSelector: {__name__="some_other_metric"}
+			`,
+		},
+		"inner vector selector not eligible for skipping decoding due to nesting inside histogram_stdvar": {
+			expr: `histogram_sum(some_metric * histogram_stdvar(some_other_metric))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS * RHS
+							- LHS: VectorSelector: {__name__="some_metric"}, skip histogram buckets
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: histogram_stdvar(...)
+									- VectorSelector: {__name__="some_other_metric"}
 			`,
 		},
 		"both vector selectors eligible for skipping decoding despite nesting": {
@@ -330,6 +370,26 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 							- param 1: DeduplicateAndMerge
 								- FunctionCall: rate(...)
 									- MatrixSelector: {__name__="some_other_metric"}[1m0s]
+			`,
+		},
+		"vector selector not eligible for skipping decoding due to trim_lower operator": {
+			expr: `histogram_count(some_metric >/ 5)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_count(...)
+						- BinaryExpression: LHS >/ RHS
+							- LHS: VectorSelector: {__name__="some_metric"}
+							- RHS: NumberLiteral: 5
+			`,
+		},
+		"vector selector not eligible for skipping decoding due to trim_upper operator": {
+			expr: `histogram_sum(some_metric </ 10)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS </ RHS
+							- LHS: VectorSelector: {__name__="some_metric"}
+							- RHS: NumberLiteral: 10
 			`,
 		},
 	}

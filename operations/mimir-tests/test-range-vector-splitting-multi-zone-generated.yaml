@@ -428,6 +428,13 @@ spec:
         properties:
           spec:
             properties:
+              crossZoneEvictionDelay:
+                description: An optional duration that defines the minimum time that
+                  must elapse after a pod returns to a ready state before another
+                  pod for the same partition can be evicted. The value must be a valid
+                  Go duration string (e.g. "20m", "1h"). This field is only applicable
+                  when podNamePartitionRegex is set.
+                type: string
               maxUnavailable:
                 description: The number of pods that can be unavailable within a zone
                   or partition.
@@ -752,6 +759,50 @@ spec:
   selector:
     name: ingester-zone-c
     rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memberlist-bridge-zone-a
+  name: memberlist-bridge-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memberlist-bridge-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: memberlist-bridge-grpc
+    port: 9095
+    targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: memberlist-bridge-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memberlist-bridge-zone-b
+  name: memberlist-bridge-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memberlist-bridge-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: memberlist-bridge-grpc
+    port: 9095
+    targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: memberlist-bridge-zone-b
 ---
 apiVersion: v1
 kind: Service
@@ -1152,6 +1203,27 @@ metadata:
   name: ruler-query-frontend-zone-a
   namespace: default
 spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend-zone-a
+  name: ruler-query-frontend-zone-a-headless
+  namespace: default
+spec:
   clusterIP: None
   ports:
   - name: ruler-query-frontend-http-metrics
@@ -1172,6 +1244,27 @@ metadata:
   labels:
     name: ruler-query-frontend-zone-b
   name: ruler-query-frontend-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend-zone-b
+  name: ruler-query-frontend-zone-b-headless
   namespace: default
 spec:
   clusterIP: None
@@ -1392,8 +1485,12 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -1411,7 +1508,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1432,6 +1529,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1455,7 +1553,7 @@ metadata:
   name: memberlist-bridge-zone-a
   namespace: default
 spec:
-  minReadySeconds: 10
+  minReadySeconds: 300
   replicas: 3
   revisionHistoryLimit: 10
   selector:
@@ -1463,6 +1561,7 @@ spec:
       name: memberlist-bridge-zone-a
   strategy:
     rollingUpdate:
+      maxSurge: 1
       maxUnavailable: 0
   template:
     metadata:
@@ -1487,9 +1586,12 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=false
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.max-concurrent-writes=15
+        - -memberlist.rejoin-interval=60s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=bridge
@@ -1498,7 +1600,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -1540,7 +1642,7 @@ metadata:
   name: memberlist-bridge-zone-b
   namespace: default
 spec:
-  minReadySeconds: 10
+  minReadySeconds: 300
   replicas: 3
   revisionHistoryLimit: 10
   selector:
@@ -1548,6 +1650,7 @@ spec:
       name: memberlist-bridge-zone-b
   strategy:
     rollingUpdate:
+      maxSurge: 1
       maxUnavailable: 0
   template:
     metadata:
@@ -1572,9 +1675,12 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=false
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.max-concurrent-writes=15
+        - -memberlist.rejoin-interval=60s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=bridge
@@ -1583,7 +1689,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -1666,12 +1772,16 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
@@ -1699,7 +1809,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1720,6 +1830,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1789,12 +1900,16 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.frontend-client.grpc-max-send-msg-size=419430400
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
@@ -1822,7 +1937,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1843,6 +1958,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1897,11 +2013,16 @@ spec:
                 - us-east-2a
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-a.default.svc.cluster.local.:11211
@@ -1911,15 +2032,19 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1927,7 +2052,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1945,10 +2070,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2002,11 +2128,16 @@ spec:
                 - us-east-2b
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-b.default.svc.cluster.local.:11211
@@ -2016,15 +2147,19 @@ spec:
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2032,7 +2167,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2050,10 +2185,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2114,12 +2250,16 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2128,7 +2268,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2149,6 +2289,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2203,12 +2344,16 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2217,7 +2362,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2238,6 +2383,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2280,7 +2426,7 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.35.0
+        image: grafana/rollout-operator:v0.40.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -2349,8 +2495,12 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -2380,7 +2530,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -2401,6 +2551,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2470,8 +2621,12 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
@@ -2501,7 +2656,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -2522,6 +2677,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2576,11 +2732,16 @@ spec:
                 - us-east-2a
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-a.default.svc.cluster.local.:11211
@@ -2590,10 +2751,13 @@ spec:
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
@@ -2611,7 +2775,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -2629,10 +2793,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2686,11 +2851,16 @@ spec:
                 - us-east-2b
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
+        - -querier.max-query-parallelism=240
         - -querier.mimir-query-engine.range-vector-splitting.backend=memcached
         - -querier.mimir-query-engine.range-vector-splitting.enabled=true
         - -querier.mimir-query-engine.range-vector-splitting.memcached.addresses=dnssrvnoa+memcached-range-vector-splitting-zone-b.default.svc.cluster.local.:11211
@@ -2700,10 +2870,13 @@ spec:
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.parallelize-shardable-queries=true
+        - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.query-sharding-total-shards=0
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
@@ -2721,7 +2894,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -2739,10 +2912,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2803,12 +2977,16 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2817,7 +2995,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -2838,6 +3016,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2892,12 +3071,16 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
@@ -2906,7 +3089,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -2927,6 +3110,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2990,8 +3174,12 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -3005,7 +3193,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-a.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-a-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -3020,7 +3208,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3110,8 +3298,12 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
@@ -3125,7 +3317,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-b.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-b-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -3140,7 +3332,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3209,8 +3401,12 @@ spec:
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -3223,7 +3419,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -3314,8 +3510,12 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -3325,7 +3525,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -3346,6 +3546,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -3444,8 +3645,11 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -3467,7 +3671,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3488,6 +3692,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3591,8 +3796,11 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
@@ -3608,7 +3816,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3629,6 +3837,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3724,8 +3933,11 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -3741,7 +3953,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3762,6 +3974,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3825,10 +4038,10 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -3843,7 +4056,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -3898,10 +4111,10 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -3916,7 +4129,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -3974,7 +4187,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -3989,7 +4202,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4047,7 +4260,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4062,7 +4275,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4121,7 +4334,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4136,7 +4349,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4195,7 +4408,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4210,7 +4423,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4268,7 +4481,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4283,7 +4496,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4341,7 +4554,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4356,7 +4569,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4414,7 +4627,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4429,7 +4642,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4487,7 +4700,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.34-alpine
+        image: memcached:1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -4502,7 +4715,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
+        image: prom/memcached-exporter:v0.16.0@sha256:fa03aba2f2aa6f572bf56ba07dd2960c62433805427be0fddc8b21b8074c1728
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -4594,8 +4807,12 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -4623,7 +4840,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -4644,6 +4861,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4749,8 +4967,12 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
         - -memberlist.zone-aware-routing.role=member
@@ -4780,7 +5002,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -4801,6 +5023,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4898,8 +5121,12 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -memberlist.zone-aware-routing.enabled=true
         - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
         - -memberlist.zone-aware-routing.role=member
@@ -4927,7 +5154,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.4
+        image: grafana/mimir:3.2.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -4948,6 +5175,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -5045,7 +5273,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_a_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_a_hpa_default
@@ -5053,7 +5282,20 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_a_hpa_default_requests_duration
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
+      query: |
+        max without(source) (
+          # classic histograms; label_replace gives each a distinct label so or acts as union
+          label_replace(
+            sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])) or vector(0),
+            "source", "classic", "", ""
+          )
+          or
+          # native histograms
+          label_replace(
+            sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))) or vector(0),
+            "source", "native", "", ""
+          )
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_a_hpa_default_requests_duration
@@ -5092,7 +5334,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_b_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_b_hpa_default
@@ -5100,7 +5343,20 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_b_hpa_default_requests_duration
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
+      query: |
+        max without(source) (
+          # classic histograms; label_replace gives each a distinct label so or acts as union
+          label_replace(
+            sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])) or vector(0),
+            "source", "classic", "", ""
+          )
+          or
+          # native histograms
+          label_replace(
+            sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))) or vector(0),
+            "source", "native", "", ""
+          )
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_b_hpa_default_requests_duration
@@ -5164,7 +5420,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -5226,7 +5482,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---
@@ -5428,7 +5684,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -5490,7 +5746,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---

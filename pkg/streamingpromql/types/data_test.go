@@ -264,38 +264,40 @@ func TestHasDuplicateSeries(t *testing.T) {
 
 func TestQueryTimeRange(t *testing.T) {
 	type testCase struct {
-		start         time.Time
-		end           time.Time
-		interval      time.Duration
-		expectedStart int64
-		expectedEnd   int64
-		expectedIntMs int64
-		expectedSteps int
-		testTimes     []time.Time
-		expectedIdxs  []int64
+		timeRange QueryTimeRange
+
+		expectedIsInstant            bool
+		expectedStartT               int64
+		expectedEndT                 int64
+		expectedIntervalMilliseconds int64
+		expectedStepCount            int
+		expectedString               string
+
+		testTimes       []time.Time
+		expectedIndices []int64
 	}
 
-	startTime := time.Now()
+	startTime := time.Date(2020, 1, 2, 3, 4, 5, 678000000, time.UTC)
 	testCases := map[string]testCase{
-		"Instant query": {
-			start:         startTime,
-			end:           startTime,
-			interval:      0,
-			expectedStart: timestamp.FromTime(startTime),
-			expectedEnd:   timestamp.FromTime(startTime),
-			expectedIntMs: 1,
-			expectedSteps: 1,
-			testTimes:     []time.Time{startTime},
-			expectedIdxs:  []int64{0},
+		"instant query": {
+			timeRange:                    NewInstantQueryTimeRange(startTime),
+			expectedIsInstant:            true,
+			expectedStartT:               timestamp.FromTime(startTime),
+			expectedEndT:                 timestamp.FromTime(startTime),
+			expectedIntervalMilliseconds: 1,
+			expectedStepCount:            1,
+			expectedString:               "instant query at 1577934245678 (2020-01-02T03:04:05.678Z)",
+			testTimes:                    []time.Time{startTime},
+			expectedIndices:              []int64{0},
 		},
-		"Range query with 15-minute interval": {
-			start:         startTime,
-			end:           startTime.Add(time.Hour),
-			interval:      time.Minute * 15,
-			expectedStart: timestamp.FromTime(startTime),
-			expectedEnd:   timestamp.FromTime(startTime.Add(time.Hour)),
-			expectedIntMs: (time.Minute * 15).Milliseconds(),
-			expectedSteps: 5,
+		"range query with 15-minute interval": {
+			timeRange:                    NewRangeQueryTimeRange(startTime, startTime.Add(time.Hour), time.Minute*15),
+			expectedIsInstant:            false,
+			expectedStartT:               timestamp.FromTime(startTime),
+			expectedEndT:                 timestamp.FromTime(startTime.Add(time.Hour)),
+			expectedIntervalMilliseconds: (time.Minute * 15).Milliseconds(),
+			expectedStepCount:            5,
+			expectedString:               "range query from 1577934245678 (2020-01-02T03:04:05.678Z) to 1577937845678 (2020-01-02T04:04:05.678Z), 15m0s step (5 steps)",
 			testTimes: []time.Time{
 				startTime,
 				startTime.Add(time.Minute * 15),
@@ -303,181 +305,110 @@ func TestQueryTimeRange(t *testing.T) {
 				startTime.Add(time.Minute * 45),
 				startTime.Add(time.Hour),
 			},
-			expectedIdxs: []int64{0, 1, 2, 3, 4},
+			expectedIndices: []int64{0, 1, 2, 3, 4},
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var qtr QueryTimeRange
-
-			if tc.interval == 0 {
-				qtr = NewInstantQueryTimeRange(tc.start)
-				require.True(t, qtr.IsInstant)
-			} else {
-				qtr = NewRangeQueryTimeRange(tc.start, tc.end, tc.interval)
-				require.False(t, qtr.IsInstant)
-			}
-
-			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")
-			require.Equal(t, tc.expectedEnd, qtr.EndT, "EndT matches")
-			require.Equal(t, tc.expectedIntMs, qtr.IntervalMilliseconds, "IntervalMs matches")
-			require.Equal(t, tc.expectedSteps, qtr.StepCount, "StepCount matches")
+			require.Equal(t, tc.expectedStartT, tc.timeRange.StartT, "StartT matches")
+			require.Equal(t, tc.expectedEndT, tc.timeRange.EndT, "EndT matches")
+			require.Equal(t, tc.expectedIntervalMilliseconds, tc.timeRange.IntervalMilliseconds, "IntervalMs matches")
+			require.Equal(t, tc.expectedStepCount, tc.timeRange.StepCount, "StepCount matches")
+			require.Equal(t, tc.expectedString, tc.timeRange.String(), "String matches")
 
 			for i, tt := range tc.testTimes {
 				ts := timestamp.FromTime(tt)
-				pointIdx := qtr.PointIndex(ts)
-				expectedIdx := tc.expectedIdxs[i]
+				pointIdx := tc.timeRange.PointIndex(ts)
+				expectedIdx := tc.expectedIndices[i]
 				require.Equal(t, expectedIdx, pointIdx, "PointIdx matches for time %v", tt)
 			}
 		})
 	}
 }
 
-func TestRangeVectorStepData_SubStep(t *testing.T) {
-	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
-	floats := NewFPointRingBuffer(memoryTracker)
-	histograms := NewHPointRingBuffer(memoryTracker)
+func TestQueryTimeRange_StepIndexing_RangeQuery(t *testing.T) {
+	// Steps at t = 0, 2, 4, 6, 8, 10 minutes (6 steps, 2-minute interval).
+	step := 2 * time.Minute
+	start := timestamp.Time(0)
+	end := start.Add(5 * step)
+	tr := NewRangeQueryTimeRange(start, end, step)
 
-	// Add float points at T=110, 120, 130, 140, 150, 160, 170, 180, 190
-	for i := int64(110); i <= 190; i += 10 {
-		require.NoError(t, floats.Append(promql.FPoint{T: i, F: float64(i)}))
+	testCases := map[string]struct {
+		t                           int64
+		expectedFirstIndexAfter     int
+		expectedLastIndexAtOrBefore int
+	}{
+		"before start": {
+			t:                           timestamp.FromTime(start.Add(-1 * time.Minute)),
+			expectedFirstIndexAfter:     0,  // first step (t=0) is after any t before start
+			expectedLastIndexAtOrBefore: -1, // no step at or before this timestamp
+		},
+		"exactly at start": {
+			t:                           timestamp.FromTime(start),
+			expectedFirstIndexAfter:     1, // strictly greater than start, so first step after is idx 1 (t=2min)
+			expectedLastIndexAtOrBefore: 0, // step at t=0 is at or before t=0
+		},
+		"between two steps": {
+			t:                           timestamp.FromTime(start.Add(3 * time.Minute)),
+			expectedFirstIndexAfter:     2, // t=3min → first step strictly after is t=4min at idx 2
+			expectedLastIndexAtOrBefore: 1, // t=3min → last step at or before is t=2min at idx 1
+		},
+		"exactly on a step": {
+			t:                           timestamp.FromTime(start.Add(4 * time.Minute)),
+			expectedFirstIndexAfter:     3, // t=4min at idx 2; strictly after → idx 3 (t=6min)
+			expectedLastIndexAtOrBefore: 2, // step at t=4min is at idx 2
+		},
+		"exactly at end": {
+			t:                           timestamp.FromTime(end),
+			expectedFirstIndexAfter:     6, // no step strictly after end; returns StepCount
+			expectedLastIndexAtOrBefore: 5, // last step at idx 5 (t=10min)
+		},
+		"after end": {
+			t:                           timestamp.FromTime(end.Add(time.Minute)),
+			expectedFirstIndexAfter:     6, // no step strictly after; returns StepCount
+			expectedLastIndexAtOrBefore: 5, // still returns last step (idx 5)
+		},
 	}
 
-	// Add histogram points at T=115, 135, 155, 175
-	for i := int64(115); i <= 175; i += 20 {
-		require.NoError(t, histograms.Append(promql.HPoint{T: i, H: &histogram.FloatHistogram{Count: float64(i)}}))
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
+		})
 	}
-
-	step := &RangeVectorStepData{
-		StepT:      200,
-		RangeStart: 100,
-		RangeEnd:   200,
-		Floats:     floats.ViewUntilSearchingBackwards(200, nil),
-		Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
-	}
-
-	t.Run("single substep", func(t *testing.T) {
-		substep, err := step.SubStep(120, 160, nil)
-		require.NoError(t, err)
-
-		require.Equal(t, int64(200), substep.StepT)
-		require.Equal(t, int64(120), substep.RangeStart)
-		require.Equal(t, int64(160), substep.RangeEnd)
-
-		// Verify floats: should have T=130, 140, 150, 160 (4 points)
-		require.Equal(t, 4, substep.Floats.Count())
-		require.Equal(t, int64(130), substep.Floats.First().T)
-		last, hasLast := substep.Floats.Last()
-		require.True(t, hasLast)
-		require.Equal(t, int64(160), last.T)
-
-		// Verify histograms: should have T=135, 155 (2 points)
-		require.Equal(t, 2, substep.Histograms.Count())
-		require.Equal(t, int64(135), substep.Histograms.First().T)
-		lastH, hasLastH := substep.Histograms.Last()
-		require.True(t, hasLastH)
-		require.Equal(t, int64(155), lastH.T)
-	})
-
-	t.Run("substep with no matching points", func(t *testing.T) {
-		substep, err := step.SubStep(195, 200, nil)
-		require.NoError(t, err)
-
-		require.Equal(t, int64(200), substep.StepT)
-		require.Equal(t, int64(195), substep.RangeStart)
-		require.Equal(t, int64(200), substep.RangeEnd)
-		require.Equal(t, 0, substep.Floats.Count())
-		require.Equal(t, 0, substep.Histograms.Count())
-	})
-
-	t.Run("substep spanning entire parent range", func(t *testing.T) {
-		// Create substep for entire parent range (100, 200]
-		substep, err := step.SubStep(100, 200, nil)
-		require.NoError(t, err)
-
-		// Should have all points
-		require.Equal(t, 9, substep.Floats.Count())
-		require.Equal(t, 4, substep.Histograms.Count())
-		require.Equal(t, int64(110), substep.Floats.First().T)
-		last, _ := substep.Floats.Last()
-		require.Equal(t, int64(190), last.T)
-	})
 }
 
-func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
-	testCases := []struct {
-		name        string
-		rangeStart  int64
-		rangeEnd    int64
-		smoothed    bool
-		anchored    bool
-		expectedErr string
+func TestQueryTimeRange_StepIndexing_InstantQuery(t *testing.T) {
+	queryT := timestamp.Time(0)
+	tr := NewInstantQueryTimeRange(queryT)
+
+	testCases := map[string]struct {
+		t                           int64
+		expectedFirstIndexAfter     int
+		expectedLastIndexAtOrBefore int
 	}{
-		{
-			name:        "start before parent start",
-			rangeStart:  50,
-			rangeEnd:    150,
-			expectedErr: "substep start (50) is before parent step's start (100)",
+		"before query time": {
+			t:                           timestamp.FromTime(queryT.Add(-time.Minute)),
+			expectedFirstIndexAfter:     0,  // the single step is after t
+			expectedLastIndexAtOrBefore: -1, // no step at or before t
 		},
-		{
-			name:        "rangeEnd after parent end",
-			rangeStart:  150,
-			rangeEnd:    250,
-			expectedErr: "substep end (250) is after parent step's end (200)",
+		"exactly at query time": {
+			t:                           timestamp.FromTime(queryT),
+			expectedFirstIndexAfter:     1, // no step strictly after query time; returns StepCount (1)
+			expectedLastIndexAtOrBefore: 0, // the single step is at query time
 		},
-		{
-			name:        "rangeStart equals end",
-			rangeStart:  150,
-			rangeEnd:    150,
-			expectedErr: "substep start (150) must be less than end (150)",
-		},
-		{
-			name:        "rangeStart greater than end",
-			rangeStart:  180,
-			rangeEnd:    170,
-			expectedErr: "substep start (180) must be less than end (170)",
-		},
-		{
-			name:        "start before parent and end after parent",
-			rangeStart:  50,
-			rangeEnd:    250,
-			expectedErr: "substep start (50) is before parent step's start (100)",
-		},
-		{
-			name:        "smoothed not supported",
-			rangeStart:  120,
-			rangeEnd:    150,
-			smoothed:    true,
-			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
-		},
-		{
-			name:        "anchored not supported",
-			rangeStart:  120,
-			rangeEnd:    150,
-			anchored:    true,
-			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		"after query time": {
+			t:                           timestamp.FromTime(queryT.Add(time.Minute)),
+			expectedFirstIndexAfter:     1, // no step strictly after query time; returns StepCount (1)
+			expectedLastIndexAtOrBefore: 0, // the single step is at or before t
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
-			floats := NewFPointRingBuffer(memoryTracker)
-			histograms := NewHPointRingBuffer(memoryTracker)
-
-			step := &RangeVectorStepData{
-				StepT:      150,
-				RangeStart: 100,
-				RangeEnd:   200,
-				Smoothed:   tc.smoothed,
-				Anchored:   tc.anchored,
-				Floats:     floats.ViewUntilSearchingBackwards(200, nil),
-				Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
-			}
-
-			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd, nil)
-			require.EqualError(t, err, tc.expectedErr)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expectedFirstIndexAfter, tr.FirstPointIndexAfter(tc.t))
+			require.Equal(t, tc.expectedLastIndexAtOrBefore, tr.LastPointIndexAtOrBefore(tc.t))
 		})
 	}
 }

@@ -62,6 +62,7 @@
     memberlistConfig:: {
       'memberlist.bind-port': gossipRingPort,
       'memberlist.join': 'dns+gossip-ring.%s.svc.%s:%d' % [$._config.namespace, $._config.cluster_domain, gossipRingPort],
+      'memberlist.rejoin-interval': '60s',
     } + (
       if $._config.memberlist_cluster_label == '' then {} else {
         'memberlist.cluster-label': $._config.memberlist_cluster_label,
@@ -99,17 +100,20 @@
   store_gateway_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   query_scheduler_ports+:: if !querySchedulerMemberlistEnabled then [] else [gossipPort],
   query_frontend_ports+:: if !queryFrontendMemberlistEnabled then [] else [gossipPort],
-  memberlist_bridge_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
   alertmanager_statefulset: overrideSuperIfExists('alertmanager_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  compactor_statefulsets+: overrideSuperCompartmentsIfExists('compactor_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_deployment: overrideSuperIfExists('distributor_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_zone_a_deployment: overrideSuperIfExists('distributor_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_zone_b_deployment: overrideSuperIfExists('distributor_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_zone_c_deployment: overrideSuperIfExists('distributor_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_a_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_a_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_b_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_b_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_c_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_c_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   ingester_statefulset: overrideSuperIfExists('ingester_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   ingester_zone_a_statefulset: overrideSuperIfExists('ingester_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   ingester_zone_b_statefulset: overrideSuperIfExists('ingester_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
@@ -117,6 +121,9 @@
   ingester_partition_zone_a_statefulset: overrideSuperIfExists('ingester_partition_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   ingester_partition_zone_b_statefulset: overrideSuperIfExists('ingester_partition_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   ingester_partition_zone_c_statefulset: overrideSuperIfExists('ingester_partition_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_a_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_b_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_c_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   querier_deployment: overrideSuperIfExists('querier_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   querier_zone_a_deployment: overrideSuperIfExists('querier_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   querier_zone_b_deployment: overrideSuperIfExists('querier_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
@@ -149,9 +156,11 @@
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_a_deployment: overrideSuperIfExists('memberlist_bridge_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_b_deployment: overrideSuperIfExists('memberlist_bridge_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
-  memberlist_bridge_zone_c_deployment: overrideSuperIfExists('memberlist_bridge_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_c_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_a_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_b_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
@@ -174,4 +183,9 @@
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
+
+  // Like overrideSuperIfExists, but merges the override into each entry of a per-compartment workload map.
+  local overrideSuperCompartmentsIfExists(name, override) =
+    if !( name in super) || !std.isObject(super[name]) then {}
+    else { [compartment]+: override for compartment in std.objectFields(super[name]) },
 }

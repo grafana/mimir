@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -120,7 +121,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 				data, err := res.Marshal()
 				require.NoError(t, err)
 
-				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
+				c.SetAsync(reqHashedCacheKey, data, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -133,7 +134,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 		},
 		"should fetch the response from the downstream and overwrite the cached response if corrupted": {
 			init: func(_ *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
-				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: []byte("corrupted")}, time.Minute)
+				c.SetAsync(reqHashedCacheKey, []byte("corrupted"), time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -150,7 +151,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 				data, err := res.Marshal()
 				require.NoError(t, err)
 
-				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
+				c.SetAsync(reqHashedCacheKey, data, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -216,7 +217,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						}
 
 						// Inject the tenant ID in the request.
-						queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+						queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 						req = req.WithContext(user.InjectOrgID(ctx, userID))
 
 						// Init the cache.

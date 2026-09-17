@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -38,6 +40,19 @@ type Request struct {
 	// uncompressedBodySize is the uncompressed request body size (wire bytes before any conversion).
 	// It may be 0 if unknown.
 	uncompressedBodySize int
+
+	// onInit is called after the supplier function completes in initWriteRequest.
+	onInit func()
+
+	// needsCleanup is set to true by WithCleanup's wrapper and is cleared when the
+	// next PushFunc in the middleware chain is invoked. It allows WithCleanup to
+	// decide whether it has to call CleanUp.
+	needsCleanup bool
+
+	// nameValidationSchemeOverride, when non-nil, overrides the tenant's name validation
+	// scheme for this request. This is used by the OTLP handler to auto-upgrade the
+	// validation scheme to UTF-8 when translation headers produce UTF-8 names.
+	nameValidationSchemeOverride *model.ValidationScheme
 }
 
 func newRequest(p supplierFunc) *Request {
@@ -65,6 +80,9 @@ func (r *Request) initWriteRequest() {
 			r.err = fmt.Errorf("push.Request supplierFunc returned a nil body and a nil error, either should be non-nil")
 		}
 		r.AddCleanup(cleanup)
+		if r.onInit != nil {
+			r.onInit()
+		}
 	}
 }
 

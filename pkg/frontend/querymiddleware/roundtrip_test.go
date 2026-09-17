@@ -40,6 +40,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -79,11 +81,14 @@ func TestTripperware_RangeQuery(t *testing.T) {
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	codec := newTestCodec()
 	codec.lookbackDelta = 3 * time.Minute
+	limits := mockLimits{}
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		codec,
+		nil,
 		nil,
 		engine,
 		engineOpts,
@@ -91,6 +96,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +106,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		path, expectedBody string
 	}{
 		{"/foo", "got request for non-query URL"},
-		{query, responseBody},
+		{query, responseBody + "\n"},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			req, err := http.NewRequest("GET", tc.path, http.NoBody)
@@ -126,15 +132,19 @@ func TestTripperware_InstantQuery(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	codec := newTestCodec()
+	limits := mockLimits{totalShards: totalShards}
 
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
 			cfg.ShardedQueries = true
+			cfg.UseMQEForSharding = false
 		}),
 		log.NewNopLogger(),
-		mockLimits{totalShards: totalShards},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		codec,
+		nil,
 		nil,
 		engine,
 		engineOpts,
@@ -142,6 +152,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 
@@ -160,7 +171,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-						Samples: []mimirpb.Sample{
+						Samples: []mimirpb.FloatSample{
 							{TimestampMs: int64(reqTime * 1000), Value: 1},
 						},
 					},
@@ -177,7 +188,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		api := v1.NewAPI(queryClient)
 
 		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
 		require.NoError(t, err)
 		require.Equal(t, model.Vector{
 			{Metric: model.Metric{"foo": "bar"}, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Value: totalShards},
@@ -189,7 +200,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -212,7 +223,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -458,11 +469,14 @@ func TestTripperware_Metrics(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
+			limits := mockLimits{alignQueriesWithStep: testData.stepAlignEnabled}
 			tw, err := NewTripperware(
 				Config{},
 				log.NewNopLogger(),
-				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
+				limits,
+				newMockQueryLimitsProvider(&limits),
 				newTestCodec(),
+				nil,
 				nil,
 				engine,
 				engineOpts,
@@ -470,6 +484,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				false,
 				nil,
 				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 			require.NoError(t, err)
 
@@ -526,7 +541,9 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 				},
 			},
 		},
+		streamingpromql.NewStaticQueryLimitsProvider(),
 		newTestCodec(),
+		nil,
 		nil,
 		engine,
 		engineOpts,
@@ -534,6 +551,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -583,22 +601,23 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
+	cfg.UseMQEForSharding = false
 	cfg.RewriteQueriesHistogram = true
-	cfg.RewriteQueriesPropagateMatchers = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
 	require.NotZero(t, cfg.RewriteQueriesHistogram)
-	require.NotZero(t, cfg.RewriteQueriesPropagateMatchers)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
+	limits := mockLimits{alignQueriesWithStep: true}
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
-		mockLimits{alignQueriesWithStep: true},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
 		nil,
 		nil,
@@ -607,6 +626,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		engineOpts,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 
 	middlewaresByRequestType := map[string]struct {
@@ -643,7 +663,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	// Utility to get the name of the struct.
 	getName := func(i interface{}) string {
 		t := reflect.TypeOf(i)
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		return t.Name()
@@ -832,7 +852,9 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
+				newMockQueryLimitsProvider(&tc.limits),
 				newTestCodec(),
+				nil,
 				nil,
 				engine,
 				engineOpts,
@@ -840,6 +862,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				false,
 				nil,
 				reg,
+				limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 			)
 
 			require.NoError(t, err)
@@ -947,15 +970,16 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	)
 
 	// Create the topic offsets reader.
-	readClient, err := ingest.NewKafkaReaderClient(createKafkaConfig(clusterAddr, topic), nil, logger)
+	kafkaCfg := createKafkaConfig(clusterAddr, topic)
+	kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
+	offsetsReader, err := ingest.NewSingleClusterTopicOffsetsReader(kafkaCfg, topic, allTopicPartitionIDs(numPartitions), "query-frontend", prometheus.NewPedanticRegistry(), logger)
 	require.NoError(t, err)
-	t.Cleanup(readClient.Close)
-
-	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
 	})
+
+	limits := mockLimits{}
 
 	// Create the tripperware.
 	tw, err := NewTripperware(
@@ -965,15 +989,18 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 			cfg.CacheResults = false
 		}),
 		log.NewNopLogger(),
-		mockLimits{},
+		limits,
+		newMockQueryLimitsProvider(&limits),
 		newTestCodec(),
+		nil,
 		nil,
 		promEngine,
 		promOpts,
-		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		NewSingleClusterReadConsistencyOffsetsReader(offsetsReader),
 		false,
 		nil,
 		nil,
+		limiter.NewInflightMemoryConsumptionTracker(nil, nil),
 	)
 	require.NoError(t, err)
 
@@ -1013,9 +1040,9 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 						offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 						for partitionID, expectedOffset := range expectedOffsets {
-							actual, ok := offsets.Lookup(partitionID)
+							actual, ok := offsets.Lookup(0, partitionID)
 							assert.True(t, ok)
-							assert.Equal(t, expectedOffset, actual)
+							assert.Equal(t, expectedOffset, actual.ForKafkaCluster(0))
 						}
 					} else {
 						assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))

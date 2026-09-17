@@ -7,11 +7,13 @@ package local
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	promRules "github.com/prometheus/prometheus/rules"
@@ -187,17 +189,19 @@ func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID
 // It loads rule groups from files
 type fileLoader struct {
 	parser parser.Parser
+	logger *slog.Logger
 }
 
 // newFileLoader creates a new fileLoader.
 func newFileLoader() *fileLoader {
 	return &fileLoader{
 		parser: promqlext.NewPromQLParser(),
+		logger: promslog.NewNopLogger(),
 	}
 }
 
 func (fl *fileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser, fl.logger)
 }
 
 func (fl *fileLoader) Parse(query string) (parser.Expr, error) {

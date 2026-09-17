@@ -53,6 +53,15 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
+
+	// OTLP translation headers allow per-request control of metric name translation.
+	// When both headers are set, otlpTranslationStrategyHeader takes full precedence
+	// and otlpAddSuffixesHeader is ignored.
+	// When only otlpAddSuffixesHeader is set, it toggles the suffix behavior of the
+	// tenant's configured translation strategy (e.g. UnderscoreEscapingWithSuffixes
+	// becomes UnderscoreEscapingWithoutSuffixes when set to "false").
+	otlpAddSuffixesHeader         = "X-Mimir-OTLP-AddSuffixes"
+	otlpTranslationStrategyHeader = "X-Mimir-OTLP-TranslationStrategy"
 )
 
 type OTLPHandlerLimits interface {
@@ -76,6 +85,7 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
+	allowTranslationHeaders bool,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
@@ -100,10 +110,13 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
+		var schemeOverride *model.ValidationScheme
 		parser := newOTLPParser(
+			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
 			OTLPPushMiddlewares,
+			&schemeOverride,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), int, error) {
@@ -128,6 +141,9 @@ func OTLPHandler(
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
+		req.onInit = func() {
+			req.nameValidationSchemeOverride = schemeOverride
+		}
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -196,11 +212,21 @@ func OTLPHandler(
 }
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
-	// Respond as per spec:
-	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+	var rejectedDataPoints int64
+	var ingPushErr ingesterPushError
+	var asErr activeSeriesLimitedError
+	var vErr validationError
+	if errors.As(pushErr, &ingPushErr) {
+		rejectedDataPoints = ingPushErr.rejectedSamples
+	} else if errors.As(pushErr, &asErr) {
+		rejectedDataPoints = asErr.rejectedSamples
+	} else if errors.As(pushErr, &vErr) {
+		rejectedDataPoints = vErr.rejectedSamples
+	}
+
 	expResp := colmetricpb.ExportMetricsServiceResponse{
 		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
-			RejectedDataPoints: 0,
+			RejectedDataPoints: rejectedDataPoints,
 			ErrorMessage:       pushErr.Error(),
 		},
 	}
@@ -208,11 +234,22 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
-func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+// inspectOTLPResourceMetrics observes ResourceMetrics/ScopeMetrics/Metrics
+// array lengths and reports whether any ResourceMetrics carries "job" or
+// "instance" as a resource attribute key.
+func inspectOTLPResourceMetrics(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) (hasJobOrInstanceResourceAttr bool) {
 	resourceMetricsSlice := req.Metrics().ResourceMetrics()
 	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
+		if !hasJobOrInstanceResourceAttr {
+			attrs := resourceMetrics.Resource().Attributes()
+			if _, ok := attrs.Get("job"); ok {
+				hasJobOrInstanceResourceAttr = true
+			} else if _, ok := attrs.Get("instance"); ok {
+				hasJobOrInstanceResourceAttr = true
+			}
+		}
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
@@ -221,9 +258,11 @@ func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequ
 			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
 		}
 	}
+	return hasJobOrInstanceResourceAttr
 }
 
 func newOTLPParser(
+	allowTranslationHeaders bool,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
@@ -231,6 +270,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	schemeOverride **model.ValidationScheme,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -350,23 +390,51 @@ func newOTLPParser(
 			}
 		}
 
-		tenantID, err := tenant.TenantID(ctx)
+		tenantID, tenantMd, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return 0, err
 		}
+
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
-		translationStrategy := limits.OTelTranslationStrategy(tenantID)
-		validateTranslationStrategy(translationStrategy, limits, tenantID)
+
+		limitsKey := tenantMd.WithTenant(tenantID)
+		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
+		translationHeadersApplied := false
+		if allowTranslationHeaders {
+			strategyHeader := r.Header.Get(otlpTranslationStrategyHeader)
+			suffixesHeader := r.Header.Get(otlpAddSuffixesHeader)
+			if strategyHeader != "" || suffixesHeader != "" {
+				var err error
+				translationStrategy, err = applyTranslationHeaders(strategyHeader, suffixesHeader, limits, limitsKey)
+				if err != nil {
+					return 0, httpgrpc.Error(http.StatusBadRequest, err.Error())
+				}
+
+				translationHeadersApplied = true
+				// Auto-upgrade the name validation scheme if the effective
+				// translation strategy determined by the headers entails utf8
+				// and the tenant isn't already using UTF-8 validation.
+				if !translationStrategy.ShouldEscape() && limits.NameValidationScheme(limitsKey) != model.UTF8Validation {
+					s := model.UTF8Validation
+					*schemeOverride = &s
+				}
+			}
+		}
+		if !translationHeadersApplied {
+			validateTranslationStrategy(translationStrategy, limits, limitsKey)
+		}
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
 		pushMetrics.IncOTLPContentType(contentType)
-		observeOTLPFieldsCount(pushMetrics, otlpReq)
+		if inspectOTLPResourceMetrics(pushMetrics, otlpReq) {
+			pushMetrics.IncOTLPRequestWithJobOrInstanceResourceAttribute(tenantID)
+		}
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
@@ -380,8 +448,10 @@ func newOTLPParser(
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
+		convSpan, convCtx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.convert")
+		defer convSpan.Finish()
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
-			ctx,
+			convCtx,
 			otlpConverter,
 			otlpReq.Metrics(),
 			convOpts,
@@ -391,6 +461,7 @@ func newOTLPParser(
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
+			convSpan.SetTag("metrics_dropped", metricsDropped)
 			return 0, err
 		}
 
@@ -404,6 +475,12 @@ func newOTLPParser(
 			histogramCount += len(m.Histograms)
 			exemplarCount += len(m.Exemplars)
 		}
+
+		convSpan.SetTag("metric_count", metricCount)
+		convSpan.SetTag("sample_count", sampleCount)
+		convSpan.SetTag("histogram_count", histogramCount)
+		convSpan.SetTag("exemplar_count", exemplarCount)
+		convSpan.SetTag("metrics_dropped", metricsDropped)
 
 		level.Debug(spanLogger).Log(
 			"msg", "OTLP to Prometheus conversion complete",
@@ -422,10 +499,56 @@ func newOTLPParser(
 	}
 }
 
+// applyTranslationHeaders returns an updated translation strategy based on strategyHeader and suffixesHeader.
+// When both headers are present, strategyHeader takes full precedence.
+func applyTranslationHeaders(strategyHeader, suffixesHeader string, limits OTLPHandlerLimits, limitsKey string) (otlptranslator.TranslationStrategyOption, error) {
+	if strategyHeader != "" {
+		strategy := otlptranslator.TranslationStrategyOption(strategyHeader)
+		switch strategy {
+		case otlptranslator.UnderscoreEscapingWithSuffixes, otlptranslator.UnderscoreEscapingWithoutSuffixes, otlptranslator.NoUTF8EscapingWithSuffixes, otlptranslator.NoTranslation:
+			return otlptranslator.TranslationStrategyOption(strategyHeader), nil
+		default:
+			return "", fmt.Errorf("invalid value for %s header: %q", otlpTranslationStrategyHeader, strategy)
+		}
+	}
+
+	// Only the suffixes header is set. Start from the tenant's configured strategy
+	// and toggle the suffix aspect: e.g. if the tenant uses UnderscoreEscapingWithSuffixes
+	// and the header says "false", the effective strategy becomes
+	// UnderscoreEscapingWithoutSuffixes. The escaping mode is preserved.
+	addSuffixes, err := strconv.ParseBool(suffixesHeader)
+	if err != nil {
+		return "", fmt.Errorf(`invalid value for %s header: %q, expected "true" or "false"`, otlpAddSuffixesHeader, suffixesHeader)
+	}
+
+	strategy := limits.OTelTranslationStrategy(limitsKey)
+	switch strategy {
+	case otlptranslator.UnderscoreEscapingWithSuffixes:
+		if !addSuffixes {
+			strategy = otlptranslator.UnderscoreEscapingWithoutSuffixes
+		}
+	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
+		if addSuffixes {
+			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
+		}
+	case otlptranslator.NoUTF8EscapingWithSuffixes:
+		if !addSuffixes {
+			strategy = otlptranslator.NoTranslation
+		}
+	case otlptranslator.NoTranslation:
+		if addSuffixes {
+			strategy = otlptranslator.NoUTF8EscapingWithSuffixes
+		}
+	default:
+		panic("limits.OTelTranslationStrategy should never return an empty string")
+	}
+	return strategy, nil
+}
+
 // validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
 // Any inconsistency at this point indicates a programming error, so we panic on errors.
-func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, tenantID string) {
-	validationScheme := limits.NameValidationScheme(tenantID)
+func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, limitsKey string) {
+	validationScheme := limits.NameValidationScheme(limitsKey)
 	switch validationScheme {
 	case model.LegacyValidation:
 		if !translationStrategy.ShouldEscape() {
@@ -445,7 +568,7 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 		panic(fmt.Errorf("unhandled name validation scheme: %s", validationScheme))
 	}
 
-	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+	addSuffixes := limits.OTelMetricSuffixesEnabled(limitsKey)
 	if addSuffixes && !translationStrategy.ShouldAddSuffixes() {
 		panic(fmt.Errorf("OTel metric suffixes are enabled, but incompatible OTel translation strategy: %s", translationStrategy))
 	} else if !addSuffixes && translationStrategy.ShouldAddSuffixes() {
@@ -461,7 +584,15 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 	}
 
 	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
+
+	var httpStatusCode int
+	var httpStatusErr ErrorWithHTTPStatusCode
+	if errors.As(pushErr, &httpStatusErr) {
+		httpStatusCode = httpStatusErr.HTTPStatusCode()
+	} else {
+		httpStatusCode = errorCauseToHTTPStatusCode(distributorErr.Cause())
+	}
+
 	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
@@ -648,9 +779,11 @@ func (c *otlpMimirConverter) Err() error {
 	return nil
 }
 
-// TimeseriesToOTLPRequest is used in tests.
-// If you provide exemplars they will be placed on the first float or
-// histogram sample.
+// TimeseriesToOTLPRequest is used in tests to convert Prometheus types to OTEL types.
+//
+// If you provide exemplars they will be placed on the first float histogram sample.
+//
+// NOTE: This should not be called from production code besides continuoustest.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -713,6 +846,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {
+				if _, isFloatCount := histogram.Count.(*prompb.Histogram_CountFloat); isFloatCount {
+					panic(fmt.Sprintf("prometheus histograms with float counts cannot be converted to OTEL exponential histograms, this is a bug. histogram: %+v", histogram))
+				}
+
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)

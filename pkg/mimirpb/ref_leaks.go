@@ -3,11 +3,12 @@
 package mimirpb
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"runtime"
 	"sync"
-	"syscall"
 	"time"
 	"unsafe"
 
@@ -29,7 +30,12 @@ func (c *InstrumentRefLeaksConfig) RegisterFlagsWithPrefix(prefix string, f *fla
 	f.Uint64Var(&c.MaxInflightInstrumentedBytes, prefix+"max-inflight-instrumented-bytes", 0, `Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.`)
 }
 
+var errRefLeaksNotAvailable = errors.New("reference leaks instrumentation not available in " + runtime.GOOS)
+
 func (c InstrumentRefLeaksConfig) Validate() error {
+	if !refLeaksInstrumentationSupported && c.Percentage != 0 {
+		return errRefLeaksNotAvailable
+	}
 	if c.Percentage < 0 || c.Percentage > 100 {
 		return fmt.Errorf("percentage must be in [0-100], got: %v", c.Percentage)
 	}
@@ -96,7 +102,7 @@ func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buff
 	// Allocate separate pages for this buffer. We'll detect ref leaks by
 	// munmaping the pages on Free, after which trying to access them will
 	// segfault.
-	b, err := syscall.Mmap(-1, 0, pageAlignedLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	b, err := mmapAnon(pageAlignedLen)
 	if err != nil {
 		panic(fmt.Errorf("mmap: %w", err))
 	}
@@ -134,7 +140,7 @@ func (b *instrumentLeaksBuf) Free() {
 		ptr := unsafe.SliceData(buf)
 		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
 		if b.waitBeforeReuse > 0 {
-			err := syscall.Mprotect(allPages, syscall.PROT_NONE)
+			err := mprotectNone(allPages)
 			if err != nil {
 				panic(fmt.Errorf("mprotect: %w", err))
 			}
@@ -179,7 +185,7 @@ func (t *refLeaksTracker) unmap(buf []byte) {
 	newInflight := t.inflightInstrumentedBytes.Sub(uint64(len(buf)))
 	t.inflightInstrumentedBytesMetric.Set(float64(newInflight))
 
-	err := syscall.Munmap(buf)
+	err := munmap(buf)
 	if err != nil {
 		panic(fmt.Errorf("munmap: %w", err))
 	}

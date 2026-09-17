@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package otelhttp // import "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+package otelhttp
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
-	otelsemconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	otelsemconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/request"
@@ -85,8 +85,6 @@ func defaultTransportFormatter(_ string, r *http.Request) string {
 // RoundTrip creates a Span and propagates its context via the provided request's headers
 // before handing the request to the configured base RoundTripper. The created span will
 // end when the response body is closed or when a read from the body returns io.EOF.
-// If GetBody returns an error, the error is reported via otel.Handle and the request
-// continues with the original Body.
 func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	requestStartTime := time.Now()
 	for _, f := range t.filters {
@@ -119,44 +117,56 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	r = r.Clone(ctx) // According to RoundTripper spec, we shouldn't modify the origin request.
 
-	// GetBody is preferred over direct access to Body if the function is set.
-	// If the resulting body is nil or is NoBody, we don't want to mutate the body as it
-	// will affect the identity of it in an unforeseeable way because we assert
-	// ReadCloser fulfills a certain interface and it is indeed nil or NoBody.
-	body := r.Body
-	if r.GetBody != nil {
-		b, err := r.GetBody()
-		if err != nil {
-			otel.Handle(fmt.Errorf("http.Request GetBody returned an error: %w", err))
-		} else {
-			body = b
+	var lastBW *request.BodyWrapper // Records the last body wrapper. Can be nil.
+	maybeWrapBody := func(body io.ReadCloser) io.ReadCloser {
+		if body == nil || body == http.NoBody {
+			return body
 		}
+		bw := request.NewBodyWrapper(body, func(int64) {})
+		lastBW = bw
+		return bw
 	}
-
-	bw := request.NewBodyWrapper(body, func(int64) {})
-	if body != nil && body != http.NoBody {
-		r.Body = bw
+	r.Body = maybeWrapBody(r.Body)
+	if r.GetBody != nil {
+		originalGetBody := r.GetBody
+		r.GetBody = func() (io.ReadCloser, error) {
+			b, err := originalGetBody()
+			if err != nil {
+				lastBW = nil // The underlying transport will fail to make a retry request, hence, record no data.
+				return nil, err
+			}
+			return maybeWrapBody(b), nil
+		}
 	}
 
 	span.SetAttributes(t.semconv.RequestTraceAttrs(r)...)
 	t.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 
 	res, err := t.rt.RoundTrip(r)
+	if err == nil {
+		res, err = ensureResponseBody(t.rt, r, res)
+	}
 
 	// Record the metrics on error or no error.
 	statusCode := 0
 	if err == nil {
 		statusCode = res.StatusCode
 	}
+	var requestSize int64
+	if lastBW != nil {
+		requestSize = lastBW.BytesRead()
+	}
 	t.semconv.RecordMetrics(
 		ctx,
 		semconv.MetricData{
-			RequestSize:     bw.BytesRead(),
+			RequestSize:     requestSize,
 			RequestDuration: time.Since(requestStartTime),
 		},
 		t.semconv.MetricOptions(semconv.MetricAttributes{
 			Req:                  r,
+			Resp:                 res,
 			StatusCode:           statusCode,
+			Err:                  err,
 			AdditionalAttributes: append(labeler.Get(), t.metricAttributesFromRequest(r)...),
 		}),
 	)
@@ -176,6 +186,20 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	span.SetStatus(t.semconv.Status(res.StatusCode))
 
 	return res, nil
+}
+
+func ensureResponseBody(rt http.RoundTripper, r *http.Request, res *http.Response) (*http.Response, error) {
+	switch {
+	case res == nil:
+		return nil, fmt.Errorf("http: RoundTripper implementation (%T) returned a nil *Response with a nil error", rt)
+	case res.Body != nil:
+		return res, nil
+	case res.ContentLength > 0 && r.Method != http.MethodHead:
+		return nil, fmt.Errorf("http: RoundTripper implementation (%T) returned a *Response with content length %d but a nil Body", rt, res.ContentLength)
+	default:
+		res.Body = http.NoBody
+		return res, nil
+	}
 }
 
 func (t *Transport) metricAttributesFromRequest(r *http.Request) []attribute.KeyValue {

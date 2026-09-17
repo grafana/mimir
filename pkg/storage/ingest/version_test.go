@@ -328,7 +328,7 @@ func TestRecordSerializer(t *testing.T) {
 
 		serializer := versionTwoRecordSerializer{}
 		inputSize := req.Size() // Capture input RW1 size before serialization
-		records, returnedSize, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		records, returnedSize, err := serializer.ToRecords("test", 1234, "user-1", req, 100000)
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 		record := records[0]
@@ -336,6 +336,8 @@ func TestRecordSerializer(t *testing.T) {
 		// Verify that ToRecords returns the input size (RW1), not the output size (RW2).
 		require.Equal(t, inputSize, returnedSize, "ToRecords should return input RW1 size, not output RW2 size")
 
+		require.Equal(t, "test", record.Topic)
+		require.Equal(t, int32(1234), record.Partition)
 		require.Equal(t, 2, ParseRecordVersion(record))
 
 		resultReq := &mimirpb.PreallocWriteRequest{}
@@ -438,7 +440,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 
 	b.Run("v2 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _, err := v2s.ToRecords(123, "user-1", req, 16000000)
+			_, _, err := v2s.ToRecords("test", 123, "user-1", req, 16000000)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -447,7 +449,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 
 	b.Run("v1 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _, err := v1s.ToRecords(123, "user-1", req, 16000000)
+			_, _, err := v1s.ToRecords("test", 123, "user-1", req, 16000000)
 			if err != nil {
 				b.Fatal(err)
 			}

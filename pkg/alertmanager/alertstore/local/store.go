@@ -24,9 +24,8 @@ const (
 )
 
 var (
-	errReadOnly              = errors.New("local alertmanager config storage is read-only")
-	errState                 = errors.New("local alertmanager storage does not support state persistency")
-	errGrafanaStateAndConfig = errors.New("local alertmanager storage does not support Grafana configuration endpoints")
+	errReadOnly = errors.New("local alertmanager config storage is read-only")
+	errState    = errors.New("local alertmanager storage does not support state persistency")
 )
 
 // StoreConfig configures a static file alertmanager store
@@ -65,16 +64,16 @@ func (f *Store) ListAllUsers(_ context.Context) ([]string, error) {
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (f *Store) GetAlertConfigs(_ context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
+func (f *Store) GetAlertConfigs(_ context.Context, userIDs []string) (map[string]*alertspb.AlertConfigDesc, error) {
 	configs, err := f.reloadConfigs()
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := make(map[string]alertspb.AlertConfigDescs, len(userIDs))
+	filtered := make(map[string]*alertspb.AlertConfigDesc, len(userIDs))
 	for _, userID := range userIDs {
 		if cfg, ok := configs[userID]; ok {
-			filtered[userID] = alertspb.AlertConfigDescs{Mimir: cfg}
+			filtered[userID] = cfg
 		}
 	}
 
@@ -82,23 +81,23 @@ func (f *Store) GetAlertConfigs(_ context.Context, userIDs []string) (map[string
 }
 
 // GetAlertConfig implements alertstore.AlertStore.
-func (f *Store) GetAlertConfig(_ context.Context, user string) (alertspb.AlertConfigDesc, error) {
+func (f *Store) GetAlertConfig(_ context.Context, user string) (*alertspb.AlertConfigDesc, error) {
 	cfgs, err := f.reloadConfigs()
 	if err != nil {
-		return alertspb.AlertConfigDesc{}, err
+		return nil, err
 	}
 
 	cfg, exists := cfgs[user]
 
 	if !exists {
-		return alertspb.AlertConfigDesc{}, alertspb.ErrNotFound
+		return nil, alertspb.ErrNotFound
 	}
 
 	return cfg, nil
 }
 
 // SetAlertConfig implements alertstore.AlertStore.
-func (f *Store) SetAlertConfig(_ context.Context, _ alertspb.AlertConfigDesc) error {
+func (f *Store) SetAlertConfig(_ context.Context, _ *alertspb.AlertConfigDesc) error {
 	return errReadOnly
 }
 
@@ -107,30 +106,18 @@ func (f *Store) DeleteAlertConfig(_ context.Context, _ string) error {
 	return errReadOnly
 }
 
-func (f *Store) GetGrafanaAlertConfig(_ context.Context, _ string) (alertspb.GrafanaAlertConfigDesc, error) {
-	return alertspb.GrafanaAlertConfigDesc{}, errGrafanaStateAndConfig
-}
-
-func (f *Store) SetGrafanaAlertConfig(_ context.Context, _ alertspb.GrafanaAlertConfigDesc) error {
-	return errGrafanaStateAndConfig
-}
-
-func (f *Store) DeleteGrafanaAlertConfig(_ context.Context, _ string) error {
-	return errGrafanaStateAndConfig
-}
-
 // ListUsersWithFullState implements alertstore.AlertStore.
 func (f *Store) ListUsersWithFullState(_ context.Context) ([]string, error) {
 	return []string{}, nil
 }
 
 // GetFullState implements alertstore.AlertStore.
-func (f *Store) GetFullState(_ context.Context, _ string) (alertspb.FullStateDesc, error) {
-	return alertspb.FullStateDesc{}, alertspb.ErrNotFound
+func (f *Store) GetFullState(_ context.Context, _ string) (*alertspb.FullStateDesc, error) {
+	return nil, alertspb.ErrNotFound
 }
 
 // SetFullState implements alertstore.AlertStore.
-func (f *Store) SetFullState(_ context.Context, _ string, _ alertspb.FullStateDesc) error {
+func (f *Store) SetFullState(_ context.Context, _ string, _ *alertspb.FullStateDesc) error {
 	return errState
 }
 
@@ -139,8 +126,8 @@ func (f *Store) DeleteFullState(_ context.Context, _ string) error {
 	return errState
 }
 
-func (f *Store) reloadConfigs() (map[string]alertspb.AlertConfigDesc, error) {
-	configs := map[string]alertspb.AlertConfigDesc{}
+func (f *Store) reloadConfigs() (map[string]*alertspb.AlertConfigDesc, error) {
+	configs := map[string]*alertspb.AlertConfigDesc{}
 	err := filepath.Walk(f.cfg.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("unable to walk file path at %s: %w", path, err)
@@ -167,7 +154,7 @@ func (f *Store) reloadConfigs() (map[string]alertspb.AlertConfigDesc, error) {
 		// The file name must correspond to the user tenant ID
 		user := strings.TrimSuffix(info.Name(), ext)
 
-		configs[user] = alertspb.AlertConfigDesc{
+		configs[user] = &alertspb.AlertConfigDesc{
 			User:      user,
 			RawConfig: string(content),
 		}

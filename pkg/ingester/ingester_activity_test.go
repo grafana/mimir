@@ -25,7 +25,7 @@ func TestRequestActivity(t *testing.T) {
 		},
 		{
 			request:  client.DefaultMetricsMetadataRequest(),
-			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{Limit:-1,LimitPerMetric:-1,Metric:,}",
+			expected: "test: user=\"\" trace=\"\" request=&MetricsMetadataRequest{Limit:-1,LimitPerMetric:-1,Metric:,MetricNames:[],}",
 		},
 		{
 			request:  &client.LabelValuesCardinalityRequest{LabelNames: []string{"hello", "world"}, Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "test", Value: "value"}}, CountMethod: client.IN_MEMORY},
@@ -70,17 +70,6 @@ func TestQueryRequest_CustomStringer(t *testing.T) {
 					{Type: client.EQUAL, Name: "n_2", Value: "v_2"},
 					{Type: client.EQUAL, Name: "n_3", Value: "v_3"},
 				},
-			},
-		},
-		"one matcher projection includes": {
-			request: &client.QueryRequest{
-				StartTimestampMs: rand.Int63(),
-				EndTimestampMs:   rand.Int63(),
-				Matchers: []*client.LabelMatcher{
-					{Type: client.EQUAL, Name: "n_1", Value: "v_1"},
-				},
-				ProjectionInclude: true,
-				ProjectionLabels:  []string{"env", "region"},
 			},
 		},
 	}

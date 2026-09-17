@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -39,6 +40,7 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type testBlocksCleanerOptions struct {
@@ -108,6 +110,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		TenantCleanupDelay:            options.tenantDeletionDelay,
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
+		EstimateCompactionJobs:        true,
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -218,6 +221,19 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
 		"cortex_bucket_index_estimated_compaction_jobs",
+	))
+}
+
+func TestBlocksCleaner_ShouldNotRegisterCompactionJobMetricsWhenEstimationDisabled(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+	reg := prometheus.NewPedanticRegistry()
+	_ = NewBlocksCleaner(BlocksCleanerConfig{EstimateCompactionJobs: false}, bucketClient, tsdb.AllUsers, newMockConfigProvider(), log.NewNopLogger(), reg)
+
+	// With estimation disabled neither the gauge nor the error counter are registered.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		"cortex_bucket_index_estimated_compaction_jobs",
+		"cortex_bucket_index_estimated_compaction_jobs_errors_total",
 	))
 }
 
@@ -362,6 +378,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		CleanupConcurrency:            1,
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
+		EstimateCompactionJobs:        true,
 	}
 
 	ctx := context.Background()
@@ -446,6 +463,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 		CleanupInterval:         time.Minute,
 		CleanupConcurrency:      1,
 		DeleteBlocksConcurrency: 1,
+		EstimateCompactionJobs:  true,
 	}
 
 	ctx := context.Background()
@@ -1310,16 +1328,131 @@ func TestComputeCompactionJobs(t *testing.T) {
 			expectedSplits: 0,
 			expectedMerges: 1,
 		},
+		"OOO blocks are grouped separately from in-order blocks": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks - should create a separate split job
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
+					},
+				},
+			},
+			// Both in-order and OOO groups should create split jobs (2 total)
+			expectedSplits: 2,
+			expectedMerges: 0,
+		},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			index := &bucketindex.Index{Blocks: c.blocks}
-			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = 3
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
 			require.NoError(t, err)
 			split, merge := computeSplitAndMergeJobs(jobs)
 			require.Equal(t, c.expectedSplits, split)
 			require.Equal(t, c.expectedMerges, merge)
+		})
+	}
+}
+
+func TestComputeCompactionJobsWithOOOShards(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+		CompactionBlockRanges:         tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+	}
+
+	const user = "test"
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+
+	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+
+	cases := map[string]struct {
+		blocks                    bucketindex.Blocks
+		mergeShards               int
+		oooMergeShards            int
+		expectedInOrderShardCount uint32
+		expectedOOOShardCount     uint32
+	}{
+		"OOO blocks use oooMergeShards when set": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+			},
+			mergeShards:               8,
+			oooMergeShards:            2,
+			expectedInOrderShardCount: 8,
+			expectedOOOShardCount:     2,
+		},
+		"OOO blocks fall back to mergeShards when oooMergeShards is 0": {
+			blocks: bucketindex.Blocks{
+				// In-order blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				// OOO blocks
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS,
+					Labels: map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
+				},
+			},
+			mergeShards:               8,
+			oooMergeShards:            0,
+			expectedInOrderShardCount: 8,
+			expectedOOOShardCount:     8,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			index := &bucketindex.Index{Blocks: c.blocks}
+			cfgProvider := newMockConfigProvider()
+			cfgProvider.splitAndMergeShards[user] = c.mergeShards
+			cfgProvider.oooSplitAndMergeShards[user] = c.oooMergeShards
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, cfgProvider)
+			require.NoError(t, err)
+
+			var inOrderJob, oooJob *Job
+			for _, job := range jobs {
+				if job.UseSplitting() {
+					metas := job.Metas()
+					if len(metas) > 0 && isOOOBlock(metas[0]) {
+						oooJob = job
+					} else {
+						inOrderJob = job
+					}
+				}
+			}
+
+			require.NotNil(t, inOrderJob, "expected an in-order split job")
+			require.NotNil(t, oooJob, "expected an OOO split job")
+			require.Equal(t, c.expectedInOrderShardCount, inOrderJob.SplittingShards(), "in-order job shard count")
+			require.Equal(t, c.expectedOOOShardCount, oooJob.SplittingShards(), "OOO job shard count")
 		})
 	}
 }
@@ -1726,8 +1859,10 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 }
 
 type mockConfigProvider struct {
+	floatChunkEncodings          map[string]chunkenc.Encoding
 	userRetentionPeriods         map[string]time.Duration
 	splitAndMergeShards          map[string]int
+	oooSplitAndMergeShards       map[string]int
 	instancesShardSize           map[string]int
 	splitGroups                  map[string]int
 	blockUploadEnabled           map[string]bool
@@ -1742,8 +1877,10 @@ type mockConfigProvider struct {
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
+		floatChunkEncodings:          make(map[string]chunkenc.Encoding),
 		userRetentionPeriods:         make(map[string]time.Duration),
 		splitAndMergeShards:          make(map[string]int),
+		oooSplitAndMergeShards:       make(map[string]int),
 		splitGroups:                  make(map[string]int),
 		blockUploadEnabled:           make(map[string]bool),
 		blockUploadValidationEnabled: make(map[string]bool),
@@ -1768,6 +1905,13 @@ func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 		return result
 	}
 	return 0
+}
+
+func (m *mockConfigProvider) CompactorOOOSplitAndMergeShards(user string) int {
+	if result, ok := m.oooSplitAndMergeShards[user]; ok {
+		return result
+	}
+	return m.CompactorSplitAndMergeShards(user)
 }
 
 func (m *mockConfigProvider) CompactorSplitGroups(user string) int {
@@ -1802,6 +1946,13 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
+}
+
+func (m *mockConfigProvider) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	if result, ok := m.floatChunkEncodings[userID]; ok {
+		return result
+	}
+	return validation.ParseFloatChunkEncoding(validation.DefaultFloatChunkEncodingValue)
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

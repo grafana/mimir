@@ -7,13 +7,14 @@ package version
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/google/go-github/v84/github"
 )
 
 const (
@@ -42,19 +43,38 @@ func CheckLatest(version string, logger log.Logger) {
 	}
 }
 
+const githubAPIBaseURL = "https://api.github.com/"
+
 func getLatestFromGitHub(logger log.Logger) (string, string, error) {
 	fmt.Print("checking latest version... ")
-	c := github.NewClient(nil)
-	repoRelease, resp, err := c.Repositories.GetLatestRelease(context.Background(), "grafana", "mimir")
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, githubAPIBaseURL+"repos/grafana/mimir/releases/latest", nil)
+	if err != nil {
+		level.Debug(logger).Log("msg", "error building request", "err", err)
+		return "", "", errUnableToRetrieveLatestVersion
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		level.Debug(logger).Log("msg", "error while retrieving the latest version", "err", err)
 		return "", "", errUnableToRetrieveLatestVersion
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
 		level.Debug(logger).Log("msg", "non-2xx status code while contacting the GitHub API", "status", resp.StatusCode)
 		return "", "", errUnableToRetrieveLatestVersion
 	}
 
-	return repoRelease.GetTagName(), repoRelease.GetHTMLURL(), nil
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		level.Debug(logger).Log("msg", "error decoding GitHub response", "err", err)
+		return "", "", errUnableToRetrieveLatestVersion
+	}
+
+	return release.TagName, release.HTMLURL, nil
 }

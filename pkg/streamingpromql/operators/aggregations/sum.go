@@ -166,7 +166,15 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
 		for idx, present := range g.floatPresent {
 			if present {
-				if g.histogramSums[idx] != nil {
+				if g.histogramSums[idx] == invalidCombinationOfHistograms {
+					// The histogram point at this index was already discarded and histogramPointCount
+					// decremented because it was an invalid combination of histograms. Remove the
+					// conflicting float from the output too, but don't decrement histogramPointCount again.
+					g.floatPresent[idx] = false
+					g.histogramSums[idx] = nil
+
+					haveMixedFloatsAndHistograms = true
+				} else if g.histogramSums[idx] != nil {
 					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
 					// and a warning annotation is emitted.
 					g.floatPresent[idx] = false
@@ -240,6 +248,9 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 }
 
 func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	// Remove sentinel histograms from slice to ensure it's not mutated when the slice is reused.
+	removeSentinelValue(g.histogramSums)
+
 	types.Float64SlicePool.Put(&g.floatSums, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)

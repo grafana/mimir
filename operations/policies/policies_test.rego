@@ -35,6 +35,22 @@ test_namespace_forbidden_on_psp if {
 	contains(reason, "Resource has a namespace, but shouldn't")
 }
 
+test_namespace_forbidden_on_volume_attributes_class if {
+	deny[reason] with input as [{"contents": {
+		"kind": "VolumeAttributesClass",
+		"metadata": {"name": "resource", "namespace": "example"},
+	}}]
+
+	contains(reason, "Resource has a namespace, but shouldn't")
+}
+
+test_passing_volume_attributes_class_without_namespace if {
+	no_denies with input as [{"contents": {
+		"kind": "VolumeAttributesClass",
+		"metadata": {"name": "resource"},
+	}}]
+}
+
 test_empty_node_selector_not_allowed if {
 	deny[reason] with input as [object.union(
 		passing_deployment,

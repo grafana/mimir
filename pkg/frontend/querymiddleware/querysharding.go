@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -149,6 +150,17 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	// Ownership of qry is transferred to the response finalizer on success. On
+	// any failure path before that hand-off we must Close qry ourselves, otherwise
+	// the query's resources (memory consumption tracker, pooled buffers, evaluator
+	// context) leak.
+	shouldCloseQuery := true
+	defer func() {
+		if shouldCloseQuery {
+			qry.Close()
+		}
+	}()
+
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
@@ -176,7 +188,7 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		headers = shardedQueryable.getResponseHeaders()
 	}
 
-	return &PrometheusResponseWithFinalizer{
+	resp := &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{
@@ -188,7 +200,10 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 			Infos:    info,
 		},
 		finalizer: qry.Close,
-	}, nil
+	}
+
+	shouldCloseQuery = false
+	return resp, nil
 }
 
 func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable) (promql.Query, error) {
@@ -249,7 +264,6 @@ type ShardingLimits interface {
 	QueryShardingTotalShards(userID string) int
 	QueryShardingMaxRegexpSizeBytes(userID string) int
 	QueryShardingMaxShardedQueries(userID string) int
-	CompactorSplitAndMergeShards(userID string) int
 }
 
 func NewQuerySharder(
@@ -419,38 +433,19 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
-	// Adjust totalShards such that one of the following is true:
-	//
-	// 1) totalShards % compactorShards == 0
-	// 2) compactorShards % totalShards == 0
-	//
-	// This allows optimization with sharded blocks in querier to be activated.
-	//
-	// (Optimization is only activated when given *block* was sharded with correct compactor shards,
-	// but we can only adjust totalShards "globally", ie. for all queried blocks.)
-	compactorShardCount := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.CompactorSplitAndMergeShards)
-	if compactorShardCount > 1 {
+	// Round the final shard count up to the next power of two so it always meshes with
+	// (is a divisor or multiple of) the compactor shard count, which is itself enforced to be a
+	// power of two. This is what allows the querier to prune blocks that cannot possibly hold a
+	// given query shard. It's applied last so that whatever value the adjustments above produced
+	// ends up being a power of two.
+	if totalShards > 1 {
 		prevTotalShards := totalShards
-
-		if totalShards > compactorShardCount {
-			totalShards = totalShards - (totalShards % compactorShardCount)
-		} else if totalShards < compactorShardCount {
-			// Adjust totalShards down to the nearest divisor of "compactor shards".
-			for totalShards > 0 && compactorShardCount%totalShards != 0 {
-				totalShards--
-			}
-
-			// If there was no divisor, just use original total shards.
-			if totalShards <= 1 {
-				totalShards = prevTotalShards
-			}
-		}
+		totalShards = util_math.NextPowerTwo(totalShards)
 
 		if prevTotalShards != totalShards {
-			spanLog.DebugLog("msg", "number of shards has been adjusted to be compatible with compactor shards",
+			spanLog.DebugLog("msg", "number of shards has been rounded up to the next power of two",
 				"previous total shards", prevTotalShards,
-				"updated total shards", totalShards,
-				"compactor shards", compactorShardCount)
+				"updated total shards", totalShards)
 		}
 	}
 
@@ -467,12 +462,12 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		return []SampleStream{
 			{
 				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
-				Samples: []mimirpb.Sample{{TimestampMs: v.T}},
+				Samples: []mimirpb.FloatSample{{TimestampMs: v.T}},
 			},
 		}, nil
 	case promql.Scalar:
 		return []SampleStream{
-			{Samples: []mimirpb.Sample{{TimestampMs: v.T, Value: v.V}}},
+			{Samples: []mimirpb.FloatSample{{TimestampMs: v.T, Value: v.V}}},
 		}, nil
 
 	case promql.Vector:
@@ -484,7 +479,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			if sample.H != nil {
 				ss.Histograms = mimirpb.FromHPointsToHistograms([]promql.HPoint{{T: sample.T, H: sample.H}})
 			} else {
-				ss.Samples = mimirpb.FromFPointsToSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
+				ss.Samples = mimirpb.FromFPointsToFloatSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
 			}
 			res = append(res, ss)
 		}
@@ -496,7 +491,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 			ss := SampleStream{
 				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
 			}
-			samples := mimirpb.FromFPointsToSamples(series.Floats)
+			samples := mimirpb.FromFPointsToFloatSamples(series.Floats)
 			if len(samples) > 0 {
 				ss.Samples = samples
 			}

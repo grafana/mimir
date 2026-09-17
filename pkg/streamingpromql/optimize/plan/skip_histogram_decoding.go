@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -45,14 +46,27 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		skipHistogramBuckets = false
 	}
 
+	// Don't skip buckets for range vector splitting either, buckets needed for counter reset detection at the boundary
+	// between splits.
+	if _, ok := node.(*rangevectorsplitting.SplitFunctionCall); ok {
+		skipHistogramBuckets = false
+	}
+
 	if f, ok := node.(*core.FunctionCall); ok {
 		switch f.Function {
 		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
 			skipHistogramBuckets = true
-		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
+		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE, functions.FUNCTION_HISTOGRAM_QUANTILES, functions.FUNCTION_HISTOGRAM_STDDEV, functions.FUNCTION_HISTOGRAM_STDVAR:
 			skipHistogramBuckets = false
 		default:
 			// Nothing to do.
+		}
+	}
+
+	// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
+	if b, ok := node.(*core.BinaryExpression); ok {
+		if b.Op == core.BINARY_TRIM_UPPER || b.Op == core.BINARY_TRIM_LOWER {
+			skipHistogramBuckets = false
 		}
 	}
 

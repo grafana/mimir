@@ -18,8 +18,9 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// Reference is a wrapper around *yaml.Node results to make things more manageable when performing
-// algorithms on data models. the *yaml.Node def is just a bit too low level for tracking state.
+// Reference is a wrapper around *yaml.Node that tracks a single $ref usage in a specification.
+// It captures the full definition path, the resolved node, parent context, circular reference state,
+// and sibling properties. Used throughout the index for reference resolution and change detection.
 type Reference struct {
 	FullDefinition        string                `json:"fullDefinition,omitempty"`
 	Definition            string                `json:"definition,omitempty"`
@@ -39,6 +40,7 @@ type Reference struct {
 	Index                 *SpecIndex            `json:"-"`                        // index that contains this reference.
 	RemoteLocation        string                `json:"remoteLocation,omitempty"`
 	Path                  string                `json:"path,omitempty"`               // this won't always be available.
+	SourcePath            []string              `json:"-"`                            // OpenAPI path to the source $ref location.
 	RequiredRefProperties map[string][]string   `json:"requiredProperties,omitempty"` // definition names (eg, #/definitions/One) to a list of required properties on this definition which reference that definition
 	HasSiblingProperties  bool                  `json:"-"`                            // indicates if ref has sibling properties
 	SiblingProperties     map[string]*yaml.Node `json:"-"`                            // stores sibling property nodes
@@ -46,7 +48,8 @@ type Reference struct {
 	In                    string                `json:"-"`                            // parameter location (path, query, header, cookie) - cached for performance
 }
 
-// ReferenceMapped is a helper struct for mapped references put into sequence (we lose the key)
+// ReferenceMapped is a helper struct that pairs a mapped reference with its original definition key,
+// preserving insertion order when references are sequenced from a map.
 type ReferenceMapped struct {
 	OriginalReference *Reference `json:"originalReference,omitempty"`
 	Reference         *Reference `json:"reference,omitempty"`
@@ -99,7 +102,7 @@ type SpecIndexConfig struct {
 	// If resolving remotely, the RemoteURLHandler will be used to fetch the remote document.
 	// If not set, the default http client will be used.
 	// Resolves [#132]: https://github.com/pb33f/libopenapi/issues/132
-	// deprecated: Use the Rolodex instead
+	// Deprecated: Use the Rolodex instead.
 	RemoteURLHandler func(url string) (*http.Response, error)
 
 	// FSHandler is an entity that implements the `fs.FS` interface that will be used to fetch local or remote documents.
@@ -110,11 +113,11 @@ type SpecIndexConfig struct {
 	// the document. This is really useful if your application has a custom file system or uses a database for storing
 	// documents.
 	//
-	// Is the FSHandler is set, it will be used for all lookups, regardless of whether they are local or remote.
-	// it also overrides the RemoteURLHandler if set.
+	// If the FSHandler is set, it will be used for all lookups, regardless of whether they are local or remote.
+	// It also overrides the RemoteURLHandler if set.
 	//
-	// Resolves[#85] https://github.com/pb33f/libopenapi/issues/85
-	// deprecated: Use the Rolodex instead
+	// Resolves [#85]: https://github.com/pb33f/libopenapi/issues/85
+	// Deprecated: Use the Rolodex instead.
 	FSHandler fs.FS
 
 	// If resolving locally, the BasePath will be the root from which relative references will be resolved from
@@ -224,6 +227,20 @@ type SpecIndexConfig struct {
 	// PropertyMergeStrategy defines how to handle conflicts when merging properties.
 	PropertyMergeStrategy datamodel.PropertyMergeStrategy
 
+	// SkipMetadataCollection disables the collection of diagnostic metadata during indexing:
+	// descriptions, summaries, enums, objects-with-properties, security requirement
+	// references, and the JSONPath `Path` values on inline schema references. Skipping
+	// them significantly reduces allocations and retained memory when parsing large
+	// documents. Reference extraction and resolution are unaffected.
+	//
+	// -- UNSAFE FOR DIAGNOSTIC, RULE, OR PATH CONSUMERS --
+	// When enabled, GetAllDescriptions, GetAllSummaries, GetAllEnums,
+	// GetAllObjectsWithProperties, GetSecurityRequirementReferences and the related
+	// counts are intentionally empty/zero, and inline schema Reference.Path values are
+	// empty strings. vacuum and any other tool that consumes index metadata or Path
+	// values must NOT enable this. Defaults to false (everything is collected).
+	SkipMetadataCollection bool
+
 	// private fields
 	uri []string
 	id  string
@@ -273,8 +290,10 @@ func (s *SpecIndexConfig) ToDocumentConfiguration() *datamodel.DocumentConfigura
 		AllowUnknownExtensionContentDetection: s.AllowUnknownExtensionContentDetection,
 		TransformSiblingRefs:                  s.TransformSiblingRefs,
 		MergeReferencedProperties:             s.MergeReferencedProperties,
+		ResolveNestedRefsWithDocumentContext:  s.ResolveNestedRefsWithDocumentContext,
 		PropertyMergeStrategy:                 strategy,
 		SkipExternalRefResolution:             s.SkipExternalRefResolution,
+		SkipMetadataCollection:                s.SkipMetadataCollection,
 		Logger:                                s.Logger,
 	}
 }
@@ -407,12 +426,13 @@ type SpecIndex struct {
 	componentIndexChan                  chan struct{}
 	polyComponentIndexChan              chan struct{}
 	resolver                            *Resolver
-	resolverLock                        sync.Mutex
+	resolverLock                        sync.RWMutex
 	cache                               *sync.Map
 	built                               bool
 	uri                                 []string
 	logger                              *slog.Logger
-	nodeMap                             map[int]map[int]*yaml.Node
+	nodeLines                           [][]nodeLineEntry
+	legacyNodeMap                       map[int]map[int]*yaml.Node // materialized on demand by GetNodeMap only
 	nodeMapCompleted                    chan struct{}
 	pendingResolve                      []refMap
 	highModelCache                      Cache
@@ -422,10 +442,15 @@ type SpecIndex struct {
 
 // GetResolver returns the resolver for this index.
 func (index *SpecIndex) GetResolver() *Resolver {
+	index.resolverLock.RLock()
+	defer index.resolverLock.RUnlock()
 	return index.resolver
 }
 
+// SetResolver sets the resolver for this index.
 func (index *SpecIndex) SetResolver(resolver *Resolver) {
+	index.resolverLock.Lock()
+	defer index.resolverLock.Unlock()
 	index.resolver = resolver
 }
 
@@ -434,12 +459,196 @@ func (index *SpecIndex) GetConfig() *SpecIndexConfig {
 	return index.config
 }
 
+// GetNodeMap returns the line-to-column-to-node map built during indexing.
+// The map is materialized from the internal line index on first call and cached.
+//
+// Deprecated: use GetNode for single lookups; this method exists for API
+// compatibility and allocates a full legacy map on first use.
 func (index *SpecIndex) GetNodeMap() map[int]map[int]*yaml.Node {
-	return index.nodeMap
+	index.awaitNodeMap()
+	index.nodeMapLock.Lock()
+	defer index.nodeMapLock.Unlock()
+	if index.legacyNodeMap != nil || index.nodeLines == nil {
+		return index.legacyNodeMap
+	}
+	legacy := make(map[int]map[int]*yaml.Node)
+	for line, entries := range index.nodeLines {
+		if len(entries) == 0 {
+			continue
+		}
+		cols := make(map[int]*yaml.Node, len(entries))
+		for _, e := range entries {
+			cols[int(e.column)] = e.node
+		}
+		legacy[line] = cols
+	}
+	index.legacyNodeMap = legacy
+	return legacy
 }
 
+// GetCache returns the reference lookup cache used during resolution.
 func (index *SpecIndex) GetCache() *sync.Map {
 	return index.cache
+}
+
+// Release nils every field on SpecIndex that can pin YAML node trees, Reference
+// maps, or large caches in memory. Call this once all consumers of the index are
+// finished so the GC can reclaim the underlying data even if an interface value
+// or escaped closure still holds a pointer to the SpecIndex struct itself.
+func (index *SpecIndex) Release() {
+	if index == nil {
+		return
+	}
+	index.releaseDocumentNodes()
+	index.releaseReferenceIndexes()
+	index.releaseComponentIndexes()
+	index.releaseDerivedState()
+	index.releaseOwnedResources()
+	index.resetRuntimeState()
+}
+
+func (index *SpecIndex) releaseDocumentNodes() {
+	index.root = nil
+	index.pathsNode = nil
+	index.tagsNode = nil
+	index.parametersNode = nil
+	index.schemasNode = nil
+	index.securitySchemesNode = nil
+	index.requestBodiesNode = nil
+	index.responsesNode = nil
+	index.headersNode = nil
+	index.examplesNode = nil
+	index.linksNode = nil
+	index.callbacksNode = nil
+	index.pathItemsNode = nil
+	index.rootServersNode = nil
+	index.rootSecurityNode = nil
+}
+
+func (index *SpecIndex) releaseReferenceIndexes() {
+	index.allRefs = nil
+	index.rawSequencedRefs = nil
+	index.linesWithRefs = nil
+	index.allMappedRefs = nil
+	index.allMappedRefsSequenced = nil
+	index.refsByLine = nil
+	index.pathRefs = nil
+	index.paramOpRefs = nil
+	index.paramCompRefs = nil
+	index.paramAllRefs = nil
+	index.paramInlineDuplicateNames = nil
+	index.globalTagRefs = nil
+	index.securitySchemeRefs = nil
+	index.requestBodiesRefs = nil
+	index.responsesRefs = nil
+	index.headersRefs = nil
+	index.examplesRefs = nil
+	index.securityRequirementRefs = nil
+	index.callbacksRefs = nil
+	index.linksRefs = nil
+	index.operationTagsRefs = nil
+	index.operationDescriptionRefs = nil
+	index.operationSummaryRefs = nil
+	index.callbackRefs = nil
+	index.serversRefs = nil
+	index.opServersRefs = nil
+	index.polymorphicRefs = nil
+	index.polymorphicAllOfRefs = nil
+	index.polymorphicOneOfRefs = nil
+	index.polymorphicAnyOfRefs = nil
+	index.externalDocumentsRef = nil
+	index.rootSecurity = nil
+	index.refsWithSiblings = nil
+}
+
+func (index *SpecIndex) releaseComponentIndexes() {
+	index.allRefSchemaDefinitions = nil
+	index.allInlineSchemaDefinitions = nil
+	index.allInlineSchemaObjectDefinitions = nil
+	index.allComponentSchemaDefinitions = nil
+	index.allSecuritySchemes = nil
+	index.allComponentSchemas = nil
+	index.allParameters = nil
+	index.allRequestBodies = nil
+	index.allResponses = nil
+	index.allHeaders = nil
+	index.allExamples = nil
+	index.allLinks = nil
+	index.allCallbacks = nil
+	index.allComponentPathItems = nil
+	index.allExternalDocuments = nil
+	index.externalSpecIndex = nil
+}
+
+func (index *SpecIndex) releaseDerivedState() {
+	// node-map state is read concurrently via awaitNodeMap/GetNode; nil it
+	// under the same lock those readers use.
+	index.nodeMapLock.Lock()
+	index.nodeLines = nil
+	index.legacyNodeMap = nil
+	index.nodeMapLock.Unlock()
+	index.allDescriptions = nil
+	index.allSummaries = nil
+	index.allEnums = nil
+	index.allObjectsWithProperties = nil
+	index.circularReferences = nil
+	index.polyCircularReferences = nil
+	index.arrayCircularReferences = nil
+	index.tagCircularReferences = nil
+	index.refErrors = nil
+	index.operationParamErrors = nil
+	index.cache = nil
+	index.highModelCache = nil
+	index.schemaIdRegistry = nil
+	index.pendingResolve = nil
+	index.uri = nil
+	index.logger = nil
+}
+
+func (index *SpecIndex) releaseOwnedResources() {
+	index.resolverLock.Lock()
+	if index.resolver != nil {
+		index.resolver.Release()
+		index.resolver = nil
+	}
+	index.resolverLock.Unlock()
+
+	if index.rolodex != nil {
+		index.rolodex.Release()
+		index.rolodex = nil
+	}
+
+	if index.config != nil {
+		index.config.SpecInfo.Release()
+		index.config = nil
+	}
+}
+
+func (index *SpecIndex) resetRuntimeState() {
+	index.externalDocumentsCount = 0
+	index.operationTagsCount = 0
+	index.globalTagsCount = 0
+	index.totalTagsCount = 0
+	index.globalLinksCount = 0
+	index.globalCallbacksCount = 0
+	index.pathCount = 0
+	index.operationCount = 0
+	index.operationParamCount = 0
+	index.componentParamCount = 0
+	index.componentsInlineParamUniqueCount = 0
+	index.componentsInlineParamDuplicateCount = 0
+	index.schemaCount = 0
+	index.refCount = 0
+	index.enumCount = 0
+	index.descriptionCount = 0
+	index.summaryCount = 0
+	index.allowCircularReferences = false
+	index.built = false
+	index.componentIndexChan = nil
+	index.polyComponentIndexChan = nil
+	// nodeMapCompleted is deliberately NOT nilled: it is closed (retaining
+	// nothing) and awaitNodeMap reads the field without a lock on the GetNode
+	// hot path - writing nil here would race every reader for zero benefit.
 }
 
 // SetAbsolutePath sets the absolute path to the spec file for the index. Will be absolute, either as a http link or a file.
@@ -456,7 +665,8 @@ func (index *SpecIndex) GetSpecAbsolutePath() string {
 // URI based document. Decides if the reference is local, remote or in a file.
 type ExternalLookupFunction func(id string) (foundNode *yaml.Node, rootNode *yaml.Node, lookupError error)
 
-// IndexingError holds data about something that went wrong during indexing.
+// IndexingError holds data about something that went wrong during indexing, including the
+// offending node and its path within the specification.
 type IndexingError struct {
 	Err     error
 	Node    *yaml.Node
@@ -464,6 +674,7 @@ type IndexingError struct {
 	Path    string
 }
 
+// Error returns the underlying error message.
 func (i *IndexingError) Error() string {
 	return i.Err.Error()
 }
@@ -478,6 +689,8 @@ type DescriptionReference struct {
 	IsSummary  bool
 }
 
+// EnumReference holds data about an enum definition found during indexing, including its
+// type, schema node, and location path within the specification.
 type EnumReference struct {
 	Node       *yaml.Node
 	KeyNode    *yaml.Node
@@ -487,6 +700,7 @@ type EnumReference struct {
 	ParentNode *yaml.Node
 }
 
+// ObjectReference holds data about an object with properties found during indexing.
 type ObjectReference struct {
 	Node       *yaml.Node
 	KeyNode    *yaml.Node

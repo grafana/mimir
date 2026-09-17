@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -44,27 +45,29 @@ func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyWaitDisabled(t *testi
 }
 
 func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
-	startChan := make(chan struct{})
-	start := func(context.Context) error {
-		<-startChan
-		return nil
-	}
-	run := func(ctx context.Context) error {
-		<-ctx.Done()
-		return nil
-	}
+	synctest.Test(t, func(t *testing.T) {
+		startChan := make(chan struct{})
+		start := func(context.Context) error {
+			<-startChan
+			return nil
+		}
+		run := func(ctx context.Context) error {
+			<-ctx.Done()
+			return nil
+		}
 
-	service := services.NewBasicService(start, run, nil)
-	require.NoError(t, service.StartAsync(context.Background()))
-	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
+		service := services.NewBasicService(start, run, nil)
+		require.NoError(t, service.StartAsync(context.Background()))
+		defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		close(startChan)
-	}()
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			close(startChan)
+		}()
 
-	err := awaitQueryFrontendServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
-	require.NoError(t, err)
+		err := awaitQueryFrontendServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
+		require.NoError(t, err)
+	})
 }
 
 func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {

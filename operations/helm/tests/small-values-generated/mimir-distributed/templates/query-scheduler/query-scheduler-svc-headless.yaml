@@ -30,3 +30,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: small-values
     app.kubernetes.io/component: query-scheduler
+

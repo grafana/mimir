@@ -35,8 +35,14 @@ type queryStats struct {
 	cachedPostingsDecompressionErrors  int
 	cachedPostingsDecompressionTimeSum time.Duration
 
-	seriesProcessed        int
+	// seriesProcessed counts series loaded from the index or from the series-for-postings cache.
+	seriesProcessed int
+
+	// seriesProcessedSizeSum tracks the total size in bytes of series entries loaded from the index.
+	// Series loaded from the series-for-postings cache are not included because the cache stores
+	// a re-encoded representation (protobuf + snappy) whose size is not comparable to raw index bytes.
 	seriesProcessedSizeSum int
+
 	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int

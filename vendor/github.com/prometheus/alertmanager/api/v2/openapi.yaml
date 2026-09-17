@@ -35,6 +35,8 @@ paths:
         - receiver
       operationId: getReceivers
       description: Get list of all receivers (name of notification integrations)
+      parameters:
+        - $ref: '#/parameters/receiverMatchers'
       responses:
         '200':
           description: Get receivers response
@@ -42,6 +44,8 @@ paths:
             type: array
             items:
               $ref: '#/definitions/receiver'
+        '400':
+          $ref: '#/responses/BadRequest'
   /silences:
     get:
       tags:
@@ -60,12 +64,27 @@ paths:
       parameters:
         - name: filter
           in: query
-          description: A list of matchers to filter silences by
+          description: A matcher expression to filter silences. For example `alertname="MyAlert"`. It can be repeated to apply multiple matchers.
           required: false
           type: array
           collectionFormat: multi
           items:
             type: string
+        - in: query
+          name: active
+          type: boolean
+          description: Include active silences in results. If false, excludes active silences.
+          default: true
+        - in: query
+          name: expired
+          type: boolean
+          description: Include expired silences in results. If false, excludes expired silences.
+          default: true
+        - in: query
+          name: pending
+          type: boolean
+          description: Include pending silences in results. If false, excludes pending silences.
+          default: true
     post:
       tags:
         - silence
@@ -143,26 +162,26 @@ paths:
         - in: query
           name: active
           type: boolean
-          description: Show active alerts
+          description: Include active alerts in results. If false, excludes active alerts and returns only suppressed (silenced or inhibited) alerts.
           default: true
         - in: query
           name: silenced
           type: boolean
-          description: Show silenced alerts
+          description: Include silenced alerts in results. If false, excludes silenced alerts. Note that true (default) shows both silenced and non-silenced alerts.
           default: true
         - in: query
           name: inhibited
           type: boolean
-          description: Show inhibited alerts
+          description: Include inhibited alerts in results. If false, excludes inhibited alerts. Note that true (default) shows both inhibited and non-inhibited alerts.
           default: true
         - in: query
           name: unprocessed
           type: boolean
-          description: Show unprocessed alerts
+          description: Include unprocessed alerts in results. If false, excludes unprocessed alerts. Note that true (default) shows both processed and unprocessed alerts.
           default: true
         - name: filter
           in: query
-          description: A list of matchers to filter alerts by
+          description: A matcher expression to filter alerts. For example `alertname="MyAlert"`. It can be repeated to apply multiple matchers.
           required: false
           type: array
           collectionFormat: multi
@@ -173,6 +192,7 @@ paths:
           description: A regex matching receivers to filter alerts by
           required: false
           type: string
+        - $ref: '#/parameters/receiverMatchers'
       responses:
         '200':
           description: Get alerts response
@@ -211,21 +231,26 @@ paths:
         - in: query
           name: active
           type: boolean
-          description: Show active alerts
+          description: Include active alerts within the returned groups. If false, excludes active alerts from groups and only shows suppressed (silenced or inhibited) alerts.
           default: true
         - in: query
           name: silenced
           type: boolean
-          description: Show silenced alerts
+          description: Include silenced alerts within the returned groups. If false, excludes silenced alerts from groups. Note that true (default) shows both silenced and non-silenced alerts.
           default: true
         - in: query
           name: inhibited
           type: boolean
-          description: Show inhibited alerts
+          description: Include inhibited alerts within the returned groups. If false, excludes inhibited alerts from groups. Note that true (default) shows both inhibited and non-inhibited alerts.
+          default: true
+        - in: query
+          name: muted
+          type: boolean
+          description: Include muted (silenced or inhibited) alert groups in results. If false, excludes entire groups where all alerts are muted.
           default: true
         - name: filter
           in: query
-          description: A list of matchers to filter alerts by
+          description: A matcher expression to filter alert groups. For example `alertname="MyAlert"`. It can be repeated to apply multiple matchers.
           required: false
           type: array
           collectionFormat: multi
@@ -236,6 +261,7 @@ paths:
           description: A regex matching receivers to filter alerts by
           required: false
           type: string
+        - '$ref': '#/parameters/receiverMatchers'
       responses:
         '200':
           description: Get alert groups response
@@ -256,6 +282,16 @@ responses:
     schema:
       type: string
 
+parameters:
+  receiverMatchers:
+    name: receiver_matchers
+    in: query
+    description: A matcher expression to filter by receiver labels. For example `owner="my-team"`. Can be repeated to apply multiple matchers.
+    required: false
+    type: array
+    collectionFormat: multi
+    items:
+      type: string
 
 definitions:
   alertmanagerStatus:
@@ -343,6 +379,8 @@ definitions:
         type: string
       comment:
         type: string
+      annotations:
+        $ref: "#/definitions/labelSet"
     required:
       - matchers
       - startsAt
@@ -364,6 +402,7 @@ definitions:
           - id
           - status
           - updatedAt
+          - annotations
       - $ref: '#/definitions/silence'
   postableSilence:
     allOf:
@@ -428,7 +467,7 @@ definitions:
           receivers:
             type: array
             items:
-              $ref: '#/definitions/receiver'
+              $ref: '#/definitions/receiverReference'
           fingerprint:
             type: string
           startsAt:
@@ -477,14 +516,17 @@ definitions:
     properties:
       labels:
         $ref: '#/definitions/labelSet'
+      routeLabels:
+        $ref: '#/definitions/labelSet'
       receiver:
-        $ref: '#/definitions/receiver'
+        $ref: '#/definitions/receiverReference'
       alerts:
         type: array
         items:
           $ref: '#/definitions/gettableAlert'
     required:
       - labels
+      - routeLabels
       - receiver
       - alerts
   alertStatus:
@@ -501,11 +543,25 @@ definitions:
         type: array
         items:
           type: string
+      mutedBy:
+        type: array
+        items:
+          type: string
     required:
       - state
       - silencedBy
       - inhibitedBy
+      - mutedBy
   receiver:
+    type: object
+    properties:
+      name:
+        type: string
+      labels:
+        $ref: '#/definitions/labelSet'
+    required:
+      - name
+  receiverReference:
     type: object
     properties:
       name:

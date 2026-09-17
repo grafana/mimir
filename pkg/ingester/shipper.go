@@ -9,6 +9,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
+	"iter"
 	"os"
 	"path"
 	"path/filepath"
@@ -121,7 +123,7 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 	meta := shipperMeta{Version: shipperMetaVersion1, Shipped: map[ulid.ULID]model.Time{}}
 	var uploadErrs int
 
-	metas, err := s.blockMetasFromOldest()
+	metas, err := blockMetasFromOldest(s.dir)
 	if err != nil {
 		return 0, err
 	}
@@ -207,28 +209,13 @@ func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Met
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
-	fis, err := os.ReadDir(s.dir)
-	if err != nil {
-		return nil, errors.Wrap(err, "read dir")
-	}
-	names := make([]string, 0, len(fis))
-	for _, fi := range fis {
-		names = append(names, fi.Name())
-	}
-	for _, n := range names {
-		if _, ok := block.IsBlockDir(n); !ok {
-			continue
-		}
-		dir := filepath.Join(s.dir, n)
-
-		fi, err := os.Stat(dir)
+func blockMetasFromOldest(dir string) (metas []*block.Meta, _ error) {
+	for id, err := range listBlocks(dir) {
 		if err != nil {
-			return nil, errors.Wrapf(err, "stat block %v", dir)
+			return nil, err
 		}
-		if !fi.IsDir() {
-			continue
-		}
+
+		dir := filepath.Join(dir, id.String())
 		m, err := block.ReadMetaFromDir(dir)
 		if err != nil {
 			return nil, errors.Wrapf(err, "read metadata for block %v", dir)
@@ -239,6 +226,37 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return metas, nil
+}
+
+func listBlocks(dir string) iter.Seq2[ulid.ULID, error] {
+	return func(yield func(ulid.ULID, error) bool) {
+		fis, err := os.ReadDir(dir)
+		if err != nil {
+			yield(ulid.Zero, err)
+			return
+		}
+		for _, fi := range fis {
+			id, ok := block.IsBlockDir(fi.Name())
+			if !ok {
+				continue
+			}
+
+			blockDir := filepath.Join(dir, id.String())
+			fi, err := os.Stat(blockDir)
+			if err != nil {
+				if !yield(ulid.Zero, fmt.Errorf("stat block %s: %w", blockDir, err)) {
+					return
+				}
+			}
+			if fi == nil || !fi.IsDir() {
+				// Keep iterating ig either the caller chosen to ignore the error, or the fi can be a block.
+				continue
+			}
+			if !yield(id, nil) {
+				return
+			}
+		}
+	}
 }
 
 func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {

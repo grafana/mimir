@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -65,40 +66,42 @@ func defaultLimitsTestConfig() validation.Limits {
 
 // TestIngesterRestart tests a restarting ingester doesn't keep adding more tokens.
 func TestIngesterRestart(t *testing.T) {
-	config := defaultIngesterTestConfig(t)
-	limits := defaultLimitsTestConfig()
-	config.IngesterRing.UnregisterOnShutdown = false
+	synctest.Test(t, func(t *testing.T) {
+		config := defaultIngesterTestConfig(t)
+		limits := defaultLimitsTestConfig()
+		config.IngesterRing.UnregisterOnShutdown = false
 
-	{
-		ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
-		require.NoError(t, err)
+		{
+			ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
+			require.NoError(t, err)
 
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
-		time.Sleep(100 * time.Millisecond)
-		// Doesn't actually unregister due to UnregisterFromRing: false.
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	}
+			time.Sleep(100 * time.Millisecond)
+			// Doesn't actually unregister due to UnregisterFromRing: false.
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
+		}
 
-	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
-	})
+		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+			return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
+		})
 
-	{
-		ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
-		require.NoError(t, err)
+		{
+			ing, _, err := prepareIngesterWithBlocksStorageAndLimits(t, config, limits, nil, "", nil)
+			require.NoError(t, err)
 
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
-		time.Sleep(100 * time.Millisecond)
-		// Doesn't actually unregister due to UnregisterFromRing: false.
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	}
+			time.Sleep(100 * time.Millisecond)
+			// Doesn't actually unregister due to UnregisterFromRing: false.
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
+		}
 
-	time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
-	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
+		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+			return numTokens(config.IngesterRing.KVStore.Mock, "localhost", IngesterRingKey)
+		})
 	})
 }
 

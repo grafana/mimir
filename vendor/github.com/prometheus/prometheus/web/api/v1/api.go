@@ -15,7 +15,7 @@ package v1
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -41,6 +41,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.yaml.in/yaml/v2"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -150,7 +156,12 @@ type RulesRetriever interface {
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-// DefaultStatsRenderer is the default stats renderer for the API.
+// DefaultStatsRenderer is the default stats renderer for the API: any
+// non-empty `stats` value includes statistics in the response. The API
+// handlers attach a deprecation warning to the response for values outside
+// the supported enum ("true", "all"); those values will be rejected in the
+// next major release. Custom StatsRenderer implementations are exempt and
+// may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -217,6 +228,7 @@ type TSDBAdminStats interface {
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
+	UseStartTimestamps() *bool
 }
 
 // API can register a set of endpoints in a router and handle
@@ -239,6 +251,9 @@ type API struct {
 	db                  TSDBAdminStats
 	dbDir               string
 	enableAdmin         bool
+	enableSearch        bool
+	maxSearchLimit      int
+	metaCache           *searchMetadataCache
 	logger              *slog.Logger
 	CORSOrigin          *regexp.Regexp
 	buildInfo           *PrometheusVersion
@@ -246,6 +261,7 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
+	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
@@ -279,6 +295,8 @@ func NewAPI(
 	db TSDBAdminStats,
 	dbDir string,
 	enableAdmin bool,
+	enableSearch bool,
+	maxSearchLimit int,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -322,6 +340,9 @@ func NewAPI(
 		db:                  db,
 		dbDir:               dbDir,
 		enableAdmin:         enableAdmin,
+		enableSearch:        enableSearch,
+		maxSearchLimit:      maxSearchLimit,
+		metaCache:           &searchMetadataCache{},
 		rulesRetriever:      rr,
 		logger:              logger,
 		CORSOrigin:          corsOrigin,
@@ -348,6 +369,7 @@ func NewAPI(
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
+		a.customStatsRenderer = true
 	}
 
 	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
@@ -443,9 +465,9 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/series", wrapAgent(api.series))
 	r.Post("/series", wrapAgent(api.series))
-	r.Del("/series", wrapAgent(api.dropSeries))
 
 	r.Get("/scrape_pools", wrap(api.scrapePools))
+	r.Get("/scrape_pools/config", wrap(api.scrapePoolConfig))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/targets/relabel_steps", wrap(api.targetRelabelSteps))
@@ -459,6 +481,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
+	r.Get("/status/self_metrics", wrap(api.selfMetrics))
 	r.Get("/features", wrap(api.features))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
@@ -466,6 +489,14 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
+
+	// Search endpoints.
+	r.Get("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Post("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Get("/search/label_names", api.ready(api.searchLabelNames))
+	r.Post("/search/label_names", api.ready(api.searchLabelNames))
+	r.Get("/search/label_values", api.ready(api.searchLabelValues))
+	r.Post("/search/label_values", api.ready(api.searchLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
@@ -499,6 +530,26 @@ func (*API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
+func setQueryResultSpanAttributes(span trace.Span, qry promql.Query, value parser.Value) {
+	var resultSeries int
+	switch v := value.(type) {
+	case promql.Matrix:
+		resultSeries = v.Len()
+	case promql.Vector:
+		resultSeries = len(v)
+	}
+
+	var totalSamples int64
+	if s := qry.Stats(); s != nil && s.Samples != nil {
+		totalSamples = s.Samples.TotalSamples
+	}
+
+	span.SetAttributes(
+		attribute.Int("result_series", resultSeries),
+		attribute.Int64("total_samples", totalSamples),
+	)
+}
+
 func (api *API) query(r *http.Request) (result apiFuncResult) {
 	limit, err := parseLimitParam(r.FormValue("limit"))
 	if err != nil {
@@ -524,8 +575,19 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "promqlInstantQuery")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("query", r.FormValue("query")),
+		attribute.String("timeout", r.FormValue("timeout")),
+		attribute.String("time", ts.Format(time.RFC3339Nano)),
+	)
+
 	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return invalidParamError(err, "query")
 	}
 
@@ -542,8 +604,11 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
+		span.RecordError(res.Err)
+		span.SetStatus(codes.Error, res.Err.Error())
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	setQueryResultSpanAttributes(span, qry, res.Value)
 
 	warnings := res.Warnings
 	if limit > 0 {
@@ -553,6 +618,9 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
@@ -597,7 +665,46 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 		duration = parsedDuration
 	}
 
-	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == "all", duration), nil
+	var useStartTimestamps *bool
+	if val := r.Header.Get("X-Prometheus-Use-Start-Timestamps"); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing X-Prometheus-Use-Start-Timestamps header: %w", err)
+		}
+		useStartTimestamps = &b
+	}
+
+	return promql.NewPrometheusQueryOpts(r.FormValue("stats") == statsAll, duration, useStartTimestamps), nil
+}
+
+// Accepted values of the `stats` query parameter on /query and /query_range
+// when the default stats renderer is in use: statsTrue includes basic query
+// statistics in the response, statsAll additionally includes per-step
+// statistics (with --enable-feature=promql-per-step-stats). Empty disables
+// statistics.
+const (
+	statsTrue = "true"
+	statsAll  = "all"
+)
+
+// statsParamWarning returns a deprecation warning for unsupported values of
+// the `stats` query parameter, to be attached to the response's warnings.
+// Historically any non-empty value silently enabled basic statistics; that
+// behaviour is kept for compatibility within the current major release, but
+// values outside the supported enum ("true", "all") are deprecated and will
+// be rejected in the next major release. Embedders that install a custom
+// StatsRenderer define their own vocabulary for the parameter, so no warning
+// is attached then.
+func (api *API) statsParamWarning(s string) error {
+	if api.customStatsRenderer {
+		return nil
+	}
+	switch s {
+	case "", statsTrue, statsAll:
+		return nil
+	default:
+		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -649,8 +756,21 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	ctx, span := otel.Tracer("").Start(ctx, "promqlRangeQuery")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("query", r.FormValue("query")),
+		attribute.String("timeout", r.FormValue("timeout")),
+		attribute.String("start", start.Format(time.RFC3339Nano)),
+		attribute.String("end", end.Format(time.RFC3339Nano)),
+		attribute.Stringer("step", step),
+	)
+
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return invalidParamError(err, "query")
 	}
 	// From now on, we must only return with a finalizer in the result (to
@@ -666,8 +786,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	res := qry.Exec(ctx)
 	if res.Err != nil {
+		span.RecordError(res.Err)
+		span.SetStatus(codes.Error, res.Err.Error())
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
+	setQueryResultSpanAttributes(span, qry, res.Value)
 
 	warnings := res.Warnings
 	if limit > 0 {
@@ -677,6 +800,9 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		if isTruncated {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
+	}
+	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+		warnings = warnings.Add(warn)
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -1047,10 +1173,6 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{metrics, nil, warnings, closer}
 }
 
-func (*API) dropSeries(*http.Request) apiFuncResult {
-	return apiFuncResult{nil, &apiError{errorInternal, errors.New("not implemented")}, nil, nil}
-}
-
 // Target has the information for one target.
 type Target struct {
 	// Labels before any processing.
@@ -1161,6 +1283,25 @@ func (api *API) scrapePools(r *http.Request) apiFuncResult {
 	sort.Strings(names)
 	res := &ScrapePoolsDiscovery{ScrapePools: names}
 	return apiFuncResult{data: res, err: nil, warnings: nil, finalizer: nil}
+}
+
+func (api *API) scrapePoolConfig(r *http.Request) apiFuncResult {
+	scrapePool := r.FormValue("scrapePool")
+	if scrapePool == "" {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no scrapePool parameter provided")}, nil, nil}
+	}
+
+	scrapeConfig, err := api.targetRetriever(r.Context()).ScrapePoolConfig(scrapePool)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
+	}
+
+	configYAML, err := yaml.Marshal(scrapeConfig)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling scrape config: %w", err)}, nil, nil}
+	}
+
+	return apiFuncResult{&prometheusConfig{YAML: string(configYAML)}, nil, nil, nil}
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
@@ -1781,7 +1922,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 }
 
 func getRuleGroupNextToken(file, group string) string {
-	h := sha1.New()
+	h := sha256.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -1870,6 +2011,38 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 	return result
 }
 
+func (api *API) selfMetrics(r *http.Request) apiFuncResult {
+	var nameFilter *regexp.Regexp
+	if pattern := r.FormValue("metric_name_pattern"); pattern != "" {
+		var err error
+		nameFilter, err = regexp.Compile("^(?:" + pattern + ")$")
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid metric_name_pattern: %w", err)}, nil, nil}
+		}
+	}
+
+	mfs, err := api.gatherer.Gather()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering self metrics: %w", err)}, nil, nil}
+	}
+
+	marshaler := protojson.MarshalOptions{}
+	result := make([]json.RawMessage, 0, len(mfs))
+	for _, mf := range mfs {
+		if nameFilter != nil && !nameFilter.MatchString(mf.GetName()) {
+			continue
+		}
+
+		b, err := marshaler.Marshal(mf)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling metric family %q: %w", mf.GetName(), err)}, nil, nil}
+		}
+		result = append(result, json.RawMessage(b))
+	}
+
+	return apiFuncResult{result, nil, nil, nil}
+}
+
 func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
 	blockMetas, err := api.db.BlockMetas()
 	if err != nil {
@@ -1939,6 +2112,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := api.db.WALReplayStatus()
 	if err != nil {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
+		return
 	}
 	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
@@ -2242,7 +2416,8 @@ func parseTime(s string) (time.Time, error) {
 func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+		// float64(math.MaxInt64) is 2^63, which int64 cannot hold, and NaN passes every comparison.
+		if math.IsNaN(ts) || ts >= float64(math.MaxInt64) || ts < float64(math.MinInt64) {
 			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return time.Duration(ts), nil

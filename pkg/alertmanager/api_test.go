@@ -20,6 +20,9 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	discord "github.com/prometheus/alertmanager/notify/discord"
+	msteams "github.com/prometheus/alertmanager/notify/msteams"
+	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
@@ -930,14 +933,14 @@ alertmanager_config: |
 
 func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertStore,
 		logger: test.NewTestingLogger(t),
 	}
 
-	require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
+	require.NoError(t, alertStore.SetAlertConfig(context.Background(), &alertspb.AlertConfigDesc{
 		User:      "test_user",
 		RawConfig: "config",
 	}))
@@ -1012,10 +1015,10 @@ receivers:
 	}
 
 	storage := objstore.NewInMemBucket()
-	alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
+	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	for u, cfg := range testCases {
-		err := alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
+		err := alertStore.SetAlertConfig(context.Background(), &alertspb.AlertConfigDesc{
 			User:      u,
 			RawConfig: cfg.AlertmanagerConfig,
 		})
@@ -1091,6 +1094,9 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		input    interface{}
 		expected error
 	}{
+		"nil input": {
+			input: nil,
+		},
 		"*HTTPClientConfig": {
 			input: &commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
@@ -1132,7 +1138,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*DiscordConfig.HTTPConfig": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1140,7 +1146,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"DiscordConfig.HTTPConfig": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1148,13 +1154,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*DiscordConfig.WebhookURLFile": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
 		},
 		"DiscordConfig.WebhookURLFile": {
-			input: config.DiscordConfig{
+			input: discord.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
@@ -1172,7 +1178,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*MSTeams.HTTPConfig": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1180,7 +1186,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"MSTeams.HTTPConfig": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1188,13 +1194,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*MSTeams.WebhookURLFile": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
 		},
 		"MSTeams.WebhookURLFile": {
-			input: config.MSTeamsConfig{
+			input: msteams.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
@@ -1225,7 +1231,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			input: config.Config{
 				Receivers: []config.Receiver{{
 					Name: "test",
-					WebhookConfigs: []*config.WebhookConfig{{
+					WebhookConfigs: []*webhook.WebhookConfig{{
 						HTTPConfig: &commoncfg.HTTPClientConfig{
 							BasicAuth: &commoncfg.BasicAuth{
 								PasswordFile: "/secrets",
@@ -1246,10 +1252,15 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errPasswordFileNotAllowed,
 		},
+		"map containing nil value": {
+			input: map[string]interface{}{
+				"test": nil,
+			},
+		},
 		"map containing TLSConfig as nested child": {
 			input: map[string][]config.EmailConfig{
 				"test": {{
-					TLSConfig: commoncfg.TLSConfig{
+					TLSConfig: &commoncfg.TLSConfig{
 						CAFile: "/file",
 					},
 				}},

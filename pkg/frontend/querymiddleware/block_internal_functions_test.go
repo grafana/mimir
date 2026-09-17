@@ -15,6 +15,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -54,7 +55,7 @@ func createTestRequest(t *testing.T, qs string) *PrometheusInstantQueryRequest {
 	expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 	require.NoError(t, err)
 
-	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, Options{}, nil, "")
+	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
 }
 
 func TestBlockInternalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
@@ -66,7 +67,7 @@ func TestBlockInternalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *
 	handler := middleware.Wrap(inner)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "")
 
 	require.NotPanics(t, func() {
 		resp, err := handler.Do(context.Background(), req)

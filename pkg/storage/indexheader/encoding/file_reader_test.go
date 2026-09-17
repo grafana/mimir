@@ -8,16 +8,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
-type closer struct{}
-
-func (c closer) put(file *os.File) error {
-	return file.Close()
-}
-
 func TestReaders_Read(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstRead, err := r.Read(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstRead, "first read")
@@ -37,7 +33,7 @@ func TestReaders_Read(t *testing.T) {
 }
 
 func TestReaders_ReadInto(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstBuf := make([]byte, 5)
 		err := r.ReadInto(firstBuf)
 		require.NoError(t, err)
@@ -59,7 +55,7 @@ func TestReaders_ReadInto(t *testing.T) {
 }
 
 func TestReaders_Peek(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstPeek, err := r.Peek(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstPeek, "peek (first call)")
@@ -90,7 +86,7 @@ func TestReaders_Peek(t *testing.T) {
 }
 
 func TestReaders_Reset(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		_, err := r.Read(5)
 		require.NoError(t, err)
 		require.NoError(t, r.Reset())
@@ -102,7 +98,7 @@ func TestReaders_Reset(t *testing.T) {
 }
 
 func TestReaders_ResetAt(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		require.NoError(t, r.ResetAt(5))
 		readAfterReset, err := r.Read(5)
 		require.NoError(t, err)
@@ -124,7 +120,7 @@ func TestReaders_ResetAt(t *testing.T) {
 }
 
 func TestReaders_Skip(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		peek, err := r.Peek(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), peek, "peek before skip")
@@ -151,7 +147,7 @@ func TestReaders_Skip(t *testing.T) {
 }
 
 func TestReaders_Len(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		require.Equal(t, 20, r.Len(), "initial length")
 
 		_, err := r.Read(5)
@@ -179,7 +175,7 @@ func TestReaders_Len(t *testing.T) {
 }
 
 func TestReaders_Position(t *testing.T) {
-	testReaders(t, func(t *testing.T, r *fileReader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		require.Equal(t, 0, r.Offset(), "initial offset")
 
 		_, err := r.Read(5)
@@ -207,7 +203,7 @@ func TestReaders_Position(t *testing.T) {
 }
 
 func TestReaders_CreationWithEmptyContents(t *testing.T) {
-	t.Run("fileReader", func(t *testing.T) {
+	t.Run("FileReader", func(t *testing.T) {
 		dir := t.TempDir()
 		filePath := path.Join(dir, "test-file")
 		require.NoError(t, os.WriteFile(filePath, nil, 0700))
@@ -218,14 +214,14 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, 0, 0, &closer{})
+		r, err := NewFileReader(f, 0, 0, &filepool.SingleFilePoolNoopCloser{})
 		require.NoError(t, err)
 		require.ErrorIs(t, r.Skip(1), ErrInvalidSize)
 		require.ErrorIs(t, r.ResetAt(1), ErrInvalidSize)
 	})
 }
 
-func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
+func testReaders(t *testing.T, test func(t *testing.T, r *FileReader)) {
 	testReaderContents := []byte("abcdefghij1234567890")
 
 	t.Run("FileReaderWithZeroOffset", func(t *testing.T) {
@@ -239,7 +235,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, 0, len(testReaderContents), &closer{})
+		r, err := NewFileReader(f, 0, len(testReaderContents), &filepool.SingleFilePoolNoopCloser{})
 		require.NoError(t, err)
 
 		test(t, r)
@@ -259,7 +255,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, len(offsetBytes), len(testReaderContents), &closer{})
+		r, err := NewFileReader(f, len(offsetBytes), len(testReaderContents), &filepool.SingleFilePoolNoopCloser{})
 		require.NoError(t, err)
 
 		test(t, r)

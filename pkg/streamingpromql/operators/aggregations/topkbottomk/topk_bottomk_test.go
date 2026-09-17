@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -67,7 +66,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 							}
 
 							param := scalars.NewScalarConstant(6, timeRange, memoryConsumptionTracker, posrange.PositionRange{})
-							o := New(inner, param, timeRange, nil, false, isTopK, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+							o := New(inner, param, timeRange, nil, false, isTopK, memoryConsumptionTracker, posrange.PositionRange{})
 
 							series, err := o.SeriesMetadata(ctx, nil)
 							require.NoError(t, err)
@@ -87,13 +86,13 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 								types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
 							}
 
-							// TestOperator does not release any unread data on Finalize(), so do that now.
+							// TestOperator does not release any unread data on FinishedReading(), so do that now.
 							for _, d := range inner.Data {
 								types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 							}
 
-							// Finalize the operator and confirm all memory has been released.
-							require.NoError(t, o.Finalize(ctx))
+							// Call FinishedReading on the operator and confirm all memory has been released.
+							require.NoError(t, o.FinishedReading(ctx))
 							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 							o.Close()
 						})

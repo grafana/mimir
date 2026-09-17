@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ .Title }}</title>
+</head>
+<body>
+    <h1>{{ .Title }}</h1>
+    <ul>
+    {{ range .Links }}
+        <li><a href="{{ .Path }}">{{ .Title }}</a></li>
+    {{ end }}
+    </ul>
+</body>
+</html>

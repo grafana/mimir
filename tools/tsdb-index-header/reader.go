@@ -19,6 +19,9 @@ type IndexAnalyzer interface {
 	// SeriesWithLabel returns an iterator over series that have the given label name.
 	// Returns nil if not supported (e.g., index-header format).
 	SeriesWithLabel(ctx context.Context, labelName string) SeriesIterator
+	// AllChunkSeries returns an iterator over all series with their chunk counts.
+	// Returns nil if not supported (e.g., index-header format).
+	AllChunkSeries(ctx context.Context) ChunkSeriesIterator
 }
 
 // SymbolIterator iterates through all symbols in the index.
@@ -37,6 +40,14 @@ type SeriesIterator interface {
 	Err() error
 }
 
+// ChunkSeriesIterator iterates over series, providing labels and chunk count.
+type ChunkSeriesIterator interface {
+	Next() bool
+	Labels() labels.Labels
+	ChunkCount() int
+	Err() error
+}
+
 // IndexInfo holds information about the index being analyzed.
 type IndexInfo struct {
 	Path               string
@@ -46,4 +57,13 @@ type IndexInfo struct {
 	IndexHeaderVersion int    // Only for index-header
 	SymbolsSize        uint64 // Only for index-header
 	PostingsTableSize  uint64 // Only for index-header
+
+	// Full index section sizes (only for full index).
+	FullIndexSymbolsSize           uint64
+	FullIndexSeriesSize            uint64
+	FullIndexLabelIndicesSize      uint64
+	FullIndexPostingsSize          uint64
+	FullIndexLabelIndicesTableSize uint64
+	FullIndexPostingsTableSize     uint64
+	FullIndexTOCSize               uint64
 }

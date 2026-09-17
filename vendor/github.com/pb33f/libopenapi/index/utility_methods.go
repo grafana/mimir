@@ -39,7 +39,7 @@ func (index *SpecIndex) extractDefinitionsAndSchemas(schemasNode *yaml.Node, pat
 			Node:                  schema,
 			Path:                  fmt.Sprintf("$.components.schemas['%s']", name),
 			ParentNode:            schemasNode,
-			RequiredRefProperties: extractDefinitionRequiredRefProperties(schemasNode, map[string][]string{}, fullDef, index),
+			RequiredRefProperties: extractDefinitionRequiredRefProperties(schema, map[string][]string{}, fullDef, index),
 		}
 		index.allComponentSchemaDefinitions.Store(def, ref)
 	}
@@ -67,7 +67,7 @@ func extractDefinitionRequiredRefProperties(schemaNode *yaml.Node, reqRefProps m
 
 	_, propertiesMapNode := utils.FindKeyNodeTop("properties", schemaNode.Content)
 	if propertiesMapNode == nil {
-		// TODO: Log a warning on the resolver, because if you have required properties, but no actual properties, something is wrong
+		// A schema with required properties but no properties map contributes no required ref edges.
 		return reqRefProps
 	}
 
@@ -383,7 +383,7 @@ func (index *SpecIndex) extractComponentSecuritySchemes(securitySchemesNode *yam
 			KeyNode:               keyNode,
 			Path:                  fmt.Sprintf("$.components.securitySchemes.%s", name),
 			ParentNode:            securitySchemesNode,
-			RequiredRefProperties: extractDefinitionRequiredRefProperties(securitySchemesNode, map[string][]string{}, fullDef, index),
+			RequiredRefProperties: extractDefinitionRequiredRefProperties(schema, map[string][]string{}, fullDef, index),
 		}
 		index.allSecuritySchemes.Store(def, ref)
 	}
@@ -555,16 +555,7 @@ func findIndex(index *SpecIndex, i *yaml.Node) *SpecIndex {
 	}
 	allIndexes := rolodex.GetIndexes()
 	for _, searchIndex := range allIndexes {
-		nodeMap := searchIndex.GetNodeMap()
-		line, ok := nodeMap[i.Line]
-		if !ok {
-			continue
-		}
-		node, ok := line[i.Column]
-		if !ok {
-			continue
-		}
-		if node == i {
+		if node, ok := searchIndex.GetNode(i.Line, i.Column); ok && node == i {
 			return searchIndex
 		}
 	}
@@ -580,6 +571,8 @@ func runIndexFunction(funcs []func() int, wg *sync.WaitGroup) {
 	}
 }
 
+// GenerateCleanSpecConfigBaseURL builds a cleaned base URL by merging the baseURL path with dir,
+// removing duplicate segments. If includeFile is true, the last path segment is preserved.
 func GenerateCleanSpecConfigBaseURL(baseURL *url.URL, dir string, includeFile bool) string {
 	cleanedPath := baseURL.Path // not cleaned yet!
 
@@ -645,10 +638,25 @@ func syncMapToMap[K comparable, V any](sm *sync.Map) map[K]V {
 
 // ClearHashCache clears the hash cache - useful for testing and memory management
 func ClearHashCache() {
-	nodeHashCache.Range(func(key, value interface{}) bool {
-		nodeHashCache.Delete(key)
-		return true
-	})
+	nodeHashCache.Clear()
+}
+
+// ClearNodePools replaces the sync.Pool instances that hold *yaml.Node pointers
+// with fresh pools. After a document lifecycle ends, pooled slices and maps
+// still reference the parsed YAML tree, preventing GC from collecting it.
+// Call this (via libopenapi.ClearAllCaches) to release those references.
+func ClearNodePools() {
+	stackPool = sync.Pool{
+		New: func() interface{} {
+			s := make([]*yaml.Node, 0, 128)
+			return &s
+		},
+	}
+	visitedPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[*yaml.Node]struct{}, 64)
+		},
+	}
 }
 
 // hasherPool pools maphash.Hash instances to avoid allocations.

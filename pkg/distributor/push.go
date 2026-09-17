@@ -71,7 +71,7 @@ type RetryConfig struct {
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
 	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
-	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
+	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
 }
 
 func (cfg *RetryConfig) Validate() error {
@@ -259,6 +259,9 @@ func handler(
 				if code/100 == 4 {
 					msgs = append(msgs, "insight", true)
 				}
+				if retryAttempt, err := strconv.Atoi(r.Header.Get("Retry-Attempt")); err == nil && retryAttempt > 0 {
+					msgs = append(msgs, "retryAttempt", retryAttempt)
+				}
 				level.Error(logger).Log(msgs...)
 			}
 			addErrorHeaders(w, err, r, code, retryCfg)
@@ -370,6 +373,11 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 func toHTTPStatus(pushErr error) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
 		return http.StatusInternalServerError
+	}
+
+	var httpStatusErr ErrorWithHTTPStatusCode
+	if errors.As(pushErr, &httpStatusErr) {
+		return httpStatusErr.HTTPStatusCode()
 	}
 
 	var distributorErr Error

@@ -25,19 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type recordTimestampKeyType struct{}
-
-var recordTimestampKey = recordTimestampKeyType{}
-
-func ContextWithRecordTimestamp(ctx context.Context, ts time.Time) context.Context {
-	return context.WithValue(ctx, recordTimestampKey, ts)
-}
-
-func RecordTimestampFromContext(ctx context.Context) (time.Time, bool) {
-	ts, ok := ctx.Value(recordTimestampKey).(time.Time)
-	return ts, ok
-}
-
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	PreCommitNotifier
@@ -99,11 +86,10 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	type parsedRecord struct {
 		*mimirpb.PreallocWriteRequest
 		// ctx holds the tracing baggage for this record/request.
-		ctx       context.Context
-		tenantID  string
-		err       error
-		offset    int64
-		timestamp time.Time
+		ctx      context.Context
+		tenantID string
+		err      error
+		offset   int64
 	}
 
 	// Buffer the channel to allow the unmarshal goroutine to work ahead while the main loop
@@ -136,10 +122,9 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
 				// This context carries the tracing data for this individual record;
 				// kotel populates this data when it fetches the messages.
-				ctx:       rec.Context,
-				tenantID:  string(rec.Key),
-				offset:    rec.Offset,
-				timestamp: rec.Timestamp,
+				ctx:      rec.Context,
+				tenantID: string(rec.Key),
+				offset:   rec.Offset,
 			}
 
 			recVersion := ParseRecordVersion(rec)
@@ -186,15 +171,8 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 			continue
 		}
 
-		rCtx := r.ctx
-		if !r.timestamp.IsZero() {
-			rCtx = ContextWithRecordTimestamp(rCtx, r.timestamp)
-		} else {
-			level.Warn(c.logger).Log("msg", "kafka record has no timestamp, falling back to wall-clock time", "offset", r.offset, "tenant", r.tenantID)
-		}
-
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(rCtx, r.tenantID, &r.WriteRequest, writer)
+		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", r.offset, r.tenantID, err)

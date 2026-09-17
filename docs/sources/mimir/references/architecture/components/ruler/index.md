@@ -12,8 +12,9 @@ weight: 130
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
 
-Evaluating rules generates new samples. Those samples are then passed to an in-process [distributor](../distributor) to be ingested and made available for further queries.
-Configuration of the built-in distributor uses [its configuration parameters](../../../../configure/configuration-parameters/#distributor).
+Evaluating rules generates new samples. By default, those samples are passed to an internal [distributor](../distributor) to be ingested and made available for further queries.
+The ruler can also be configured to push rule-result series to remote distributors over gRPC.
+Configuration of the internal distributor uses [its configuration parameters](../../../../configure/configuration-parameters/#distributor).
 
 ## Operational modes
 
@@ -22,7 +23,7 @@ The ruler supports two different rule evaluation modes:
 ### Internal
 
 This is the default mode. The ruler internally runs a querier, and evaluates recording and alerting rules in the ruler process itself.
-To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
+To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series through the configured rule-result write path.
 
 Configuration of the built-in querier uses [its configuration parameters](../../../../configure/configuration-parameters/#querier).
 
@@ -46,9 +47,44 @@ Communication between ruler and query-frontend is established over gRPC, so you 
 
 When the query-frontend address set via the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter starts with `http://` or `https://`, the ruler delegates rule evaluation to a Prometheus-compatible server. One use case for this feature is to use a proxy to federate data from multiple Mimir instances.
 
+## Rule result writes
+
+The ruler's operational mode controls how rule expressions are evaluated.
+It doesn't control where the resulting samples are written.
+
+By default, the ruler writes rule-result series through an internal distributor.
+To push rule-result series to remote distributors over native gRPC instead, set the `-ruler.distributor.address` CLI flag or its respective YAML configuration parameter.
+Most deployments only need to set this address.
+`ruler.distributor.remote_timeout` configures the per-request timeout, and `ruler.distributor.grpc_client_config` provides advanced standard gRPC client tuning such as TLS, message sizes, compression, retries, and cluster validation.
+
+The ruler splits remote writes along series boundaries so that they fit within `ruler.distributor.grpc_client_config.max_send_msg_size`.
+When compression is enabled, the ruler reserves a conservative amount of space for compression framing, so it can split a write slightly below the configured transport limit.
+It sends the resulting requests sequentially, with independent timeouts and retries; each request also consumes a separate gRPC client rate-limit token when rate limiting is enabled.
+Requests accepted before a later request fails aren't rolled back.
+The ruler emits one float or native-histogram sample per result series for each evaluation.
+Consequently, an individual result series exceeding the effective split limit cannot be losslessly subdivided.
+If this occurs, increase `ruler.distributor.grpc_client_config.max_send_msg_size` and configure the distributor's `server.grpc_server_max_recv_msg_size` to be at least as large.
+When compression is enabled, a series above the conservative effective limit may still succeed if its compressed payload fits within the configured transport limit; otherwise gRPC returns `ResourceExhausted`.
+The `cortex_ruler_remote_distributor_requests_per_write_request` histogram reports how many remote requests each ruler write produced.
+
+In Kubernetes deployments, point `ruler.distributor.address` at the distributor headless service on the gRPC port when you want gRPC client-side load balancing.
+A normal ClusterIP service can work for connectivity, but it doesn't provide the intended per-RPC client-side balancing across distributor endpoints.
+
+Global ruler deployments should configure both remote rule evaluation and remote distributor writes.
+The query target can be the normal query-frontend or a dedicated ruler-query-frontend, depending on the deployment.
+
+```yaml
+ruler:
+  query_frontend:
+    address: dns:///<query-frontend-or-ruler-query-frontend-headless>.<namespace>.svc.cluster.local:9095
+  distributor:
+    address: dns:///<distributor-headless>.<namespace>.svc.cluster.local:9095
+    remote_timeout: 10s
+```
+
 ## Recording rules
 
-The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.
+The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results through the configured rule-result write path.
 
 ## Alerting rules
 

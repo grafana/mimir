@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM grafana/mimir-build-image AS builder
+FROM us-docker.pkg.dev/grafanalabs-dev/docker-mimir-build-image/mimir-build-image AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./

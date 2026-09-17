@@ -17,8 +17,19 @@
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
 
+    // the minimum time that must elapse after a pod becomes ready before a pod in another zone
+    // for the same partition can be evicted - only applicable when a partition regex is set
+    multi_zone_ingester_zpdb_cross_zone_eviction_delay: if $._config.ingest_storage_enabled then '20m' else '',
+
     // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
     multi_zone_ingester_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
+    multi_zone_ingester_zone_a_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
+    multi_zone_ingester_zone_b_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
+    multi_zone_ingester_zone_c_multi_az_enabled: self.multi_zone_ingester_multi_az_enabled,
+
+    ingester_zone_a_data_disk_class: self.ingester_data_disk_class,
+    ingester_zone_b_data_disk_class: self.ingester_data_disk_class,
+    ingester_zone_c_data_disk_class: self.ingester_data_disk_class,
   },
 
   local container = $.core.v1.container,
@@ -27,12 +38,12 @@
   local service = $.core.v1.service,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
 
-  local isMultiAZEnabled = $._config.multi_zone_ingester_multi_az_enabled,
-  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isZoneAEnabled = $._config.multi_zone_ingester_zone_a_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = $._config.multi_zone_ingester_zone_b_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = $._config.multi_zone_ingester_zone_c_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
-  assert !isMultiAZEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
+  local isMultiAZAtLeastOnceEnabled = isZoneAEnabled || isZoneBEnabled || isZoneCEnabled,
+  assert !isMultiAZAtLeastOnceEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
   assert !$._config.multi_zone_ingester_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
 
   //
@@ -77,10 +88,10 @@
     )) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
-  newIngesterZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
+  newIngesterZoneStatefulSet(zone, container, dataDiskClass, nodeAffinityMatchers=[])::
     local name = 'ingester-zone-%s' % zone;
 
-    $.newIngesterStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    $.newIngesterStatefulSet(name, container, dataDiskClass, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'ingester' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
@@ -115,7 +126,7 @@
     $.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
   ingester_zone_a_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers) +
+    $.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $._config.ingester_zone_a_data_disk_class, $.ingester_zone_a_node_affinity_matchers) +
     (if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_a_service: if !$._config.multi_zone_ingester_enabled then null else
@@ -125,7 +136,7 @@
     $.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
   ingester_zone_b_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers) +
+    $.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $._config.ingester_zone_b_data_disk_class, $.ingester_zone_b_node_affinity_matchers) +
     (if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_b_service: if !$._config.multi_zone_ingester_enabled then null else
@@ -135,7 +146,7 @@
     $.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
   ingester_zone_c_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers) +
+    $.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $._config.ingester_zone_c_data_disk_class, $.ingester_zone_c_node_affinity_matchers) +
     (if isZoneCEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_c_service: if !$._config.multi_zone_ingester_enabled then null else
@@ -144,7 +155,7 @@
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
     (
       if $._config.multi_zone_ingester_zpdb_enabled then
-        $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_regex, $._config.multi_zone_ingester_zpdb_partition_group)
+        $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_regex, $._config.multi_zone_ingester_zpdb_partition_group, $._config.multi_zone_ingester_zpdb_cross_zone_eviction_delay)
       else
         podDisruptionBudget.new('ingester-rollout') +
         podDisruptionBudget.mixin.spec.withMaxUnavailable(1)

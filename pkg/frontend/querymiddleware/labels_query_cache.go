@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -41,7 +42,7 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, newResultsCacheMetrics(queryTypeLabels, reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {
@@ -109,9 +110,9 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	}
 
 	// Add start and end time.
-	b.WriteString(fmt.Sprintf("%d", startTime))
+	fmt.Fprintf(&b, "%d", startTime)
 	b.WriteRune(stringParamSeparator)
-	b.WriteString(fmt.Sprintf("%d", endTime))
+	fmt.Fprintf(&b, "%d", endTime)
 
 	// Add label name (if any).
 	if labelName != "" {

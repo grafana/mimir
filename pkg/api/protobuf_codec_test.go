@@ -562,7 +562,7 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{
 									TimestampMs: 1234,
 									Value:       5.67,
@@ -597,7 +597,7 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{
 									TimestampMs: 1234,
 									Value:       5.67,
@@ -643,7 +643,7 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1"},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{
 									TimestampMs: 1234,
 									Value:       5.67,
@@ -656,7 +656,7 @@ var protobufCodecScenarios = map[string]struct {
 						},
 						{
 							Metric: []string{"name-2", "value-2"},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{
 									TimestampMs: 12340,
 									Value:       50.67,
@@ -814,7 +814,7 @@ var protobufCodecScenarios = map[string]struct {
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{
 									TimestampMs: 5678,
 									Value:       9.01,

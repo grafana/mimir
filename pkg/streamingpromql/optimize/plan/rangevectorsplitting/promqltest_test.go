@@ -132,30 +132,35 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 		// See comments for rangevectorsplitting.SplitSumOverTime.
 		testCasesToSkip = []string{
 			`eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
   expect no_info
   {} 93`,
 
 			`eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
   expect no_info
   {} 21`,
 
 			`eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
-    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
     {timing="late"} 7`,
 
 			// The split avg_over_time has the same limitation in detection of conflicting counter reset warnings as sum_over_time.
 			// See comments for rangevectorsplitting.SplitAvgOverTime
 			`eval instant at 14m histogram_count(avg_over_time(mixed[10m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
   expect no_info
   {} 9.3`,
 
 			`eval instant at 11m histogram_count(avg_over_time(mixed[2m]))
-  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation (1:31)
   expect no_info
   {} 10.5`,
+
+			// TODO: Precision is lost calculating avg_over_time across a block boundary, in cases
+			// of huge opposite-sign values (eg. +1e100/-1e100) that should cancel out exactly.
+			`eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
+    {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}`,
 		}
 
 	default:

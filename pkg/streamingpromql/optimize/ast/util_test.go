@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -33,12 +34,15 @@ func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, cre
 	reg := prometheus.NewPedanticRegistry()
 	opts.CommonOpts.Reg = reg
 	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
-	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
+	params := &planning.QueryParameters{
+		OriginalExpression: input,
+		TimeRange:          types.NewInstantQueryTimeRange(timestamp.Time(1000)),
+	}
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(optimizer)
 	observer := streamingpromql.NoopPlanningObserver{}
-	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
+	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
 	require.NoError(t, err)
 	return reg, outputExpr
 }

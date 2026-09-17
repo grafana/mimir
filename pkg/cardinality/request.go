@@ -232,14 +232,11 @@ func extractLimit(values url.Values, tenantMaxLimit int) (limit int, err error) 
 		return 0, fmt.Errorf("'limit' param cannot be less than '%v'", minLimit)
 	}
 
-	// Use the tenant-specific limit from Overrides if available
-	if tenantMaxLimit == 0 {
-		tenantMaxLimit = maxLimit
-	}
-
-	if limit > tenantMaxLimit {
+	// Use the tenant-specific limit from overrides if available.
+	if tenantMaxLimit > 0 && limit > tenantMaxLimit {
 		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", tenantMaxLimit)
 	}
+
 	return limit, nil
 }
 

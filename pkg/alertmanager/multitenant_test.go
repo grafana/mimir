@@ -12,13 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,8 +29,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"github.com/grafana/alerting/definition"
-	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -47,12 +43,12 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -65,6 +61,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -72,6 +69,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -89,7 +87,6 @@ receivers:
 receivers:
   - name: dummy2`
 
-	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
 	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
 	badConfig         = `
@@ -240,7 +237,7 @@ func TestMultitenantAlertmanager_relativeDataDir(t *testing.T) {
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User: "user",
 		RawConfig: simpleConfigOne + `
 templates:
@@ -283,22 +280,28 @@ templates:
 
 func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	utiltest.VerifyNoLeak(t,
-		// This package's init() function statically starts a singleton goroutine that runs forever.
-		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+		// Upstream alertmanager's Inhibitor.Stop() and Dispatcher.Stop() signal
+		// cancellation but don't fully wait for all spawned goroutines to return.
+		// These goroutines exit eventually, but may still be draining when goleak
+		// checks after a prior test's deferred StopAndWait.
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*Dispatcher).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/dispatch.(*aggrGroup).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/alertmanager/inhibit.(*Inhibitor).run"),
+		goleak.IgnoreTopFunction("github.com/oklog/run.(*Group).Run"),
 	)
 
 	ctx := context.Background()
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	user1Cfg := alertspb.AlertConfigDesc{
+	user1Cfg := &alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
 	}
 	require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
 
-	user2Cfg := alertspb.AlertConfigDesc{
+	user2Cfg := &alertspb.AlertConfigDesc{
 		User:      "user2",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
@@ -316,7 +319,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 
 	currentConfigFp, cfgExists := am.cfgs["user1"]
 	require.True(t, cfgExists)
-	require.Equal(t, amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint(), currentConfigFp)
+	require.Equal(t, fingerprint(user1Cfg), currentConfigFp)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -326,7 +329,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Ensure when a 3rd config is added, it is synced correctly
-	user3Cfg := alertspb.AlertConfigDesc{
+	user3Cfg := &alertspb.AlertConfigDesc{
 		User: "user3",
 		RawConfig: simpleConfigOne + `
 templates:
@@ -356,7 +359,7 @@ templates:
 	require.True(t, dirExists(t, user3Dir))
 	finalUserCfgFp, ok := am.cfgs["user3"]
 	require.True(t, ok)
-	require.Equal(t, amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint(), finalUserCfgFp)
+	require.Equal(t, fingerprint(user3Cfg), finalUserCfgFp)
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
@@ -365,7 +368,7 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
-	user1Cfg = alertspb.AlertConfigDesc{
+	user1Cfg = &alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigTwo,
 		Templates: []*alertspb.TemplateDesc{},
@@ -378,11 +381,11 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp := amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp := fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Ensure the config is reloaded if only templates changed
-	user1Cfg = alertspb.AlertConfigDesc{
+	user1Cfg = &alertspb.AlertConfigDesc{
 		User: "user1",
 		RawConfig: simpleConfigTwo + `
 templates:
@@ -402,7 +405,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user1Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user1Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	// Test Delete User, ensure config is removed and the resources are freed.
@@ -435,7 +438,7 @@ templates:
 
 	currentConfigFp, cfgExists = am.cfgs["user3"]
 	require.True(t, cfgExists)
-	expectedFp = amConfigFromMimirConfig(user3Cfg, cfg.ExternalURL.URL).fingerprint()
+	expectedFp = fingerprint(user3Cfg)
 	require.Equal(t, expectedFp, currentConfigFp)
 
 	_, cfgExists = am.alertmanagers["user3"]
@@ -472,7 +475,7 @@ templates:
 	require.True(t, dirExists(t, user3Dir))
 
 	t.Run("when bad config is loaded", func(t *testing.T) {
-		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      "user4",
 			RawConfig: badConfig,
 			Templates: []*alertspb.TemplateDesc{},
@@ -495,7 +498,7 @@ templates:
 	})
 
 	t.Run("when bad templates are loaded", func(t *testing.T) {
-		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      "user5",
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{
@@ -733,7 +736,7 @@ receivers:
 
 				// Store the alertmanager config in the bucket.
 				store := prepareInMemoryAlertStore()
-				require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+				require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 					User:      userID,
 					RawConfig: alertmanagerCfg,
 				}))
@@ -763,7 +766,7 @@ receivers:
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 				// Create an alert to push.
-				alerts := types.Alerts(&types.Alert{
+				alerts := alert.Alerts(&alert.Alert{
 					Alert: model.Alert{
 						Labels:   map[model.LabelName]model.LabelValue{model.AlertNameLabel: "test"},
 						StartsAt: time.Now().Add(-time.Minute),
@@ -837,7 +840,7 @@ func TestMultitenantAlertmanager_deleteUnusedLocalUserState(t *testing.T) {
 	)
 
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User:      user2,
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
@@ -923,17 +926,17 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 
 	{
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user1,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
 		}))
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user2,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
 		}))
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user3,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
@@ -995,12 +998,12 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 
 	// Configure the users and wait for the state persister to write some state for both.
 	{
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user1,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
 		}))
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user2,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
@@ -1091,12 +1094,12 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.
 
 	// Configure the users and wait for the state persister to write some state for both.
 	{
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user1,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
 		}))
-		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 			User:      user2,
 			RawConfig: simpleConfigOne,
 			Templates: []*alertspb.TemplateDesc{},
@@ -1168,21 +1171,24 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Request when fallback user configuration is used, as user hasn't
-	// created a configuration yet.
-	req := httptest.NewRequest("GET", externalURL.String(), nil)
+	// We hit a real API endpoint (the alertmanager v0.32.0 dropped the UI, so we
+	// can no longer rely on the redirect-to-UI 301 to confirm the per-tenant
+	// alertmanager is reachable). /api/v2/status is served by the AM and returns
+	// 200 when the request was correctly routed to a live alertmanager instance.
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	ctx := user.InjectOrgID(req.Context(), "user1")
 
+	// Request when fallback user configuration is used, as user hasn't created a
+	// configuration yet — the AM should still answer with the fallback config.
 	{
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		_ = w.Result()
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 
 	// Create a configuration for the user in storage.
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigTwo,
 		Templates: []*alertspb.TemplateDesc{},
@@ -1192,12 +1198,12 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 
-	// Request when AM is active.
+	// Request when AM is active with the user's config.
 	{
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 
 	// Verify that GET /metrics returns 404 even when AM is active.
@@ -1230,13 +1236,12 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// Request when the alertmanager is gone should result in setting the
-		// default fallback config, thus redirecting to the ui.
+		// Request when the alertmanager is gone should result in the multitenant
+		// AM falling back to the default config and answering the API request.
 		w := httptest.NewRecorder()
 		am.ServeHTTP(w, req.WithContext(ctx))
 
-		_ = w.Result()
-		require.Equal(t, 301, w.Code) // redirect to UI
+		require.Equal(t, http.StatusOK, w.Code)
 	}
 }
 
@@ -1314,8 +1319,7 @@ receivers:
 }
 
 func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T) {
-	const testGrafanaUser = "user1"
-	const testMimirUser = "user2"
+	const testUser = "user"
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
@@ -1332,59 +1336,28 @@ func TestMultitenantAlertmanager_ServeHTTPWithStrictInitialization(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	am := setupSingleMultitenantAlertmanager(t, amConfig, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
-	// Create a tenant with a default Grafana and an empty Mimir config.
-	// It should be skipped by the MOA.
+	// Create a tenant with an empty config - it should be skipped by the MOA.
 	ctx := context.Background()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testGrafanaUser,
-	}))
-	smtpConfig := &alertspb.SmtpConfig{
-		EhloIdentity:   "test-identity",
-		FromAddress:    "test@test.com",
-		FromName:       "Test Name",
-		Host:           "test:8080",
-		Password:       "test password",
-		SkipVerify:     true,
-		StartTlsPolicy: "test",
-		StaticHeaders:  map[string]string{"test-key": "test-value"},
-		User:           "test-user",
-	}
-	require.NoError(t, store.SetGrafanaAlertConfig(ctx, alertspb.GrafanaAlertConfigDesc{
-		User:       testGrafanaUser,
-		RawConfig:  grafanaConfig,
-		Promoted:   true,
-		Default:    true,
-		SmtpConfig: smtpConfig,
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
+		User: testUser,
 	}))
 
-	// Create another tenant with an empty Mimir config.
-	// It should be skipped by the MOA.
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
-		User: testMimirUser,
-	}))
-
-	// Sync configurations, the Alertmanagers shouldn't be initialized.
+	// Sync configurations - the Alertmanager shouldn't be initialized.
 	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
 
-	// Make requests as the users. The Alertmanagers should be initialized.
+	// Make requests as the users - the Alertmanager should be initialized.
 	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
 	require.NoError(t, err)
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testGrafanaUser)))
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testUser)))
 	require.Equal(t, http.StatusOK, w.Result().StatusCode)
 	require.Len(t, am.alertmanagers, 1)
 
-	w = httptest.NewRecorder()
-	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), testMimirUser)))
-	require.Equal(t, http.StatusOK, w.Result().StatusCode)
-	require.Len(t, am.alertmanagers, 2)
-
-	// Set the idle period to 0.
-	// The Alertmanagers should be turned off after the next sync.
-	am.cfg.GrafanaAlertmanagerIdleGracePeriod = 0
+	// Set the idle period to 0 - the Alertmanager should be turned off after the next sync.
+	am.cfg.StrictInitializationIdleGracePeriod = 0
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 0)
@@ -1425,7 +1398,7 @@ receivers:
 	am.fallbackConfig = fallbackCfg
 
 	// Upload config for the user.
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User:      "user1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
@@ -1510,7 +1483,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 
 			// Use an alert store with a mocked backend.
 			bkt := &bucket.ClientMock{}
-			alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bkt, nil, log.NewNopLogger())
+			alertStore := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
 
 			// Setup the initial instance state in the ring.
 			if tt.existing {
@@ -1605,7 +1578,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 			// First, add the number of configs to the store.
 			for i := 1; i <= tt.configs; i++ {
 				u := fmt.Sprintf("u-%d", i)
-				require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
+				require.NoError(t, alertStore.SetAlertConfig(context.Background(), &alertspb.AlertConfigDesc{
 					User:      u,
 					RawConfig: simpleConfigOne,
 					Templates: []*alertspb.TemplateDesc{},
@@ -1867,7 +1840,7 @@ func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	bkt := &bucket.ClientMock{}
 	bkt.MockIter("alerts/", nil, errors.New("failed to list alerts"))
 	bkt.MockIter("alertmanager/", nil, nil)
-	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bkt, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
 
 	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
@@ -1887,7 +1860,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mockStore := prepareInMemoryAlertStore()
-	require.NoError(t, mockStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, mockStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User:      "user-1",
 		RawConfig: simpleConfigOne,
 		Templates: []*alertspb.TemplateDesc{},
@@ -1995,7 +1968,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 			// First, add the number of configs to the store.
 			for i := 1; i <= 12; i++ {
 				u := fmt.Sprintf("u-%d", i)
-				require.NoError(t, mockStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+				require.NoError(t, mockStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 					User:      u,
 					RawConfig: simpleConfigOne,
 					Templates: []*alertspb.TemplateDesc{},
@@ -2081,13 +2054,20 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 			multitenantAM.alertmanagersMtx.Unlock()
 
 			// 3. Now that we have our alertmanager user, let's create a silence and make sure it is replicated.
-			silence := types.Silence{
+			silence := struct {
+				Matchers  labels.Matchers `json:"matchers"`
+				Comment   string          `json:"comment,omitempty"`
+				CreatedBy string          `json:"createdBy"`
+				StartsAt  time.Time       `json:"startsAt"`
+				EndsAt    time.Time       `json:"endsAt"`
+			}{
 				Matchers: labels.Matchers{
 					{Name: "instance", Value: "prometheus-one"},
 				},
-				Comment:  "Created for a test case.",
-				StartsAt: time.Now(),
-				EndsAt:   time.Now().Add(time.Hour),
+				Comment:   "Created for a test case.",
+				CreatedBy: "test",
+				StartsAt:  time.Now(),
+				EndsAt:    time.Now().Add(time.Hour),
 			}
 			data, err := json.Marshal(silence)
 			require.NoError(t, err)
@@ -2175,7 +2155,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 			// Create only two users - no need for more for these test cases.
 			for i := 1; i <= 2; i++ {
 				u := fmt.Sprintf("u-%d", i)
-				require.NoError(t, mockStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+				require.NoError(t, mockStore.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 					User:      u,
 					RawConfig: simpleConfigOne,
 					Templates: []*alertspb.TemplateDesc{},
@@ -2232,13 +2212,20 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 			}
 
 			writeSilence := func(i *MultitenantAlertmanager, userID string) {
-				silence := types.Silence{
+				silence := struct {
+					Matchers  labels.Matchers `json:"matchers"`
+					Comment   string          `json:"comment,omitempty"`
+					CreatedBy string          `json:"createdBy"`
+					StartsAt  time.Time       `json:"startsAt"`
+					EndsAt    time.Time       `json:"endsAt"`
+				}{
 					Matchers: labels.Matchers{
 						{Name: "instance", Value: "prometheus-one"},
 					},
-					Comment:  "Created for a test case.",
-					StartsAt: time.Now(),
-					EndsAt:   time.Now().Add(time.Hour),
+					Comment:   "Created for a test case.",
+					CreatedBy: "test",
+					StartsAt:  time.Now(),
+					EndsAt:    time.Now().Add(time.Hour),
 				}
 				data, err := json.Marshal(silence)
 				require.NoError(t, err)
@@ -2329,8 +2316,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 // prepareInMemoryAlertStore builds and returns an in-memory alert store.
 func prepareInMemoryAlertStore() alertstore.AlertStore {
-	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
-	return bucketclient.NewBucketAlertStore(cfg, objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	return bucketclient.NewBucketAlertStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 }
 
 func TestSafeTemplateFilepath(t *testing.T) {
@@ -2429,7 +2415,7 @@ receivers:
 
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+	require.NoError(t, store.SetAlertConfig(ctx, &alertspb.AlertConfigDesc{
 		User:      "user",
 		RawConfig: config,
 		Templates: []*alertspb.TemplateDesc{},
@@ -2457,12 +2443,13 @@ receivers:
 	require.NotNil(t, uam)
 
 	ctx = notify.WithReceiverName(ctx, "email")
+	ctx = notify.WithRouteID(ctx, "default-route")
 	ctx = notify.WithGroupKey(ctx, "key")
 	ctx = notify.WithRepeatInterval(ctx, time.Minute)
 	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
-	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})
+	_, _, err = uam.lastPipeline.Exec(ctx, utillog.SlogFromGoKit(log.NewNopLogger()), &alert.Alert{})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), errRateLimited.Error())
 }
@@ -2506,91 +2493,73 @@ func TestShouldStartAM(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		cfg        alertspb.AlertConfigDescs
+		cfg        *alertspb.AlertConfigDesc
 		expStartAM bool
 	}{
 		{
-			name: "custom mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, receiving requests",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "custom mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: simpleConfigOne,
-				},
+			name: "custom config, idle Alertmanager",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      testTenant,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      testTenant,
+				RawConfig: am.fallbackConfig,
 			},
 		},
 		{
-			name: "default mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequests,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, receiving requests",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "default mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User:      tenantReceivingRequestsExpired,
-					RawConfig: am.fallbackConfig,
-				},
+			name: "default config, idle Alertmanager",
+			cfg: &alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: am.fallbackConfig,
 			},
 			expStartAM: false,
 		},
 		{
-			name: "empty mimir config",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: testTenant,
-				},
+			name: "empty config",
+			cfg: &alertspb.AlertConfigDesc{
+				User: testTenant,
 			},
 		},
 		{
-			name: "empty mimir config, receiving requests",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequests,
-				},
+			name: "empty config, receiving requests",
+			cfg: &alertspb.AlertConfigDesc{
+				User: tenantReceivingRequests,
 			},
 			expStartAM: true,
 		},
 		{
-			name: "empty mimir config, idle Alertmanager",
-			cfg: alertspb.AlertConfigDescs{
-				Mimir: alertspb.AlertConfigDesc{
-					User: tenantReceivingRequestsExpired,
-				},
+			name: "empty config, idle Alertmanager",
+			cfg: &alertspb.AlertConfigDesc{
+				User: tenantReceivingRequestsExpired,
 			},
 			expStartAM: false,
 		},
@@ -2609,64 +2578,51 @@ func TestShouldStartAM(t *testing.T) {
 	}
 }
 
-func Test_amConfigFingerprint(t *testing.T) {
-	const expectedTotalFields = 24 // Total fields: 3 (PostableApiTemplate) + 15 (EmailSenderConfig) + 6 (amConfig)
+func Test_fingerprint(t *testing.T) {
+	// Total exported fields across the protobuf-generated structs that the fingerprint
+	// has to cover: 2 in TemplateDesc + 3 in AlertConfigDesc. Internal protoimpl fields
+	// (state, unknownFields, sizeCache) are unexported and excluded.
+	const expectedTotalFields = 5
 	t.Run("ensure all fields in the fingerprint", func(t *testing.T) {
-		// Helper function to get field count of a struct
-		getFieldCount := func(v interface{}) int {
+		// Helper function to count the exported fields of a struct.
+		getExportedFieldCount := func(v interface{}) int {
 			t := reflect.TypeOf(v)
-			if t.Kind() == reflect.Ptr {
+			if t.Kind() == reflect.Pointer {
 				t = t.Elem()
 			}
-			return t.NumField()
+			n := 0
+			for i := 0; i < t.NumField(); i++ {
+				if t.Field(i).IsExported() {
+					n++
+				}
+			}
+			return n
 		}
 
-		// Calculate total fields across all structs
+		// Calculate total exported fields across all structs.
 		totalFields := 0
-		totalFields += getFieldCount(definition.PostableApiTemplate{})
-		totalFields += getFieldCount(alertingReceivers.EmailSenderConfig{})
-		totalFields += getFieldCount(amConfig{})
+		totalFields += getExportedFieldCount(alertspb.TemplateDesc{})
+		totalFields += getExportedFieldCount(alertspb.AlertConfigDesc{})
 
 		require.Equalf(t, expectedTotalFields, totalFields, "Total fields across structs is %d, expected %d; new fields may require updating fingerprint method", totalFields, expectedTotalFields)
 	})
 
-	url, err := url.Parse("http://localhost")
-	require.NoError(t, err)
-
-	fullConfig := amConfig{
-		User:      "user-grafana",
+	fullConfig := &alertspb.AlertConfigDesc{
+		User:      "user",
 		RawConfig: simpleConfigOne,
-		Templates: []definition.PostableApiTemplate{
+		Templates: []*alertspb.TemplateDesc{
 			{
-				Name:    "test",
-				Content: "test",
-				Kind:    definition.MimirTemplateKind,
+				Filename: "test",
+				Body:     "test",
 			},
 			{
-				Name:    "test2",
-				Content: "test2",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test2",
+				Body:     "test2",
 			},
 			{
-				Name:    "test3",
-				Content: "test3",
-				Kind:    definition.GrafanaTemplateKind,
+				Filename: "test3",
+				Body:     "test3",
 			},
-		},
-		TmplExternalURL: url,
-		EmailConfig: alertingReceivers.EmailSenderConfig{
-			AuthPassword:   "custom-password",
-			AuthUser:       "custom-user",
-			ContentTypes:   []string{"text/html", "text/plain"},
-			EhloIdentity:   "custom-identity",
-			ExternalURL:    "http://custom-url",
-			FromAddress:    "custom@address.com",
-			FromName:       "Custom From Name",
-			Host:           "custom-host",
-			SentBy:         "Mimir vunknown",
-			SkipVerify:     true,
-			StartTLSPolicy: "custom-policy",
-			StaticHeaders:  map[string]string{"test": "test", "test2": "test2", "test3": "test3"},
 		},
 	}
 
@@ -2674,32 +2630,23 @@ func Test_amConfigFingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("fingerprint should be stable", func(t *testing.T) {
-		expected := fullConfig.fingerprint()
+		expected := fingerprint(fullConfig)
 
-		// do it many times to make sure order of elements in the map does not affect fingerprint
+		// Do it many times to make sure order of elements in the map does not affect fingerprint
 		for i := 0; i < 100; i++ {
-			cfg2 := amConfig{}
-			require.NoError(t, json.Unmarshal(jsonCfg, &cfg2)) // copy structure
-			assert.Empty(t, cmp.Diff(fullConfig, cfg2, cmp.AllowUnexported(amConfig{})))
+			cfg2 := &alertspb.AlertConfigDesc{}
+			require.NoError(t, json.Unmarshal(jsonCfg, cfg2)) // copy structure
+			assert.Empty(t, cmp.Diff(fullConfig, cfg2, protocmp.Transform()))
 			rand.Shuffle(len(cfg2.Templates), func(i, j int) {
 				cfg2.Templates[i], cfg2.Templates[j] = cfg2.Templates[j], cfg2.Templates[i]
 			})
-			// copy map to shuffle elements
-			cp := map[string]string{}
-			maps.Copy(cp, cfg2.EmailConfig.StaticHeaders)
-			cfg2.EmailConfig.StaticHeaders = cp
-
-			rand.Shuffle(len(cfg2.EmailConfig.ContentTypes), func(i, j int) {
-				cfg2.EmailConfig.ContentTypes[i], cfg2.EmailConfig.ContentTypes[j] = cfg2.EmailConfig.ContentTypes[j], cfg2.EmailConfig.ContentTypes[i]
-			})
-
-			require.Equal(t, expected, cfg2.fingerprint())
+			require.Equal(t, expected, fingerprint(cfg2))
 		}
 	})
 
 	t.Run("fingerprint should change", func(t *testing.T) {
-		cfg := amConfig{}
-		require.NoError(t, json.Unmarshal(jsonCfg, &cfg)) // copy structure
+		cfg := &alertspb.AlertConfigDesc{}
+		require.NoError(t, json.Unmarshal(jsonCfg, cfg)) // copy structure
 		notChecked := expectedTotalFields
 		setStringFieldsWithRandomValue := func(val reflect.Value, callback func(fieldName string)) {
 			t := val.Type()
@@ -2722,43 +2669,22 @@ func Test_amConfigFingerprint(t *testing.T) {
 			}
 		}
 
-		lastFingerprint := cfg.fingerprint()
+		lastFingerprint := fingerprint(cfg)
 		assertField := func(prefix string) func(fieldName string) {
 			return func(fieldName string) {
-				newFP := cfg.fingerprint()
+				newFP := fingerprint(cfg)
 				assert.NotEqualf(t, lastFingerprint, newFP, "Changes in fields [%s%s] did not cause fingerprint to change", prefix, fieldName)
 				lastFingerprint = newFP
 			}
 		}
 
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg).Elem(), assertField(""))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.EmailConfig).Elem(), assertField("EmailConfig."))
-		setStringFieldsWithRandomValue(reflect.ValueOf(&cfg.Templates[1]).Elem(), assertField("Templates[1]."))
-		cfg.Templates = append(cfg.Templates, definition.PostableApiTemplate{
-			Name:    "test3",
-			Content: "test3",
-			Kind:    definition.GrafanaTemplateKind,
+		setStringFieldsWithRandomValue(reflect.ValueOf(cfg).Elem(), assertField(""))
+		setStringFieldsWithRandomValue(reflect.ValueOf(cfg.Templates[1]).Elem(), assertField("Templates[1]."))
+		cfg.Templates = append(cfg.Templates, &alertspb.TemplateDesc{
+			Filename: "test3",
+			Body:     "test3",
 		})
 		assertField("")("Templates")
-		notChecked--
-
-		cfg.TmplExternalURL = nil
-		assertField("")("TmplExternalURL")
-		cfg.TmplExternalURL, err = url.Parse("http://new-url")
-		require.NoError(t, err)
-		assertField("")("TmplExternalURL")
-		notChecked--
-
-		cfg.EmailConfig.ContentTypes = []string{"text/plain"}
-		assertField("EmailConfig.")("ContentTypes")
-		notChecked--
-
-		cfg.EmailConfig.StaticHeaders = map[string]string{"test2": "test", "test": "test2", "test3": "test3"}
-		assertField("EmailConfig.")("StaticHeaders")
-		notChecked--
-
-		cfg.EmailConfig = alertingReceivers.EmailSenderConfig{}
-		assertField("")("EmailConfig")
 		notChecked--
 
 		require.Equal(t, 0, notChecked)
@@ -2815,12 +2741,9 @@ func (f *passthroughAlertmanagerClientPool) GetClientFor(addr string) (Client, e
 }
 
 type mockAlertManagerLimits struct {
-	notifyHooksLimits
-
 	emailNotificationRateLimit     rate.Limit
 	emailNotificationBurst         int
 	maxConfigSize                  int
-	maxGrafanaConfigSize           int
 	maxSilencesCount               int
 	maxSilenceSizeBytes            int
 	maxTemplatesCount              int
@@ -2835,10 +2758,6 @@ type mockAlertManagerLimits struct {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
-}
-
-func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaConfigSize(string) int {
-	return m.maxGrafanaConfigSize
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxSilencesCount(string) int { return m.maxSilencesCount }

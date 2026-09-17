@@ -15,10 +15,15 @@
     // How many zones ingesters should be deployed to.
     ingest_storage_ingester_zones: 3,
 
-    // The version of the Kafka record wire format. Versions 0 and 1 are stable, version 2 is experimental.
-    ingest_storage_kafka_producer_record_version: 1,
-    // Opt-in to allowing experimental record formats that may not be stable between builds.
-    ingest_storage_allow_experimental_record_formats: false,
+    // The version of the Kafka record wire format. Versions 0, 1, and 2 are stable.
+    ingest_storage_kafka_producer_record_version: 2,
+
+    // Kafka is a single cluster shared across availability zones, so its address is intentionally
+    // non-zonal. Exclude it from the multi-zone config validation, which would otherwise flag it on
+    // zone-aware deployments (e.g. multi-AZ ingesters).
+    multi_zone_config_validation_excluded_args+: if !$._config.ingest_storage_enabled then [] else [
+      '-ingest-storage.kafka.address',
+    ],
 
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
@@ -88,15 +93,10 @@
 
   // The configuration that should be applied to all Mimir components ingesting metrics from Kafka (e.g. ingesters).
   ingest_storage_kafka_ingestion_args:: {
+    // Set estimated-bytes-per-sample because it depends on the configured Kafka record version
+    // (v2 has a better compression, so a smaller per-sample estimate applies).
     local estimated_bytes_per_sample = if $._config.ingest_storage_kafka_producer_record_version == 2 then 200 else 500,
-
-    'ingest-storage.kafka.fetch-concurrency-max': 12,
-    'ingest-storage.kafka.ingestion-concurrency-batch-size': 150,
     'ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample': estimated_bytes_per_sample,
-    'ingest-storage.kafka.ingestion-concurrency-queue-capacity': 3,
-    'ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard': 40,
-    'ingest-storage.kafka.ingestion-concurrency-max': 8,
-    'ingest-storage.kafka.max-buffered-bytes': 1e9,  // 1GB
   },
 
   //
@@ -251,7 +251,7 @@
       // Explicitly use null so that the CLI flag will not be set at all (instead of getting set to an empty string).
       null,
 
-  local max_producer_record_version = if $._config.ingest_storage_allow_experimental_record_formats then 2 else 1,
+  local max_producer_record_version = 2,
   assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= max_producer_record_version
          : 'the Kafka record version must be in the range [0, %s]' % max_producer_record_version,
 }

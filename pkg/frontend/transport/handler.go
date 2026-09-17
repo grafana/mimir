@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -29,9 +30,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -40,8 +44,7 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest    = 499
 	ServiceTimingHeaderName      = "Server-Timing"
-	cacheControlHeader           = "Cache-Control"
-	cacheControlLogField         = "header_cache_control"
+	cacheControlSafeHeader       = safeHeader(requestoptions.CacheControlHeader)
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 	encodeTimeSeconds            = "encode_time_seconds"
 	estimatedSeriesCount         = "estimated_series_count"
@@ -64,6 +67,31 @@ var (
 	errCanceled              = httpgrpc.Error(StatusClientClosedRequest, context.Canceled.Error())
 	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
+
+	// lineBreaksToSpaces replaces line breaks with spaces.
+	lineBreaksToSpaces = strings.NewReplacer("\n", " ", "\r", " ")
+
+	// sensitiveHeaderNames is the deny list of HTTP header names whose values
+	// carry credentials or session material and must never appear in logs.
+	sensitiveHeaderNames = []string{
+		"authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+		"x-amz-security-token",
+		"authentication-info",
+		"www-authenticate",
+		"proxy-authenticate",
+		"x-csrf-token",
+		"x-xsrf-token",
+		"x-access-token",
+		"x-session-token",
+		"x-forwarded-authorization",
+		"x-auth-request-access-token",
+		"x-id-token",
+	}
 )
 
 // HandlerConfig is a config for the handler.
@@ -73,6 +101,9 @@ type HandlerConfig struct {
 	MaxBodySize              int64                  `yaml:"max_body_size" category:"advanced"`
 	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
 	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
+
+	// MaxInflightMetricsEnabled is injected internally from the query-frontend config.
+	MaxInflightMetricsEnabled bool `yaml:"-"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -83,22 +114,41 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ActiveSeriesWriteTimeout, "query-frontend.active-series-write-timeout", 5*time.Minute, "Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used.")
 }
 
+// Validate the HandlerConfig.
+func (cfg *HandlerConfig) Validate() error {
+	var rejected []string
+	for _, h := range cfg.LogQueryRequestHeaders {
+		if isSensitiveHeaderName(h) {
+			rejected = append(rejected, h)
+		}
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("-query-frontend.log-query-request-headers must not contain headers that carry credentials or session material: %s", strings.Join(rejected, ", "))
+	}
+	return nil
+}
+
 // Handler accepts queries and forwards them to RoundTripper. It can wait on in-flight requests and log slow queries,
 // all other logic is inside the RoundTripper.
 type Handler struct {
-	cfg          HandlerConfig
-	headersToLog []string
-	log          log.Logger
-	roundTripper http.RoundTripper
+	cfg              HandlerConfig
+	safeHeadersToLog []safeHeader
+	log              log.Logger
+	roundTripper     http.RoundTripper
 
 	// Metrics.
-	querySeconds          *prometheus.CounterVec
-	querySeries           *prometheus.CounterVec
-	queryChunkBytes       *prometheus.CounterVec
-	queryChunks           *prometheus.CounterVec
-	queryIndexBytes       *prometheus.CounterVec
-	querySamplesProcessed *prometheus.CounterVec
-	activeUsers           *util.ActiveUsersCleanupService
+	querySeconds               *prometheus.CounterVec
+	querySeries                *prometheus.CounterVec
+	queryChunkBytes            *prometheus.CounterVec
+	queryChunks                *prometheus.CounterVec
+	queryIndexBytes            *prometheus.CounterVec
+	querySamplesProcessed      *prometheus.CounterVec
+	queryPhysicalSamplesRead   *prometheus.CounterVec
+	queryEquivalentSamplesRead *prometheus.CounterVec
+	activeUsers                *util.ActiveUsersCleanupService
+
+	// maxInflight is nil when -query-frontend.max-inflight-http-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -109,12 +159,19 @@ type Handler struct {
 // NewHandler creates a new frontend handler.
 func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer) *Handler {
 	h := &Handler{
-		cfg:          cfg,
-		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
-		log:          log,
-		roundTripper: roundTripper,
+		cfg:              cfg,
+		safeHeadersToLog: safeHeadersToLog(cfg.LogQueryRequestHeaders),
+		log:              log,
+		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
+
+	if cfg.MaxInflightMetricsEnabled {
+		h.maxInflight = inflight.NewMaxInflightCollector("http")
+		if reg != nil {
+			reg.MustRegister(h.maxInflight)
+		}
+	}
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -147,6 +204,16 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
 
+		h.queryPhysicalSamplesRead = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_physical_samples_read_total",
+			Help: "Number of samples read from storage to execute a query. This excludes any samples that were read from a cache or otherwise not read due to query optimizations.",
+		}, []string{"user"})
+
+		h.queryEquivalentSamplesRead = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_equivalent_samples_read_total",
+			Help: "Equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
@@ -155,6 +222,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.queryPhysicalSamplesRead.DeleteLabelValues(user)
+			h.queryEquivalentSamplesRead.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -186,21 +255,39 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.inflightRequests++
 	f.mtx.Unlock()
 
+	// Arm the cleanup before tracking below, not after. Anything that panics between the
+	// increment above and this defer leaks inflightRequests, which would make Stop() wait
+	// forever. inflightID is captured by reference, so the assignment below is visible here,
+	// and Remove ignores the zero value it holds until then.
+	var inflightID inflight.InflightRequest
 	defer func() {
+		if f.maxInflight != nil {
+			f.maxInflight.Remove(inflightID)
+		}
+
 		f.mtx.Lock()
 		f.inflightRequests--
 		f.cond.Broadcast()
 		f.mtx.Unlock()
 	}()
 
-	var queryDetails *querymiddleware.QueryDetails
+	// The auth middleware wraps this handler, so the tenant is already in the request
+	// context. Requests without a resolvable tenant are rejected further down the chain;
+	// leave them untracked rather than attributing them to an empty tenant.
+	if f.maxInflight != nil {
+		if tenantIDs, err := tenant.TenantIDs(r.Context()); err == nil {
+			inflightID = f.maxInflight.Add(tenant.JoinTenantIDs(tenantIDs))
+		}
+	}
+
+	var queryDetails *querydetails.QueryDetails
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
 	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
-		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
+		queryDetails, ctx = querydetails.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
 	}
 
@@ -262,8 +349,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
-		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -271,28 +357,38 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	// we don't check for copy error as there is no much we can do at this point
-	queryResponseSize, _ := io.Copy(w, resp.Body)
+	queryResponseSize, err := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, err)
+	}
+
+	if err != nil {
+		level.Error(util_log.WithContext(r.Context(), f.log)).Log(
+			"msg", "failed to write query response; aborting connection to signal truncation",
+			"bytes_written", queryResponseSize, "err", err)
+		panic(http.ErrAbortHandler)
 	}
 }
 
 // reportSlowQuery reports slow queries.
-func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
-	logMessage := append([]any{
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querydetails.QueryDetails) {
+	logMessage := []any{
 		"msg", "slow query detected",
-		"method", r.Method,
-		"host", r.Host,
-		"path", r.URL.Path,
+		"method", dskitlog.DropUnsafeChars(r.Method),
+		"host", dskitlog.DropUnsafeChars(r.Host),
+		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"time_taken", queryResponseTime.String(),
-	}, formatQueryString(details, queryString)...)
+	}
 
-	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
+
+	// Append query string params last so that, if the log line is truncated downstream,
+	// the long param_query value is what gets cut rather than other fields.
+	logMessage = append(logMessage, formatQueryString(details, queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
@@ -303,7 +399,7 @@ func (f *Handler) reportQueryStats(
 	queryStartTime time.Time,
 	queryResponseTime time.Duration,
 	queryResponseSizeBytes int64,
-	details *querymiddleware.QueryDetails,
+	details *querydetails.QueryDetails,
 	queryResponseStatusCode int,
 	queryErr error,
 ) {
@@ -323,6 +419,8 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
+	equivalentSamplesRead := stats.LoadEquivalentSamplesRead()
+	physicalSamplesRead := stats.LoadPhysicalSamplesRead()
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -331,17 +429,19 @@ func (f *Handler) reportQueryStats(
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
+		f.queryPhysicalSamplesRead.WithLabelValues(userID).Add(float64(physicalSamplesRead))
+		f.queryEquivalentSamplesRead.WithLabelValues(userID).Add(float64(equivalentSamplesRead))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
 	// Log stats.
-	logMessage := append([]any{
+	logMessage := []any{
 		"msg", "query stats",
 		"component", "query-frontend",
-		"method", r.Method,
-		"path", r.URL.Path,
+		"method", dskitlog.DropUnsafeChars(r.Method),
+		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"route_name", middleware.ExtractRouteName(r.Context()),
-		"user_agent", r.UserAgent(),
+		"user_agent", dskitlog.DropUnsafeChars(r.UserAgent()),
 		"status_code", queryResponseStatusCode,
 		responseTime, queryResponseTime,
 		responseSizeBytes, queryResponseSizeBytes,
@@ -358,8 +458,11 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
+		"retries", stats.LoadRetries(),
 		"samples_processed", samplesProcessed,
-	}, formatQueryString(details, queryString)...)
+		"equivalent_samples_read", equivalentSamplesRead,
+		"physical_samples_read", physicalSamplesRead,
+	}
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
@@ -376,6 +479,11 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			"results_cache_hit_count", details.ResultsCacheHitCount,
+			"results_cache_miss_count", details.ResultsCacheMissCount,
+			"results_cache_set_count", details.ResultsCacheSetCount,
+			"response_series_count", details.ResponseSeriesCount,
+			"response_samples_count", details.ResponseSamplesCount,
 		)
 	}
 
@@ -387,7 +495,7 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage, "read_consistency_max_delay", delay)
 	}
 
-	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
+	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
 	if queryErr == nil && queryResponseStatusCode/100 != 2 {
 		// If downstream replied with non-2xx, log this as a failure.
@@ -410,11 +518,15 @@ func (f *Handler) reportQueryStats(
 			"status", "success")
 	}
 
+	// Append query string params last so that, if the log line is truncated downstream,
+	// the long param_query value is what gets cut rather than other fields.
+	logMessage = append(logMessage, formatQueryString(details, queryString)...)
+
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
-func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []any) {
+func formatQueryString(details *querydetails.QueryDetails, queryString url.Values) (fields []any) {
 	for k, v := range queryString {
 		var formattedValue string
 		if details != nil {
@@ -424,7 +536,7 @@ func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Va
 		if formattedValue == "" {
 			formattedValue = strings.Join(v, ",")
 		}
-		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
+		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(lineBreaksToSpaces.Replace(formattedValue)))
 	}
 	return fields
 }
@@ -432,7 +544,7 @@ func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Va
 // paramValueFromDetails returns the value of the parameter from details if the value there is non-zero.
 // Otherwise, it returns an empty string.
 // One reason why details field may be zero-values is if the value was not parseable.
-func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName string) string {
+func paramValueFromDetails(details *querydetails.QueryDetails, paramName string) string {
 	switch paramName {
 	case "start", "time":
 		if !details.Start.IsZero() {
@@ -454,21 +566,78 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
-func filterHeadersToLog(headersToLog []string) (filtered []string) {
-	for _, h := range headersToLog {
-		if strings.EqualFold(h, cacheControlHeader) {
-			continue
-		}
-		filtered = append(filtered, h)
+// safeHeader is the name of an HTTP request header that has been validated as
+// safe to log: it is not in the sensitive-header deny list. Values must be
+// constructed via newSafeHeader so the deny-list check cannot be bypassed by
+// callers outside the package.
+type safeHeader string
+
+// newSafeHeader returns a safeHeader wrapping name and true, or the zero value
+// and false if name is in the sensitive-header deny list.
+func newSafeHeader(name string) (safeHeader, bool) {
+	if isSensitiveHeaderName(name) {
+		return "", false
 	}
-	return filtered
+	return safeHeader(name), true
 }
 
-func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
-	fields = append(fields, cacheControlLogField, h.Get(cacheControlHeader))
-	for _, s := range headersToLog {
-		if v := h.Get(s); v != "" {
-			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
+func (s safeHeader) String() string {
+	return string(s)
+}
+
+func (s safeHeader) log() string {
+	return fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(string(s)), "-", "_"))
+}
+
+// isSensitiveHeaderName reports whether the named header carries credentials
+// or session material whose value must never be logged, regardless of operator
+// allow-list configuration.
+func isSensitiveHeaderName(name string) bool {
+	lower := strings.ToLower(name)
+	for _, h := range sensitiveHeaderNames {
+		if h == lower {
+			return true
+		}
+	}
+	return false
+}
+
+func safeHeadersToLog(headersToLog []string) (safeHeaders []safeHeader) {
+	for _, h := range headersToLog {
+		if strings.EqualFold(h, requestoptions.CacheControlHeader) {
+			continue
+		}
+		if s, ok := newSafeHeader(h); ok {
+			safeHeaders = append(safeHeaders, s)
+		}
+	}
+	return safeHeaders
+}
+
+// sanitizeHeaderValue reads headerName from header and returns its sanitized
+// value. The ok flag is true when the sanitized value is non-empty or
+// acceptEmpty is set.
+func sanitizeHeaderValue(header *http.Header, headerName safeHeader, acceptEmpty bool) (string, bool) {
+	value := header.Get(headerName.String())
+	value = strings.TrimSpace(value)
+	if value != "" {
+		value = dskitlog.DropUnsafeChars(value).String()
+	}
+
+	return value, acceptEmpty || value != ""
+}
+
+// formatRequestHeaders returns the log fields for the Cache-Control header and
+// for every operator-allow-listed header present in the request. All such
+// headers are of type safeHeader.
+func (f *Handler) formatRequestHeaders(header *http.Header) (fields []any) {
+	if v, ok := sanitizeHeaderValue(header, cacheControlSafeHeader, true); ok {
+		fields = append(fields, cacheControlSafeHeader.log(), v)
+	}
+
+	for _, s := range f.safeHeadersToLog {
+		if v, ok := sanitizeHeaderValue(header, s, false); ok {
+			fields = append(fields, s.log(), v)
 		}
 	}
 	return fields
@@ -513,7 +682,7 @@ func writeError(w http.ResponseWriter, err error) int {
 	return statusCode
 }
 
-func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.QueryDetails) []string {
+func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -522,18 +691,20 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 		statsValue("querier_wall_time", stats.LoadWallTime()),
 		statsValue("response_time", queryResponseTime),
 		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()),
-		statsValue("samples_processed", stats.GetSamplesProcessed()),
+		statsValue("samples_processed", stats.LoadSamplesProcessed()),
+		statsValue("equivalent_samples_read", stats.LoadEquivalentSamplesRead()),
 	}
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
+// contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
 	stats := details.QuerierStats
-	return []string{
-		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
+
+	statsResponse := []string{
 		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
 		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
 		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
@@ -548,7 +719,17 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(shardedQueries, stats.LoadShardedQueries()),
 		statsValue(splitQueries, stats.LoadSplitQueries()),
 		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
+		statsValue("physical_samples_read", stats.LoadPhysicalSamplesRead()), // The "equivalent samples read" count is added in getQueryStats above.
 	}
+
+	if contentLengthBytes >= 0 {
+		// encode_time_seconds is always 0 for streaming responses: encoding runs concurrently with body
+		// streaming, so the encode time is not available until after the headers have been sent.
+		// We only insert this if we are in a non-streaming response.
+		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	return statsResponse
 }
 
 func statsValue(name string, val interface{}) string {

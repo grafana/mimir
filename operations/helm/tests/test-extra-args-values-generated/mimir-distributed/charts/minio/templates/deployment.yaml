@@ -82,4 +82,5 @@ spec:
             claimName: test-extra-args-values-minio
         - name: minio-user
           secret:
-            secretName: test-extra-args-values-minio
+            secretName: test-extra-args-values-minio        
+

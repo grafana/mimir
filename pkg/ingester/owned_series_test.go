@@ -795,7 +795,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 
 	for _, s := range c.seriesToWrite {
 		req := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
-		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
+		require.NoError(t, writer.WriteSync(context.Background(), c.cfg.IngestStorageConfig.KafkaConfig.Topic, c.partitionID, c.user, req))
 	}
 
 	// Wait until the ingester ingested all series from Kafka.

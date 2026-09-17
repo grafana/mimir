@@ -3,25 +3,28 @@
 package core
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type FunctionCall struct {
 	*FunctionCallDetails
-	Args []planning.Node `json:"-"`
+	Args []planning.Node `json:"-" node:"children,labelfmt=param %d"`
 }
 
 func (f *FunctionCall) Describe() string {
@@ -46,64 +49,12 @@ func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
 }
 
-func (f *FunctionCall) Child(idx int) planning.Node {
-	if idx >= len(f.Args) {
-		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
-	}
-
-	return f.Args[idx]
-}
-
-func (f *FunctionCall) ChildCount() int {
-	return len(f.Args)
-}
-
-func (f *FunctionCall) SetChildren(children []planning.Node) error {
-	f.Args = children
-	return nil
-}
-
-func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(f.Args) {
-		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
-	}
-
-	f.Args[idx] = node
-	return nil
-}
-
-func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherFunctionCall, ok := other.(*FunctionCall)
-
-	return ok &&
-		f.Function == otherFunctionCall.Function &&
-		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
-}
-
 func (f *FunctionCall) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
 }
 
-func (f *FunctionCall) ChildrenLabels() []string {
-	if len(f.Args) == 0 {
-		return nil
-	}
-
-	if len(f.Args) == 1 {
-		return []string{""}
-	}
-
-	l := make([]string, len(f.Args))
-
-	for i := range l {
-		l[i] = fmt.Sprintf("param %v", i)
-	}
-
-	return l
-}
-
-func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
@@ -111,7 +62,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 
 	children := make([]types.Operator, 0, len(f.Args))
 	for _, arg := range f.Args {
-		o, err := materializer.ConvertNodeToOperator(arg, timeRange)
+		o, err := materializer.ConvertNodeToOperator(ctx, arg, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -123,6 +74,19 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 
 	if f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
+	}
+
+	if f.Function == functions.FUNCTION_INFO && len(f.Args) == 2 {
+		// Pin the data label selector to the first argument's @/offset (mirroring Prometheus's
+		// infoSelectHints), but only when the vector paths share one reference; otherwise leave the
+		// per-step default. Done here, not in the operator factory, where nested selectors aren't
+		// reachable.
+		if dataLabelSelector, ok := children[1].(*functions.DataLabelSelector); ok {
+			if ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0]); uniform {
+				dataLabelSelector.Selector.Timestamp = TimestampFromTime(ts)
+				dataLabelSelector.Selector.Offset = offset.Milliseconds()
+			}
+		}
 	}
 
 	o, err := fnc.OperatorFactory(children, absentLabels, params, f.GetExpressionPosition().ToPrometheusType(), timeRange)
@@ -144,7 +108,18 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	timeRange := planning.NoDataQueried()
 
-	for _, arg := range f.Args {
+	for i, arg := range f.Args {
+		if f.Function == functions.FUNCTION_INFO && i == 1 {
+			// The info data label selector is evaluated as a vector selector at the @ timestamp and
+			// offset derived from the first argument (which MaterializeFunctionCall applies to the
+			// operator). Reflect that here so the queried range covers the info series' lookback
+			// window at the pinned time. A range-selector first argument does not contribute that
+			// window itself, so using the selector's own evaluation-time range would miss the info
+			// series when routing remote-execution requests.
+			timeRange = timeRange.Union(f.infoSeriesQueriedTimeRange(queryTimeRange, lookbackDelta))
+			continue
+		}
+
 		argTimeRange, err := arg.QueriedTimeRange(queryTimeRange, lookbackDelta)
 		if err != nil {
 			return planning.NoDataQueried(), err
@@ -156,10 +131,22 @@ func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, loo
 	return timeRange, nil
 }
 
+// infoSeriesQueriedTimeRange returns the time range over which the info function selects its info
+// series. Like MaterializeFunctionCall, it pins to the first argument's @/offset only when the
+// vector paths share one reference, so the advertised range matches the operator's fetch.
+func (f *FunctionCall) infoSeriesQueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	ts, offset, uniform := infoSelectTimestampAndOffset(f.Args[0])
+	if !uniform {
+		ts, offset = nil, 0
+	}
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(ts), 0, offset.Milliseconds(), lookbackDelta, false, false)
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
 func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (f *FunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (f *FunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

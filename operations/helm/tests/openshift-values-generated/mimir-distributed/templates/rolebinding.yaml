@@ -18,3 +18,4 @@ subjects:
   name: openshift-values-mimir
 - kind: ServiceAccount
   name: openshift-values-mimir-distributed
+

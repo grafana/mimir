@@ -72,7 +72,7 @@ data:
         backend: memcached
         memcached:
           addresses: dnssrvnoa+large-values-mimir-results-cache.citestns.svc.cluster.local.:11211
-          max_item_size: 5242880
+          max_item_size: 26214400
           timeout: 500ms
       scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
@@ -109,8 +109,9 @@ data:
       compression_enabled: false
       join_members:
       - dns+large-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+      rejoin_interval: 60s
     querier:
-      max_concurrent: 16
+      max_concurrent: 8
     query_scheduler:
       max_outstanding_requests_per_tenant: 800
     ruler:
@@ -138,3 +139,4 @@ data:
         zone_awareness_enabled: true
     usage_stats:
       installation_mode: helm
+

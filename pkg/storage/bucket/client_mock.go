@@ -34,6 +34,11 @@ func (m *ClientMock) Upload(ctx context.Context, name string, r io.Reader, opts 
 	return args.Error(0)
 }
 
+// SupportedObjectUploadOptions mocks objstore.Bucket.SupportedObjectUploadOptions().
+func (m *ClientMock) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return nil
+}
+
 func (m *ClientMock) MockUpload(name string, err error) {
 	m.On("Upload", mock.Anything, name, mock.Anything, mock.Anything).Return(err)
 }
@@ -161,6 +166,10 @@ func (m *ClientMock) IsObjNotFoundErr(err error) bool {
 }
 
 func (m *ClientMock) IsAccessDeniedErr(_ error) bool {
+	return false
+}
+
+func (m *ClientMock) IsConditionNotMetErr(_ error) bool {
 	return false
 }
 

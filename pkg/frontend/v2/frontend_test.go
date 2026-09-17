@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -68,10 +70,17 @@ func TestMain(m *testing.M) {
 const testFrontendWorkerConcurrency = 5
 
 func setupFrontend(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
-	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency, log.NewLogfmtLogger(os.Stdout))
+	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency, log.NewLogfmtLogger(os.Stdout), nil)
 }
 
-func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, logger log.Logger, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
+// setupFrontendWithConfig is setupFrontend with a chance to change the config before the
+// frontend is built.
+func setupFrontendWithConfig(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, mutateCfg func(*Config)) (*Frontend, *mockScheduler) {
+	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency, log.NewLogfmtLogger(os.Stdout), mutateCfg)
+}
+
+// mutateCfg may be nil, in which case the default config is used.
+func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, logger log.Logger, mutateCfg func(*Config), opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
 	// We need to use different ports as the scheduler does not need the user header interceptor,
 	// whereas the frontend does.
 	frontendListener, err := net.Listen("tcp", "localhost:0")
@@ -103,6 +112,9 @@ func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.R
 	cfg.Addr = frontendHost
 	cfg.Port = grpcPort
 	cfg.QueryStoreAfter = 12 * time.Hour
+	if mutateCfg != nil {
+		mutateCfg(&cfg)
+	}
 
 	codec := newTestCodec()
 
@@ -255,6 +267,46 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
+}
+
+// The response body from RoundTripGRPC reaches the query-frontend middleware chain as an
+// http.Response.Body, and that chain closes it more than once:
+// httpQueryRequestRoundTripperHandler.Do closes it, and so does readResponseBody in the
+// codec it hands the response to. Every extra close used to decrement the in-flight gauge
+// again, so it walked below zero and stayed there until the process restarted.
+func TestFrontend_HTTPGRPC_ClosingResponseBodyMoreThanOnceDoesNotSkewInflightRequests(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			_ = sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(body),
+			})
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
+	}
+	resp, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.Equal(t, int32(200), resp.Code)
+
+	require.NoError(t, respBody.Close())
+	require.NoError(t, respBody.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_frontend_queries_in_progress Number of queries in progress handled by this frontend.
+		# TYPE cortex_query_frontend_queries_in_progress gauge
+		cortex_query_frontend_queries_in_progress 0
+	`), "cortex_query_frontend_queries_in_progress"))
 }
 
 func TestFrontend_Protobuf_HappyPath(t *testing.T) {
@@ -942,6 +994,7 @@ func TestFrontendCancellation(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
 			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+			reqStats, ctx := stats.ContextWithEmptyStats(ctx)
 			defer cancel()
 
 			makeRequest(ctx, t, f)
@@ -960,6 +1013,8 @@ func TestFrontendCancellation(t *testing.T) {
 				require.Equal(t, schedulerpb.CANCEL, ms.msgs[1].Type)
 				require.Equal(t, ms.msgs[0].QueryID, ms.msgs[1].QueryID)
 			})
+
+			require.Greater(t, reqStats.LoadQueueTime(), time.Duration(0))
 		})
 	}
 
@@ -1592,6 +1647,109 @@ func TestFrontendStreamingResponse(t *testing.T) {
 	}
 }
 
+// TestFrontendStreamingResponseAfterCancellationDoesNotLeak reproduces the race where the querier's
+// streaming response claims the request just after RoundTripGRPC's cancellation branch found the
+// httpResponse channel still empty and returned: nothing will ever read the response or its body pipe,
+// so the handler must not stay blocked writing body chunks once the request context is done.
+func TestFrontendStreamingResponseAfterCancellationDoesNotLeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
+
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
+
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      117,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
+
+		// RoundTripGRPC's cancellation branch has already returned and cancelled the request context.
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
+
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
+
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
+
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			res := <-freq.httpResponse
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a response nobody will read")
+		}
+	})
+}
+
+// TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak reproduces the case where
+// RoundTripGRPC's cancellation branch drains the streaming response from the httpResponse channel
+// but discards it without ever reading its body: cancelling the request context alone (which the
+// deferred cleanup does) must be enough to unblock the handler writing body chunks to the pipe.
+func TestFrontendStreamingResponseDiscardedAfterDrainDoesNotLeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const userID = "test"
+
+		f := &Frontend{requests: newRequestsInProgress(), log: log.NewNopLogger()}
+
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), userID))
+		freq := &frontendRequest{
+			queryID:      118,
+			userID:       userID,
+			ctx:          ctx,
+			httpResponse: make(chan queryResultWithBody, 1),
+		}
+		f.requests.put(freq)
+
+		msg := &schedulerpb.FrontendToScheduler{QueryID: freq.queryID}
+		stream := &mockQueryResultStreamServer{
+			ctx: user.InjectOrgID(t.Context(), userID),
+			msgs: []*frontendv2pb.QueryResultStreamRequest{
+				metadataRequest(msg, http.StatusOK, nil),
+				bodyChunkRequest(msg, []byte("a body chunk nobody will read")),
+			},
+		}
+
+		streamReturned := make(chan error, 1)
+		go func() {
+			streamReturned <- f.QueryResultStream(stream)
+		}()
+
+		// RoundTripGRPC's cancellation branch drains the response, discarding it without reading the
+		// body, and then its deferred cleanup cancels the request context.
+		res := <-freq.httpResponse
+		cause := cancellation.NewErrorf("request cancelled")
+		cancel(cause)
+
+		select {
+		case err := <-streamReturned:
+			require.ErrorIs(t, err, cause)
+		case <-time.After(time.Second):
+			// Only reached when the handler is stuck: synctest's fake clock advances once no
+			// goroutine in the bubble can run. Unblock the handler so its goroutine doesn't
+			// also trip the leak detector.
+			_ = res.bodyStream.Close()
+			t.Fatal("QueryResultStream is still blocked writing the body of a discarded response")
+		}
+	})
+}
+
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		QueryID: msg.QueryID,
@@ -1790,7 +1948,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 
 	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
-	}, frontendConcurrency, log.NewLogfmtLogger(os.Stdout), grpc.KeepaliveParams(keepalive.ServerParameters{
+	}, frontendConcurrency, log.NewLogfmtLogger(os.Stdout), nil, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle:     100 * time.Millisecond,
 		MaxConnectionAge:      100 * time.Millisecond,
 		MaxConnectionAgeGrace: 100 * time.Millisecond,
@@ -2114,7 +2272,7 @@ func TestQueryDecoding(t *testing.T) {
 }
 
 func newTestCodec() querymiddleware.Codec {
-	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{})
+	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{}, log.NewNopLogger())
 }
 
 func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
@@ -2139,4 +2297,217 @@ func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
 			require.NoError(b, err, "shouldNotAbortReading should not return an error")
 		}
 	}
+}
+
+const (
+	maxInflightRequestsMetric   = "cortex_query_frontend_max_inflight_requests"
+	maxInflightRequestAgeMetric = "cortex_query_frontend_max_inflight_request_age_seconds"
+)
+
+func maxInflightRequestsExpected(series string) string {
+	return `
+		# HELP cortex_query_frontend_max_inflight_requests Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). The type label is "http" for requests entering the query-frontend, or "dispatched" for the sub-requests sent on to query-schedulers.
+		# TYPE cortex_query_frontend_max_inflight_requests gauge
+	` + series
+}
+
+func enableMaxInflightMetrics(cfg *Config) {
+	cfg.MaxInflightMetricsEnabled = true
+}
+
+func TestFrontend_MaxInflightDispatchedMetricsDisabledByDefault(t *testing.T) {
+	const userID = "test"
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	require.False(t, cfg.MaxInflightMetricsEnabled)
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			_ = sendResponseWithDelay(f, 0, userID, msg.QueryID, &httpgrpc.HTTPResponse{Code: 200})
+		}()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+	_, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+	require.NoError(t, respBody.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+func TestFrontend_MaxInflightDispatchedMetrics(t *testing.T) {
+	const (
+		userID      = "test"
+		concurrency = 3
+	)
+
+	started := make(chan struct{}, concurrency)
+	release := make(chan struct{})
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontendWithConfig(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// Only enqueues are held. The frontend also sends CANCEL messages here, and one of
+		// those must not park a goroutine on the started channel for the rest of the run.
+		if msg.Type == schedulerpb.ENQUEUE {
+			go func() {
+				// Hold the query in flight until the test has gathered the peak.
+				started <- struct{}{}
+				<-release
+				_ = sendResponseWithDelay(f, 0, userID, msg.QueryID, &httpgrpc.HTTPResponse{Code: 200})
+			}()
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}, enableMaxInflightMetrics)
+
+	var wg sync.WaitGroup
+	for range concurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+			_, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+			if assert.NoError(t, err) {
+				assert.NoError(t, respBody.Close())
+			}
+		}()
+	}
+
+	for range concurrency {
+		<-started
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 3`+"\n",
+	)), maxInflightRequestsMetric))
+
+	count, err := testutil.GatherAndCount(reg, maxInflightRequestAgeMetric)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+
+	close(release)
+	wg.Wait()
+
+	// The window the queries spanned still reports the peak, and the next one is empty
+	// because nothing is left in flight.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 3`+"\n",
+	)), maxInflightRequestsMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+// The middleware chain closes the response body more than once, which used to drive
+// cortex_query_frontend_queries_in_progress permanently negative. The in-flight tracker must
+// not have the same flaw: an extra close must leave the tenant at zero in flight, not below
+// it. A tenant stuck below zero would never be pruned, so the empty gather at the end is
+// what proves the count landed exactly on zero.
+func TestFrontend_MaxInflightDispatchedMetrics_ClosingResponseBodyMoreThanOnce(t *testing.T) {
+	const userID = "test"
+
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontendWithConfig(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		go func() {
+			_ = sendResponseWithDelay(f, 0, userID, msg.QueryID, &httpgrpc.HTTPResponse{Code: 200})
+		}()
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}, enableMaxInflightMetrics)
+
+	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+	_, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+	require.NoError(t, err)
+
+	require.NoError(t, respBody.Close())
+	require.NoError(t, respBody.Close())
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+	)), maxInflightRequestsMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+// A dispatched query that never succeeds must not leak its in-flight entry. As in the
+// handler tests, the empty second gather is the real assertion: the tenant is only dropped
+// once its in-flight count is back to zero.
+func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenQueryFails(t *testing.T) {
+	const userID = "test"
+
+	// On the httpgrpc path a scheduler rejection is not returned as a Go error: the frontend
+	// synthesises a 429 or 500 HTTP response and hands the caller a body to close, exactly as
+	// it does for a successful query. So untracking a rejected query depends on the caller
+	// closing that body, which is what this test does.
+	tests := map[string]schedulerpb.SchedulerToFrontendStatus{
+		"scheduler rejects the query": schedulerpb.TOO_MANY_REQUESTS_PER_TENANT,
+		"scheduler reports an error":  schedulerpb.ERROR,
+		"scheduler is shutting down":  schedulerpb.SHUTTING_DOWN,
+	}
+
+	for name, status := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			f, _ := setupFrontendWithConfig(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				return &schedulerpb.SchedulerToFrontend{Status: status}
+			}, enableMaxInflightMetrics)
+
+			req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+			resp, respBody, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+			if err == nil {
+				require.NotEqual(t, int32(http.StatusOK), resp.Code, "the query was expected to fail")
+				require.NoError(t, respBody.Close())
+			}
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+				maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+			)), maxInflightRequestsMetric))
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+				maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+
+			// The pre-existing gauge must agree that nothing is left in flight.
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_query_frontend_queries_in_progress Number of queries in progress handled by this frontend.
+				# TYPE cortex_query_frontend_queries_in_progress gauge
+				cortex_query_frontend_queries_in_progress 0
+			`), "cortex_query_frontend_queries_in_progress"))
+		})
+	}
+}
+
+func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenCallerCancels(t *testing.T) {
+	const userID = "test"
+
+	enqueued := make(chan struct{})
+	// The reply func runs once per enqueue attempt, so the signal has to tolerate repeats.
+	var signalOnce sync.Once
+	reg := prometheus.NewPedanticRegistry()
+	f, _ := setupFrontendWithConfig(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// Accept the query but never send a response, so the caller's cancellation is what
+		// unwinds it.
+		signalOnce.Do(func() { close(enqueued) })
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}, enableMaxInflightMetrics)
+
+	ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), userID))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+		_, _, err := f.RoundTripGRPC(ctx, req)
+		assert.Error(t, err)
+	}()
+
+	<-enqueued
+	cancel()
+	<-done
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="dispatched",user="`+userID+`"} 1`+"\n",
+	)), maxInflightRequestsMetric))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
 }

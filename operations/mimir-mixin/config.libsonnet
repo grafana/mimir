@@ -1,4 +1,7 @@
 {
+  assert $._config.compactor_standalone_enabled || $._config.compactor_scheduler_enabled
+         : 'at least one of compactor_standalone_enabled and compactor_scheduler_enabled must be enabled',
+
   grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
 
@@ -24,6 +27,10 @@
 
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
+
+    // If Mimir deployments has compartments enabled, set to true to enable
+    // specific dropdowns and job selectors.
+    compartments_enabled: false,
 
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,
@@ -57,6 +64,7 @@
     // dashboards and alerts, they should override the final matcher regexp (e.g. container_names or instance_names).
     local componentNameRegexp = {
       compactor: 'compactor',
+      compactor_scheduler: 'compactor-scheduler',
       alertmanager: 'alertmanager',
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
@@ -108,6 +116,7 @@
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
+      compactor_scheduler: ['compactor-scheduler.*'],
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
       usage_tracker: ['usage-tracker.*'],
@@ -122,6 +131,32 @@
       backend: ['ruler|ruler-zone-.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
+    } + (
+      // When compartments are enabled, override the job names of the
+      // compartmentalized components so that dashboards select only
+      // the jobs belonging to the currently selected read compartment.
+      if $._config.compartments_enabled then $._config.compartmentalized_job_names else {}
+    ),
+
+    // These are overrides for the job names for matching a specific compartment.
+    compartmentalized_job_names: {
+      ingester: ['ingester.*$read_compartment', 'cortex', 'mimir'],
+      block_builder: ['block-builder.*$read_compartment'],
+      block_builder_scheduler: ['block-builder-scheduler.*$read_compartment'],
+      compactor: ['compactor.*$read_compartment', 'cortex', 'mimir'],
+      compactor_scheduler: ['compactor-scheduler.*$read_compartment'],
+      store_gateway: ['store-gateway.*$read_compartment', 'cortex', 'mimir'],
+    },
+
+    // Unlike the job_names above, these are format strings, expanded with the zone suffix (e.g.
+    // 'distributor-zone-%(zone)s.*' becomes 'distributor-zone-a.*') to match one zone's deployments
+    // of a component. Used to build the per-zone panels, e.g. when
+    // show_multi_zone_write_path_panels is enabled.
+    // The expanded job names must also be matched by the component's job_names regexes above,
+    // otherwise the per-zone deployments would be missing from the aggregate panels.
+    multi_zone_job_name_formats: {
+      distributor: ['distributor-zone-%(zone)s.*'],
+      gateway: ['cortex-gw.*-zone-%(zone)s'],
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -134,6 +169,7 @@
 
       // The following matchers MUST match only the individual instances.
       compactor: instanceMatcher(componentNameRegexp.compactor),
+      compactor_scheduler: instanceMatcher(componentNameRegexp.compactor_scheduler),
       block_builder: instanceMatcher(componentNameRegexp.block_builder),
       block_builder_scheduler: instanceMatcher(componentNameRegexp.block_builder_scheduler),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
@@ -169,6 +205,7 @@
       // The following matchers MUST match only the individual instances.
       block_builder: componentNameRegexp.block_builder,
       block_builder_scheduler: componentNameRegexp.block_builder_scheduler,
+      compactor_scheduler: componentNameRegexp.compactor_scheduler,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
@@ -212,6 +249,8 @@
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
+      read_compartments_query: 'cortex_build_info{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
+      read_compartments_query_regex: '/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g',  // match "-rc-XX" but shown as "rc-XX" in the UI
     },
 
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
@@ -239,6 +278,9 @@
     rollout_stuck_alert_ignore_deployments: [],
     rollout_stuck_alert_ignore_statefulsets: [],
 
+    workload_group_regex: '(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?',
+    workload_group_replacement: '$1$2',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -255,6 +297,10 @@
 
     // Whether mimir compactor scheduler is enabled (experimental)
     compactor_scheduler_enabled: false,
+
+    // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
+    compactor_standalone_enabled: true,
+    compactor_standalone_summary_collapsed: $._config.compactor_scheduler_enabled,
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
@@ -332,14 +378,12 @@
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
                   label_replace(
                     kube_deployment_spec_replicas,
-                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                    # always matches everything and the (optional) zone is not removed.
-                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                    "deployment_without_zone", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                   )
                 )
                 or
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
-                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "%(workload_group_replacement)s", "statefulset", "%(workload_group_regex)s")
                 ),
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
@@ -347,15 +391,16 @@
           |||,
         cpu_usage_seconds_total:
           |||
+            # The sandbox and parent cgroup series that cAdvisor exposes next to the per-container
+            # ones have an empty "image" label and would double count CPU time, so they're filtered
+            # out, consistently with the memory_usage rule below.
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(recording_rules_range_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total{image!=""}[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
           |||,
@@ -377,9 +422,7 @@
                     kube_pod_container_resource_requests_cpu_cores,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -393,9 +436,7 @@
                     kube_pod_container_resource_requests{resource="cpu"},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -423,9 +464,7 @@
                   container_memory_usage_bytes{image!=""},
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
           |||,
@@ -447,9 +486,7 @@
                     kube_pod_container_resource_requests_memory_bytes,
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -463,9 +500,7 @@
                     kube_pod_container_resource_requests{resource="memory"},
                     "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
-                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                  # always matches everything and the (optional) zone is not removed.
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
             )
@@ -584,8 +619,15 @@
             (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
           ) != 0
         |||,
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        // Kubernetes doesn't have build-in solution to track all ephemeral storage by container
+        // Ref https://github.com/kubernetes/kubernetes/issues/69507.
+        // We only use "log filesystem" because every container needs some amount of this for logs,
+        // regardless to if the container requires any other ephemeral persistence for it's data.
+        ephemeral_storage_usage: 'max by(%(instanceLabel)s) (kubelet_container_log_filesystem_used_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        ephemeral_storage_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        ephemeral_storage_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -634,8 +676,8 @@
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -666,12 +708,19 @@
       workload_label_replaces: [
         { src_label: 'deployment', regex: '(.+)', replacement: '$1' },
         { src_label: 'statefulset', regex: '(.+)', replacement: '$1' },
-        { src_label: 'workload', regex: '(.*?)(?:-zone-[a-z])?', replacement: '$1' },
+        { src_label: 'workload', regex: $._config.workload_group_regex, replacement: $._config.workload_group_replacement },
       ],
     },
 
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
+
+    // The regular expression used to identify the node's boot/root disk device.
+    // This device is excluded from the "Disk writes" and "Disk reads" panels, since it
+    // typically doesn't hold Mimir data and would otherwise skew the per-device breakdown.
+    // Override this if your nodes don't use "sda" as the boot device (e.g. some cloud
+    // providers default to "vda").
+    node_boot_disk_device_regex: '.*sda.*',
 
     // Whether certain dashboard description headers should be shown
     show_dashboard_descriptions: {
@@ -707,7 +756,8 @@
       },
       store_gateway: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a|' +
+                  $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a-rc-.*',
       },
       distributor: {
         enabled: false,
@@ -723,16 +773,19 @@
       },
       ingester: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a|' +
+                  $._config.autoscaling_hpa_prefix + 'ingester-zone-a-rc-.*',
         replica_template_name: 'ingester-zone-a',
       },
       compactor: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor|' +
+                  $._config.autoscaling_hpa_prefix + 'compactor-rc-.*',
       },
       block_builder: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder|' +
+                  $._config.autoscaling_hpa_prefix + 'block-builder-rc-.*',
       },
     },
 
@@ -743,7 +796,7 @@
     ],
 
     // All query methods from IngesterServer interface. Basically everything except Push.
-    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)',
 
     // All query methods from StoregatewayServer interface.
     store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
@@ -752,14 +805,14 @@
     dashboard_datasource: 'default',
     datasource_regex: '',
 
-    // Tunes histogram recording rules to aggregate over this interval.
-    // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
-    // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    recording_rules_range_interval: '1m',
-
-    // Used to calculate range interval in alerts with default range selector under 10 minutes.
-    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    base_alerts_range_interval_minutes: 1,
+    // The Prometheus scrape interval configured in your Prometheus. Used by rateInterval() and
+    // stepInterval() to compute safe windows automatically.
+    // See https://www.robustperception.io/what-range-should-i-use-with-rate/
+    // Default is 1m, the Prometheus default scrape interval. Precompiled mixins are built
+    // with this value; rateInterval(min) uses max(min, 4*scrape_interval). Rebuild the
+    // mixin with a different scrape_interval if yours differs.
+    // See https://github.com/grafana/mimir/issues/12782
+    scrape_interval: '1m',
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
@@ -784,6 +837,17 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: true,
+
+    // Show optional panels on the Writes dashboard breaking down the traffic of write path components
+    // deployed per availability zone (e.g. distributor-zone-a), to help spotting a degradation only
+    // affecting a single zone. Disabled by default, because it only applies to deployments where the
+    // gateway and the distributor are deployed per zone (see multi_zone_write_path_enabled in the
+    // Mimir jsonnet).
+    show_multi_zone_write_path_panels: false,
+
+    // The zone suffixes of multi-zone write path deployments. Used to build the per-zone panels when
+    // show_multi_zone_write_path_panels is enabled.
+    multi_zone_write_path_zones: ['a', 'b', 'c'],
 
     // External Grafana URL prefix for dashboard links in alerts.
     // This is used to generate absolute URLs in alert annotations that link to dashboards.

@@ -42,6 +42,10 @@ func (c *CreateTopicCommand) createTopic(_ *kingpin.ParseContext) error {
 		return err
 	}
 
+	// The existence check above caches "topic not found" in the kgo client (up to MetadataMinAge).
+	// Purge it so a subsequent read observes the topic we are about to create instead of the cached negative result.
+	client.PurgeTopicsFromClient(c.topic)
+
 	// Create the topic. Replication factor -1 means use broker default.
 	_, err := adm.CreateTopic(context.Background(), int32(c.numPartitions), -1, nil, c.topic)
 	if err != nil {

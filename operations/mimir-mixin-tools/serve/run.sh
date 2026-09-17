@@ -9,13 +9,15 @@ GRAFANA_VERSION=11.1.3
 DOCKER_CONTAINER_NAME="mixin-serve-grafana"
 DOCKER_OPTS=""
 MIXIN_PATH="../../mimir-mixin-compiled"  # default path
+DASHBOARDS_DIR=""
 
 function usage() {
-    echo "Usage: $0 [--docker-network <name>] [-p|--path <mixin-path>]"
+    echo "Usage: $0 [--docker-network <name>] [-p|--path <mixin-path>] [--dashboards-dir <path>]"
     echo ""
     echo "Options:"
     echo "  --docker-network <name>   Joins the Docker network <name>"
-    echo "  -p, --path <path>         Path to mixin dashboards directory"
+    echo "  -p, --path <path>         Path to mixin compiled directory (relative to repo root)"
+    echo "  --dashboards-dir <path>   Path to the dashboards directory (overrides --path)"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -30,6 +32,11 @@ while [[ $# -gt 0 ]]; do
     shift
     shift
     ;;
+  --dashboards-dir)
+    DASHBOARDS_DIR="$2"
+    shift
+    shift
+    ;;
   *)  break
     ;;
   esac
@@ -38,6 +45,11 @@ done
 if [[ $# -gt 0 ]]; then
   usage
   exit 1
+fi
+
+# Default DASHBOARDS_DIR if not explicitly set via --dashboards-dir.
+if [[ -z "${DASHBOARDS_DIR}" ]]; then
+  DASHBOARDS_DIR="${SCRIPT_DIR}/${MIXIN_PATH}/dashboards"
 fi
 
 # Check if the config file exists.
@@ -86,7 +98,7 @@ docker run \
   --env "LOKI_DATASOURCE_URL=${LOKI_DATASOURCE_URL}" \
   --env "LOKI_DATASOURCE_USERNAME=${LOKI_DATASOURCE_USERNAME}" \
   --env "LOKI_DATASOURCE_PASSWORD=${LOKI_DATASOURCE_PASSWORD}" \
-  -v "${SCRIPT_DIR}/${MIXIN_PATH}/dashboards:/var/lib/grafana/dashboards" \
+  -v "${DASHBOARDS_DIR}:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
   --expose 3000 \

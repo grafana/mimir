@@ -4,7 +4,6 @@ package remoteexec
 
 import (
 	"context"
-	"errors"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -17,12 +16,10 @@ type InstantVectorRemoteExec struct {
 	Node               planning.Node
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
-	Annotations        *annotations.Annotations
-	QueryStats         *types.QueryStats
 	expressionPosition posrange.PositionRange
 
-	resp      InstantVectorRemoteExecutionResponse
-	finalized bool
+	resp                  InstantVectorRemoteExecutionResponse
+	finishedReadingCalled bool
 }
 
 var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
@@ -49,22 +46,22 @@ func (r *InstantVectorRemoteExec) NextSeries(ctx context.Context) (types.Instant
 	return r.resp.GetNextSeries(ctx)
 }
 
-func (r *InstantVectorRemoteExec) Finalize(ctx context.Context) error {
-	if r.finalized {
+func (r *InstantVectorRemoteExec) FinishedReading(ctx context.Context) error {
+	if r.finishedReadingCalled {
 		return nil
 	}
 
-	r.finalized = true
+	r.finishedReadingCalled = true
 
-	return finalize(ctx, r.resp, r.Annotations, r.QueryStats)
+	return finishedReading(ctx, r.resp)
 }
 
 func (r *InstantVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.expressionPosition
 }
 
-func (r *InstantVectorRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, errors.New("Stats not implemented for instant vector remote execution")
+func (r *InstantVectorRemoteExec) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return r.resp.Finalize(ctx)
 }
 
 func (r *InstantVectorRemoteExec) Close() {
@@ -72,5 +69,5 @@ func (r *InstantVectorRemoteExec) Close() {
 		r.resp.Close()
 	}
 
-	r.finalized = true // Don't try to finalize from a closed stream.
+	r.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

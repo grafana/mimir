@@ -8,6 +8,8 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 type CollapseConstants struct{}
@@ -16,7 +18,7 @@ func (c *CollapseConstants) Name() string {
 	return "Collapse constants"
 }
 
-func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
+func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	return c.apply(expr), nil
 }
 
@@ -92,6 +94,12 @@ func (c *CollapseConstants) apply(expr parser.Expr) parser.Expr {
 		return expr
 	case *parser.StepInvariantExpr:
 		expr.Expr = c.apply(expr.Expr)
+
+		// If the inner expression is now just a number literal, drop the step invariant expression wrapper.
+		if _, ok := expr.Expr.(*parser.NumberLiteral); ok {
+			return expr.Expr
+		}
+
 		return expr
 	case *parser.VectorSelector, *parser.MatrixSelector, *parser.StringLiteral, *parser.NumberLiteral:
 		// Nothing to do.

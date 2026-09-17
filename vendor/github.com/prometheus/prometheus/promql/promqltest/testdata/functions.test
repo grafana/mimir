@@ -254,15 +254,15 @@ eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
   	expect no_warn
 
 eval instant at 20m irate(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "http_requests_histogram" (1:7)
 	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
 
 eval instant at 20m irate(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:7)
 
 eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
   	expect no_warn
@@ -293,12 +293,12 @@ eval instant at 20m delta(http_requests_gauge[20m])
 
 # delta emits warn annotation for non-gauge histogram types.
 eval instant at 20m delta(http_requests_counter[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_counter" (1:7)
 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
 # delta emits warn annotation for mix of histogram and floats.
 eval instant at 20m delta(http_requests_mix[20m])
-	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix"
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_mix" (1:7)
 	#empty
 
 clear
@@ -337,22 +337,22 @@ eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
 	expect no_warn
 
 eval instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
-	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram"
+	expect warn msg: PromQL warning: this native histogram metric is not a gauge: "http_requests_histogram" (1:8)
 	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram"
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "http_requests_histogram" (1:8)
 
 eval instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 	expect no_warn
-	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction
+	expect info msg: PromQL info: mismatched custom buckets were reconciled during subtraction (1:8)
 	{path="/g"} {{schema:-53 custom_values:[1] counter_reset_hint:gauge buckets:[-1]}}
 
 clear
@@ -648,6 +648,41 @@ eval instant at 0m clamp(test_clamp, NaN, 0)
 	{src="clamp-a"}	NaN
 	{src="clamp-b"}	NaN
 	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_min(test_clamp, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
+
+eval instant at 0m clamp_max(test_clamp, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_max(test_clamp, -Inf)
+	{src="clamp-a"}	-Inf
+	{src="clamp-b"}	-Inf
+	{src="clamp-c"}	-Inf
+
+eval instant at 0m clamp_min(test_clamp, -Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m clamp_min(test_clamp, Inf)
+	{src="clamp-a"}	+Inf
+	{src="clamp-b"}	+Inf
+	{src="clamp-c"}	+Inf
+
+eval instant at 0m clamp(test_clamp, -Inf, Inf)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
 
 eval instant at 0m clamp(test_clamp, 5, -5)
 
@@ -1277,12 +1312,36 @@ eval instant at 55s stddev_over_time(metric[1m])
 clear
 load 10s
 	metric 4 6 2 1 999 1 2
+	metric_odd 1 2 3 4 5
+	metric_equal 7 7 7 7 7
+	metric_single 5
+	metric_nan 1 2 NaN 4
 	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
 	expect no_info
 	{} 1
+
+# Odd number of samples: median is the exact middle value.
+eval instant at 40s mad_over_time(metric_odd[50s])
+	expect no_info
+	{} 1
+
+# All samples equal: deviations are all zero, so MAD is zero.
+eval instant at 40s mad_over_time(metric_equal[50s])
+	expect no_info
+	{} 0
+
+# Single sample: deviation from itself is zero.
+eval instant at 0s mad_over_time(metric_single[10s])
+	expect no_info
+	{} 0
+
+# A NaN sample makes the result NaN rather than being silently dropped.
+eval instant at 30s mad_over_time(metric_nan[40s])
+	expect no_info
+	{} NaN
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 	expect no_info
@@ -2049,3 +2108,193 @@ eval_fail instant at 0 label_replace(overlap, "idx", "same", "idx", ".*")
 
 # Test label_join failure with overlapping timestamps (same labelset at same time).
 eval_fail instant at 0 label_join(overlap, "idx", ",", "label", "label")
+
+# Tests for step() and range() functions.
+clear
+
+# Test step() function in range queries.
+eval range from 0 to 10s step 5s step()
+  {} 5 5 5
+
+eval range from 0 to 20s step 10s step()
+  {} 10 10 10
+
+eval range from 0 to 30s step 15s step()
+  {} 15 15 15
+
+# Test range() function in range queries.
+eval range from 0 to 30s step 10s range()
+  {} 30 30 30 30
+
+eval range from 0s to 60s step 20s range()
+  {} 60 60 60 60
+
+eval range from 10s to 50s step 10s range()
+  {} 40 40 40 40 40
+
+# Test step() function in instant queries.
+eval instant at 0s step()
+  0
+
+# Test range() function in instant queries.
+eval instant at 0s range()
+  0
+
+eval instant at 100s range()
+  0
+
+# Test step() and range() in expressions.
+eval range from 0 to 10s step 5s vector(step())
+  {} 5 5 5
+
+eval range from 0 to 20s step 10s vector(range())
+  {} 20 20 20
+
+# Test step() and range() with arithmetic.
+load 1s
+  metric 1 2 3 4 5
+
+eval range from 0s to 4s step 1s metric * step()
+  {} 1 2 3 4 5
+
+eval range from 0s to 2s step 1s metric + range()
+  {} 3 4 5
+
+# Test that step() returns the step value, not evaluation timestamp.
+eval range from 100s to 110s step 5s step()
+  {} 5 5 5
+
+# Test that range() returns the query range, not evaluation timestamp.
+eval range from 100s to 130s step 10s range()
+  {} 30 30 30 30
+
+
+# Tests for start() and end() functions.
+
+# Test start() function in range queries.
+eval range from 0 to 30s step 10s start()
+  {} 0 0 0 0
+
+eval range from 100s to 130s step 10s start()
+  {} 100 100 100 100
+
+eval range from 50s to 60s step 5s start()
+  {} 50 50 50
+
+# Test end() function in range queries.
+eval range from 0 to 30s step 10s end()
+  {} 30 30 30 30
+
+eval range from 100s to 140s step 10s end()
+  {} 140 140 140 140 140
+
+eval range from 20s to 50s step 10s end()
+  {} 50 50 50 50
+
+# Test start() function in instant queries (start == end).
+eval instant at 0s start()
+  0
+
+eval instant at 100s start()
+  100
+
+# Test end() function in instant queries (start == end).
+eval instant at 0s end()
+  0
+
+eval instant at 50s end()
+  50
+
+# Test start() and end() in expressions.
+eval range from 0 to 20s step 10s vector(start())
+  {} 0 0 0
+
+eval range from 10s to 30s step 10s vector(end())
+  {} 30 30 30
+
+# Test that start() and end() return query boundaries, not evaluation timestamps.
+eval range from 100s to 130s step 10s start()
+  {} 100 100 100 100
+
+eval range from 100s to 130s step 10s end()
+  {} 130 130 130 130
+
+# Test start() and end() with arithmetic.
+eval range from 10s to 20s step 5s end() - start()
+  {} 10 10 10
+
+eval range from 0s to 30s step 10s (end() + start()) / 2
+  {} 15 15 15 15
+
+# Test combination with step() and range().
+eval range from 0s to 20s step 10s start() + range()
+  {} 20 20 20
+
+eval range from 10s to 50s step 10s end() - range()
+  {} 10 10 10 10 10
+
+
+# Test start() and end() with @ modifier in selector context.
+# Range queries with @ start() and @ end() work correctly.
+load 1s
+  metric_for_at 1 2 3 4 5 6 7 8 9 10
+
+# For range query from 0s to 9s: start()=0, end()=9
+# metric_for_at @ 0 = 1, metric_for_at @ 9 = 10
+eval range from 0s to 9s step 3s metric_for_at @ start()
+  {__name__="metric_for_at"} 1 1 1 1
+
+eval range from 1s to 9s step 2s metric_for_at @ end()
+  {__name__="metric_for_at"} 10 10 10 10 10
+
+# Tests for min_of() and max_of() scalar functions.
+
+# min_of(a, b) returns math.Min(a, b).
+# max_of(a, b) returns math.Max(a, b).
+
+# Basic literal comparisons.
+eval instant at 0s min_of(3, 5)
+  3
+
+eval instant at 0s min_of(5, 3)
+  3
+
+eval instant at 0s max_of(3, 5)
+  5
+
+eval instant at 0s max_of(5, 3)
+  5
+
+# Equal values.
+eval instant at 0s min_of(4, 4)
+  4
+
+eval instant at 0s max_of(4, 4)
+  4
+
+# Negative values.
+eval instant at 0s min_of(-2, -5)
+  -5
+
+eval instant at 0s max_of(-2, -5)
+  -2
+
+# Zero and positive.
+eval instant at 0s min_of(0, 1)
+  0
+
+eval instant at 0s max_of(0, 1)
+  1
+
+# NaN propagation: any NaN input yields NaN.
+eval instant at 0s min_of(NaN, 3)
+  NaN
+
+eval instant at 0s min_of(3, NaN)
+  NaN
+
+eval instant at 0s max_of(NaN, 3)
+  NaN
+
+eval instant at 0s max_of(3, NaN)
+  NaN

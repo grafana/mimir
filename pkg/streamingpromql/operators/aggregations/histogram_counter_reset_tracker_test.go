@@ -3,11 +3,11 @@
 package aggregations
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 )

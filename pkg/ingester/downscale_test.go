@@ -121,14 +121,12 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Following is not part of the test, but a workaround for hanging listener goroutines (started when ingester is created, even before starting)
 		// By stopping services watched by ingester.subservicesWatcher, we make sure that all listeners (goroutines) attached to those services
-		// are stopped.
+		// are stopped. The remaining watched subservices are stopped by the
+		// cleanup that stopWatchedSubservicesOnCleanup registered in setup.
 		ingester.lifecycler.StopAsync()
 		if ingester.ownedSeriesService != nil {
 			ingester.ownedSeriesService.StopAsync()
 		}
-		ingester.compactionService.StopAsync()
-		ingester.metricsUpdaterService.StopAsync()
-		ingester.metadataPurgerService.StopAsync()
 	})
 
 	t.Run("should return MethodNotAllowed when ingest storage is enabled", func(t *testing.T) {

@@ -17,6 +17,9 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('ruler_query_frontend'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ruler_query_frontend'),
+      )
     )
     .addRow(
       $.row('Ruler-query-scheduler')
@@ -29,6 +32,9 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('ruler_query_scheduler'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ruler_query_scheduler'),
+      )
     )
     .addRow(
       $.row('Ruler-querier')
@@ -40,6 +46,9 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('ruler_querier'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ruler_querier'),
       )
     ) + {
       templating+: {

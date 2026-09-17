@@ -64,18 +64,15 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		queryDurationMs = req.GetEnd() - req.GetStart()
 		queryDuration   = time.Duration(queryDurationMs) * time.Millisecond
 		isInstantQuery  = queryDurationMs == 0
+		stepMs          = req.GetStep()
+		stepDuration    = time.Duration(stepMs) * time.Millisecond
 	)
 
 	for ruleIndex, block := range blocks {
-		if block.UnalignedRangeQueries {
-			_, isRangeQuery := req.(*PrometheusRangeQueryRequest)
-
-			if !isRangeQuery || isRequestStepAligned(req) {
-				continue
-			}
-		}
-
 		pattern := strings.TrimSpace(block.Pattern)
+		if pattern == "" {
+			continue // pattern is required and enforced during configuration load.
+		}
 
 		// Check literal match regardless of regex setting (backwards compatibility).
 		patternMatches := pattern == strings.TrimSpace(query)
@@ -83,41 +80,44 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		if block.Regex {
 			r, err := labels.NewFastRegexMatcher(block.Pattern)
 			if err != nil {
-				level.Error(logger).Log("msg", "query blocker regex does not compile, ignoring query blocker", "pattern", block.Pattern, "err", err, "index", ruleIndex)
+				continue // regex patterns are validated during configuration load.
+			}
+			patternMatches = patternMatches || r.MatchString(query)
+		}
+
+		if !patternMatches {
+			continue
+		}
+
+		if block.UnalignedRangeQueries {
+			_, isRangeQuery := req.(*PrometheusRangeQueryRequest)
+			if !isRangeQuery || isRequestStepAligned(req) {
 				continue
 			}
-			if r.MatchString(query) {
-				patternMatches = true
-			}
 		}
 
-		timeRangeViolation := !isInstantQuery &&
-			block.TimeRangeLongerThan > 0 &&
-			queryDuration > time.Duration(block.TimeRangeLongerThan)
-
-		shouldBlock := false
-		switch {
-		case pattern != "" && block.TimeRangeLongerThan > 0:
-			shouldBlock = patternMatches && timeRangeViolation
-		case pattern != "":
-			shouldBlock = patternMatches
-		case block.TimeRangeLongerThan > 0:
-			shouldBlock = timeRangeViolation
+		if block.TimeRangeLongerThan > 0 &&
+			(isInstantQuery || queryDuration <= time.Duration(block.TimeRangeLongerThan)) {
+			continue
 		}
 
-		if shouldBlock {
-			level.Info(logger).Log(
-				"msg", "query blocked",
-				"query", query,
-				"query_duration_ms", queryDurationMs,
-				"pattern_matched", patternMatches,
-				"time_range_violation", timeRangeViolation,
-				"index", ruleIndex,
-				"reason", block.Reason,
-			)
-
-			return true, block.Reason
+		if block.StepSizeShorterThan > 0 &&
+			(stepMs == 0 || stepDuration >= time.Duration(block.StepSizeShorterThan)) {
+			continue
 		}
+
+		level.Info(logger).Log(
+			"msg", "query blocked",
+			"query", query,
+			"query_duration_ms", queryDurationMs,
+			"step_ms", stepMs,
+			"index", ruleIndex,
+			"id", block.ID,
+			"reason", block.Reason,
+			"expired", block.IsExpired(time.Now()),
+		)
+
+		return true, block.Reason
 	}
 
 	return false, ""

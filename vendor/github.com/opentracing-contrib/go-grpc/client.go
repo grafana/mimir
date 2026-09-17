@@ -1,12 +1,14 @@
 package otgrpc
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
 	"runtime"
 	"sync/atomic"
 
 	opentracing "github.com/opentracing/opentracing-go"
-	"context"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
 	"google.golang.org/grpc"
@@ -18,10 +20,10 @@ import (
 //
 // For example:
 //
-//     conn, err := grpc.Dial(
-//         address,
-//         ...,  // (existing DialOptions)
-//         grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
+//	conn, err := grpc.Dial(
+//	    address,
+//	    ...,  // (existing DialOptions)
+//	    grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
 //
 // All gRPC client spans will inject the OpenTracing SpanContext into the gRPC
 // metadata; they will also look in the context.Context for an active
@@ -80,10 +82,10 @@ func OpenTracingClientInterceptor(tracer opentracing.Tracer, optFuncs ...Option)
 //
 // For example:
 //
-//     conn, err := grpc.Dial(
-//         address,
-//         ...,  // (existing DialOptions)
-//         grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)))
+//	conn, err := grpc.Dial(
+//	    address,
+//	    ...,  // (existing DialOptions)
+//	    grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)))
 //
 // All gRPC client spans will inject the OpenTracing SpanContext into the gRPC
 // metadata; they will also look in the context.Context for an active
@@ -162,7 +164,7 @@ func newOpenTracingClientStream(ctx context.Context, cs grpc.ClientStream, metho
 			//    RecvMsg() call has returned.
 			// 2. ClientStream implementations cancel their context as soon as an error is received in Header(),
 			//    RecvMsg(), SendMsg() or CloseSend(). This causes a race between the interceptor logging the
-			//    returned error and this method logging the cancelled context.
+			//    returned error and this method logging the canceled context.
 			// Using ctx avoids both of these issues.
 			finishFunc(ctx.Err())
 		}
@@ -195,39 +197,42 @@ func (cs *openTracingClientStream) Header() (metadata.MD, error) {
 	md, err := cs.ClientStream.Header()
 	if err != nil {
 		cs.finishFunc(err)
+		return md, fmt.Errorf("failed to get header: %w", err)
 	}
-	return md, err
+	return md, nil
 }
 
 func (cs *openTracingClientStream) SendMsg(m interface{}) error {
 	err := cs.ClientStream.SendMsg(m)
 	if err != nil {
 		cs.finishFunc(err)
+		return fmt.Errorf("failed to send message: %w", err)
 	}
-	return err
+	return nil
 }
 
 func (cs *openTracingClientStream) RecvMsg(m interface{}) error {
 	err := cs.ClientStream.RecvMsg(m)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		cs.finishFunc(nil)
-		return err
+		return err //nolint:wrapcheck
 	} else if err != nil {
 		cs.finishFunc(err)
-		return err
+		return fmt.Errorf("failed to receive message: %w", err)
 	}
 	if !cs.desc.ServerStreams {
 		cs.finishFunc(nil)
 	}
-	return err
+	return nil
 }
 
 func (cs *openTracingClientStream) CloseSend() error {
 	err := cs.ClientStream.CloseSend()
 	if err != nil {
 		cs.finishFunc(err)
+		return fmt.Errorf("failed to close send: %w", err)
 	}
-	return err
+	return nil
 }
 
 func injectSpanContext(ctx context.Context, tracer opentracing.Tracer, clientSpan opentracing.Span) context.Context {

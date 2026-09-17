@@ -47,6 +47,7 @@ type tsdbBuilderMetrics struct {
 	processSamplesDiscarded            *prometheus.CounterVec
 	compactAndUploadDuration           *prometheus.HistogramVec
 	compactAndUploadFailed             *prometheus.CounterVec
+	earlyCompactionsTriggered          *prometheus.CounterVec
 	lastSuccessfulCompactAndUploadTime *prometheus.GaugeVec
 }
 
@@ -67,6 +68,11 @@ func newTSDBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	m.compactAndUploadFailed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_tsdb_compact_and_upload_failed_total",
 		Help: "Total number of failures compacting and uploading a tsdb of one partition.",
+	}, []string{"partition"})
+
+	m.earlyCompactionsTriggered = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_tsdb_early_compactions_triggered_total",
+		Help: "Total number of triggered early compactions.",
 	}, []string{"partition"})
 
 	m.lastSuccessfulCompactAndUploadTime = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{

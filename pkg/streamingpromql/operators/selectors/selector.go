@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -45,11 +46,11 @@ type Selector struct {
 	// This flag has no effect unless Smoothed is set to true.
 	CounterAware bool
 
-	// Pass the set of labels required for the query to the Querier to avoid transferring labels that aren't needed
-	// back and forth between the querier and storage layer (ingesters, store-gateways). The storage layer may also
-	// apply further optimizations based on this information.
-	ProjectionInclude bool
-	ProjectionLabels  []string
+	// When the Anchored range modifier wraps resets() or changes() this flag is set.
+	AnchoredResetsChanges bool
+
+	// Subsets to report in operator stats.
+	Subsets []Subset
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -57,7 +58,19 @@ type Selector struct {
 	seriesSet storage.SeriesSet
 	series    *seriesList
 
+	seriesSubsetBitmap []bool // One entry per subset in Subsets. Reused for each call to Next().
+
 	seriesIdx int
+
+	haveReportedCardinality bool
+}
+
+type Subset struct {
+	Filter      []*labels.Matcher
+	AllMatchers types.Matchers
+
+	matchingSeries      []bool // One entry per series. True means the corresponding series matches this subset.
+	matchingSeriesCount uint64 // The number of series that match this subset.
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
@@ -96,12 +109,69 @@ func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		s.series.Add(series)
 	}
 
+	if s.seriesSet.Err() != nil {
+		return nil, s.seriesSet.Err()
+	}
+
 	metadata, err := s.series.ToSeriesMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	return metadata, s.seriesSet.Err()
+	if err := s.computeSubsetBitmaps(metadata); err != nil {
+		return nil, err
+	}
+
+	s.reportCardinality(ctx, len(metadata))
+
+	return metadata, nil
+}
+
+// reportCardinality records the number of series selected by this selector (and each of its subsets)
+// in the query stats, keyed by the selector's matchers and queried time range.
+//
+// The matchers are taken from the original expression (Selector.Matchers / Subset.AllMatchers),
+// ignoring any additional matchers pushed down by callers of SeriesMetadata.
+func (s *Selector) reportCardinality(ctx context.Context, seriesCount int) {
+	s.haveReportedCardinality = true
+
+	queryStats := stats.FromContext(ctx)
+	if queryStats == nil {
+		return
+	}
+
+	minT, maxT := s.getQueriedTimeRange()
+
+	queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
+		Matchers:    labelMatchersFromMatchers(s.Matchers),
+		MinT:        minT,
+		MaxT:        maxT,
+		SeriesCount: uint64(seriesCount),
+	})
+
+	for _, subset := range s.Subsets {
+		queryStats.AddSeenSelectorCardinality(stats.SelectorCardinality{
+			Matchers:    labelMatchersFromMatchers(subset.AllMatchers),
+			MinT:        minT,
+			MaxT:        maxT,
+			SeriesCount: subset.matchingSeriesCount,
+		})
+	}
+}
+
+// labelMatchersFromMatchers converts the given matchers to their stats.LabelMatcher representation.
+func labelMatchersFromMatchers(matchers types.Matchers) []stats.LabelMatcher {
+	out := make([]stats.LabelMatcher, 0, len(matchers))
+
+	for _, m := range matchers {
+		out = append(out, stats.LabelMatcher{
+			Type:  m.Type,
+			Name:  m.Name,
+			Value: m.Value,
+		})
+	}
+
+	return out
 }
 
 func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
@@ -129,22 +199,48 @@ func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
 	return out
 }
 
+func (s *Selector) computeSubsetBitmaps(metadata []types.SeriesMetadata) error {
+	if len(s.Subsets) == 0 {
+		return nil
+	}
+
+	for idx, subset := range s.Subsets {
+		bitmap, err := types.BoolSlicePool.Get(len(metadata), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		matchCount := uint64(0)
+
+		for _, series := range metadata {
+			matches := types.MatchersMatch(subset.Filter, series.Labels)
+
+			if matches {
+				matchCount++
+			}
+
+			bitmap = append(bitmap, matches)
+		}
+
+		s.Subsets[idx].matchingSeries = bitmap
+		s.Subsets[idx].matchingSeriesCount = matchCount
+	}
+
+	return nil
+}
+
 func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) error {
 	if s.seriesSet != nil {
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
+	startTimestamp, endTimestamp := s.getQueriedTimeRange()
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.TimeRange.IntervalMilliseconds,
 		Range: s.Range.Milliseconds(),
-
-		// Mimir Queriers don't use projection hints for anything at time of writing.
-		ProjectionInclude: s.ProjectionInclude,
-		ProjectionLabels:  s.ProjectionLabels,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
@@ -170,7 +266,21 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	}
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
+
+	if len(s.Subsets) > 0 {
+		s.seriesSubsetBitmap, err = types.BoolSlicePool.Get(len(s.Subsets), s.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		s.seriesSubsetBitmap = s.seriesSubsetBitmap[:len(s.Subsets)]
+	}
+
 	return nil
+}
+
+func (s *Selector) getQueriedTimeRange() (int64, int64) {
+	return ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
 }
 
 func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration, anchored bool, smoothed bool) (int64, int64) {
@@ -195,9 +305,14 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	return startTimestamp, endTimestamp
 }
 
-func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
+// Next returns the iterator and subset bitmap for the next series in this selector.
+//
+// Each entry in the subset bitmap corresponds to an entry in Subsets. True means this series matches the subset.
+// The subset bitmap is only valid until the next call to Next or Close.
+// This Selector instance is responsible for returning it to the pool on Close.
+func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, []bool, error) {
 	if s.series.Len() == 0 {
-		return nil, types.EOS
+		return nil, nil, types.EOS
 	}
 
 	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
@@ -205,11 +320,30 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 	// index so that we check for cancellation at least once for all selectors.
 	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
 	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
+	s.updateSeriesSubsetBitmap()
 	s.seriesIdx++
-	return s.series.Pop().Iterator(existing), nil
+
+	return s.series.Pop().Iterator(existing), s.seriesSubsetBitmap, nil
+}
+
+func (s *Selector) updateSeriesSubsetBitmap() {
+	for subsetIdx, subset := range s.Subsets {
+		s.seriesSubsetBitmap[subsetIdx] = subset.matchingSeries[s.seriesIdx]
+	}
+}
+
+func (s *Selector) FinishedReading(ctx context.Context) {
+	if !s.haveReportedCardinality {
+		// If SeriesMetadata was never called, but FinishedReading was called, this means the query succeeded
+		// without needing to read this selector (eg. because a binary operation meant no series from this selector were needed).
+		// Report cardinality 0 so that cardinality estimates are more accurate.
+		// This also ensures a cardinality estimate can be generated next time this expression is evaluated (no estimate can be
+		// generated if any selector's cardinality is not cached).
+		s.reportCardinality(ctx, 0)
+	}
 }
 
 func (s *Selector) Close() {
@@ -224,6 +358,13 @@ func (s *Selector) Close() {
 	}
 
 	s.seriesSet = nil
+
+	for idx := range s.Subsets {
+		types.BoolSlicePool.Put(&s.Subsets[idx].matchingSeries, s.MemoryConsumptionTracker)
+	}
+
+	s.Subsets = nil
+	types.BoolSlicePool.Put(&s.seriesSubsetBitmap, s.MemoryConsumptionTracker)
 }
 
 // seriesList is a FIFO queue of storage.Series.

@@ -11,6 +11,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -18,9 +20,12 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -31,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -44,6 +50,7 @@ const (
 	MaxSeriesPerQueryFlag                       = "querier.max-fetched-series-per-query"
 	MaxEstimatedChunksPerQueryMultiplierFlag    = "querier.max-estimated-fetched-chunks-per-query-multiplier"
 	MaxEstimatedMemoryConsumptionPerQueryFlag   = "querier.max-estimated-memory-consumption-per-query"
+	MaxBlocksPerStoreRequestFlag                = "querier.max-blocks-per-store-request"
 	MaxLabelNamesPerSeriesFlag                  = "validation.max-label-names-per-series"
 	MaxLabelNamesPerInfoSeriesFlag              = "validation.max-label-names-per-info-series"
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
@@ -54,6 +61,8 @@ const (
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                     = "validation.create-grace-period"
 	PastGracePeriodFlag                         = "validation.past-grace-period"
+	EnforceOutOfOrderWindowOnDistributorFlag    = "validation.enforce-out-of-order-window-on-distributor"
+	OutOfOrderTimeWindowFlag                    = "ingester.out-of-order-time-window"
 	MaxActiveSeriesAdditionalCustomTrackersFlag = "validation.max-active-series-additional-custom-trackers"
 	MaxPartialQueryLengthFlag                   = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
@@ -62,6 +71,7 @@ const (
 	MaxTotalQueryLengthFlag                     = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag             = "query-frontend.max-query-expression-size-bytes"
 	MaxActiveSeriesPerUserFlag                  = "distributor.max-active-series-per-user"
+	ActiveSeriesLimitResponseCodeFlag           = "distributor.active-series-limit-response-code"
 	RequestRateFlag                             = "distributor.request-rate-limit"
 	RequestBurstSizeFlag                        = "distributor.request-burst-size"
 	IngestionRateFlag                           = "distributor.ingestion-rate-limit"
@@ -73,7 +83,7 @@ const (
 	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
-	AlertmanagerMaxGrafanaConfigSizeFlag        = "alertmanager.max-grafana-config-size-bytes"
+	SubquerySpinOffEnabledFlag                  = "query-frontend.subquery-spin-off-enabled"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -83,12 +93,39 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
 )
 
 const (
 	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
 )
+
+// DefaultFloatChunkEncodingValue is the value of the -blocks-storage.tsdb.float-chunk-encoding limit used when the
+// limit is unset, or holds a value this version does not support.
+const DefaultFloatChunkEncodingValue = promcfg.FloatChunkEncodingXOR
+
+// floatChunkEncodings maps every value the -blocks-storage.tsdb.float-chunk-encoding limit accepts to the chunk
+// encoding it selects.
+var floatChunkEncodings = map[string]chunkenc.Encoding{
+	DefaultFloatChunkEncodingValue: chunkenc.EncXOR,
+	promcfg.FloatChunkEncodingXOR2: chunkenc.EncXOR2,
+}
+
+// FloatChunkEncodingValues holds the values the -blocks-storage.tsdb.float-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var FloatChunkEncodingValues = slices.Sorted(maps.Keys(floatChunkEncodings))
+
+// ParseFloatChunkEncoding returns the chunk encoding selected by the given value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit. A value the limit does not accept, the empty string
+// included, selects the encoding of DefaultFloatChunkEncodingValue.
+func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
+	if enc, ok := floatChunkEncodings[value]; ok {
+		return enc
+	}
+	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -119,16 +156,19 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user" category:"experimental" doc:"hidden"`
-	RequestRate            float64 `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize       int     `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate          float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize     int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor   float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples        bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel         string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel         string  `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters          int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	MaxActiveSeriesPerUser        int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user" category:"experimental" doc:"hidden"`
+	ActiveSeriesLimitResponseCode int     `yaml:"active_series_limit_response_code" json:"active_series_limit_response_code" category:"experimental" doc:"hidden"`
+	RequestRate                   float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize              int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate                 float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize            int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor          float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples               bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HATrackerPerSampleDedupe      bool    `yaml:"ha_tracker_per_sample_dedupe" json:"ha_tracker_per_sample_dedupe" category:"experimental"`
+	MergeDuplicateTimeseries      bool    `yaml:"merge_duplicate_timeseries" json:"merge_duplicate_timeseries" category:"experimental"`
+	HAClusterLabel                string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel                string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters                 int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
 	// We should only update the timestamp if the difference
 	// between the stored timestamp and the time we received a sample at
 	// is more than this duration.
@@ -159,6 +199,7 @@ type Limits struct {
 	ReduceNativeHistogramOverMaxBuckets bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                 model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	PastGracePeriod                     model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
+	EnforceOOOWindowOnDistributor       bool                              `yaml:"enforce_out_of_order_window_on_distributor" json:"enforce_out_of_order_window_on_distributor" category:"experimental"`
 	EnforceMetadataMetricName           bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
@@ -178,8 +219,11 @@ type Limits struct {
 	// Per-tenant early head compaction
 	EarlyHeadCompactionOwnedSeriesThreshold                  int `yaml:"early_head_compaction_owned_series_threshold" json:"early_head_compaction_owned_series_threshold" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" json:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
-	// Native histograms
+	// Native histograms.
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
+
+	// Float chunk encoding.
+	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -200,6 +244,7 @@ type Limits struct {
 	MaxFetchedSeriesPerQuery              int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery          int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxEstimatedMemoryConsumptionPerQuery uint64         `yaml:"max_estimated_memory_consumption_per_query" json:"max_estimated_memory_consumption_per_query" category:"experimental"`
+	MaxBlocksPerStoreRequest              int            `yaml:"max_blocks_per_store_request" json:"max_blocks_per_store_request" category:"experimental"`
 	MaxQueryLookback                      model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
 	MaxPartialQueryLength                 model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
 	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
@@ -212,6 +257,7 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	CardinalityShardingMaxShardedQueries  int            `yaml:"cardinality_sharding_max_sharded_queries" json:"cardinality_sharding_max_sharded_queries" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
@@ -230,6 +276,7 @@ type Limits struct {
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
 	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
+	EnabledPromQLBinopFillModifiers        flagext.StringSliceCSV `yaml:"enabled_promql_binop_fill_modifiers" json:"enabled_promql_binop_fill_modifiers"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
 	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
@@ -242,9 +289,15 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                         `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration              `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
+	// as a tracker named "cost-attribution" during validation. Cannot be set together with CostAttributionBaseTrackers.
+	CostAttributionLabelsStructured   costattributionmodel.Labels                          `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	CostAttributionBaseTrackers       costattributionmodel.TrackerConfigs                  `yaml:"cost_attribution_trackers,omitempty" json:"cost_attribution_trackers,omitempty" category:"experimental"`
+	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs                  `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	costAttributionMergedTrackers     *atomic.Pointer[costattributionmodel.TrackerConfigs] `yaml:"-" json:"-"`
+	CostAttributionCooldown           model.Duration                                       `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	MaxCostAttributionCardinality     int                                                  `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	costAttributionConfigHash         uint64
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -270,6 +323,7 @@ type Limits struct {
 	// Compactor.
 	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
 	CompactorSplitAndMergeShards          int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorOOOSplitAndMergeShards       int            `yaml:"compactor_ooo_split_and_merge_shards" json:"compactor_ooo_split_and_merge_shards"`
 	CompactorSplitGroups                  int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
 	CompactorTenantShardSize              int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
 	CompactorPartialBlockDeletionDelay    model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
@@ -293,21 +347,17 @@ type Limits struct {
 	NotificationRateLimit               float64                    `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
 	NotificationRateLimitPerIntegration flagext.LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
-	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes          `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
-	AlertmanagerMaxConfigSizeBytes             int                    `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
-	AlertmanagerMaxSilencesCount               int                    `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
-	AlertmanagerMaxSilenceSizeBytes            int                    `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
-	AlertmanagerMaxTemplatesCount              int                    `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
-	AlertmanagerMaxTemplateSizeBytes           int                    `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
-	AlertmanagerMaxDispatcherAggregationGroups int                    `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
-	AlertmanagerMaxAlertsCount                 int                    `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
-	AlertmanagerMaxAlertsSizeBytes             int                    `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
-	AlertmanagerNotifyHookURL                  string                 `yaml:"alertmanager_notify_hook_url" json:"alertmanager_notify_hook_url"`
-	AlertmanagerNotifyHookReceivers            flagext.StringSliceCSV `yaml:"alertmanager_notify_hook_receivers" json:"alertmanager_notify_hook_receivers"`
-	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
+	AlertmanagerMaxConfigSizeBytes             int `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
+	AlertmanagerMaxSilencesCount               int `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
+	AlertmanagerMaxSilenceSizeBytes            int `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
+	AlertmanagerMaxTemplatesCount              int `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
+	AlertmanagerMaxTemplateSizeBytes           int `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
+	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
+	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
+	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool                         `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelMetricSuffixesEnabled                *bool                        `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
 	OTelCreatedTimestampZeroIngestionEnabled bool                         `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
 	PromoteOTelResourceAttributes            flagext.StringSliceCSV       `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
 	OTelKeepIdentifyingResourceAttributes    bool                         `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
@@ -332,6 +382,7 @@ type Limits struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxActiveSeriesPerUser, MaxActiveSeriesPerUserFlag, 0, "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.")
+	f.IntVar(&l.ActiveSeriesLimitResponseCode, ActiveSeriesLimitResponseCodeFlag, 429, "HTTP response code to use when rejecting series due to the active series limit.")
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
@@ -339,6 +390,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
+	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
+	f.BoolVar(&l.MergeDuplicateTimeseries, "distributor.merge-duplicate-timeseries", false, "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -364,10 +417,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
+	f.BoolVar(&l.EnforceOOOWindowOnDistributor, EnforceOutOfOrderWindowOnDistributorFlag, false, "When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
-	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
+	l.OTelMetricSuffixesEnabled = new(bool)
+	f.BoolVar(l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
-	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
+	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify a comma-separated list of OTel resource attributes to promote to labels. E.g. 'k8s.cluster.name,host.name,cloud.region'")
 	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
@@ -389,14 +444,16 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
+	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
-	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.")
+	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
+	f.Var(&l.CostAttributionBaseTrackers, "validation.cost-attribution-trackers", "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackers, MaxActiveSeriesAdditionalCustomTrackersFlag, 0, "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
@@ -406,6 +463,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Uint64Var(&l.MaxEstimatedMemoryConsumptionPerQuery, MaxEstimatedMemoryConsumptionPerQueryFlag, 0, "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.")
+	f.IntVar(&l.MaxBlocksPerStoreRequest, MaxBlocksPerStoreRequestFlag, 0, "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.")
 	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
@@ -425,9 +483,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
-	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
-	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
+	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
+	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery).")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
+	f.IntVar(&l.CardinalityShardingMaxShardedQueries, "query-frontend.cardinality-sharding-max-sharded-queries", 0, "The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
@@ -463,7 +522,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleEvaluationResults, "ruler.max-rule-evaluation-results", 0, "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
-	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.")
+	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	_ = l.CompactorPartialBlockDeletionDelay.Set("1d")
@@ -472,7 +532,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
-	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than the TSDB block range period (default: 2h). A value of 0s means that all blocks are considered regardless of their upload time.")
 	f.IntVar(&l.CompactorMaxPerBlockUploadConcurrency, "compactor.max-per-block-upload-concurrency", 8, "Maximum number of TSDB segment files that the compactor can upload concurrently per block.")
 
 	// Query-frontend.
@@ -490,8 +550,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.")
+	f.Var(&l.EnabledPromQLBinopFillModifiers, "query-frontend.enabled-promql-binop-fill-modifiers", "Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
-	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
+	f.BoolVar(&l.SubquerySpinOffEnabled, SubquerySpinOffEnabledFlag, false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
 	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", true, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
@@ -509,8 +570,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
-	_ = l.AlertmanagerMaxGrafanaConfigSizeBytes.Set("0")
-	f.Var(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilencesCount, "alertmanager.max-silences-count", 0, "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilenceSizeBytes, "alertmanager.max-silence-size-bytes", 0, "Maximum silence size in bytes. 0 = no limit.")
@@ -519,18 +578,15 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
-	f.StringVar(&l.AlertmanagerNotifyHookURL, "alertmanager.notify-hook-url", "", "URL of a hook to invoke before a notification is sent. empty = no hook.")
-	f.Var(&l.AlertmanagerNotifyHookReceivers, "alertmanager.notify-hook-receivers", "List of receivers to enable notify hooks for. empty = all receivers.")
-	_ = l.AlertmanagerNotifyHookTimeout.Set("30s")
-	f.Var(&l.AlertmanagerNotifyHookTimeout, "alertmanager.notify-hook-timeout", "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.")
 
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 	f.IntVar(&l.IngestionPartitionsTenantWriteShardSize, "ingest-storage.ingestion-partition-tenant-write-shard-size", 0, "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.")
 
-	// Ensure the pointer holder is initialized.
+	// Ensure the pointer holders are initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+	l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -550,7 +606,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	})
 }
 
-// unmarshal does both YAML and JSON.
+// unmarshal does YAML, JSON and mapstructure.
 func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
@@ -561,8 +617,13 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 
-		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+		l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
+
+		// Reset these params to be nil, since they are set during RegisterFlags.
+		l.OTelMetricSuffixesEnabled = nil
+		l.NameValidationScheme = model.UnsetValidation
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -573,12 +634,34 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
+	l.migrateCostAttributionLabelsStructured()
+
 	if err = l.Validate(); err != nil {
 		return err
 	}
 
 	l.canonicalizeQueries()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
+	l.ComputeCostAttributionConfigHash()
 	return nil
+}
+
+// migrateCostAttributionLabelsStructured migrates the deprecated CostAttributionLabelsStructured
+// field into CostAttributionBaseTrackers.
+func (l *Limits) migrateCostAttributionLabelsStructured() {
+	if len(l.CostAttributionLabelsStructured) == 0 {
+		return
+	}
+	if len(l.CostAttributionBaseTrackers) > 0 {
+		// Base trackers are set too; leave the deprecated field in place so Validate rejects the
+		// mutually-exclusive combination instead of silently dropping the configured trackers.
+		return
+	}
+	l.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: costattributionmodel.TrackerConfig{Labels: l.CostAttributionLabelsStructured},
+	}
+	l.CostAttributionLabelsStructured = nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -600,15 +683,16 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 
 // Validate the Limits.
 func (l *Limits) Validate() error {
+	validationScheme := model.LegacyValidation
 	switch l.NameValidationScheme {
 	case model.UTF8Validation, model.LegacyValidation:
+		validationScheme = l.NameValidationScheme
 	case model.UnsetValidation:
-		l.NameValidationScheme = model.LegacyValidation
+		// Do nothing.
 	default:
 		return fmt.Errorf("unrecognized name validation scheme: %s", l.NameValidationScheme)
 	}
 
-	validationScheme := l.NameValidationScheme
 	switch otlptranslator.TranslationStrategyOption(l.OTelTranslationStrategy) {
 	case otlptranslator.UnderscoreEscapingWithoutSuffixes:
 		if validationScheme != model.LegacyValidation {
@@ -617,7 +701,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.UnderscoreEscapingWithSuffixes:
@@ -627,7 +711,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.LegacyValidation,
 			)
 		}
-		if !l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled == nil || !*l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoUTF8EscapingWithSuffixes:
@@ -637,7 +721,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if !l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled == nil || !*l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are enabled", l.OTelTranslationStrategy)
 		}
 	case otlptranslator.NoTranslation:
@@ -647,7 +731,7 @@ func (l *Limits) Validate() error {
 				l.OTelTranslationStrategy, model.UTF8Validation,
 			)
 		}
-		if l.OTelMetricSuffixesEnabled {
+		if l.OTelMetricSuffixesEnabled != nil && *l.OTelMetricSuffixesEnabled {
 			return fmt.Errorf("OTLP translation strategy %s is not allowed unless metric suffixes are disabled", l.OTelTranslationStrategy)
 		}
 	case "":
@@ -673,6 +757,14 @@ func (l *Limits) Validate() error {
 		return errNegativeUpdateTimeoutJitterMax
 	}
 
+	if l.MaxBlocksPerStoreRequest < 0 {
+		return errNegativeMaxBlocksPerStoreRequest
+	}
+
+	if l.FloatChunkEncoding != "" && !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
+		return errInvalidFloatChunkEncoding
+	}
+
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
 		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
 		if l.HATrackerFailoverTimeout < minFailureTimeout {
@@ -687,7 +779,13 @@ func (l *Limits) Validate() error {
 		}
 	}
 
-	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
+	if len(l.CostAttributionLabelsStructured) > 0 && len(l.CostAttributionBaseTrackers) > 0 {
+		return fmt.Errorf("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	}
+	if err := l.CostAttributionBaseTrackers.Validate(); err != nil {
+		return err
+	}
+	if err := l.AdditionalCostAttributionTrackers.Validate(); err != nil {
 		return err
 	}
 
@@ -700,7 +798,40 @@ func (l *Limits) Validate() error {
 		return fmt.Errorf("active_series_additional_custom_trackers validation failed: %w", err)
 	}
 
+	// Round the shard counts up to the next power of two. Query sharding and the compactor's
+	// split-and-merge sharding work best when one shard count is a divisor or multiple of the
+	// other, and powers of two always satisfy that relationship. A value of 0 or 1 disables
+	// sharding (or falls through to another setting), so it's left untouched.
+	if l.QueryShardingTotalShards > 1 {
+		l.QueryShardingTotalShards = util_math.NextPowerTwo(l.QueryShardingTotalShards)
+	}
+	if l.CompactorSplitAndMergeShards > 1 {
+		l.CompactorSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorSplitAndMergeShards)
+	}
+	if l.CompactorOOOSplitAndMergeShards > 1 {
+		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
+	}
+
 	return nil
+}
+
+// ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
+func (l *Limits) ComputeCostAttributionConfigHash() uint64 {
+	l.costAttributionConfigHash = l.computeCostAttributionConfigHash()
+	return l.costAttributionConfigHash
+}
+
+func (l *Limits) computeCostAttributionConfigHash() uint64 {
+	if len(l.CostAttributionBaseTrackers) == 0 && len(l.AdditionalCostAttributionTrackers) == 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	e := json.NewEncoder(h)
+	_ = e.Encode(l.CostAttributionBaseTrackers)
+	_ = e.Encode(l.MaxCostAttributionCardinality)
+	_ = e.Encode(l.CostAttributionCooldown)
+	_ = e.Encode(l.AdditionalCostAttributionTrackers)
+	return h.Sum64()
 }
 
 // LabelValueHashLen is the length of the hash portion that replaces part of all
@@ -709,6 +840,9 @@ func (l *Limits) Validate() error {
 const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
+	if len(l.BlockedQueries) == 0 {
+		return
+	}
 	parser := promqlext.NewPromQLParser()
 
 	for i, q := range l.BlockedQueries {
@@ -775,8 +909,8 @@ func (o *Overrides) RequestBurstSize(userID string) int {
 }
 
 // IngestionRate returns the limit on ingester rate (samples per second).
-func (o *Overrides) IngestionRate(userID string) float64 {
-	return o.getOverridesForUser(userID).IngestionRate
+func (o *Overrides) IngestionRate(limitsKey string) float64 {
+	return o.getOverridesForLimitsKey(limitsKey).IngestionRate
 }
 
 // LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
@@ -798,12 +932,12 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 }
 
 // IngestionBurstSize returns the burst size for ingestion rate.
-func (o *Overrides) IngestionBurstSize(userID string) int {
-	return o.getOverridesForUser(userID).IngestionBurstSize
+func (o *Overrides) IngestionBurstSize(limitsKey string) int {
+	return o.getOverridesForLimitsKey(limitsKey).IngestionBurstSize
 }
 
-func (o *Overrides) IngestionBurstFactor(userID string) float64 {
-	burstFactor := o.getOverridesForUser(userID).IngestionBurstFactor
+func (o *Overrides) IngestionBurstFactor(limitsKey string) float64 {
+	burstFactor := o.getOverridesForLimitsKey(limitsKey).IngestionBurstFactor
 	if burstFactor < 1 {
 		return 0
 	}
@@ -813,6 +947,20 @@ func (o *Overrides) IngestionBurstFactor(userID string) float64 {
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
 func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
+}
+
+// HATrackerPerSampleDedupe returns whether HA deduplication should be evaluated
+// per timeseries within a write request (instead of applying the first series'
+// decision to the whole request) for this user.
+func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
+	return o.getOverridesForUser(userID).HATrackerPerSampleDedupe
+}
+
+// MergeDuplicateTimeseries returns whether timeseries sharing the same label set
+// and created timestamp within a single write request should be merged into a
+// single timeseries for this user.
+func (o *Overrides) MergeDuplicateTimeseries(userID string) bool {
+	return o.getOverridesForUser(userID).MergeDuplicateTimeseries
 }
 
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
@@ -886,6 +1034,12 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
 }
 
+// EnforceOOOWindowOnDistributor returns whether the distributor should reject
+// samples older than the out-of-order time window when past_grace_period is 0.
+func (o *Overrides) EnforceOOOWindowOnDistributor(userID string) bool {
+	return o.getOverridesForUser(userID).EnforceOOOWindowOnDistributor
+}
+
 // MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
 // It will automatically fall back to the MaxGlobalSeriesPerUser setting if MaxActiveSeriesPerUser is unset.
 // This means that for users who have any overrides defined, the fallback order is:
@@ -896,12 +1050,17 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 // And for tenants without overrides it's just:
 // - Default MaxActiveSeriesPerUser
 // - Default MaxGlobalSeriesPerUser
-func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
-	overrides := o.getOverridesForUser(userID)
+func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(limitsKey string) int {
+	overrides := o.getOverridesForLimitsKey(limitsKey)
 	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
 		return maxActive
 	}
 	return overrides.MaxGlobalSeriesPerUser
+}
+
+// ActiveSeriesLimitResponseCode returns the HTTP status code to use when rejecting series due to the active series limit.
+func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
+	return o.getOverridesForLimitsKey(limitsKey).ActiveSeriesLimitResponseCode
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
@@ -926,6 +1085,10 @@ func (o *Overrides) EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(use
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxChunksPerQuery
+}
+
+func (o *Overrides) MaxBlocksPerStoreRequest(userID string) int {
+	return o.getOverridesForUser(userID).MaxBlocksPerStoreRequest
 }
 
 func (o *Overrides) MaxEstimatedChunksPerQuery(userID string) int {
@@ -1041,6 +1204,12 @@ func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
 }
 
+// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
+// be run for a cardinality (active series and active native histogram metrics) request.
+func (o *Overrides) CardinalityShardingMaxShardedQueries(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityShardingMaxShardedQueries
+}
+
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 // 0 means all queries are sent to ingester.
 func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
@@ -1127,16 +1296,57 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabelsStructured(userID string) costattributionmodel.Labels {
-	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
-}
-
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
 
 func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
+}
+
+// costAttributionTrackers returns the merged base + additional tracker configs. The result is cached.
+func (l *Limits) costAttributionTrackers() costattributionmodel.TrackerConfigs {
+	if l.costAttributionMergedTrackers == nil {
+		return costattributionmodel.MergeTrackerConfigs(
+			l.CostAttributionBaseTrackers,
+			l.AdditionalCostAttributionTrackers,
+		)
+	}
+
+	if merged := l.costAttributionMergedTrackers.Load(); merged != nil {
+		return *merged
+	}
+
+	merged := costattributionmodel.MergeTrackerConfigs(
+		l.CostAttributionBaseTrackers,
+		l.AdditionalCostAttributionTrackers,
+	)
+	l.costAttributionMergedTrackers.Store(&merged)
+	return merged
+}
+
+// CostAttributionConfig returns all cost attribution limits for a tenant in a single lookup.
+type CostAttributionConfig struct {
+	Trackers       costattributionmodel.TrackerConfigs
+	MaxCardinality int
+	Cooldown       time.Duration
+}
+
+func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
+	l := o.getOverridesForUser(userID)
+	return CostAttributionConfig{
+		Trackers:       l.costAttributionTrackers(),
+		MaxCardinality: l.MaxCostAttributionCardinality,
+		Cooldown:       time.Duration(l.CostAttributionCooldown),
+	}
+}
+
+// CostAttributionConfigHash returns a precomputed hash of all cost attribution
+// config fields for a tenant. The hash is stable within a config reload cycle.
+// The second argument indicates whether the user has any cost attribution trackers configured.
+func (o *Overrides) CostAttributionConfigHash(userID string) (uint64, bool) {
+	user := o.getOverridesForUser(userID)
+	return user.costAttributionConfigHash, len(user.CostAttributionBaseTrackers)+len(user.AdditionalCostAttributionTrackers) > 0
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
@@ -1178,6 +1388,17 @@ func (o *Overrides) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 // CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
+}
+
+// CompactorOOOSplitAndMergeShards returns the number of shards to use when splitting out-of-order blocks.
+// It only applies to blocks with the out-of-order external label. Such blocks are only generated when -ingester.out-of-order-blocks-external-label-enabled is set.
+// If the value is 0 or not set, it falls back to CompactorSplitAndMergeShards.
+func (o *Overrides) CompactorOOOSplitAndMergeShards(userID string) int {
+	oooShards := o.getOverridesForUser(userID).CompactorOOOSplitAndMergeShards
+	if oooShards > 0 {
+		return oooShards
+	}
+	return o.CompactorSplitAndMergeShards(userID)
 }
 
 // CompactorSplitGroups returns the number of groups that blocks for splitting should be grouped into.
@@ -1229,9 +1450,26 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return relabelConfigs
 }
 
-// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
+// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester.
 func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
+}
+
+// FloatChunkEncoding returns the float chunk encoding for this tenant.
+func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+}
+
+// FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit, which is never empty: tsdb.DB.ApplyConfig() reads an empty
+// chunk encoding as "keep the encoding resolved at startup", so a tenant that clears the limit has
+// to be handed DefaultFloatChunkEncodingValue explicitly to fall back to it.
+func (o *Overrides) FloatChunkEncodingValue(userID string) string {
+	value := o.getOverridesForUser(userID).FloatChunkEncoding
+	if _, ok := floatChunkEncodings[value]; ok {
+		return value
+	}
+	return DefaultFloatChunkEncodingValue
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {
@@ -1445,10 +1683,6 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 	return int(l)
 }
 
-func (o *Overrides) AlertmanagerMaxGrafanaConfigSize(userID string) int {
-	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes)
-}
-
 func (o *Overrides) AlertmanagerMaxConfigSize(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxConfigSizeBytes
 }
@@ -1479,18 +1713,6 @@ func (o *Overrides) AlertmanagerMaxAlertsCount(userID string) int {
 
 func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxAlertsSizeBytes
-}
-
-func (o *Overrides) AlertmanagerNotifyHookURL(userID string) string {
-	return o.getOverridesForUser(userID).AlertmanagerNotifyHookURL
-}
-
-func (o *Overrides) AlertmanagerNotifyHookReceivers(userID string) []string {
-	return o.getOverridesForUser(userID).AlertmanagerNotifyHookReceivers
-}
-
-func (o *Overrides) AlertmanagerNotifyHookTimeout(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).AlertmanagerNotifyHookTimeout)
 }
 
 func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
@@ -1525,12 +1747,21 @@ func (o *Overrides) EnabledPromQLExtendedRangeSelectors(userID string) []string 
 	return o.getOverridesForUser(userID).EnabledPromQLExtendedRangeSelectors
 }
 
+func (o *Overrides) EnabledPromQLBinopFillModifiers(userID string) []string {
+	return o.getOverridesForUser(userID).EnabledPromQLBinopFillModifiers
+}
+
 func (o *Overrides) Prom2RangeCompat(userID string) bool {
 	return o.getOverridesForUser(userID).Prom2RangeCompat
 }
 
-func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
-	return o.getOverridesForUser(tenantID).OTelMetricSuffixesEnabled
+func (o *Overrides) OTelMetricSuffixesEnabled(limitsKey string) bool {
+	v := o.getOverridesForLimitsKey(limitsKey).OTelMetricSuffixesEnabled
+	if v != nil {
+		return *v
+	}
+	v = o.defaultLimits.OTelMetricSuffixesEnabled
+	return v != nil && *v
 }
 
 func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bool {
@@ -1557,15 +1788,15 @@ func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
 }
 
-func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.TranslationStrategyOption {
-	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForUser(tenantID).OTelTranslationStrategy)
+func (o *Overrides) OTelTranslationStrategy(limitsKey string) otlptranslator.TranslationStrategyOption {
+	strategy := otlptranslator.TranslationStrategyOption(o.getOverridesForLimitsKey(limitsKey).OTelTranslationStrategy)
 	if strategy != "" {
 		return strategy
 	}
 
 	// Generate translation strategy based on other settings.
-	suffixesEnabled := o.OTelMetricSuffixesEnabled(tenantID)
-	switch scheme := o.NameValidationScheme(tenantID); scheme {
+	suffixesEnabled := o.OTelMetricSuffixesEnabled(limitsKey)
+	switch scheme := o.NameValidationScheme(limitsKey); scheme {
 	case model.LegacyValidation:
 		if suffixesEnabled {
 			strategy = otlptranslator.UnderscoreEscapingWithSuffixes
@@ -1641,8 +1872,15 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 // NameValidationScheme returns the name validation scheme to use for a particular tenant.
-func (o *Overrides) NameValidationScheme(userID string) model.ValidationScheme {
-	return o.getOverridesForUser(userID).NameValidationScheme
+func (o *Overrides) NameValidationScheme(limitsKey string) model.ValidationScheme {
+	scheme := o.getOverridesForLimitsKey(limitsKey).NameValidationScheme
+	if scheme != model.UnsetValidation {
+		return scheme
+	}
+	if s := o.defaultLimits.NameValidationScheme; s != model.UnsetValidation {
+		return s
+	}
+	return model.LegacyValidation
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
@@ -1652,6 +1890,7 @@ func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
+	userID = tenant.TrimMetadata(userID)
 	if o.tenantLimits != nil {
 		l := o.tenantLimits.ByUserID(userID)
 		if l != nil {
@@ -1659,6 +1898,71 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
+	limits := o.getOverridesForUser(limitsKey)
+	if o.tenantLimits == nil {
+		return limits
+	}
+	userID, tenantMd, err := tenant.ParseWithMetadata(limitsKey)
+	if err != nil {
+		return limits
+	}
+	if userID == limitsKey {
+		return limits
+	}
+
+	// The limitsKey includes metadata. Iterate KV pairs and merge limits.
+	dst := copyLimits(o.getOverridesForUser(userID))
+	for kv := range tenantMd.Divide() {
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.Encode()))
+		dst = mergeLimits(dst, o.tenantLimits.ByUserID(kv.WithTenant(userID)))
+	}
+	dst = mergeLimits(dst, o.tenantLimits.ByUserID(limitsKey))
+	return dst
+}
+
+// mergeLimits merges overlay into dst in place. If dst is nil, a copy of
+// overlay is returned. Only non-zero fields from overlay are applied.
+func mergeLimits(dst, overlay *Limits) *Limits {
+	if overlay == nil {
+		return dst
+	}
+	if dst == nil {
+		return copyLimits(overlay)
+	}
+	if overlay.MaxActiveSeriesPerUser > 0 {
+		dst.MaxActiveSeriesPerUser = overlay.MaxActiveSeriesPerUser
+	}
+	if overlay.ActiveSeriesLimitResponseCode > 0 {
+		dst.ActiveSeriesLimitResponseCode = overlay.ActiveSeriesLimitResponseCode
+	}
+	if overlay.IngestionRate > 0 {
+		dst.IngestionRate = overlay.IngestionRate
+	}
+	if overlay.IngestionBurstSize > 0 {
+		dst.IngestionBurstSize = overlay.IngestionBurstSize
+	}
+	if overlay.IngestionBurstFactor > 0 {
+		dst.IngestionBurstFactor = overlay.IngestionBurstFactor
+	}
+	if overlay.OTelMetricSuffixesEnabled != nil {
+		v := *overlay.OTelMetricSuffixesEnabled
+		dst.OTelMetricSuffixesEnabled = &v
+	}
+	if overlay.NameValidationScheme != model.UnsetValidation {
+		dst.NameValidationScheme = overlay.NameValidationScheme
+	}
+	if overlay.OTelTranslationStrategy != "" {
+		dst.OTelTranslationStrategy = overlay.OTelTranslationStrategy
+	}
+	return dst
+}
+
+func copyLimits(l *Limits) *Limits {
+	cp := *l
+	return &cp
 }
 
 // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants

@@ -11,13 +11,17 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -30,7 +34,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	tests := map[string]struct {
 		args                 args
 		expectedMetrics      string
-		expectedQueryDetails QueryDetails
+		expectedQueryDetails querydetails.QueryDetails
 	}{
 		"happy path range query": {
 			args: args{
@@ -56,7 +60,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats:  &querier_stats.SafeStats{},
 				Start:         start.Truncate(time.Millisecond),
 				End:           end.Truncate(time.Millisecond),
@@ -93,7 +97,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_queries_consistency_total counter
 			cortex_query_frontend_queries_consistency_total{consistency="strong",user="test"} 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
@@ -110,7 +114,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					start.Truncate(time.Millisecond).UnixMilli(),
 					5*time.Minute,
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
-					Options{},
+					requestoptions.Options{},
 					nil,
 					"",
 				)},
@@ -128,7 +132,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats:  &querier_stats.SafeStats{},
 				Start:         start.Truncate(time.Millisecond),
 				End:           start.Truncate(time.Millisecond),
@@ -183,7 +187,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 2
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
@@ -228,7 +232,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
 			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
-			expectedQueryDetails: QueryDetails{
+			expectedQueryDetails: querydetails.QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
@@ -246,7 +250,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx
 				}
-				actualDetails, ctx := ContextWithEmptyDetails(ctx)
+				actualDetails, ctx := querydetails.ContextWithEmptyDetails(ctx)
 				ctx = user.InjectOrgID(ctx, tenantID)
 
 				for _, req := range tt.args.req {
@@ -257,6 +261,126 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tt.expectedMetrics)))
 				assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
 			})
+		})
+	}
+}
+
+func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
+	const tenantID = "test"
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, `metric`),
+	}
+
+	tests := map[string]struct {
+		resp                         *PrometheusResponse
+		expectedResponseSeriesCount  int
+		expectedResponseSamplesCount int
+	}{
+		"nil response": {
+			resp:                         nil,
+			expectedResponseSeriesCount:  0,
+			expectedResponseSamplesCount: 0,
+		},
+		"empty response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data:   &PrometheusData{ResultType: model.ValMatrix.String(), Result: []SampleStream{}},
+			},
+			expectedResponseSeriesCount:  0,
+			expectedResponseSamplesCount: 0,
+		},
+		"matrix response with samples": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 0, Value: 1}, {TimestampMs: 1000, Value: 2}}},
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 0, Value: 3}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  2,
+			expectedResponseSamplesCount: 3,
+		},
+		"vector response with histograms": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+						{Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 0}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  3,
+			expectedResponseSamplesCount: 3,
+		},
+		"response with mixed samples and histograms": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Samples:    []mimirpb.FloatSample{{TimestampMs: 0, Value: 1}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1000}},
+						},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 2,
+		},
+		"string response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Samples: []mimirpb.FloatSample{{TimestampMs: 1_500}},
+						},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 1,
+		},
+		"scalar response": {
+			resp: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
+					},
+				},
+			},
+			expectedResponseSeriesCount:  1,
+			expectedResponseSamplesCount: 1,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			mw := newQueryStatsMiddleware(reg)
+			actualDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
+			ctx = user.InjectOrgID(ctx, tenantID)
+
+			_, err := mw.Wrap(mockHandlerWith(tt.resp, nil)).Do(ctx, req)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedResponseSeriesCount, actualDetails.ResponseSeriesCount)
+			require.Equal(t, tt.expectedResponseSamplesCount, actualDetails.ResponseSamplesCount)
 		})
 	}
 }

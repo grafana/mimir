@@ -6,21 +6,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
-func TestInstantVectorRemoteExec_FinalizeCalledAfterClosed(t *testing.T) {
-	resp := &finalizationTestMockResponse{}
+func TestInstantVectorRemoteExec_FinishedReadingCalledAfterClosed(t *testing.T) {
+	resp := &finishedReadingTestMockResponse{}
 
 	o := &InstantVectorRemoteExec{
-		Annotations: annotations.New(),
-		resp:        resp,
+		resp: resp,
 	}
 
 	o.Close()
 	require.True(t, resp.Closed, "the response should have been closed")
 
-	require.NoError(t, o.Finalize(context.Background()))
-	require.False(t, resp.Finalized, "calling Finalize after Close should not try to read from the response stream")
+	require.NoError(t, o.FinishedReading(context.Background()))
+	require.False(t, resp.FinishedReadingCalled, "calling FinishedReading after Close should not try to read from the response stream")
 }

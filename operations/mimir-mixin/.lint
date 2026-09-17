@@ -38,3 +38,12 @@ exclusions:
     reason: We don't set the description on alerts.
   panel-units-rule:
     reason: We have many panels without an unit defined. We should fix it but it's low priority.
+  alert-name-length:
+    reason: We prefer clear, descriptive names over short names.
+  uneditable-dashboard:
+    reason: We don't want to restrict editing of dashboards, and there are other mechanisms available to consumers to restrict editing if need be.
+  alert-group-rule-count:
+    reason: We have some existing rule groups that contain too many alerts.
+    entries:
+    - alert: mimir_alerts
+    - alert: mimir_ingest_storage_alerts

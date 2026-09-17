@@ -60,13 +60,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -125,7 +125,10 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 }
 
 func TestConfig_Validate(t *testing.T) {
+	enabledCompartments := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}}
+
 	tests := map[string]struct {
+		compartments  compartments.Config
 		setup         func(*Config)
 		expectedError string
 	}{
@@ -151,6 +154,38 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.PushGrpcMethodEnabled = false
 			},
 		},
+		"compartments disabled with a non-zero read compartment ID fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+			expectedError: "ingester read compartment ID must be 0 when compartments are disabled",
+		},
+		"compartments enabled with read compartment ID 0 passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 0
+			},
+		},
+		"compartments enabled with an in-range read compartment ID passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+		},
+		"compartments enabled with a negative read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = -1
+			},
+			expectedError: "ingester read compartment ID -1 is out of range [0, 2)",
+		},
+		"compartments enabled with an out-of-range read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 2
+			},
+			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
+		},
 	}
 
 	for name, tc := range tests {
@@ -159,7 +194,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			tc.setup(&cfg)
 
-			err := cfg.Validate(log.NewNopLogger())
+			err := cfg.Validate(tc.compartments)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 			} else {
@@ -4362,7 +4397,7 @@ func TestIngester_Push(t *testing.T) {
 			}, s)
 			require.NoError(t, err)
 
-			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 			if len(res) == 0 {
 				res = nil
@@ -4635,7 +4670,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "cpu"}}
+				limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "cpu"}}},
+				}
 				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
@@ -5325,7 +5362,7 @@ func Test_Ingester_Query(t *testing.T) {
 			err = i.QueryStream(req, &s)
 			require.NoError(t, err)
 
-			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expected, res)
 		})
@@ -5568,7 +5605,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		actualTimeseries = append(actualTimeseries, res...)
 	}
@@ -6943,7 +6980,24 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		return nil, nil, err
 	}
 
+	stopWatchedSubservicesOnCleanup(t, ingester)
+
 	return ingester, ingestersRing, nil
+}
+
+// stopWatchedSubservicesOnCleanup registers a cleanup stopping the subservices
+// that ingester.New() watches via subservicesWatcher and that never start in
+// tests skipping the full ingester lifecycle. Each WatchService spawns a
+// listener goroutine that only exits when the service reaches a terminal
+// state, so without this the listeners would leak and trip the package-level
+// goleak check. StopAsync is idempotent.
+func stopWatchedSubservicesOnCleanup(t testing.TB, ingester *Ingester) {
+	t.Cleanup(func() {
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
+		ingester.computeWorkerPool.StopAsync()
+	})
 }
 
 func startAndWaitHealthy(t testing.TB, i *Ingester, r ring.ReadRing) {
@@ -8925,7 +8979,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := client.ToQueryRequest(start, end, false, nil, []*labels.Matcher{matcher})
+	req, err := client.ToQueryRequest(start, end, []*labels.Matcher{matcher})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -8933,7 +8987,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	err = ing.QueryStream(req, &s)
 	require.NoError(t, err)
 
-	res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
 	sort.Sort(res)
 	return res, req, nil
@@ -10345,7 +10399,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -10583,7 +10637,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -10871,7 +10925,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		err := ing.QueryStream(req, &s)
 		require.NoError(t, err, msg)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err, msg)
 		assert.ElementsMatch(t, expected, res, msg)
 	}
@@ -12416,125 +12470,148 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 	return req
 }
 
-func TestActiveSeriesNow(t *testing.T) {
-	t.Run("returns wall clock when ingest storage disabled", func(t *testing.T) {
-		i := &Ingester{}
-		i.cfg.IngestStorageConfig.Enabled = false
+func TestIngesterXOR2EncodingEnabled(t *testing.T)  { testIngesterXOR2Encoding(t, true) }
+func TestIngesterXOR2EncodingDisabled(t *testing.T) { testIngesterXOR2Encoding(t, false) }
 
-		before := time.Now()
-		got := i.activeSeriesNow()
-		after := time.Now()
+func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
+	limits := defaultLimitsTestConfig()
+	if xor2Enabled {
+		limits.FloatChunkEncoding = "xor2"
+	}
 
-		assert.False(t, got.Before(before))
-		assert.False(t, got.After(after))
+	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = limits
 	})
 
-	t.Run("returns wall clock when ingest storage enabled but no timestamp set", func(t *testing.T) {
-		i := &Ingester{}
-		i.cfg.IngestStorageConfig.Enabled = true
-
-		before := time.Now()
-		got := i.activeSeriesNow()
-		after := time.Now()
-
-		assert.False(t, got.Before(before))
-		assert.False(t, got.After(after))
-	})
-
-	t.Run("returns Kafka timestamp when ingest storage enabled and timestamp set", func(t *testing.T) {
-		i := &Ingester{}
-		i.cfg.IngestStorageConfig.Enabled = true
-
-		kafkaTs := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
-		i.latestKafkaRecordTimestamp.Store(kafkaTs.UnixMilli())
-
-		got := i.activeSeriesNow()
-		assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
-	})
-}
-
-func TestKafkaTimestampPropagation(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetrics.Enabled = true
-
-	i, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	startAndWaitHealthy(t, i, r)
 
-	kafkaTs := time.Now().Add(-5 * time.Minute)
-	ctx := user.InjectOrgID(context.Background(), userID)
-	ctx = ingest.ContextWithRecordTimestamp(ctx, kafkaTs)
+	ctx := user.InjectOrgID(context.Background(), "user1")
 
-	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test_metric"), 1, time.Now().UnixMilli())
-
-	err = i.PushWithCleanup(ctx, req, func() {})
+	const ts = int64(1000)
+	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2"}}},
+		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		nil, nil, mimirpb.API,
+	))
 	require.NoError(t, err)
 
-	// Verify latestKafkaRecordTimestamp was updated.
-	assert.Equal(t, kafkaTs.UnixMilli(), i.latestKafkaRecordTimestamp.Load())
+	chunks := queryXOR2Chunks(ctx, t, i)
+	require.Len(t, chunks, 1)
 
-	// Verify activeSeriesNow falls back to wall clock since ingest storage is disabled.
-	before := time.Now()
-	got := i.activeSeriesNow()
-	after := time.Now()
-	assert.False(t, got.Before(before))
-	assert.False(t, got.After(after))
-
-	// Stop the ingester before mutating config to avoid data races with the
-	// metricsUpdaterServiceRunning goroutine that reads IngestStorageConfig.
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
-
-	// Enable ingest storage config to test activeSeriesNow uses the stored Kafka timestamp.
-	i.cfg.IngestStorageConfig.Enabled = true
-	got = i.activeSeriesNow()
-	assert.Equal(t, kafkaTs.UnixMilli(), got.UnixMilli())
+	expectedChunkEnc := chunkenc.EncXOR
+	expectedClientEnc := int32(chunk.PrometheusXorChunk)
+	if xor2Enabled {
+		expectedChunkEnc = chunkenc.EncXOR2
+		expectedClientEnc = int32(chunk.PrometheusXor2Chunk)
+	}
+	assert.Equal(t, expectedClientEnc, chunks[0].Encoding)
+	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
 }
 
-func TestActiveSeriesLoadingMetric(t *testing.T) {
-	t.Run("classic mode: transitions from 1 to 0 after idle timeout", func(t *testing.T) {
-		registry := prometheus.NewRegistry()
-		cfg := defaultIngesterTestConfig(t)
-		cfg.ActiveSeriesMetrics.Enabled = true
-		cfg.ActiveSeriesMetrics.IdleTimeout = 200 * time.Millisecond
+// TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
+// in both directions. Both directions already worked; this guards the normalisation in
+// applyTSDBSettings() that clearing the limit depends on.
+func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
+	tests := map[string]struct {
+		initialLimit   string
+		updatedLimit   string
+		expectedBefore chunk.Encoding
+		expectedAfter  chunk.Encoding
+	}{
+		"enabling XOR2": {
+			initialLimit: "", updatedLimit: "xor2",
+			expectedBefore: chunk.PrometheusXorChunk, expectedAfter: chunk.PrometheusXor2Chunk,
+		},
+		"clearing the limit falls back to XOR": {
+			initialLimit: "xor2", updatedLimit: "",
+			expectedBefore: chunk.PrometheusXor2Chunk, expectedAfter: chunk.PrometheusXorChunk,
+		},
+	}
 
-		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
-		require.NoError(t, err)
-		startAndWaitHealthy(t, ing, r)
-		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			userID := "user1"
+			tenantOverride := new(TenantLimitsMock)
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: testData.initialLimit})
 
-		// Push a sample so the ingester has a TSDB.
-		ctx := user.InjectOrgID(context.Background(), userID)
-		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 1, time.Now().UnixMilli())
-		require.NoError(t, ing.PushWithCleanup(ctx, req, func() {}))
+			override := validation.NewOverrides(defaultLimitsTestConfig(), tenantOverride)
 
-		// Before idle timeout elapses, metric should be 1.
-		ing.updateActiveSeries(time.Now())
-		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
-			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
-			# TYPE cortex_ingester_active_series_loading gauge
-			cortex_ingester_active_series_loading 1
-		`), "cortex_ingester_active_series_loading"))
+			cfg := defaultIngesterTestConfig(t)
+			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
 
-		// After idle timeout, metric should be 0.
-		ing.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetrics.IdleTimeout))
-		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
-			# HELP cortex_ingester_active_series_loading 1 if active series counts are still warming up and may be underreported, 0 once they are accurate.
-			# TYPE cortex_ingester_active_series_loading gauge
-			cortex_ingester_active_series_loading 0
-		`), "cortex_ingester_active_series_loading"))
-	})
+			ctx := user.InjectOrgID(context.Background(), userID)
 
-	t.Run("disabled: metric is absent", func(t *testing.T) {
-		registry := prometheus.NewRegistry()
-		cfg := defaultIngesterTestConfig(t)
-		cfg.ActiveSeriesMetrics.Enabled = false
+			// This push opens the tenant's TSDB, seeding its startup encoding from the limit.
+			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_before"}}},
+				[]mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
+				nil, nil, mimirpb.API,
+			))
+			require.NoError(t, err)
 
-		ing, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
-		require.NoError(t, err)
-		startAndWaitHealthy(t, ing, r)
-		defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+			chunks := queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_before")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedBefore), chunks[0].Encoding)
 
-		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(""), "cortex_ingester_active_series_loading"))
-	})
+			// Change the limit at runtime.
+			tenantOverride.ExpectedCalls = nil
+			tenantOverride.On("ByUserID", userID).Return(&validation.Limits{FloatChunkEncoding: testData.updatedLimit})
+			<-time.After(1500 * time.Millisecond)
+
+			// A new series always starts a fresh chunk, which will use the updated setting.
+			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_after"}}},
+				[]mimirpb.Sample{{TimestampMs: 2000, Value: 2}},
+				nil, nil, mimirpb.API,
+			))
+			require.NoError(t, err)
+
+			chunks = queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2_after")
+			require.Len(t, chunks, 1)
+			assert.Equal(t, int32(testData.expectedAfter), chunks[0].Encoding)
+		})
+	}
+}
+
+func queryXOR2Chunks(ctx context.Context, t *testing.T, i *Ingester) []client.Chunk {
+	t.Helper()
+	return queryXOR2ChunksForMetric(ctx, t, i, "testmetric_xor2")
+}
+
+func queryXOR2ChunksForMetric(ctx context.Context, t *testing.T, i *Ingester, metricName string) []client.Chunk {
+	t.Helper()
+	queryReq := &client.QueryRequest{
+		StartTimestampMs:         math.MinInt64,
+		EndTimestampMs:           math.MaxInt64,
+		Matchers:                 []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
+		StreamingChunksBatchSize: 64,
+	}
+	s := stream{ctx: ctx}
+	require.NoError(t, i.QueryStream(queryReq, &s))
+	var allChunks []client.Chunk
+	for _, resp := range s.responses {
+		for _, sc := range resp.StreamingSeriesChunks {
+			allChunks = append(allChunks, sc.Chunks...)
+		}
+	}
+	return allChunks
+}
+
+func verifyChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedTs int64, expectedVal float64) {
+	t.Helper()
+	chk, err := chunkenc.FromData(enc, data)
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	actualTs, actualVal := it.At()
+	assert.Equal(t, expectedTs, actualTs)
+	assert.Equal(t, expectedVal, actualVal)
+	assert.Equal(t, chunkenc.ValNone, it.Next())
+	assert.NoError(t, it.Err())
 }

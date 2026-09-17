@@ -28,6 +28,7 @@ This action is configured using environment variables defined in the workflow. T
 
 This GitHub Action uses [`mimirtool`](https://github.com/grafana/mimir) under the hood.
 `mimirtool` uses HTTP Basic authentication against a Mimir cluster. The variable `MIMIR_TENANT_ID` is used as the username and `MIMIR_API_KEY` as the password.
+For AWS SigV4-protected endpoints, the underlying `mimirtool rules` command also accepts the `MIMIR_SIGV4_*` environment variables documented in the Mimirtool docs.
 
 ## Actions
 

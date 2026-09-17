@@ -41,7 +41,11 @@ nested_struct:
 
 # The nested list
 nested_slice:
-  - # The username
+  - # A long description that will wrap onto a second line when rendered inside
+    # a slice item element
+    [long_desc: <string> | default = ""]
+
+    # The username
     [username: <string> | default = ""]
 
     # The password
@@ -63,6 +67,7 @@ type NestedStruct struct {
 }
 
 type NestedSliceElement struct {
+	LongDesc string `yaml:"long_desc" doc:"description=A long description that will wrap onto a second line when rendered inside a slice item element"`
 	Username string `yaml:"username" doc:"description=The username"`
 	Password string `yaml:"password" doc:"description=The password"`
 }

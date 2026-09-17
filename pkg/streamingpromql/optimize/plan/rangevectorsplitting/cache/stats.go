@@ -3,14 +3,15 @@
 package cache
 
 type CacheStats struct {
-	ReadEntries    int
-	WrittenEntries int
-	TotalSeries    int // not deduped
-	MinSeries      int
-	MaxSeries      int
-	TotalBytes     int
-	MinBytes       int
-	MaxBytes       int
+	ReadEntries       int
+	WrittenEntries    int
+	TotalSeries       int // not deduped
+	MinSeries         int
+	MaxSeries         int
+	FilteredOutSeries int
+	TotalBytes        int
+	MinBytes          int
+	MaxBytes          int
 }
 
 func (c *CacheStats) AddReadEntryStat(seriesCount, size int) {
@@ -31,9 +32,10 @@ func (c *CacheStats) AddReadEntryStat(seriesCount, size int) {
 	}
 }
 
-func (c *CacheStats) AddWriteEntryStat(seriesCount, size int) {
+func (c *CacheStats) AddWriteEntryStat(seriesCount, totalSeriesCount, size int) {
 	c.WrittenEntries++
 	c.TotalSeries += seriesCount
+	c.FilteredOutSeries += totalSeriesCount - seriesCount
 	if c.MinSeries == 0 || seriesCount < c.MinSeries {
 		c.MinSeries = seriesCount
 	}

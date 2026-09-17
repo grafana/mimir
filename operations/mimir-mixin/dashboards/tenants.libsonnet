@@ -811,6 +811,23 @@ local filename = 'mimir-tenants.json';
         ])
         { fieldConfig+: { defaults+: { unit: 'bytes' } } }
       )
+      .addPanel(
+        local title = 'Rejected queries rate - query-frontend';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_query_frontend_rejected_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          '{{ reason }}'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Rate of queries rejected by the query-frontend for this tenant, by reason.
+            "blocked" means the query matched a blocked_queries rule.
+            "limited" means the query exceeded a configured query rate limit.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Read Path - Queries (Ruler)')

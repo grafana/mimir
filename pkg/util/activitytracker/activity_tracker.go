@@ -29,8 +29,9 @@ type ActivityTracker struct {
 	freeIndexQueue chan int // Used as a queue for indexes of free entries.
 	maxEntries     int
 
-	failedInserts       *prometheus.CounterVec
-	freeActivityEntries prometheus.GaugeFunc
+	failedInserts             *prometheus.CounterVec
+	freeActivityEntries       prometheus.GaugeFunc
+	loadedActivitiesOnStartup prometheus.Gauge
 }
 
 const (
@@ -56,6 +57,9 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	if cfg.Filepath == "" {
 		return nil, nil
 	}
+
+	// Load entries from the previous run before getMappedFile truncates the file.
+	prevEntries, _ := LoadUnfinishedEntries(cfg.Filepath)
 
 	filesize := cfg.MaxEntries * entrySize
 	file, fileAsBytes, err := getMappedFile(cfg.Filepath, filesize)
@@ -84,6 +88,12 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	}, func() float64 {
 		return float64(len(tracker.freeIndexQueue))
 	})
+
+	tracker.loadedActivitiesOnStartup = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "activity_tracker_unfinished_activities_loaded",
+		Help: "Number of unfinished activities loaded from the activity tracker file on startup.",
+	})
+	tracker.loadedActivitiesOnStartup.Set(float64(len(prevEntries)))
 
 	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.freeIndexQueue <- i

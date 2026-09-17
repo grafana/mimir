@@ -16,39 +16,61 @@ package featurecontrol
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 )
 
 const (
+	FeatureAlertNamesInMetrics   = "alert-names-in-metrics"
 	FeatureReceiverNameInMetrics = "receiver-name-in-metrics"
+	FeatureGroupKeyInMetrics     = "group-key-in-metrics"
 	FeatureClassicMode           = "classic-mode"
 	FeatureUTF8StrictMode        = "utf8-strict-mode"
+	FeatureAutoGOMEMLIMIT        = "auto-gomemlimit"
+	FeatureEventRecorder         = "event-recorder"
 )
 
 var AllowedFlags = []string{
+	FeatureAlertNamesInMetrics,
 	FeatureReceiverNameInMetrics,
+	FeatureGroupKeyInMetrics,
 	FeatureClassicMode,
 	FeatureUTF8StrictMode,
+	FeatureAutoGOMEMLIMIT,
+	FeatureEventRecorder,
 }
 
 type Flagger interface {
+	EnableAlertNamesInMetrics() bool
 	EnableReceiverNamesInMetrics() bool
+	EnableGroupKeyInMetrics() bool
 	ClassicMode() bool
 	UTF8StrictMode() bool
+	EnableAutoGOMEMLIMIT() bool
+	EnableEventRecorder() bool
 }
 
 type Flags struct {
-	logger                       log.Logger
+	logger                       *slog.Logger
+	enableAlertNamesInMetrics    bool
 	enableReceiverNamesInMetrics bool
+	enableGroupKeyInMetrics      bool
 	classicMode                  bool
 	utf8StrictMode               bool
+	enableAutoGOMEMLIMIT         bool
+	enableEventRecorder          bool
+}
+
+func (f *Flags) EnableAlertNamesInMetrics() bool {
+	return f.enableAlertNamesInMetrics
 }
 
 func (f *Flags) EnableReceiverNamesInMetrics() bool {
 	return f.enableReceiverNamesInMetrics
+}
+
+func (f *Flags) EnableGroupKeyInMetrics() bool {
+	return f.enableGroupKeyInMetrics
 }
 
 func (f *Flags) ClassicMode() bool {
@@ -59,11 +81,25 @@ func (f *Flags) UTF8StrictMode() bool {
 	return f.utf8StrictMode
 }
 
+func (f *Flags) EnableAutoGOMEMLIMIT() bool {
+	return f.enableAutoGOMEMLIMIT
+}
+
+func (f *Flags) EnableEventRecorder() bool {
+	return f.enableEventRecorder
+}
+
 type flagOption func(flags *Flags)
 
 func enableReceiverNameInMetrics() flagOption {
 	return func(configs *Flags) {
 		configs.enableReceiverNamesInMetrics = true
+	}
+}
+
+func enableGroupKeyInMetrics() flagOption {
+	return func(configs *Flags) {
+		configs.enableGroupKeyInMetrics = true
 	}
 }
 
@@ -79,7 +115,25 @@ func enableUTF8StrictMode() flagOption {
 	}
 }
 
-func NewFlags(logger log.Logger, features string) (Flagger, error) {
+func enableAutoGOMEMLIMIT() flagOption {
+	return func(configs *Flags) {
+		configs.enableAutoGOMEMLIMIT = true
+	}
+}
+
+func enableEventRecorder() flagOption {
+	return func(configs *Flags) {
+		configs.enableEventRecorder = true
+	}
+}
+
+func enableAlertNamesInMetrics() flagOption {
+	return func(configs *Flags) {
+		configs.enableAlertNamesInMetrics = true
+	}
+}
+
+func NewFlags(logger *slog.Logger, features string) (Flagger, error) {
 	fc := &Flags{logger: logger}
 	opts := []flagOption{}
 
@@ -87,17 +141,29 @@ func NewFlags(logger log.Logger, features string) (Flagger, error) {
 		return NoopFlags{}, nil
 	}
 
-	for _, feature := range strings.Split(features, ",") {
+	for feature := range strings.SplitSeq(features, ",") {
 		switch feature {
+		case FeatureAlertNamesInMetrics:
+			opts = append(opts, enableAlertNamesInMetrics())
+			logger.Warn("Alert names in metrics enabled")
 		case FeatureReceiverNameInMetrics:
 			opts = append(opts, enableReceiverNameInMetrics())
-			level.Warn(logger).Log("msg", "Experimental receiver name in metrics enabled")
+			logger.Warn("Experimental receiver name in metrics enabled")
+		case FeatureGroupKeyInMetrics:
+			opts = append(opts, enableGroupKeyInMetrics())
+			logger.Warn("Experimental group key in metrics enabled")
 		case FeatureClassicMode:
 			opts = append(opts, enableClassicMode())
-			level.Warn(logger).Log("msg", "Classic mode enabled")
+			logger.Warn("Classic mode enabled")
 		case FeatureUTF8StrictMode:
 			opts = append(opts, enableUTF8StrictMode())
-			level.Warn(logger).Log("msg", "UTF-8 strict mode enabled")
+			logger.Warn("UTF-8 strict mode enabled")
+		case FeatureAutoGOMEMLIMIT:
+			opts = append(opts, enableAutoGOMEMLIMIT())
+			logger.Warn("Automatically set GOMEMLIMIT to match the Linux container or system memory limit.")
+		case FeatureEventRecorder:
+			opts = append(opts, enableEventRecorder())
+			logger.Warn("Experimental event recorder enabled")
 		default:
 			return nil, fmt.Errorf("unknown option '%s' for --enable-feature", feature)
 		}
@@ -116,8 +182,16 @@ func NewFlags(logger log.Logger, features string) (Flagger, error) {
 
 type NoopFlags struct{}
 
+func (n NoopFlags) EnableAlertNamesInMetrics() bool { return false }
+
 func (n NoopFlags) EnableReceiverNamesInMetrics() bool { return false }
+
+func (n NoopFlags) EnableGroupKeyInMetrics() bool { return false }
 
 func (n NoopFlags) ClassicMode() bool { return false }
 
 func (n NoopFlags) UTF8StrictMode() bool { return false }
+
+func (n NoopFlags) EnableAutoGOMEMLIMIT() bool { return false }
+
+func (n NoopFlags) EnableEventRecorder() bool { return false }

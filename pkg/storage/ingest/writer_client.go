@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/warpstream-go/pkg/wgo"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -18,11 +19,75 @@ import (
 	"go.uber.org/atomic"
 )
 
-// NewKafkaWriterClient returns the kgo.Client that should be used by the Writer.
+const (
+	// defaultProducerLinger is the producer-side batching delay.
+	defaultProducerLinger = 50 * time.Millisecond
+
+	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
+	// list and partition leaders) is refreshed. It is used for both the
+	// minimum and maximum metadata age so the metadata request frequency
+	// stays constant regardless of errors.
+	DefaultMetadataRefreshInterval = 10 * time.Second
+)
+
+// newKafkaProducerForBackend selects and constructs the producer
+// implementation based on cfg.Backend. The caller owns the lifecycle of the
+// returned producer and must call Close() when done.
+func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Logger, reg prometheus.Registerer) (*KafkaProducer, error) {
+	var producerClient KafkaProducerClient
+
+	switch cfg.Backend {
+	case KafkaBackendWarpstream:
+		warpstreamOpts, err := cfg.ToWarpstreamClientOptions()
+		if err != nil {
+			return nil, err
+		}
+		// warpstream-go emits the client metrics itself; we only add our bespoke
+		// kafka_* extended latency metrics, to match the kafka backend.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
+
+		// Trace produces like the kafka backend. warpstream-go drives the
+		// produce-record hooks on its own produce path, so the same sampled-only
+		// tracer yields the same producer spans and traceparent propagation as a
+		// franz-go client.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(newSampledOnlyTracer()))
+
+		warpstreamClient, err := wgo.NewWarpstreamClient(NewKafkaLogger(logger), reg, warpstreamOpts...)
+		if err != nil {
+			return nil, err
+		}
+		producerClient = warpstreamClient
+	default:
+		kafkaClient, err := NewKafkaWriterClient(cfg, maxInflight, logger, reg, WithDisableDefaultTopic())
+		if err != nil {
+			return nil, err
+		}
+		producerClient = kafkaClient
+	}
+
+	return NewKafkaProducer(producerClient, cfg.ProducerMaxBufferedBytes, reg), nil
+}
+
+// KafkaWriterClientOption is a functional option for NewKafkaWriterClient.
+type KafkaWriterClientOption func(*kafkaWriterClientOptions)
+
+type kafkaWriterClientOptions struct {
+	disableDefaultTopic bool
+}
+
+// WithDisableDefaultTopic disables setting the default produce topic on the Kafka client.
+// When this option is used, the caller is expected to set the Topic field on each produced record individually.
+func WithDisableDefaultTopic() KafkaWriterClientOption {
+	return func(o *kafkaWriterClientOptions) {
+		o.disableDefaultTopic = true
+	}
+}
+
+// NewKafkaWriterClient returns a kgo.Client configured for producing Kafka records.
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
+func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer, opts ...KafkaWriterClientOption) (*kgo.Client, error) {
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.
@@ -30,12 +95,12 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	// Allow to disable linger in tests.
-	linger := 50 * time.Millisecond
+	linger := defaultProducerLinger
 	if kafkaCfg.DisableLinger {
 		linger = 0
 	}
 
-	opts := append(
+	kgoOpts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
 
 		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
@@ -43,7 +108,6 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
 
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(kafkaCfg.Topic),
 
 		// We set the partition field in each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
@@ -80,7 +144,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.RecordRetries(math.MaxInt64),
 		kgo.RecordDeliveryTimeout(kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		kgo.RequestTimeoutOverhead(kafkaCfg.WriteTimeoutOverhead),
 
 		// Unlimited number of buffered records because we limit on bytes in Writer. The reason why we don't use
 		// kgo.MaxBufferedBytes() is because it suffers a deadlock issue:
@@ -89,12 +153,57 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedBytes(0),
 	)
 
-	return kgo.NewClient(opts...)
+	var options kafkaWriterClientOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
+	if !options.disableDefaultTopic {
+		kgoOpts = append(kgoOpts, kgo.DefaultProduceTopic(kafkaCfg.Topic))
+	}
+
+	if codecs := kafkaProducerCompressionFromConfig(kafkaCfg.ProducerCompression); codecs != nil {
+		// Override the franz-go default (snappy with no-compression fallback) when the operator
+		// has explicitly configured a producer compression codec. This is required for Kafka-compatible
+		// backends that don't support snappy, such as Azure Event Hub.
+		kgoOpts = append(kgoOpts, kgo.ProducerBatchCompression(codecs...))
+	}
+
+	return kgo.NewClient(kgoOpts...)
+}
+
+// KafkaProducerClient is the minimum surface KafkaProducer needs from the
+// underlying client.
+type KafkaProducerClient interface {
+	Produce(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
+	BufferedProduceBytes() int64
+	BufferedProduceRecords() int64
+	Close()
+}
+
+// kafkaProducerCompressionFromConfig translates the configured producer compression codec name
+// into a franz-go CompressionCodec preference list. An empty config value returns nil so that
+// the franz-go default (snappy with no-compression fallback) is preserved.
+func kafkaProducerCompressionFromConfig(name string) []kgo.CompressionCodec {
+	switch name {
+	case kafkaCompressionNone:
+		return []kgo.CompressionCodec{kgo.NoCompression()}
+	case kafkaCompressionGzip:
+		return []kgo.CompressionCodec{kgo.GzipCompression()}
+	case kafkaCompressionSnappy:
+		return []kgo.CompressionCodec{kgo.SnappyCompression()}
+	case kafkaCompressionLz4:
+		return []kgo.CompressionCodec{kgo.Lz4Compression()}
+	case kafkaCompressionZstd:
+		return []kgo.CompressionCodec{kgo.ZstdCompression()}
+	default:
+		return nil
+	}
 }
 
 // KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.
 type KafkaProducer struct {
-	*kgo.Client
+	client KafkaProducerClient
 
 	closeOnce *sync.Once
 	closed    chan struct{}
@@ -119,9 +228,9 @@ type KafkaProducer struct {
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func NewKafkaProducer(client *kgo.Client, maxBufferedBytes int64, reg prometheus.Registerer) *KafkaProducer {
+func NewKafkaProducer(client KafkaProducerClient, maxBufferedBytes int64, reg prometheus.Registerer) *KafkaProducer {
 	producer := &KafkaProducer{
-		Client:           client,
+		client:           client,
 		closeOnce:        &sync.Once{},
 		closed:           make(chan struct{}),
 		bufferedBytes:    atomic.NewInt64(0),
@@ -182,7 +291,13 @@ func (c *KafkaProducer) Close() {
 		close(c.closed)
 	})
 
-	c.Client.Close()
+	c.client.Close()
+}
+
+// BufferedProduceRecords returns the count of records currently buffered (or
+// in-flight) in the underlying client.
+func (c *KafkaProducer) BufferedProduceRecords() int64 {
+	return c.client.BufferedProduceRecords()
 }
 
 func (c *KafkaProducer) updateMetricsLoop() {
@@ -193,7 +308,7 @@ func (c *KafkaProducer) updateMetricsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			c.bufferedProduceBytes.Observe(float64(c.BufferedProduceBytes()))
+			c.bufferedProduceBytes.Observe(float64(c.client.BufferedProduceBytes()))
 
 		case <-c.closed:
 			return
@@ -204,8 +319,16 @@ func (c *KafkaProducer) updateMetricsLoop() {
 // ProduceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
 //
-// This function honors the configure max buffered bytes and refuse to produce a record, returnin kgo.ErrMaxBuffered,
-// if the configured limit is reached.
+// This function honors the configured max buffered bytes: if the whole batch would not fit in the
+// remaining buffer space, none of the records are produced and every result is set to kgo.ErrMaxBuffered.
+// The admission is all-or-nothing per call (rather than per record) so that a partial in-buffer
+// acceptance does not turn into a wasted full retry from the caller, which fails the whole batch on
+// any error.
+//
+// On context cancellation/timeout after records have been handed to the Kafka client, the returned
+// results carry per-record errors but the Record on each result is a synthetic value with only the
+// input partition set. Callers must not assume Record points back to the original input record or
+// that any field other than Partition is populated in that case.
 func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	var (
 		remaining = atomic.NewInt64(int64(len(records)))
@@ -232,7 +355,60 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
 
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
-		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done")}}
+		// Records haven't been handed to the Kafka client yet, so the input record pointers are
+		// still safe to expose on the results.
+		return newFailedProduceResultsFromRecords(records, errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done"))
+	}
+
+	// Record.Timestamp must be left unset by callers. We rely on the franz-go client setting
+	// it as late as possible (right before the record is sent on the wire) so that it accurately
+	// represents the produce time. That timestamp is used to compute end-to-end latency
+	// (cortex_ingest_storage_reader_receive_delay_seconds) and the strong-read-consistency wait
+	// in the partition reader. Stamping it earlier inflates both. If a caller needs to attach
+	// another timestamp with a different meaning (e.g. distributor validation time), it must
+	// use a Kafka record header instead.
+	for _, record := range records {
+		if !record.Timestamp.IsZero() {
+			recordsCount := float64(len(records))
+
+			c.produceRecordsEnqueuedTotal.Add(recordsCount)
+			c.produceRecordsFailedTotal.WithLabelValues("record-timestamp-set").Add(recordsCount)
+
+			return newFailedProduceResultsFromRecords(records, errors.New("Kafka record Timestamp must not be set by the caller; it is reserved for the Kafka client to track produce time"))
+		}
+	}
+
+	c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
+
+	// Reserve buffer space for the whole batch up front. If the reservation would exceed the configured
+	// limit, refund it and reject every record with kgo.ErrMaxBuffered. This makes admission all-or-nothing
+	// per call: callers retry the whole request on failure, so a partial in-buffer acceptance is wasted work.
+	if c.maxBufferedBytes > 0 {
+		var batchBytes int64
+		for _, record := range records {
+			batchBytes += int64(len(record.Value))
+		}
+
+		if c.bufferedBytes.Add(batchBytes) > c.maxBufferedBytes {
+			c.bufferedBytes.Add(-batchBytes)
+			c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(kgo.ErrMaxBuffered)).Add(float64(len(records)))
+
+			rejected := make(kgo.ProduceResults, len(records))
+			for i, record := range records {
+				rejected[i] = kgo.ProduceResult{Record: record, Err: kgo.ErrMaxBuffered}
+			}
+			return rejected
+		}
+	}
+
+	// Snapshot each record's partition before handing the records off to the Kafka client.
+	// After Produce() is called, the client may concurrently mutate record fields (e.g. franz-go
+	// writes Record.Partition from its metadata-update goroutine), so we can no longer safely
+	// read from the input records. The snapshot is used to build per-record results on the
+	// post-Produce cancellation path, which is exactly where we abandon the in-flight callbacks.
+	recordPartitions := make([]int32, len(records))
+	for i, r := range records {
+		recordPartitions[i] = r.Partition
 	}
 
 	onProduceDone := func(r *kgo.Record, err error) {
@@ -261,15 +437,8 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// data point when we troubleshoot high production latencies.
 	{
 		enqueueStartTime := time.Now()
-		c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
 
 		for _, record := range records {
-			// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
-			if c.maxBufferedBytes > 0 && c.bufferedBytes.Add(int64(len(record.Value))) > c.maxBufferedBytes {
-				onProduceDone(record, kgo.ErrMaxBuffered)
-				continue
-			}
-
 			// We use a new context to avoid that other Produce() may be cancelled when this call's context is
 			// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 			// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
@@ -278,7 +447,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 			// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
 			// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
 			// Produce() should never block for us in practice.
-			c.Produce(context.WithoutCancel(ctx), record, onProduceDone)
+			c.client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 		}
 
 		c.produceRecordsEnqueueDuration.Observe(time.Since(enqueueStartTime).Seconds())
@@ -288,11 +457,36 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	select {
 	case <-ctx.Done():
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
-		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged")}}
+		// Records have already been handed to the Kafka client, so we can't expose the original
+		// record pointers on the results; build fresh records from the partition snapshot taken above.
+		return newFailedProduceResultsFromPartitions(recordPartitions, errors.Wrap(context.Cause(ctx), "waiting for Kafka records to be produced and acknowledged"))
 	case <-done:
 		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
 		return res
 	}
+}
+
+// newFailedProduceResultsFromRecords builds a kgo.ProduceResults that reports the given error
+// for each input record, exposing the input record pointer on each result. Only safe to call
+// while the caller still owns the records (i.e. before handing them to the Kafka client);
+// otherwise use newFailedProduceResultsFromPartitions to avoid racing with the client.
+func newFailedProduceResultsFromRecords(records []*kgo.Record, err error) kgo.ProduceResults {
+	results := make(kgo.ProduceResults, 0, len(records))
+	for _, record := range records {
+		results = append(results, kgo.ProduceResult{Record: record, Err: err})
+	}
+	return results
+}
+
+// newFailedProduceResultsFromPartitions is like newFailedProduceResultsFromRecords but allocates
+// fresh kgo.Record values carrying just the given partition, so it's safe to use when the
+// original records have been handed to the Kafka client and may still be mutated by it.
+func newFailedProduceResultsFromPartitions(partitions []int32, err error) kgo.ProduceResults {
+	results := make(kgo.ProduceResults, 0, len(partitions))
+	for _, partition := range partitions {
+		results = append(results, kgo.ProduceResult{Record: &kgo.Record{Partition: partition}, Err: err})
+	}
+	return results
 }
 
 func produceErrReason(err error) string {

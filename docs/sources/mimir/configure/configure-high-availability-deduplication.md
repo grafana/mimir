@@ -11,6 +11,12 @@ weight: 50
 
 # Configure Grafana Mimir high-availability deduplication
 
+{{< admonition type="note" >}}
+If you use Grafana Cloud, HA deduplication is enabled by default for your tenant, using the default label names described on this page (`cluster` and `__replica__`). You don't need to configure anything to use this feature.
+
+If you need custom cluster or replica label names for your tenant, [contact Grafana Support](/docs/grafana-cloud/account-management/support/).
+{{< /admonition >}}
+
 You can have more than one Prometheus instance that scrapes the same metrics for redundancy. Grafana Mimir already performs replication for redundancy,
 so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.
 
@@ -45,7 +51,9 @@ Incoming samples are considered duplicated (and thus dropped) if they are receiv
 
 If the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples are accepted by default and never deduplicated.
 
-> Note: the HA tracker checks the cluster and replica label of every series in the request to determine whether each series in the request should be deduplicated.
+> Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to determine whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. Ensure this requirement is honored if you have a non-standard Prometheus setup (for example, you're using Prometheus federation or have a metrics proxy in between).
+>
+> If all series inside a single write request can't be guaranteed to share the same cluster and replica labels, enable the experimental per-series HA deduplication via `-distributor.ha-tracker.per-sample-dedupe` (or the `ha_tracker_per_sample_dedupe` per-tenant limit). With this setting enabled, each timeseries in the request is evaluated independently, so non-elected replicas are dropped even when mixed with elected-replica or non-HA series in the same request.
 
 ### Error responses
 

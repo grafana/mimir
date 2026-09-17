@@ -15,34 +15,51 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Handler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, status, err := handleAnalysis(w, r, planner, limitsProvider)
-
-		if err != nil {
-			body = []byte(err.Error())
-			w.Header().Set("Content-Type", "text/plain")
-		}
-
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-	})
+// NewHandler creates the query analysis HTTP handler. optionDecoder decodes per-request options
+// (including the allow-listed headers made available to optimization passes) so that analysis reflects
+// the same per-request toggles the real query path would see.
+func NewHandler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider, opts streamingpromql.EngineOpts, optionDecoder requestoptions.OptionDecoder) http.Handler {
+	return &handler{
+		planner:        planner,
+		limitsProvider: limitsProvider,
+		lookbackDelta:  streamingpromql.DetermineLookbackDelta(opts.CommonOpts),
+		optionDecoder:  optionDecoder,
+	}
 }
 
-func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) ([]byte, int, error) {
-	if planner == nil {
+type handler struct {
+	planner        *streamingpromql.QueryPlanner
+	limitsProvider streamingpromql.QueryLimitsProvider
+	lookbackDelta  time.Duration
+	optionDecoder  requestoptions.OptionDecoder
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, status, err := h.performAnalysis(w, r)
+
+	if err != nil {
+		body = []byte(err.Error())
+		w.Header().Set("Content-Type", "text/plain")
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byte, int, error) {
+	if h.planner == nil {
 		// Handle the case where query planning is disabled.
 		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
 	}
 
-	enableDelayedNameRemoval, err := limitsProvider.GetEnableDelayedNameRemoval(r.Context())
+	enableDelayedNameRemoval, err := h.limitsProvider.GetEnableDelayedNameRemoval(r.Context())
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("could not get enable delayed name removal setting: %w", err)
 	}
@@ -98,12 +115,22 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
 	}
 
-	ctx := r.Context()
-	var options querymiddleware.Options
-	querymiddleware.DecodeOptions(r, &options)
-	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
+	lookbackDelta := h.lookbackDelta
+	if r.Form.Has("lookback_delta") {
+		lookbackDelta, err = parseDuration(r.Form.Get("lookback_delta"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'lookback_delta' parameter: %w", err)
+		}
 
-	result, err := Analyze(ctx, planner, qs, timeRange, enableDelayedNameRemoval)
+		if lookbackDelta <= 0 {
+			return nil, http.StatusBadRequest, errors.New("lookback_delta must be greater than 0")
+		}
+	}
+
+	ctx := r.Context()
+	ctx = requestoptions.ContextWithOptions(ctx, h.optionDecoder.DecodeOptions(r)) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
+
+	result, err := Analyze(ctx, h.planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {
 		var perr parser.ParseErrors
 		if errors.As(err, &perr) {
@@ -173,9 +200,9 @@ type PlanningStage struct {
 }
 
 // Analyze performs query planning and produces a report on the query planning process.
-func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool) (*Result, error) {
+func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool) (*Result, error) {
 	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := planner.NewQueryPlan(ctx, qs, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, observer)
+	_, err := planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, observer)
 	if err != nil {
 		return nil, err
 	}

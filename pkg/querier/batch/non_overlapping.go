@@ -15,7 +15,7 @@ import (
 
 type nonOverlappingIterator struct {
 	curr   int
-	chunks []GenericChunk
+	chunks []chunk.Chunk
 	iter   chunkIterator
 	// id is used to detect when the iterator has changed when merging
 	id int
@@ -23,7 +23,7 @@ type nonOverlappingIterator struct {
 
 // newNonOverlappingIterator returns a single iterator over a slice of sorted,
 // non-overlapping iterators.
-func newNonOverlappingIterator(it *nonOverlappingIterator, id int, chunks []GenericChunk, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) *nonOverlappingIterator {
+func newNonOverlappingIterator(it *nonOverlappingIterator, id int, chunks []chunk.Chunk, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) *nonOverlappingIterator {
 	if it == nil {
 		it = &nonOverlappingIterator{}
 	}

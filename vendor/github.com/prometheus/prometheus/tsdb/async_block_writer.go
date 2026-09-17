@@ -94,9 +94,9 @@ func (bw *asyncBlockWriter) loop() (res asyncBlockWriterResult) {
 			samples := uint64(chk.Chunk.NumSamples())
 			stats.NumSamples += samples
 			switch chk.Chunk.Encoding() {
-			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram, chunkenc.EncHistogramST, chunkenc.EncFloatHistogramST:
 				stats.NumHistogramSamples += samples
-			case chunkenc.EncXOR:
+			case chunkenc.EncXOR, chunkenc.EncXOR2:
 				stats.NumFloatSamples += samples
 			}
 		}

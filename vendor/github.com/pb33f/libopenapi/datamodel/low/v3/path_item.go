@@ -1,4 +1,4 @@
-// Copyright 2022-2023 Princess B33f Heavy Industries / Dave Shanley
+// Copyright 2022-2026 Princess B33f Heavy Industries / Dave Shanley
 // SPDX-License-Identifier: MIT
 
 package v3
@@ -45,6 +45,8 @@ type PathItem struct {
 	RootNode             *yaml.Node
 	index                *index.SpecIndex
 	context              context.Context
+	nodeStore            sync.Map
+	reference            low.Reference
 	*low.Reference
 	low.NodeMap
 }
@@ -71,39 +73,57 @@ func (p *PathItem) Hash() uint64 {
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Get.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", GetLabel, low.GenerateHashString(p.Get.Value)))
+			h.WriteString(GetLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Get.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Put.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", PutLabel, low.GenerateHashString(p.Put.Value)))
+			h.WriteString(PutLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Put.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Post.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", PostLabel, low.GenerateHashString(p.Post.Value)))
+			h.WriteString(PostLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Post.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Delete.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", DeleteLabel, low.GenerateHashString(p.Delete.Value)))
+			h.WriteString(DeleteLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Delete.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Options.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", OptionsLabel, low.GenerateHashString(p.Options.Value)))
+			h.WriteString(OptionsLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Options.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Head.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", HeadLabel, low.GenerateHashString(p.Head.Value)))
+			h.WriteString(HeadLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Head.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Patch.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", PatchLabel, low.GenerateHashString(p.Patch.Value)))
+			h.WriteString(PatchLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Patch.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Trace.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", TraceLabel, low.GenerateHashString(p.Trace.Value)))
+			h.WriteString(TraceLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Trace.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 		if !p.Query.IsEmpty() {
-			h.WriteString(fmt.Sprintf("%s-%s", QueryLabel, low.GenerateHashString(p.Query.Value)))
+			h.WriteString(QueryLabel)
+			h.WriteByte('-')
+			h.WriteString(low.GenerateHashString(p.Query.Value))
 			h.WriteByte(low.HASH_PIPE)
 		}
 
@@ -111,7 +131,7 @@ func (p *PathItem) Hash() uint64 {
 		if p.AdditionalOperations.Value != nil && p.AdditionalOperations.Value.Len() > 0 {
 			keys := make([]string, 0, p.AdditionalOperations.Value.Len())
 			for k, v := range p.AdditionalOperations.Value.FromOldest() {
-				keys = append(keys, fmt.Sprintf("%s-%s", k.Value, low.GenerateHashString(v.Value)))
+				keys = append(keys, k.Value+"-"+low.GenerateHashString(v.Value))
 			}
 			sort.Strings(keys)
 			for _, key := range keys {
@@ -177,7 +197,8 @@ func (p *PathItem) GetExtensions() *orderedmap.Map[low.KeyReference[string], low
 // Build extracts extensions, parameters, servers and each http method defined.
 // everything is extracted asynchronously for speed.
 func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *index.SpecIndex) error {
-	p.Reference = new(low.Reference)
+	p.reference = low.Reference{}
+	p.Reference = &p.reference
 	if ok, _, ref := utils.IsNodeRefValue(root); ok {
 		p.SetReference(ref, root)
 	}
@@ -185,7 +206,13 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	p.KeyNode = keyNode
 	p.RootNode = root
 	utils.CheckForMergeNodes(root)
-	p.Nodes = low.ExtractNodes(ctx, root)
+	p.nodeStore = sync.Map{}
+	p.Nodes = &p.nodeStore
+	if len(root.Content) > 0 {
+		p.NodeMap.ExtractNodes(root, false)
+	} else {
+		p.AddNode(root.Line, root)
+	}
 	p.Extensions = low.ExtractExtensions(root)
 	p.index = idx
 	p.context = ctx
@@ -194,9 +221,7 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	skip := false
 	var currentNode *yaml.Node
 
-	var wg sync.WaitGroup
-	var errors []error
-	var ops []low.NodeReference[*Operation]
+	ops := make([]low.NodeReference[*Operation], 0, len(root.Content)/2)
 	var additionalOps *orderedmap.Map[low.KeyReference[string], low.NodeReference[*Operation]]
 
 	// extract parameters
@@ -216,7 +241,7 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	_, ln, vn = utils.FindKeyNodeFullTop(ServersLabel, root.Content)
 	if vn != nil {
 		if utils.IsNodeArray(vn) {
-			var servers []low.ValueReference[*Server]
+			servers := make([]low.ValueReference[*Server], 0, len(vn.Content))
 			for _, srvN := range vn.Content {
 				if utils.IsNodeMap(srvN) {
 					srvr := new(Server)
@@ -238,7 +263,7 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 	}
 	prevExt := false
 	for i, pathNode := range root.Content {
-		if strings.HasPrefix(strings.ToLower(pathNode.Value), "x-") {
+		if len(pathNode.Value) >= 2 && (pathNode.Value[0] == 'x' || pathNode.Value[0] == 'X') && pathNode.Value[1] == '-' {
 			skip = true
 			prevExt = true
 			continue
@@ -246,7 +271,7 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 		// https://github.com/pb33f/libopenapi/issues/388
 		// in the case where a user has an extension with the value 'parameters', make sure we handle
 		// it correctly, by not skipping.
-		if strings.HasPrefix(strings.ToLower(pathNode.Value), "parameters") {
+		if strings.EqualFold(pathNode.Value, "parameters") {
 			if !prevExt { // this
 				skip = true
 				continue
@@ -290,8 +315,9 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 			return err
 		}
 		var op Operation
-		wg.Add(1)
-		low.BuildModelAsync(pathNode, &op, &wg, &errors)
+		if err := low.BuildModel(pathNode, &op); err != nil {
+			return err
+		}
 
 		opRef := low.NodeReference[*Operation]{
 			Value:     &op,
@@ -345,8 +371,9 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 						return err
 					}
 					var addOp Operation
-					wg.Add(1)
-					low.BuildModelAsync(opValueNode, &addOp, &wg, &errors)
+					if err := low.BuildModel(opValueNode, &addOp); err != nil {
+						return err
+					}
 
 					addOpRef := low.NodeReference[*Operation]{
 						Value:     &addOp,
@@ -405,7 +432,7 @@ func (p *PathItem) Build(ctx context.Context, keyNode, root *yaml.Node, idx *ind
 
 	// assign additionalOperations if any were found
 	if additionalOps != nil && additionalOps.Len() > 0 {
-		var extrOps []low.NodeReference[*Operation]
+		extrOps := make([]low.NodeReference[*Operation], 0, additionalOps.Len())
 		// build out each additional operation
 		for _, appVal := range additionalOps.FromOldest() {
 			extrOps = append(extrOps, appVal)

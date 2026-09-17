@@ -23,3 +23,34 @@ func NewInfoAnnotation(msg string) error {
 
 func (a *stringAnnotation) Error() string { return a.msg }
 func (a *stringAnnotation) Unwrap() error { return a.inner }
+
+func (a *Annotations) Decode() annotations.Annotations {
+	if len(a.Infos) == 0 && len(a.Warnings) == 0 {
+		return nil
+	}
+
+	annos := make(annotations.Annotations, len(a.Infos)+len(a.Warnings))
+
+	for _, a := range a.Infos {
+		annos.Add(NewInfoAnnotation(a))
+	}
+
+	for _, a := range a.Warnings {
+		annos.Add(NewWarningAnnotation(a))
+	}
+
+	return annos
+}
+
+func EncodeAnnotations(a annotations.Annotations, originalExpression string) Annotations {
+	if len(a) == 0 {
+		return Annotations{}
+	}
+
+	warnings, infos := a.AsStrings(originalExpression, 0, 0)
+
+	return Annotations{
+		Warnings: warnings,
+		Infos:    infos,
+	}
+}

@@ -122,8 +122,8 @@ func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
 
 func (t *testNode) MergeHints(_ Node) error { panic("not supported") }
 
-func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
-	panic("not supported")
+func (t *testNode) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return timeRange
 }
 
 func (t *testNode) ResultType() (parser.ValueType, error) {
@@ -138,8 +138,8 @@ func (t *testNode) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 
-func (t *testNode) MinimumRequiredPlanVersion() QueryPlanVersion {
-	return t.minimumRequiredPlanVersion
+func (t *testNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (QueryPlanVersion, error) {
+	return t.minimumRequiredPlanVersion, nil
 }
 
 func TestQueryPlanVersion(t *testing.T) {
@@ -159,12 +159,18 @@ func TestQueryPlanVersion(t *testing.T) {
 		},
 		"single root node": {
 			plan: QueryPlan{
+				Parameters: &QueryParameters{
+					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
+				},
 				Root: &testNode{minimumRequiredPlanVersion: v1},
 			},
 			expectedVersion: v1,
 		},
 		"node with children": {
 			plan: QueryPlan{
+				Parameters: &QueryParameters{
+					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
+				},
 				Root: &testNode{
 					minimumRequiredPlanVersion: v1,
 					children: []Node{
@@ -181,6 +187,9 @@ func TestQueryPlanVersion(t *testing.T) {
 		},
 		"node with deep children": {
 			plan: QueryPlan{
+				Parameters: &QueryParameters{
+					TimeRange: types.NewInstantQueryTimeRange(time.Now()),
+				},
 				Root: &testNode{
 					minimumRequiredPlanVersion: v0,
 					children: []Node{

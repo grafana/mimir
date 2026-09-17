@@ -4,13 +4,17 @@ package querier
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -59,6 +63,37 @@ func (q *memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hi
 
 func (q *memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.inner.LabelNames(ctx, hints, matchers...)
+}
+
+// SearchLabelNames passes through to the inner querier's mimirSearcher
+// implementation. No memory tracking is applied to label search — the
+// streaming SearchResultSet caps memory at the per-tenant Limit via the
+// merge tree, so wrapping each emitted Value in a tracker would be
+// redundant work on the hot path.
+func (q *memoryTrackingQuerier) SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.inner.(mimirSearcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("inner querier %T does not implement search", q.inner))
+	}
+	return s.SearchLabelNames(ctx, params, hints, matchers...)
+}
+
+// SearchLabelValues mirrors SearchLabelNames; see that docstring for rationale.
+func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.inner.(mimirSearcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("inner querier %T does not implement search", q.inner))
+	}
+	return s.SearchLabelValues(ctx, name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata passes through to the inner querier's metadata fetcher.
+func (q *memoryTrackingQuerier) FetchMetricMetadata(ctx context.Context, names []string, matcherSets [][]*labels.Matcher) (map[string]metadata.Metadata, error) {
+	f, ok := q.inner.(querierapi.MetricMetadataFetcher)
+	if !ok {
+		return nil, fmt.Errorf("inner querier %T does not support metric metadata fetch", q.inner)
+	}
+	return f.FetchMetricMetadata(ctx, names, matcherSets)
 }
 
 func (q *memoryTrackingQuerier) Close() error {

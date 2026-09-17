@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Allow importing the kmeta package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
 	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
@@ -231,19 +233,33 @@ func (ss ctxStream) Context() context.Context {
 // EncodedOffsets holds the encoded partition offsets.
 type EncodedOffsets string
 
-// Lookup the offset for the input partitionID.
-func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
+// Lookup returns the offsets for the input read compartment and partition.
+func (p EncodedOffsets) Lookup(readCompartment int, partitionID int32) (kmeta.PartitionOffsets, bool) {
 	const versionLen = 3
-
 	if len(p) < versionLen {
-		return 0, false
+		return kmeta.PartitionOffsets{}, false
 	}
 
-	// Check the version.
-	if p[:3] != "v1=" {
-		return 0, false
+	switch p[:versionLen] {
+	case "v1=":
+		if readCompartment != 0 {
+			return kmeta.PartitionOffsets{}, false
+		}
+		offset, ok := p.lookupV1(partitionID)
+		if !ok {
+			return kmeta.PartitionOffsets{}, false
+		}
+		return kmeta.NewSingleClusterPartitionOffsets(offset), true
+	case "v2=":
+		return p.lookupV2(readCompartment, partitionID)
+	default:
+		return kmeta.PartitionOffsets{}, false
 	}
+}
 
+// lookupV1 returns the offset for the input partitionID from the v1 encoding produced by EncodeOffsetsV1.
+// It assumes the caller has already verified the "v1=" version prefix and so doesn't re-check it.
+func (p EncodedOffsets) lookupV1(partitionID int32) (int64, bool) {
 	// Find the position of the partition. The partition can either be:
 	// - At the beginning, right after the version (so after "=")
 	// - In the middle or end, right after another partition (so after ",")
@@ -275,9 +291,9 @@ func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
 	return offset, true
 }
 
-// EncodeOffsets serialise the input offsets into a string which is safe to be used as HTTP header value.
+// EncodeOffsetsV1 serialise the input offsets into a string which is safe to be used as HTTP header value.
 // Empty partitions (offset is -1) are NOT skipped.
-func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
+func EncodeOffsetsV1(offsets map[int32]int64) EncodedOffsets {
 	const versionLen = 3
 
 	if len(offsets) == 0 {
@@ -317,4 +333,114 @@ func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	}
 
 	return EncodedOffsets(unsafe.String(unsafe.SliceData(buffer), len(buffer)))
+}
+
+// EncodeOffsetsV2 serialises the input per-read-compartment kmeta.PartitionsOffsets into a
+// string which is safe to be used as an HTTP header value.
+//
+// The encoded format is:
+// "v2=<read-compartment>/<partition>:<offset>;<offset>;..."
+//
+// with offsets indexed by Kafka cluster ID.
+func EncodeOffsetsV2(offsets map[int]kmeta.PartitionsOffsets) EncodedOffsets {
+	const version = "v2="
+
+	numEntries := 0
+	for _, partitions := range offsets {
+		numEntries += len(partitions)
+	}
+	if numEntries == 0 {
+		return ""
+	}
+
+	// Pre-size the buffer to avoid reallocations, slightly overallocating because the digit count is an
+	// estimation that is expected to be >= the actual one.
+	size := len(version)
+	for readCompartment, partitions := range offsets {
+		for partitionID, clusterOffsets := range partitions {
+			// "<read-compartment>" + "/" + "<partition>" + ":" + entry separator.
+			size += math.EstimatedDigitsInt64(int64(readCompartment)) + 1 + math.EstimatedDigitsInt32(partitionID) + 1 + 1
+			for kafkaClusterID := 0; kafkaClusterID < clusterOffsets.NumKafkaClusters(); kafkaClusterID++ {
+				// "<offset>" + cluster separator.
+				size += math.EstimatedDigitsInt64(clusterOffsets.ForKafkaCluster(kafkaClusterID)) + 1
+			}
+		}
+	}
+
+	buffer := make([]byte, 0, size)
+	buffer = append(buffer, version...)
+
+	first := true
+	for readCompartment, partitions := range offsets {
+		for partitionID, clusterOffsets := range partitions {
+			// Add the entry separator, unless it's the first entry.
+			if !first {
+				buffer = append(buffer, ',')
+			}
+			first = false
+
+			buffer = strconv.AppendInt(buffer, int64(readCompartment), 10)
+			buffer = append(buffer, '/')
+			buffer = strconv.AppendInt(buffer, int64(partitionID), 10)
+			buffer = append(buffer, ':')
+
+			for kafkaClusterID := 0; kafkaClusterID < clusterOffsets.NumKafkaClusters(); kafkaClusterID++ {
+				if kafkaClusterID > 0 {
+					buffer = append(buffer, ';')
+				}
+				buffer = strconv.AppendInt(buffer, clusterOffsets.ForKafkaCluster(kafkaClusterID), 10)
+			}
+		}
+	}
+
+	// buffer is freshly allocated here, becomes the returned string's only backing, and is never mutated
+	// or pooled afterwards, so the zero-copy conversion is safe.
+	return EncodedOffsets(unsafe.String(unsafe.SliceData(buffer), len(buffer))) // #nosec G103 -- nosemgrep
+}
+
+// lookupV2 returns the per-Kafka-cluster offsets for the input read compartment and partition, as encoded
+// by EncodeOffsetsV2.
+func (p EncodedOffsets) lookupV2(readCompartment int, partitionID int32) (kmeta.PartitionOffsets, bool) {
+	const versionLen = 3
+
+	if len(p) < versionLen || p[:versionLen] != "v2=" {
+		return kmeta.PartitionOffsets{}, false
+	}
+
+	// The entry key is "<read-compartment>/<partition>:". It is anchored by the delimiter that precedes it
+	// (a "," between entries, or the "=" of the version prefix for the first entry) so that, for example,
+	// looking up "1/2" doesn't match "11/2". The "/" and ":" never appear in offset values, so the key can
+	// only match at a real entry boundary.
+	key := strconv.Itoa(readCompartment) + "/" + strconv.FormatInt(int64(partitionID), 10) + ":"
+	idx := strings.Index(string(p), ","+key)
+	if idx < 0 {
+		idx = strings.Index(string(p), "="+key)
+	}
+	if idx < 0 {
+		return kmeta.PartitionOffsets{}, false
+	}
+
+	// Skip the leading delimiter and the key.
+	start := idx + 1 + len(key)
+
+	// The value runs until the next entry separator or the end of the string.
+	end := strings.IndexByte(string(p[start:]), ',')
+	if end >= 0 {
+		end += start
+	} else {
+		end = len(p)
+	}
+
+	// Parse the ";"-separated per-Kafka-cluster offsets.
+	parts := strings.Split(string(p[start:end]), ";")
+	clusterOffsets := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		offset, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return kmeta.PartitionOffsets{}, false
+		}
+		clusterOffsets = append(clusterOffsets, offset)
+	}
+
+	return kmeta.NewMultiClusterPartitionOffsets(clusterOffsets), true
 }

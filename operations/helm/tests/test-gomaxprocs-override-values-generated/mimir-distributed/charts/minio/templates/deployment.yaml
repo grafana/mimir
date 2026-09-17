@@ -82,4 +82,5 @@ spec:
             claimName: test-gomaxprocs-override-values-minio
         - name: minio-user
           secret:
-            secretName: test-gomaxprocs-override-values-minio
+            secretName: test-gomaxprocs-override-values-minio        
+

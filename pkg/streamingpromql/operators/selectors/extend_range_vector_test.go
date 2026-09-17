@@ -69,17 +69,22 @@ func TestRevertibleExtendedPointsUtilityUndoModifications(t *testing.T) {
 		},
 		"restore excluded tail": {
 			mods: RevertibleExtendedPointsState{
-				restoreExcludedLast: true,
-				excludedLast:        promql.FPoint{T: 100, F: 7000},
+				excludedTrailing: []promql.FPoint{{T: 100, F: 7000}},
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}, {T: 100, F: 7000}},
+		},
+		"restore multiple excluded tail in original order": {
+			// Recorded furthest-from-rangeEnd first, so they must be restored in reverse.
+			mods: RevertibleExtendedPointsState{
+				excludedTrailing: []promql.FPoint{{T: 100, F: 7000}, {T: 50, F: 700}},
+			},
+			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}, {T: 50, F: 700}, {T: 100, F: 7000}},
 		},
 		"combined": {
 			mods: RevertibleExtendedPointsState{
 				restoreExcludedFirst:  true,
 				excludedFirst:         promql.FPoint{T: 5, F: 70},
-				restoreExcludedLast:   true,
-				excludedLast:          promql.FPoint{T: 100, F: 7000},
+				excludedTrailing:      []promql.FPoint{{T: 100, F: 7000}},
 				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 8, F: 80},
 				undoTailModifications: replaced,
@@ -154,16 +159,14 @@ func TestRevertibleExtendedPointsUtilityReset(t *testing.T) {
 		},
 		"restore excluded tail": {
 			mods: &RevertibleExtendedPointsState{
-				restoreExcludedLast: true,
-				excludedLast:        promql.FPoint{T: 100, F: 7000},
+				excludedTrailing: []promql.FPoint{{T: 100, F: 7000}},
 			},
 		},
 		"combined": {
 			mods: &RevertibleExtendedPointsState{
 				restoreExcludedFirst:  true,
 				excludedFirst:         promql.FPoint{T: 5, F: 70},
-				restoreExcludedLast:   true,
-				excludedLast:          promql.FPoint{T: 100, F: 7000},
+				excludedTrailing:      []promql.FPoint{{T: 100, F: 7000}},
 				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 8, F: 80},
 				undoTailModifications: replaced,

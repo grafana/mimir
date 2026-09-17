@@ -300,6 +300,34 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				},
 			},
 		},
+		"meta.json with NumSeries": {
+			meta: block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+					Stats: tsdb.BlockStats{
+						NumSeries: 12345,
+					},
+					Compaction: tsdb.BlockMetaCompaction{
+						Level: 1,
+					},
+				},
+				Thanos: block.ThanosMeta{
+					Source: block.SourceType("test"),
+				},
+			},
+			expected: Block{
+				ID:              blockID,
+				MinTime:         10,
+				MaxTime:         20,
+				SegmentsFormat:  SegmentsFormatUnknown,
+				SegmentsNum:     0,
+				Source:          "test",
+				CompactionLevel: 1,
+				NumSeries:       12345,
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -433,6 +461,34 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				Thanos: block.ThanosMeta{
 					Version: block.ThanosVersion1,
 					Labels:  map[string]string{"my_key": "0x8413"},
+				},
+			},
+		},
+		"block with NumSeries": {
+			block: Block{
+				ID:              blockID,
+				MinTime:         10,
+				MaxTime:         20,
+				SegmentsFormat:  SegmentsFormatUnknown,
+				SegmentsNum:     0,
+				CompactionLevel: 1,
+				NumSeries:       12345,
+			},
+			expected: &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+					Version: block.TSDBVersion1,
+					Stats: tsdb.BlockStats{
+						NumSeries: 12345,
+					},
+					Compaction: tsdb.BlockMetaCompaction{
+						Level: 1,
+					},
+				},
+				Thanos: block.ThanosMeta{
+					Version: block.ThanosVersion1,
 				},
 			},
 		},

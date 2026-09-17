@@ -7,10 +7,12 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	stats "github.com/grafana/mimir/pkg/querier/stats"
 	planning "github.com/grafana/mimir/pkg/streamingpromql/planning"
+	types "github.com/grafana/mimir/pkg/streamingpromql/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -33,6 +35,12 @@ type EvaluateQueryRequest struct {
 	Plan      planning.EncodedQueryPlan `protobuf:"bytes,1,opt,name=plan,proto3" json:"plan"`
 	Nodes     []EvaluationNode          `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes"`
 	BatchSize uint64                    `protobuf:"varint,4,opt,name=batchSize,proto3" json:"batchSize,omitempty"`
+	// seriesMetadataBatchSize is the maximum number of series metadata entries to include in a single
+	// EvaluateQueryResponseSeriesMetadata message. A non-zero value indicates that the query-frontend
+	// supports receiving batched series metadata messages (ie. multiple EvaluateQueryResponseSeriesMetadata
+	// messages per node).
+	SeriesMetadataBatchSize  uint64 `protobuf:"varint,5,opt,name=seriesMetadataBatchSize,proto3" json:"seriesMetadataBatchSize,omitempty"`
+	EnablePerNodeAnnotations bool   `protobuf:"varint,6,opt,name=enablePerNodeAnnotations,proto3" json:"enablePerNodeAnnotations,omitempty"`
 }
 
 func (m *EvaluateQueryRequest) Reset()      { *m = EvaluateQueryRequest{} }
@@ -88,9 +96,23 @@ func (m *EvaluateQueryRequest) GetBatchSize() uint64 {
 	return 0
 }
 
+func (m *EvaluateQueryRequest) GetSeriesMetadataBatchSize() uint64 {
+	if m != nil {
+		return m.SeriesMetadataBatchSize
+	}
+	return 0
+}
+
+func (m *EvaluateQueryRequest) GetEnablePerNodeAnnotations() bool {
+	if m != nil {
+		return m.EnablePerNodeAnnotations
+	}
+	return false
+}
+
 type EvaluationNode struct {
-	NodeIndex int64                          `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
-	TimeRange planning.EncodedQueryTimeRange `protobuf:"bytes,2,opt,name=timeRange,proto3" json:"timeRange"`
+	NodeIndex int64                       `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
+	TimeRange types.EncodedQueryTimeRange `protobuf:"bytes,2,opt,name=timeRange,proto3" json:"timeRange"`
 }
 
 func (m *EvaluationNode) Reset()      { *m = EvaluationNode{} }
@@ -132,11 +154,11 @@ func (m *EvaluationNode) GetNodeIndex() int64 {
 	return 0
 }
 
-func (m *EvaluationNode) GetTimeRange() planning.EncodedQueryTimeRange {
+func (m *EvaluationNode) GetTimeRange() types.EncodedQueryTimeRange {
 	if m != nil {
 		return m.TimeRange
 	}
-	return planning.EncodedQueryTimeRange{}
+	return types.EncodedQueryTimeRange{}
 }
 
 type EvaluateQueryResponse struct {
@@ -279,6 +301,11 @@ func (*EvaluateQueryResponse) XXX_OneofWrappers() []interface{} {
 type EvaluateQueryResponseSeriesMetadata struct {
 	NodeIndex int64            `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
 	Series    []SeriesMetadata `protobuf:"bytes,2,rep,name=series,proto3" json:"series"`
+	// totalSeriesCountForNode is non-zero if the EvaluateQueryRequest has a non-zero seriesMetadataBatchSize and the
+	// querier supports batching series metadata messages.
+	// Why send a total count rather than a "more messages to come" flag? Sending the count allows the query-frontend to
+	// allocate a slice of exactly the right length to hold all series.
+	TotalSeriesCountForNode int64 `protobuf:"varint,3,opt,name=totalSeriesCountForNode,proto3" json:"totalSeriesCountForNode,omitempty"`
 }
 
 func (m *EvaluateQueryResponseSeriesMetadata) Reset()      { *m = EvaluateQueryResponseSeriesMetadata{} }
@@ -325,6 +352,13 @@ func (m *EvaluateQueryResponseSeriesMetadata) GetSeries() []SeriesMetadata {
 		return m.Series
 	}
 	return nil
+}
+
+func (m *EvaluateQueryResponseSeriesMetadata) GetTotalSeriesCountForNode() int64 {
+	if m != nil {
+		return m.TotalSeriesCountForNode
+	}
+	return 0
 }
 
 type SeriesMetadata struct {
@@ -423,8 +457,8 @@ func (m *EvaluateQueryResponseStringValue) GetValue() string {
 }
 
 type EvaluateQueryResponseScalarValue struct {
-	NodeIndex int64            `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
-	Values    []mimirpb.Sample `protobuf:"bytes,2,rep,name=values,proto3" json:"values"`
+	NodeIndex int64                 `protobuf:"varint,1,opt,name=nodeIndex,proto3" json:"nodeIndex,omitempty"`
+	Values    []mimirpb.FloatSample `protobuf:"bytes,2,rep,name=values,proto3" json:"values"`
 }
 
 func (m *EvaluateQueryResponseScalarValue) Reset()      { *m = EvaluateQueryResponseScalarValue{} }
@@ -466,7 +500,7 @@ func (m *EvaluateQueryResponseScalarValue) GetNodeIndex() int64 {
 	return 0
 }
 
-func (m *EvaluateQueryResponseScalarValue) GetValues() []mimirpb.Sample {
+func (m *EvaluateQueryResponseScalarValue) GetValues() []mimirpb.FloatSample {
 	if m != nil {
 		return m.Values
 	}
@@ -527,7 +561,7 @@ func (m *EvaluateQueryResponseInstantVectorSeriesData) GetSeries() []InstantVect
 }
 
 type InstantVectorSeriesData struct {
-	Floats     []mimirpb.Sample             `protobuf:"bytes,1,rep,name=floats,proto3" json:"floats"`
+	Floats     []mimirpb.FloatSample        `protobuf:"bytes,1,rep,name=floats,proto3" json:"floats"`
 	Histograms []mimirpb.FloatHistogramPair `protobuf:"bytes,2,rep,name=histograms,proto3" json:"histograms"`
 }
 
@@ -563,7 +597,7 @@ func (m *InstantVectorSeriesData) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_InstantVectorSeriesData proto.InternalMessageInfo
 
-func (m *InstantVectorSeriesData) GetFloats() []mimirpb.Sample {
+func (m *InstantVectorSeriesData) GetFloats() []mimirpb.FloatSample {
 	if m != nil {
 		return m.Floats
 	}
@@ -584,7 +618,7 @@ type EvaluateQueryResponseRangeVectorStepData struct {
 	StepT      int64                        `protobuf:"varint,3,opt,name=step_t,json=stepT,proto3" json:"step_t,omitempty"`
 	RangeStart int64                        `protobuf:"varint,4,opt,name=range_start,json=rangeStart,proto3" json:"range_start,omitempty"`
 	RangeEnd   int64                        `protobuf:"varint,5,opt,name=range_end,json=rangeEnd,proto3" json:"range_end,omitempty"`
-	Floats     []mimirpb.Sample             `protobuf:"bytes,6,rep,name=floats,proto3" json:"floats"`
+	Floats     []mimirpb.FloatSample        `protobuf:"bytes,6,rep,name=floats,proto3" json:"floats"`
 	Histograms []mimirpb.FloatHistogramPair `protobuf:"bytes,7,rep,name=histograms,proto3" json:"histograms"`
 }
 
@@ -657,7 +691,7 @@ func (m *EvaluateQueryResponseRangeVectorStepData) GetRangeEnd() int64 {
 	return 0
 }
 
-func (m *EvaluateQueryResponseRangeVectorStepData) GetFloats() []mimirpb.Sample {
+func (m *EvaluateQueryResponseRangeVectorStepData) GetFloats() []mimirpb.FloatSample {
 	if m != nil {
 		return m.Floats
 	}
@@ -723,8 +757,10 @@ func (m *Error) GetMessage() string {
 }
 
 type EvaluateQueryResponseEvaluationCompleted struct {
-	Annotations Annotations `protobuf:"bytes,1,opt,name=annotations,proto3" json:"annotations"`
-	Stats       stats.Stats `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats"`
+	Annotations        Annotations                                    `protobuf:"bytes,1,opt,name=annotations,proto3" json:"annotations"`
+	Stats              stats.Stats                                    `protobuf:"bytes,2,opt,name=stats,proto3" json:"stats"`
+	PerNodeStats       map[int64]types.EncodedOperatorEvaluationStats `protobuf:"bytes,3,rep,name=perNodeStats,proto3" json:"perNodeStats" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	PerNodeAnnotations map[int64]Annotations                          `protobuf:"bytes,4,rep,name=perNodeAnnotations,proto3" json:"perNodeAnnotations" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
 func (m *EvaluateQueryResponseEvaluationCompleted) Reset() {
@@ -773,6 +809,20 @@ func (m *EvaluateQueryResponseEvaluationCompleted) GetStats() stats.Stats {
 		return m.Stats
 	}
 	return stats.Stats{}
+}
+
+func (m *EvaluateQueryResponseEvaluationCompleted) GetPerNodeStats() map[int64]types.EncodedOperatorEvaluationStats {
+	if m != nil {
+		return m.PerNodeStats
+	}
+	return nil
+}
+
+func (m *EvaluateQueryResponseEvaluationCompleted) GetPerNodeAnnotations() map[int64]Annotations {
+	if m != nil {
+		return m.PerNodeAnnotations
+	}
+	return nil
 }
 
 type Annotations struct {
@@ -839,73 +889,87 @@ func init() {
 	proto.RegisterType((*EvaluateQueryResponseRangeVectorStepData)(nil), "querierpb.EvaluateQueryResponseRangeVectorStepData")
 	proto.RegisterType((*Error)(nil), "querierpb.Error")
 	proto.RegisterType((*EvaluateQueryResponseEvaluationCompleted)(nil), "querierpb.EvaluateQueryResponseEvaluationCompleted")
+	proto.RegisterMapType((map[int64]Annotations)(nil), "querierpb.EvaluateQueryResponseEvaluationCompleted.PerNodeAnnotationsEntry")
+	proto.RegisterMapType((map[int64]types.EncodedOperatorEvaluationStats)(nil), "querierpb.EvaluateQueryResponseEvaluationCompleted.PerNodeStatsEntry")
 	proto.RegisterType((*Annotations)(nil), "querierpb.Annotations")
 }
 
 func init() { proto.RegisterFile("querier.proto", fileDescriptor_7edfe438abd6b96f) }
 
 var fileDescriptor_7edfe438abd6b96f = []byte{
-	// 955 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x4f, 0x6f, 0x1b, 0x45,
-	0x14, 0xdf, 0x8d, 0xff, 0x34, 0x7e, 0x86, 0xa8, 0xda, 0xa6, 0xd4, 0x84, 0x6a, 0x63, 0x2d, 0x17,
-	0x4b, 0x54, 0x6b, 0x48, 0x81, 0x8a, 0x0b, 0x6d, 0x5d, 0x8c, 0x5c, 0x04, 0x6d, 0x19, 0x47, 0x11,
-	0xe2, 0x52, 0x8d, 0xbd, 0x93, 0xcd, 0x8a, 0xdd, 0x99, 0xcd, 0xcc, 0xb8, 0x34, 0x88, 0x03, 0x5f,
-	0x00, 0xc4, 0xa1, 0xdf, 0x01, 0xee, 0x7c, 0x89, 0x1e, 0x73, 0xac, 0x38, 0x54, 0xc4, 0x11, 0x12,
-	0xc7, 0x7e, 0x04, 0x34, 0x33, 0x6b, 0xef, 0xc6, 0xb1, 0x63, 0xb7, 0x17, 0x7b, 0xe6, 0xcd, 0xfb,
-	0xfd, 0xde, 0xcc, 0xef, 0xbd, 0x79, 0x3b, 0xf0, 0xf6, 0xe1, 0x88, 0xf0, 0x88, 0x70, 0x3f, 0xe5,
-	0x4c, 0x32, 0xa7, 0x96, 0x4d, 0xd3, 0xc1, 0xd6, 0x87, 0x61, 0x24, 0x0f, 0x46, 0x03, 0x7f, 0xc8,
-	0x92, 0x76, 0xc8, 0xf1, 0x3e, 0xa6, 0xb8, 0x9d, 0x44, 0x49, 0xc4, 0xdb, 0xe9, 0x0f, 0xa1, 0x19,
-	0xa5, 0x03, 0xf3, 0x6f, 0xc0, 0x5b, 0x9f, 0x5e, 0x88, 0xc8, 0x98, 0xdb, 0x42, 0x62, 0x29, 0xcc,
-	0x6f, 0x86, 0xbb, 0x73, 0x21, 0x4e, 0x48, 0x4e, 0x70, 0x12, 0xd1, 0x30, 0xe5, 0x2c, 0x39, 0x8c,
-	0xdb, 0x69, 0x8c, 0x29, 0x8d, 0x68, 0xa8, 0x07, 0x19, 0xc3, 0x66, 0xc8, 0x42, 0xa6, 0x87, 0x6d,
-	0x35, 0x32, 0x56, 0xef, 0x0f, 0x1b, 0x36, 0xbb, 0x4f, 0x70, 0x3c, 0xc2, 0x92, 0x7c, 0x3b, 0x22,
-	0xfc, 0x08, 0x91, 0xc3, 0x11, 0x11, 0xd2, 0xf9, 0x18, 0xca, 0x0a, 0xdc, 0xb0, 0x9b, 0x76, 0xab,
-	0xbe, 0xb3, 0xe5, 0x4f, 0x28, 0xfd, 0x2e, 0x1d, 0xb2, 0x80, 0x04, 0xda, 0xf9, 0x51, 0x8c, 0x69,
-	0xa7, 0xfc, 0xfc, 0xe5, 0xb6, 0x85, 0xb4, 0xb7, 0xf3, 0x09, 0x54, 0x28, 0x0b, 0x88, 0x68, 0xac,
-	0x35, 0x4b, 0xad, 0xfa, 0xce, 0xbb, 0xfe, 0x54, 0x2b, 0x3f, 0x8b, 0x12, 0x31, 0xfa, 0x80, 0x05,
-	0x24, 0x43, 0x19, 0x6f, 0xe7, 0x3a, 0xd4, 0x06, 0x58, 0x0e, 0x0f, 0xfa, 0xd1, 0x4f, 0xa4, 0x51,
-	0x6e, 0xda, 0xad, 0x32, 0xca, 0x0d, 0x5f, 0x95, 0xd7, 0x4b, 0x97, 0xcb, 0x9e, 0x80, 0x8d, 0xb3,
-	0x14, 0x0a, 0xa5, 0xe0, 0xf7, 0x69, 0x40, 0x9e, 0xea, 0x7d, 0x96, 0x50, 0x6e, 0x70, 0xee, 0x41,
-	0x4d, 0x46, 0x09, 0x41, 0x98, 0x86, 0xa4, 0xb1, 0xa6, 0x4f, 0xb1, 0x3d, 0xff, 0x14, 0xbb, 0x13,
-	0xb7, 0x6c, 0x53, 0x39, 0xce, 0xfb, 0xb7, 0x0c, 0x57, 0x67, 0xe4, 0x11, 0x29, 0xa3, 0x82, 0x38,
-	0xdf, 0xc1, 0x86, 0x50, 0x47, 0x13, 0xdf, 0x10, 0x89, 0x03, 0x2c, 0x71, 0xa6, 0x94, 0x7f, 0xfe,
-	0xc8, 0x67, 0x91, 0xfd, 0x33, 0xa8, 0x9e, 0x85, 0x66, 0x78, 0x9c, 0x87, 0x50, 0x17, 0x92, 0x47,
-	0x34, 0xdc, 0xc3, 0xf1, 0x68, 0xb2, 0xf5, 0x0f, 0x96, 0xd2, 0xe6, 0x90, 0x9e, 0x85, 0x8a, 0x0c,
-	0x9a, 0x70, 0x88, 0x63, 0xcc, 0x0d, 0x61, 0x69, 0x45, 0xc2, 0x1c, 0xa2, 0x09, 0xf3, 0xa9, 0x23,
-	0xe0, 0x5a, 0x44, 0x85, 0xc4, 0x54, 0xee, 0x91, 0xa1, 0x64, 0xdc, 0x1c, 0xe9, 0x0b, 0x25, 0x42,
-	0x59, 0x93, 0xdf, 0x5a, 0x46, 0x7e, 0x7f, 0x3e, 0xbc, 0x67, 0xa1, 0x45, 0xcc, 0x4e, 0x08, 0x57,
-	0xb8, 0xca, 0x49, 0xb6, 0x20, 0x49, 0xaa, 0x03, 0x56, 0x74, 0xc0, 0x9b, 0xcb, 0x02, 0xa2, 0xf3,
-	0xd0, 0x9e, 0x85, 0xe6, 0x31, 0xaa, 0x40, 0x64, 0x5a, 0x68, 0xf7, 0x58, 0x92, 0xc6, 0x44, 0x92,
-	0xa0, 0x51, 0x5d, 0x2d, 0x50, 0xf7, 0x3c, 0x54, 0x05, 0x9a, 0xc3, 0xd8, 0xa9, 0xc1, 0xa5, 0x84,
-	0x08, 0x81, 0x43, 0xe2, 0xfd, 0x0c, 0xef, 0xaf, 0x50, 0x2c, 0x4b, 0x2a, 0xfe, 0x16, 0x54, 0x4d,
-	0x29, 0xcd, 0xb9, 0x7d, 0x67, 0x89, 0xb2, 0x42, 0xcf, 0xdc, 0xbd, 0x67, 0x36, 0x6c, 0xcc, 0x44,
-	0xda, 0x87, 0x6a, 0x8c, 0x07, 0x24, 0x16, 0x0d, 0x5b, 0x73, 0x5d, 0xf1, 0x87, 0x8c, 0x4b, 0xf2,
-	0x34, 0x1d, 0xf8, 0x5f, 0x2b, 0xfb, 0x23, 0x1c, 0xf1, 0xce, 0x67, 0x8a, 0xe5, 0xef, 0x97, 0xdb,
-	0x1f, 0xad, 0xd2, 0x06, 0x0d, 0xee, 0x6e, 0x80, 0x53, 0x49, 0x38, 0xca, 0xd8, 0x9d, 0x2d, 0x58,
-	0x0f, 0x38, 0x4b, 0x1f, 0xe0, 0xc4, 0x54, 0xfa, 0x3a, 0x9a, 0xce, 0xbd, 0x3d, 0x68, 0x2e, 0x2b,
-	0xf5, 0x25, 0x8a, 0x6c, 0x42, 0xe5, 0xc9, 0xf4, 0x12, 0xd5, 0x90, 0x99, 0x78, 0xe9, 0x22, 0xde,
-	0x42, 0x89, 0x5f, 0xcc, 0xeb, 0x43, 0x55, 0x53, 0x4d, 0x94, 0xbe, 0x9c, 0xab, 0xd3, 0xc7, 0x2a,
-	0xbd, 0x13, 0x81, 0x8d, 0x97, 0xf7, 0x9b, 0x0d, 0x37, 0x5e, 0xe7, 0x1e, 0x2c, 0x09, 0x7f, 0x67,
-	0x26, 0xd1, 0x5e, 0x21, 0xd1, 0x0b, 0x18, 0x67, 0x32, 0xfe, 0xab, 0x0d, 0xd7, 0x16, 0xc5, 0xf6,
-	0xa1, 0xba, 0x1f, 0x33, 0x2c, 0x27, 0xa9, 0x5f, 0x78, 0x38, 0xe3, 0xe5, 0x74, 0x00, 0x0e, 0x22,
-	0x21, 0x59, 0xc8, 0x71, 0x32, 0xd9, 0xd1, 0xf5, 0x1c, 0xf3, 0xa5, 0xf2, 0xea, 0x4d, 0x1c, 0x74,
-	0xdd, 0x18, 0x7c, 0x01, 0xe5, 0xfd, 0xb5, 0x06, 0xad, 0x55, 0xef, 0xed, 0x12, 0x71, 0x9a, 0x50,
-	0x37, 0x87, 0x34, 0xeb, 0x6b, 0x7a, 0xbd, 0x68, 0x72, 0xae, 0x42, 0x55, 0x48, 0x92, 0x3e, 0x96,
-	0xba, 0x15, 0x96, 0x50, 0x45, 0xcd, 0x76, 0x9d, 0x6d, 0xa8, 0xeb, 0x76, 0xf0, 0x58, 0x48, 0xcc,
-	0xa5, 0xee, 0x64, 0x25, 0x04, 0xda, 0xd4, 0x57, 0x16, 0xe7, 0x3d, 0xa8, 0x19, 0x07, 0x42, 0x03,
-	0xdd, 0x77, 0x4a, 0x68, 0x5d, 0x1b, 0xba, 0x34, 0x28, 0xa8, 0x56, 0x7d, 0x03, 0xd5, 0x2e, 0xbd,
-	0x91, 0x6a, 0x0f, 0xa1, 0xd2, 0xe5, 0x9c, 0x71, 0xe7, 0x06, 0x94, 0xe5, 0x51, 0x4a, 0xb4, 0x18,
-	0x1b, 0x3b, 0x8d, 0x9c, 0x46, 0x6b, 0xa9, 0x7d, 0x76, 0x8f, 0x52, 0x82, 0xb4, 0x97, 0xd3, 0x98,
-	0xf6, 0x9d, 0xec, 0x5e, 0x4c, 0xdb, 0xd0, 0x33, 0x7b, 0x41, 0x1a, 0xe6, 0x74, 0x35, 0xe7, 0x73,
-	0xa8, 0x63, 0x4a, 0x99, 0xd4, 0x66, 0x91, 0x7d, 0xfe, 0xde, 0x29, 0x94, 0xe2, 0xdd, 0x7c, 0x35,
-	0xdb, 0x7c, 0x11, 0xe0, 0xb4, 0xa0, 0xa2, 0x5f, 0x38, 0xd9, 0x17, 0xee, 0x2d, 0xdf, 0xbc, 0x77,
-	0xfa, 0xea, 0x77, 0xf2, 0x3c, 0xd0, 0x26, 0xef, 0x36, 0xd4, 0x0b, 0x5c, 0xaa, 0x67, 0xfc, 0x88,
-	0xb9, 0xfa, 0x8c, 0x9b, 0x12, 0xad, 0xa1, 0xe9, 0x5c, 0xdd, 0xf8, 0x88, 0xee, 0x33, 0x53, 0x87,
-	0x35, 0x64, 0x26, 0x9d, 0xdb, 0xc7, 0x27, 0xae, 0xf5, 0xe2, 0xc4, 0xb5, 0x5e, 0x9d, 0xb8, 0xf6,
-	0x2f, 0x63, 0xd7, 0xfe, 0x73, 0xec, 0xda, 0xcf, 0xc7, 0xae, 0x7d, 0x3c, 0x76, 0xed, 0x7f, 0xc6,
-	0xae, 0xfd, 0xdf, 0xd8, 0xb5, 0x5e, 0x8d, 0x5d, 0xfb, 0xf7, 0x53, 0xd7, 0x3a, 0x3e, 0x75, 0xad,
-	0x17, 0xa7, 0xae, 0xf5, 0x7d, 0xfe, 0xd0, 0x1b, 0x54, 0xf5, 0x6b, 0xe9, 0xe6, 0xff, 0x01, 0x00,
-	0x00, 0xff, 0xff, 0x09, 0x68, 0x81, 0x05, 0x0b, 0x0a, 0x00, 0x00,
+	// 1139 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x57, 0xdd, 0x6e, 0x1b, 0x45,
+	0x14, 0xde, 0xb5, 0xd7, 0x6e, 0x7c, 0x5c, 0xa2, 0x32, 0x6d, 0x88, 0x31, 0xd1, 0xc6, 0x5a, 0x84,
+	0x64, 0x89, 0x68, 0x0d, 0x09, 0xd0, 0x52, 0xa4, 0xfe, 0xb8, 0xb8, 0x4a, 0xf9, 0x69, 0xc2, 0x26,
+	0x8a, 0x10, 0x12, 0xaa, 0xc6, 0xde, 0xc9, 0x66, 0xd5, 0xf5, 0xcc, 0x66, 0x76, 0x5c, 0x1a, 0xae,
+	0xe0, 0x05, 0x10, 0x42, 0xdc, 0x72, 0xcf, 0x13, 0x20, 0x1e, 0xa1, 0x97, 0xb9, 0xac, 0xb8, 0xa8,
+	0x88, 0x23, 0x24, 0x2e, 0xfb, 0x08, 0x68, 0x66, 0xd6, 0xf6, 0x3a, 0xb1, 0xe3, 0x34, 0xdc, 0x38,
+	0x3b, 0x33, 0xe7, 0xfb, 0xbe, 0xb3, 0x67, 0xce, 0x39, 0x7b, 0x02, 0xaf, 0xed, 0xf7, 0x08, 0x0f,
+	0x09, 0x77, 0x63, 0xce, 0x04, 0x43, 0xa5, 0x74, 0x19, 0xb7, 0xab, 0xef, 0x05, 0xa1, 0xd8, 0xeb,
+	0xb5, 0xdd, 0x0e, 0xeb, 0x36, 0x02, 0x8e, 0x77, 0x31, 0xc5, 0x8d, 0x6e, 0xd8, 0x0d, 0x79, 0x23,
+	0x7e, 0x1c, 0xe8, 0xa7, 0xb8, 0xad, 0xff, 0x6a, 0x70, 0xf5, 0xa3, 0x33, 0x11, 0x29, 0x73, 0x23,
+	0x11, 0x58, 0x24, 0xfa, 0x37, 0xc5, 0xdd, 0x39, 0x13, 0x97, 0x08, 0x4e, 0x70, 0x37, 0xa4, 0x41,
+	0xcc, 0x59, 0x77, 0x3f, 0x6a, 0xc4, 0x11, 0xa6, 0x34, 0xa4, 0x81, 0x7a, 0x48, 0x19, 0x6e, 0xbd,
+	0x12, 0x83, 0x38, 0x88, 0x49, 0xa2, 0x7f, 0x53, 0xfc, 0xb5, 0x80, 0x05, 0x4c, 0x3d, 0x36, 0xe4,
+	0x93, 0xde, 0x75, 0x7e, 0xcb, 0xc1, 0xb5, 0xd6, 0x13, 0x1c, 0xf5, 0xb0, 0x20, 0x5f, 0xf5, 0x08,
+	0x3f, 0xf0, 0xc8, 0x7e, 0x8f, 0x24, 0x02, 0x7d, 0x00, 0x96, 0x14, 0xaf, 0x98, 0x35, 0xb3, 0x5e,
+	0x5e, 0xad, 0xba, 0x03, 0x97, 0xdc, 0x16, 0xed, 0x30, 0x9f, 0xf8, 0xca, 0x78, 0x33, 0xc2, 0xb4,
+	0x69, 0x3d, 0x7b, 0xb1, 0x6c, 0x78, 0xca, 0x1a, 0x7d, 0x08, 0x05, 0xca, 0x7c, 0x92, 0x54, 0x72,
+	0xb5, 0x7c, 0xbd, 0xbc, 0xfa, 0xa6, 0x3b, 0x8c, 0xb5, 0x9b, 0xaa, 0x84, 0x8c, 0x3e, 0x64, 0x3e,
+	0x49, 0x51, 0xda, 0x1a, 0x2d, 0x41, 0xa9, 0x8d, 0x45, 0x67, 0x6f, 0x2b, 0xfc, 0x9e, 0x54, 0xac,
+	0x9a, 0x59, 0xb7, 0xbc, 0xd1, 0x06, 0xba, 0x01, 0x8b, 0x89, 0x64, 0x49, 0xbe, 0x24, 0x02, 0xfb,
+	0x58, 0xe0, 0xe6, 0xd0, 0xb6, 0xa0, 0x6c, 0xa7, 0x1d, 0xa3, 0x9b, 0x50, 0x21, 0x14, 0xb7, 0x23,
+	0xb2, 0x49, 0xb8, 0x54, 0xbd, 0x4b, 0x29, 0x13, 0xca, 0x87, 0xa4, 0x52, 0xac, 0x99, 0xf5, 0x39,
+	0x6f, 0xea, 0xf9, 0x67, 0xd6, 0x5c, 0xfe, 0x8a, 0xe5, 0xc4, 0x30, 0x3f, 0xee, 0xb8, 0xf4, 0x55,
+	0x3a, 0xfd, 0x80, 0xfa, 0xe4, 0xa9, 0x8a, 0x4e, 0xde, 0x1b, 0x6d, 0xa0, 0x3b, 0x50, 0x12, 0x61,
+	0x97, 0x78, 0x98, 0x06, 0xa4, 0x92, 0x53, 0xb1, 0x5b, 0x72, 0xf5, 0x35, 0x64, 0x03, 0xb7, 0x3d,
+	0xb0, 0x49, 0xe3, 0x30, 0x02, 0x39, 0xff, 0x58, 0xb0, 0x70, 0xe2, 0x46, 0x92, 0x98, 0xd1, 0x84,
+	0xa0, 0xaf, 0x61, 0x7e, 0xfc, 0x45, 0xd3, 0xcb, 0x71, 0x4f, 0x47, 0x79, 0x1c, 0xb9, 0x35, 0x86,
+	0x5a, 0x37, 0xbc, 0x13, 0x3c, 0x68, 0x03, 0xca, 0x89, 0xe0, 0x21, 0x0d, 0x76, 0x70, 0xd4, 0x1b,
+	0xf8, 0xfd, 0xee, 0x4c, 0xda, 0x11, 0x64, 0xdd, 0xf0, 0xb2, 0x0c, 0x8a, 0xb0, 0x83, 0x23, 0xcc,
+	0x35, 0x61, 0xfe, 0x9c, 0x84, 0x23, 0x88, 0x22, 0x1c, 0x2d, 0x51, 0x02, 0x8b, 0x21, 0x4d, 0x04,
+	0xa6, 0x62, 0x87, 0x74, 0x04, 0xe3, 0xfa, 0x95, 0x3e, 0x95, 0x41, 0xb0, 0x14, 0xf9, 0xf5, 0x59,
+	0xe4, 0x0f, 0x26, 0xc3, 0xd7, 0x0d, 0x6f, 0x1a, 0x33, 0x0a, 0xe0, 0x2a, 0x97, 0x77, 0x92, 0x1e,
+	0x08, 0x12, 0x2b, 0xc1, 0x82, 0x12, 0x5c, 0x9b, 0x25, 0xe8, 0x9d, 0x86, 0xae, 0x1b, 0xde, 0x24,
+	0x46, 0x29, 0x44, 0x86, 0x59, 0x76, 0x8f, 0x75, 0xe3, 0x88, 0x08, 0xe2, 0xab, 0x14, 0x3d, 0x87,
+	0x50, 0xeb, 0x34, 0x54, 0x0a, 0x4d, 0x60, 0x6c, 0x96, 0xe0, 0x52, 0x97, 0x24, 0x09, 0x0e, 0x88,
+	0xf3, 0x87, 0x09, 0x6f, 0x9f, 0x23, 0x5b, 0x66, 0xe4, 0xfb, 0x75, 0x28, 0xea, 0x5c, 0x9a, 0x50,
+	0xf1, 0xe3, 0x44, 0x69, 0xa6, 0xa7, 0xe6, 0xb2, 0xa8, 0x05, 0x13, 0x38, 0xd2, 0x46, 0xf7, 0x58,
+	0x8f, 0x8a, 0xfb, 0x4c, 0x15, 0xa1, 0xca, 0x96, 0xbc, 0x37, 0xed, 0xd8, 0xf9, 0xd5, 0x84, 0xf9,
+	0x13, 0x3e, 0xee, 0x42, 0x31, 0xc2, 0x6d, 0x12, 0x25, 0x15, 0x53, 0x79, 0x71, 0xd5, 0xed, 0x30,
+	0x2e, 0xc8, 0xd3, 0xb8, 0xed, 0x7e, 0x21, 0xf7, 0x37, 0x71, 0xc8, 0x9b, 0x1f, 0x4b, 0xfd, 0xbf,
+	0x5e, 0x2c, 0xbf, 0x7f, 0x9e, 0xa6, 0xaf, 0x71, 0x77, 0x7d, 0x1c, 0x0b, 0xc2, 0xbd, 0x94, 0x1d,
+	0x55, 0x61, 0xce, 0xe7, 0x2c, 0x7e, 0x88, 0xbb, 0xba, 0x48, 0xe6, 0xbc, 0xe1, 0xda, 0xd9, 0x81,
+	0xda, 0xac, 0x2a, 0x99, 0x11, 0xcb, 0x6b, 0x50, 0x78, 0x32, 0xac, 0xbf, 0x92, 0xa7, 0x17, 0x4e,
+	0x6f, 0x1a, 0x6f, 0xa6, 0x3a, 0xce, 0xe6, 0x5d, 0x83, 0xa2, 0xa2, 0x1a, 0xdc, 0xd1, 0xc2, 0x28,
+	0x3a, 0xf7, 0x23, 0x86, 0xc5, 0x16, 0x96, 0xe9, 0x31, 0xb8, 0x1f, 0x6d, 0xea, 0xfc, 0x64, 0xc2,
+	0xca, 0xab, 0xd4, 0xd1, 0xcc, 0xbe, 0x38, 0x9e, 0x27, 0x4e, 0x26, 0x4f, 0xa6, 0x30, 0x8e, 0x27,
+	0x8c, 0xf3, 0x8b, 0x09, 0x8b, 0xd3, 0xb4, 0xd7, 0xa0, 0xb8, 0x2b, 0xdf, 0x64, 0x70, 0xff, 0x67,
+	0xbf, 0xa1, 0x36, 0x45, 0x4d, 0x80, 0xbd, 0x30, 0x11, 0x2c, 0xe0, 0xb8, 0x3b, 0x70, 0x6b, 0xe9,
+	0x04, 0x70, 0x7d, 0x60, 0xa0, 0x32, 0x48, 0xe3, 0x33, 0x28, 0xe7, 0xcf, 0x1c, 0xd4, 0xcf, 0x5b,
+	0xfc, 0x33, 0x22, 0x54, 0x83, 0xb2, 0x7e, 0x53, 0x7d, 0x9e, 0x53, 0xe7, 0xd9, 0x2d, 0xb4, 0x00,
+	0xc5, 0x44, 0x90, 0xf8, 0x91, 0x48, 0x2b, 0xa4, 0x20, 0x57, 0xdb, 0x68, 0x19, 0xca, 0xaa, 0xa7,
+	0x3c, 0x4a, 0x04, 0xe6, 0x42, 0xb5, 0xc3, 0xbc, 0x07, 0x6a, 0x6b, 0x4b, 0xee, 0xa0, 0xb7, 0xa0,
+	0xa4, 0x0d, 0x08, 0xf5, 0x55, 0xf3, 0xca, 0x7b, 0x73, 0x6a, 0xa3, 0x45, 0xfd, 0x4c, 0xe8, 0x8a,
+	0x17, 0x0d, 0xdd, 0xa5, 0x0b, 0x85, 0x6e, 0x03, 0x0a, 0x2d, 0xce, 0x19, 0x47, 0x2b, 0x60, 0xc9,
+	0x0f, 0xa4, 0x8a, 0xc8, 0xfc, 0x6a, 0x65, 0x44, 0xa3, 0x02, 0xaa, 0x6c, 0xb6, 0x0f, 0x62, 0xe2,
+	0x29, 0x2b, 0x54, 0x19, 0x76, 0xb0, 0xb4, 0x4c, 0x86, 0x0d, 0xed, 0xd0, 0x9a, 0x72, 0x17, 0x13,
+	0xfa, 0x23, 0xba, 0x05, 0x65, 0x9c, 0x19, 0x06, 0xf4, 0x87, 0xf4, 0x8d, 0x4c, 0x52, 0x66, 0x46,
+	0x81, 0xd4, 0xf9, 0x2c, 0x00, 0xd5, 0xa1, 0xa0, 0xc6, 0xbb, 0xf4, 0x5b, 0x79, 0xd9, 0xd5, 0xc3,
+	0xde, 0x96, 0xfc, 0x1d, 0xcc, 0x36, 0x6a, 0x0b, 0x31, 0xb8, 0x1c, 0xeb, 0xe9, 0x42, 0x1d, 0x56,
+	0xf2, 0x2a, 0x5a, 0xad, 0x0b, 0x34, 0x75, 0x77, 0x33, 0xc3, 0xd3, 0xa2, 0x82, 0x1f, 0xa4, 0x4a,
+	0x63, 0x02, 0xe8, 0x47, 0x13, 0x50, 0x7c, 0x7a, 0xde, 0xb1, 0x94, 0xee, 0xe7, 0xff, 0x43, 0x37,
+	0xc3, 0x96, 0x55, 0x9f, 0x20, 0x56, 0xdd, 0x85, 0xd7, 0x4f, 0x39, 0x8b, 0xae, 0x40, 0xfe, 0x31,
+	0x39, 0x48, 0x33, 0x5f, 0x3e, 0xa2, 0x4f, 0xb2, 0x1d, 0xaf, 0xbc, 0xfa, 0xce, 0xf8, 0xa4, 0xb4,
+	0x11, 0x13, 0x8e, 0x05, 0xe3, 0x23, 0x97, 0x14, 0x59, 0xda, 0x18, 0x6f, 0xe6, 0x6e, 0x98, 0xd5,
+	0x6f, 0x61, 0x71, 0x8a, 0x73, 0x13, 0xd4, 0x56, 0xc6, 0xd5, 0xa6, 0xdc, 0x76, 0x86, 0xde, 0xb9,
+	0x0d, 0xe5, 0xcc, 0x89, 0x6c, 0xff, 0xdf, 0x61, 0x2e, 0xa7, 0x60, 0xdd, 0x68, 0x4a, 0xde, 0x70,
+	0x2d, 0x9b, 0x77, 0x48, 0x77, 0x99, 0x6e, 0x24, 0x25, 0x4f, 0x2f, 0x9a, 0xb7, 0x0f, 0x8f, 0x6c,
+	0xe3, 0xf9, 0x91, 0x6d, 0xbc, 0x3c, 0xb2, 0xcd, 0x1f, 0xfa, 0xb6, 0xf9, 0x7b, 0xdf, 0x36, 0x9f,
+	0xf5, 0x6d, 0xf3, 0xb0, 0x6f, 0x9b, 0x7f, 0xf7, 0x6d, 0xf3, 0xdf, 0xbe, 0x6d, 0xbc, 0xec, 0xdb,
+	0xe6, 0xcf, 0xc7, 0xb6, 0x71, 0x78, 0x6c, 0x1b, 0xcf, 0x8f, 0x6d, 0xe3, 0x9b, 0xd1, 0x7f, 0x28,
+	0xed, 0xa2, 0x1a, 0xd3, 0xd7, 0xfe, 0x0b, 0x00, 0x00, 0xff, 0xff, 0x34, 0x3f, 0x2c, 0x72, 0xc4,
+	0x0c, 0x00, 0x00,
 }
 
 func (this *EvaluateQueryRequest) Equal(that interface{}) bool {
@@ -939,6 +1003,12 @@ func (this *EvaluateQueryRequest) Equal(that interface{}) bool {
 		}
 	}
 	if this.BatchSize != that1.BatchSize {
+		return false
+	}
+	if this.SeriesMetadataBatchSize != that1.SeriesMetadataBatchSize {
+		return false
+	}
+	if this.EnablePerNodeAnnotations != that1.EnablePerNodeAnnotations {
 		return false
 	}
 	return true
@@ -1173,6 +1243,9 @@ func (this *EvaluateQueryResponseSeriesMetadata) Equal(that interface{}) bool {
 		if !this.Series[i].Equal(&that1.Series[i]) {
 			return false
 		}
+	}
+	if this.TotalSeriesCountForNode != that1.TotalSeriesCountForNode {
+		return false
 	}
 	return true
 }
@@ -1440,6 +1513,26 @@ func (this *EvaluateQueryResponseEvaluationCompleted) Equal(that interface{}) bo
 	if !this.Stats.Equal(&that1.Stats) {
 		return false
 	}
+	if len(this.PerNodeStats) != len(that1.PerNodeStats) {
+		return false
+	}
+	for i := range this.PerNodeStats {
+		a := this.PerNodeStats[i]
+		b := that1.PerNodeStats[i]
+		if !(&a).Equal(&b) {
+			return false
+		}
+	}
+	if len(this.PerNodeAnnotations) != len(that1.PerNodeAnnotations) {
+		return false
+	}
+	for i := range this.PerNodeAnnotations {
+		a := this.PerNodeAnnotations[i]
+		b := that1.PerNodeAnnotations[i]
+		if !(&a).Equal(&b) {
+			return false
+		}
+	}
 	return true
 }
 func (this *Annotations) Equal(that interface{}) bool {
@@ -1483,7 +1576,7 @@ func (this *EvaluateQueryRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 9)
 	s = append(s, "&querierpb.EvaluateQueryRequest{")
 	s = append(s, "Plan: "+strings.Replace(this.Plan.GoString(), `&`, ``, 1)+",\n")
 	if this.Nodes != nil {
@@ -1494,6 +1587,8 @@ func (this *EvaluateQueryRequest) GoString() string {
 		s = append(s, "Nodes: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "BatchSize: "+fmt.Sprintf("%#v", this.BatchSize)+",\n")
+	s = append(s, "SeriesMetadataBatchSize: "+fmt.Sprintf("%#v", this.SeriesMetadataBatchSize)+",\n")
+	s = append(s, "EnablePerNodeAnnotations: "+fmt.Sprintf("%#v", this.EnablePerNodeAnnotations)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1572,7 +1667,7 @@ func (this *EvaluateQueryResponseSeriesMetadata) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
+	s := make([]string, 0, 7)
 	s = append(s, "&querierpb.EvaluateQueryResponseSeriesMetadata{")
 	s = append(s, "NodeIndex: "+fmt.Sprintf("%#v", this.NodeIndex)+",\n")
 	if this.Series != nil {
@@ -1582,6 +1677,7 @@ func (this *EvaluateQueryResponseSeriesMetadata) GoString() string {
 		}
 		s = append(s, "Series: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
+	s = append(s, "TotalSeriesCountForNode: "+fmt.Sprintf("%#v", this.TotalSeriesCountForNode)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1615,7 +1711,7 @@ func (this *EvaluateQueryResponseScalarValue) GoString() string {
 	s = append(s, "&querierpb.EvaluateQueryResponseScalarValue{")
 	s = append(s, "NodeIndex: "+fmt.Sprintf("%#v", this.NodeIndex)+",\n")
 	if this.Values != nil {
-		vs := make([]mimirpb.Sample, len(this.Values))
+		vs := make([]mimirpb.FloatSample, len(this.Values))
 		for i := range vs {
 			vs[i] = this.Values[i]
 		}
@@ -1648,7 +1744,7 @@ func (this *InstantVectorSeriesData) GoString() string {
 	s := make([]string, 0, 6)
 	s = append(s, "&querierpb.InstantVectorSeriesData{")
 	if this.Floats != nil {
-		vs := make([]mimirpb.Sample, len(this.Floats))
+		vs := make([]mimirpb.FloatSample, len(this.Floats))
 		for i := range vs {
 			vs[i] = this.Floats[i]
 		}
@@ -1676,7 +1772,7 @@ func (this *EvaluateQueryResponseRangeVectorStepData) GoString() string {
 	s = append(s, "RangeStart: "+fmt.Sprintf("%#v", this.RangeStart)+",\n")
 	s = append(s, "RangeEnd: "+fmt.Sprintf("%#v", this.RangeEnd)+",\n")
 	if this.Floats != nil {
-		vs := make([]mimirpb.Sample, len(this.Floats))
+		vs := make([]mimirpb.FloatSample, len(this.Floats))
 		for i := range vs {
 			vs[i] = this.Floats[i]
 		}
@@ -1707,10 +1803,36 @@ func (this *EvaluateQueryResponseEvaluationCompleted) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
+	s := make([]string, 0, 8)
 	s = append(s, "&querierpb.EvaluateQueryResponseEvaluationCompleted{")
 	s = append(s, "Annotations: "+strings.Replace(this.Annotations.GoString(), `&`, ``, 1)+",\n")
 	s = append(s, "Stats: "+strings.Replace(this.Stats.GoString(), `&`, ``, 1)+",\n")
+	keysForPerNodeStats := make([]int64, 0, len(this.PerNodeStats))
+	for k, _ := range this.PerNodeStats {
+		keysForPerNodeStats = append(keysForPerNodeStats, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForPerNodeStats)
+	mapStringForPerNodeStats := "map[int64]types.EncodedOperatorEvaluationStats{"
+	for _, k := range keysForPerNodeStats {
+		mapStringForPerNodeStats += fmt.Sprintf("%#v: %#v,", k, this.PerNodeStats[k])
+	}
+	mapStringForPerNodeStats += "}"
+	if this.PerNodeStats != nil {
+		s = append(s, "PerNodeStats: "+mapStringForPerNodeStats+",\n")
+	}
+	keysForPerNodeAnnotations := make([]int64, 0, len(this.PerNodeAnnotations))
+	for k, _ := range this.PerNodeAnnotations {
+		keysForPerNodeAnnotations = append(keysForPerNodeAnnotations, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForPerNodeAnnotations)
+	mapStringForPerNodeAnnotations := "map[int64]Annotations{"
+	for _, k := range keysForPerNodeAnnotations {
+		mapStringForPerNodeAnnotations += fmt.Sprintf("%#v: %#v,", k, this.PerNodeAnnotations[k])
+	}
+	mapStringForPerNodeAnnotations += "}"
+	if this.PerNodeAnnotations != nil {
+		s = append(s, "PerNodeAnnotations: "+mapStringForPerNodeAnnotations+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1753,6 +1875,21 @@ func (m *EvaluateQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.EnablePerNodeAnnotations {
+		i--
+		if m.EnablePerNodeAnnotations {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.SeriesMetadataBatchSize != 0 {
+		i = encodeVarintQuerier(dAtA, i, uint64(m.SeriesMetadataBatchSize))
+		i--
+		dAtA[i] = 0x28
+	}
 	if m.BatchSize != 0 {
 		i = encodeVarintQuerier(dAtA, i, uint64(m.BatchSize))
 		i--
@@ -2001,6 +2138,11 @@ func (m *EvaluateQueryResponseSeriesMetadata) MarshalToSizedBuffer(dAtA []byte) 
 	_ = i
 	var l int
 	_ = l
+	if m.TotalSeriesCountForNode != 0 {
+		i = encodeVarintQuerier(dAtA, i, uint64(m.TotalSeriesCountForNode))
+		i--
+		dAtA[i] = 0x18
+	}
 	if len(m.Series) > 0 {
 		for iNdEx := len(m.Series) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -2371,6 +2513,50 @@ func (m *EvaluateQueryResponseEvaluationCompleted) MarshalToSizedBuffer(dAtA []b
 	_ = i
 	var l int
 	_ = l
+	if len(m.PerNodeAnnotations) > 0 {
+		for k := range m.PerNodeAnnotations {
+			v := m.PerNodeAnnotations[k]
+			baseI := i
+			{
+				size, err := (&v).MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuerier(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+			i = encodeVarintQuerier(dAtA, i, uint64(k))
+			i--
+			dAtA[i] = 0x8
+			i = encodeVarintQuerier(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.PerNodeStats) > 0 {
+		for k := range m.PerNodeStats {
+			v := m.PerNodeStats[k]
+			baseI := i
+			{
+				size, err := (&v).MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuerier(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+			i = encodeVarintQuerier(dAtA, i, uint64(k))
+			i--
+			dAtA[i] = 0x8
+			i = encodeVarintQuerier(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
 	{
 		size, err := m.Stats.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
@@ -2462,6 +2648,12 @@ func (m *EvaluateQueryRequest) Size() (n int) {
 	}
 	if m.BatchSize != 0 {
 		n += 1 + sovQuerier(uint64(m.BatchSize))
+	}
+	if m.SeriesMetadataBatchSize != 0 {
+		n += 1 + sovQuerier(uint64(m.SeriesMetadataBatchSize))
+	}
+	if m.EnablePerNodeAnnotations {
+		n += 2
 	}
 	return n
 }
@@ -2578,6 +2770,9 @@ func (m *EvaluateQueryResponseSeriesMetadata) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovQuerier(uint64(l))
 		}
+	}
+	if m.TotalSeriesCountForNode != 0 {
+		n += 1 + sovQuerier(uint64(m.TotalSeriesCountForNode))
 	}
 	return n
 }
@@ -2735,6 +2930,24 @@ func (m *EvaluateQueryResponseEvaluationCompleted) Size() (n int) {
 	n += 1 + l + sovQuerier(uint64(l))
 	l = m.Stats.Size()
 	n += 1 + l + sovQuerier(uint64(l))
+	if len(m.PerNodeStats) > 0 {
+		for k, v := range m.PerNodeStats {
+			_ = k
+			_ = v
+			l = v.Size()
+			mapEntrySize := 1 + sovQuerier(uint64(k)) + 1 + l + sovQuerier(uint64(l))
+			n += mapEntrySize + 1 + sovQuerier(uint64(mapEntrySize))
+		}
+	}
+	if len(m.PerNodeAnnotations) > 0 {
+		for k, v := range m.PerNodeAnnotations {
+			_ = k
+			_ = v
+			l = v.Size()
+			mapEntrySize := 1 + sovQuerier(uint64(k)) + 1 + l + sovQuerier(uint64(l))
+			n += mapEntrySize + 1 + sovQuerier(uint64(mapEntrySize))
+		}
+	}
 	return n
 }
 
@@ -2778,6 +2991,8 @@ func (this *EvaluateQueryRequest) String() string {
 		`Plan:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.Plan), "EncodedQueryPlan", "planning.EncodedQueryPlan", 1), `&`, ``, 1) + `,`,
 		`Nodes:` + repeatedStringForNodes + `,`,
 		`BatchSize:` + fmt.Sprintf("%v", this.BatchSize) + `,`,
+		`SeriesMetadataBatchSize:` + fmt.Sprintf("%v", this.SeriesMetadataBatchSize) + `,`,
+		`EnablePerNodeAnnotations:` + fmt.Sprintf("%v", this.EnablePerNodeAnnotations) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2788,7 +3003,7 @@ func (this *EvaluationNode) String() string {
 	}
 	s := strings.Join([]string{`&EvaluationNode{`,
 		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
-		`TimeRange:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.TimeRange), "EncodedQueryTimeRange", "planning.EncodedQueryTimeRange", 1), `&`, ``, 1) + `,`,
+		`TimeRange:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.TimeRange), "EncodedQueryTimeRange", "types.EncodedQueryTimeRange", 1), `&`, ``, 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2875,6 +3090,7 @@ func (this *EvaluateQueryResponseSeriesMetadata) String() string {
 	s := strings.Join([]string{`&EvaluateQueryResponseSeriesMetadata{`,
 		`NodeIndex:` + fmt.Sprintf("%v", this.NodeIndex) + `,`,
 		`Series:` + repeatedStringForSeries + `,`,
+		`TotalSeriesCountForNode:` + fmt.Sprintf("%v", this.TotalSeriesCountForNode) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2905,7 +3121,7 @@ func (this *EvaluateQueryResponseScalarValue) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForValues := "[]Sample{"
+	repeatedStringForValues := "[]FloatSample{"
 	for _, f := range this.Values {
 		repeatedStringForValues += fmt.Sprintf("%v", f) + ","
 	}
@@ -2937,7 +3153,7 @@ func (this *InstantVectorSeriesData) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForFloats := "[]Sample{"
+	repeatedStringForFloats := "[]FloatSample{"
 	for _, f := range this.Floats {
 		repeatedStringForFloats += fmt.Sprintf("%v", f) + ","
 	}
@@ -2958,7 +3174,7 @@ func (this *EvaluateQueryResponseRangeVectorStepData) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForFloats := "[]Sample{"
+	repeatedStringForFloats := "[]FloatSample{"
 	for _, f := range this.Floats {
 		repeatedStringForFloats += fmt.Sprintf("%v", f) + ","
 	}
@@ -2995,9 +3211,31 @@ func (this *EvaluateQueryResponseEvaluationCompleted) String() string {
 	if this == nil {
 		return "nil"
 	}
+	keysForPerNodeStats := make([]int64, 0, len(this.PerNodeStats))
+	for k, _ := range this.PerNodeStats {
+		keysForPerNodeStats = append(keysForPerNodeStats, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForPerNodeStats)
+	mapStringForPerNodeStats := "map[int64]types.EncodedOperatorEvaluationStats{"
+	for _, k := range keysForPerNodeStats {
+		mapStringForPerNodeStats += fmt.Sprintf("%v: %v,", k, this.PerNodeStats[k])
+	}
+	mapStringForPerNodeStats += "}"
+	keysForPerNodeAnnotations := make([]int64, 0, len(this.PerNodeAnnotations))
+	for k, _ := range this.PerNodeAnnotations {
+		keysForPerNodeAnnotations = append(keysForPerNodeAnnotations, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForPerNodeAnnotations)
+	mapStringForPerNodeAnnotations := "map[int64]Annotations{"
+	for _, k := range keysForPerNodeAnnotations {
+		mapStringForPerNodeAnnotations += fmt.Sprintf("%v: %v,", k, this.PerNodeAnnotations[k])
+	}
+	mapStringForPerNodeAnnotations += "}"
 	s := strings.Join([]string{`&EvaluateQueryResponseEvaluationCompleted{`,
 		`Annotations:` + strings.Replace(strings.Replace(this.Annotations.String(), "Annotations", "Annotations", 1), `&`, ``, 1) + `,`,
 		`Stats:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.Stats), "Stats", "stats.Stats", 1), `&`, ``, 1) + `,`,
+		`PerNodeStats:` + mapStringForPerNodeStats + `,`,
+		`PerNodeAnnotations:` + mapStringForPerNodeAnnotations + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3136,6 +3374,45 @@ func (m *EvaluateQueryRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesMetadataBatchSize", wireType)
+			}
+			m.SeriesMetadataBatchSize = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuerier
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesMetadataBatchSize |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EnablePerNodeAnnotations", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuerier
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.EnablePerNodeAnnotations = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQuerier(dAtA[iNdEx:])
@@ -3601,6 +3878,25 @@ func (m *EvaluateQueryResponseSeriesMetadata) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TotalSeriesCountForNode", wireType)
+			}
+			m.TotalSeriesCountForNode = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuerier
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.TotalSeriesCountForNode |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQuerier(dAtA[iNdEx:])
@@ -3904,7 +4200,7 @@ func (m *EvaluateQueryResponseScalarValue) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Values = append(m.Values, mimirpb.Sample{})
+			m.Values = append(m.Values, mimirpb.FloatSample{})
 			if err := m.Values[len(m.Values)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -4091,7 +4387,7 @@ func (m *InstantVectorSeriesData) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Floats = append(m.Floats, mimirpb.Sample{})
+			m.Floats = append(m.Floats, mimirpb.FloatSample{})
 			if err := m.Floats[len(m.Floats)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -4304,7 +4600,7 @@ func (m *EvaluateQueryResponseRangeVectorStepData) Unmarshal(dAtA []byte) error 
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Floats = append(m.Floats, mimirpb.Sample{})
+			m.Floats = append(m.Floats, mimirpb.FloatSample{})
 			if err := m.Floats[len(m.Floats)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -4559,6 +4855,236 @@ func (m *EvaluateQueryResponseEvaluationCompleted) Unmarshal(dAtA []byte) error 
 			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PerNodeStats", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuerier
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuerier
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuerier
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.PerNodeStats == nil {
+				m.PerNodeStats = make(map[int64]types.EncodedOperatorEvaluationStats)
+			}
+			var mapkey int64
+			mapvalue := &types.EncodedOperatorEvaluationStats{}
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQuerier
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQuerier
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapkey |= int64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+				} else if fieldNum == 2 {
+					var mapmsglen int
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQuerier
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapmsglen |= int(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					if mapmsglen < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					postmsgIndex := iNdEx + mapmsglen
+					if postmsgIndex < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					if postmsgIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = &types.EncodedOperatorEvaluationStats{}
+					if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
+						return err
+					}
+					iNdEx = postmsgIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipQuerier(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.PerNodeStats[mapkey] = *mapvalue
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PerNodeAnnotations", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuerier
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuerier
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuerier
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.PerNodeAnnotations == nil {
+				m.PerNodeAnnotations = make(map[int64]Annotations)
+			}
+			var mapkey int64
+			mapvalue := &Annotations{}
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowQuerier
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQuerier
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapkey |= int64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+				} else if fieldNum == 2 {
+					var mapmsglen int
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowQuerier
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapmsglen |= int(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					if mapmsglen < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					postmsgIndex := iNdEx + mapmsglen
+					if postmsgIndex < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					if postmsgIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = &Annotations{}
+					if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
+						return err
+					}
+					iNdEx = postmsgIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipQuerier(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthQuerier
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.PerNodeAnnotations[mapkey] = *mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

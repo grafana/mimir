@@ -133,7 +133,7 @@ func TestMaximumNumberOfTrackers(t *testing.T) {
 		var flagToSet bytes.Buffer
 		numberOfTrackers := maxNumberOfTrackers + 1
 		for i := 0; i < numberOfTrackers; i++ {
-			flagToSet.WriteString(fmt.Sprintf("name%d:{__name__=%d}", i, i))
+			fmt.Fprintf(&flagToSet, "name%d:{__name__=%d}", i, i)
 			if i < numberOfTrackers-1 {
 				flagToSet.WriteString(";")
 			}

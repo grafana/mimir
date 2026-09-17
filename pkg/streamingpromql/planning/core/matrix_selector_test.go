@@ -15,7 +15,7 @@ import (
 )
 
 func TestMatrixSelector_Describe(t *testing.T) {
-	singleMatcher := []*LabelMatcher{
+	singleMatcher := []LabelMatcher{
 		{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 	}
 
@@ -35,7 +35,7 @@ func TestMatrixSelector_Describe(t *testing.T) {
 		"many matchers, no timestamp and no offset": {
 			node: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 						{Name: "env", Type: labels.MatchNotEqual, Value: "test"},
 						{Name: "region", Type: labels.MatchRegexp, Value: "au-.*"},
@@ -150,6 +150,49 @@ func TestMatrixSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}[1m0s]`,
 		},
+		"one subset": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
+					},
+				},
+			},
+			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"} ({__name__="foo", env="prod"})`,
+		},
+		"two subsets": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+							AllMatchers: []LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+							},
+						},
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+							AllMatchers: []LabelMatcher{
+								{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+								{Name: "env", Type: labels.MatchEqual, Value: "test"},
+							},
+						},
+					},
+				},
+			},
+			expected: `{__name__="foo"}[1m0s], subsets: {env="prod"} ({__name__="foo", env="prod"}), {env="test"} ({__name__="foo", env="test"})`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -169,7 +212,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"identical": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -178,7 +221,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -190,7 +233,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"different expression position": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -199,7 +242,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -211,7 +254,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"different type": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -224,7 +267,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"different range": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -233,7 +276,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              2 * time.Minute,
@@ -245,7 +288,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"different offset": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -254,7 +297,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -267,7 +310,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"one with timestamp, one without": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -276,7 +319,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -289,7 +332,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"both with different timestamps": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -299,7 +342,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -312,7 +355,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"selectors with different name": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -321,7 +364,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name_2__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -333,7 +376,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"selectors with different type": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -342,7 +385,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -354,7 +397,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"selectors with different value": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -363,7 +406,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "bar"},
 					},
 					Range:              time.Minute,
@@ -375,7 +418,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"one with skipping histogram buckets enabled, one without": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:                time.Minute,
@@ -385,7 +428,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
 					Range:                time.Minute,
@@ -398,7 +441,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"one with smoothed and one without": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -408,7 +451,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -421,7 +464,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"both smoothed": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -431,7 +474,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -444,7 +487,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"neither smoothed": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -454,7 +497,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -467,7 +510,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"one with anchored and one without": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -477,7 +520,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -490,7 +533,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"both anchored": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -500,7 +543,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -513,7 +556,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"neither anchored": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -523,7 +566,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -536,7 +579,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"same wrapping smoothed": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -547,7 +590,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -561,7 +604,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 		"one function wrapping smoothed": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
@@ -572,12 +615,70 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			b: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
+					Matchers: []LabelMatcher{
 						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
 					},
 					Range:              time.Minute,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 					Smoothed:           true,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"same subsets": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range: time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range: time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			expectEquivalent: true,
+		},
+		"different subsets": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range: time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "prod"}},
+						},
+					},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range: time.Minute,
+					Subsets: []SubsetMatchers{
+						{
+							Filter: []LabelMatcher{{Name: "env", Type: labels.MatchEqual, Value: "test"}},
+						},
+					},
 				},
 			},
 			expectEquivalent: false,
@@ -627,78 +728,6 @@ func TestMatrixSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 
 	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
 		runTest(t, true, true, true)
-	})
-}
-
-func TestMatrixSelector_MergeHints_ProjectionLabels(t *testing.T) {
-	// NOTE: Test cases for this test should be kept in sync with TestVectorSelector_MergeHints_ProjectionLabels
-
-	runTest := func(t *testing.T, includeFirst bool, lblsFirst []string, includeSecond bool, lblsSecond []string, expectInclude bool, expectLbls []string) {
-		first := &MatrixSelector{
-			MatrixSelectorDetails: &MatrixSelectorDetails{
-				ProjectionInclude: includeFirst,
-				ProjectionLabels:  lblsFirst,
-			},
-		}
-		second := &MatrixSelector{
-			MatrixSelectorDetails: &MatrixSelectorDetails{
-				ProjectionInclude: includeSecond,
-				ProjectionLabels:  lblsSecond,
-			},
-		}
-
-		err := first.MergeHints(second)
-		require.NoError(t, err)
-		require.Equal(t, expectInclude, first.ProjectionInclude)
-		require.Equal(t, expectLbls, first.ProjectionLabels)
-	}
-
-	t.Run("differing include/exclude", func(t *testing.T) {
-		runTest(
-			t,
-			true,
-			[]string{"job"},
-			false,
-			[]string{"pod"},
-			false,
-			[]string{},
-		)
-	})
-
-	t.Run("both exclude empty labels", func(t *testing.T) {
-		runTest(
-			t,
-			false,
-			[]string{},
-			false,
-			[]string{},
-			false,
-			[]string{},
-		)
-	})
-
-	t.Run("both include some labels", func(t *testing.T) {
-		runTest(
-			t,
-			true,
-			[]string{"job"},
-			true,
-			[]string{"pod"},
-			true,
-			[]string{"job", "pod"},
-		)
-	})
-
-	t.Run("one excludes some labels one excludes no labels", func(t *testing.T) {
-		runTest(
-			t,
-			false,
-			[]string{"job"},
-			false,
-			[]string{},
-			false,
-			[]string{},
-		)
 	})
 }
 
@@ -762,87 +791,56 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 	}
 }
 
-func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
-	singleMatcher := []*LabelMatcher{
-		{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+func TestMatrixSelector_QueriedTimeRangeWithSubRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	originalTimestamp := timestamp.Time(0).Add(5 * time.Hour)
+	originalRange := 7 * time.Minute
+	originalOffset := 3 * time.Minute
+	rng := 11 * time.Minute
+	offset := -2 * time.Minute
+	ts := timestamp.Time(0).Add(6 * time.Hour)
+	lookback := 100 * time.Minute
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	selector := &MatrixSelector{
+		MatrixSelectorDetails: &MatrixSelectorDetails{
+			Range:     originalRange,
+			Offset:    originalOffset,
+			Timestamp: &originalTimestamp,
+		},
 	}
 
 	testCases := map[string]struct {
-		node     *MatrixSelector
-		expected string
+		override planning.RangeParams
+		expected planning.QueriedTimeRange
 	}{
-		"one matcher, no timestamp and no offset": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: singleMatcher,
-					Range:    time.Minute,
-				},
+		"range and offset override": {
+			override: planning.RangeParams{
+				IsSet:  true,
+				Range:  rng,
+				Offset: offset,
 			},
-			expected: `{__name__="foo"}`,
+			expected: planning.NewQueriedTimeRange(startT.Add(-rng).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
 		},
-		"one matcher, no timestamp, has offset": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: singleMatcher,
-					Range:    time.Minute,
-					Offset:   time.Hour,
-				},
+		"range, offset and timestamp override": {
+			override: planning.RangeParams{
+				IsSet:        true,
+				Range:        rng,
+				Offset:       offset,
+				HasTimestamp: true,
+				Timestamp:    ts,
 			},
-			expected: `{__name__="foo"}`,
-		},
-		"one matcher, has timestamp, no offset": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers:  singleMatcher,
-					Range:     time.Minute,
-					Timestamp: timestampOf(123456),
-				},
-			},
-			expected: `{__name__="foo"}`,
-		},
-		"one matcher, has timestamp and offset": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers:  singleMatcher,
-					Range:     time.Minute,
-					Offset:    time.Hour,
-					Timestamp: timestampOf(123456),
-				},
-			},
-			expected: `{__name__="foo"}`,
-		},
-		"one matcher, skip histogram buckets enabled": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers:             singleMatcher,
-					Range:                time.Minute,
-					SkipHistogramBuckets: true,
-				},
-			},
-			expected: `{__name__="foo"}, skip histogram buckets`,
-		},
-		"complex selector with all fields": {
-			node: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
-						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
-						{Name: "env", Type: labels.MatchNotEqual, Value: "test"},
-						{Name: "region", Type: labels.MatchRegexp, Value: "au-.*"},
-					},
-					Range:                5 * time.Minute,
-					Offset:               2 * time.Hour,
-					Timestamp:            timestampOf(789012),
-					SkipHistogramBuckets: true,
-				},
-			},
-			expected: `{__name__="foo", env!="test", region=~"au-.*"}, skip histogram buckets`,
+			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			cacheKey := testCase.node.SplittingCacheKey()
-			require.Equal(t, testCase.expected, cacheKey)
+			timeRange, err := selector.QueriedTimeRangeWithSubRange(queryTimeRange, testCase.override, lookback)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
 		})
 	}
 }

@@ -48,16 +48,55 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
-  // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
-  repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
+  reserved 13; // samples_processed_per_step
   // The number of remote execution requests that were made while evaluating a query.
   uint32 remote_execution_request_count = 14;
   // The number of range vectors that were split in the query.
   uint32 split_range_vectors = 15;
+  // EquivalentSamplesRead is the number of samples that would have been read from storage for this request
+  // if no caching or other optimizations were applied to the request.
+  uint64 equivalent_samples_read = 16;
+  // PhysicalSamplesRead is the number of samples that were read from storage for this request.
+  // Samples that were read from a cache are not included.
+  // Samples that were read once but used multiple times (eg. in duplicated expressions)
+  // count only once per request, not once per use.
+  uint64 physical_samples_read = 17;
+  // Retries is the number of times downstream requests were retried by the query-frontend while
+  // processing this request.
+  // 0 means all requests succeeded on the first attempt.
+  uint32 retries = 18;
+  // SeenSelectorCardinalities records the number of series selected by each selector evaluated while
+  // processing this request, keyed by the selector's matchers and queried time range.
+  // If the query is sharded, then the selectors here may contain matchers on __query_shard__.
+  repeated SelectorCardinality seen_selector_cardinalities = 19 [(gogoproto.nullable) = false];
+  // EstimatedSelectorCardinalities records the estimated number of series selected by each selector
+  // used while preparing this request.
+  // The selectors here will never contain __query_shard__, as the estimates are for the full
+  // cardinality of the selector (i.e. summed across all shards).
+  repeated SelectorCardinality estimated_selector_cardinalities = 20 [(gogoproto.nullable) = false];
 }
 
-// StepStat represents a sample count at a specific timestamp
-message StepStat {
-  int64 timestamp = 1; // Unix timestamp in milliseconds
-  int64 value = 2; // Number of samples at this timestamp
+// SelectorCardinality records the number of series selected by a single selector over a time range,
+// or an estimate of the selector's cardinality.
+message SelectorCardinality {
+  // The matchers of the selector.
+  repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
+
+  // The inclusive start of the time range that was queried (if this is a seen cardinality) or the start
+  // of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
+  int64 min_t = 2;
+
+  // The inclusive end of the time range that was queried (if this is a seen cardinality) or the end
+  // of a cached estimate's time bucket (if this is an estimate), in milliseconds since the Unix epoch.
+  int64 max_t = 3;
+
+  // The number of series selected.
+  uint64 series_count = 4;
+}
+
+// LabelMatcher is a single label matcher.
+message LabelMatcher {
+  int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
+  string name = 2;
+  string value = 3;
 }

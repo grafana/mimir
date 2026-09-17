@@ -46,7 +46,10 @@ func IsEnabled(ctx context.Context) bool {
 // SafeStats is a concurrent safe wrapper around the Stats struct.
 type SafeStats struct {
 	Stats
-	mx sync.Mutex
+
+	// selectorCardinalitiesMtx guards access to Stats.SeenSelectorCardinalities and Stats.EstimatedSelectorCardinalities, which are slices and
+	// therefore cannot be mutated safely with the atomic operations used for the scalar fields.
+	selectorCardinalitiesMtx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
@@ -241,20 +244,6 @@ func (s *SafeStats) LoadSpunOffSubqueries() uint32 {
 	return atomic.LoadUint32(&s.SpunOffSubqueries)
 }
 
-func (s *SafeStats) AddSamplesProcessedPerStep(points []StepStat) {
-	// merge is concurrent safe
-	s.mergeSamplesProcessedPerStep(points)
-}
-
-func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
-	if s == nil {
-		return nil
-	}
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	return s.SamplesProcessedPerStep
-}
-
 func (s *SafeStats) AddRemoteExecutionRequests(count uint32) {
 	if s == nil {
 		return
@@ -283,6 +272,120 @@ func (s *SafeStats) LoadSplitRangeVectors() uint32 {
 	return atomic.LoadUint32(&s.SplitRangeVectors)
 }
 
+func (s *SafeStats) AddEquivalentSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.EquivalentSamplesRead, c)
+}
+
+func (s *SafeStats) LoadEquivalentSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.EquivalentSamplesRead)
+}
+
+func (s *SafeStats) AddPhysicalSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.PhysicalSamplesRead, c)
+}
+
+func (s *SafeStats) LoadPhysicalSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.PhysicalSamplesRead)
+}
+
+func (s *SafeStats) AddRetries(count uint32) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint32(&s.Retries, count)
+}
+
+func (s *SafeStats) LoadRetries() uint32 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint32(&s.Retries)
+}
+
+// AddSeenSelectorCardinality records the cardinality of a single selector.
+//
+// The caller must not mutate sc, or any slice or string it references, after calling this method.
+// In particular, any strings referenced by sc (including matcher names and values) must not alias
+// a reused request buffer, as they may outlive the request: clone them first (see the note on
+// unsafe memory tricks in the contributing guide).
+func (s *SafeStats) AddSeenSelectorCardinality(sc SelectorCardinality) {
+	if s == nil {
+		return
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	s.SeenSelectorCardinalities = append(s.SeenSelectorCardinalities, sc)
+}
+
+// LoadSeenSelectorCardinalities returns a copy of the recorded selector cardinalities.
+func (s *SafeStats) LoadSeenSelectorCardinalities() []SelectorCardinality {
+	if s == nil {
+		return nil
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	if len(s.SeenSelectorCardinalities) == 0 {
+		return nil
+	}
+
+	return append([]SelectorCardinality(nil), s.SeenSelectorCardinalities...)
+}
+
+// AddEstimatedSelectorCardinality records the estimated cardinality of a single selector.
+//
+// The caller must not mutate sc, or any slice or string it references, after calling this method.
+// In particular, any strings referenced by sc (including matcher names and values) must not alias
+// a reused request buffer, as they may outlive the request: clone them first (see the note on
+// unsafe memory tricks in the contributing guide).
+func (s *SafeStats) AddEstimatedSelectorCardinality(sc SelectorCardinality) {
+	if s == nil {
+		return
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	s.EstimatedSelectorCardinalities = append(s.EstimatedSelectorCardinalities, sc)
+}
+
+// LoadEstimatedSelectorCardinalities returns a copy of the recorded estimated selector cardinalities.
+func (s *SafeStats) LoadEstimatedSelectorCardinalities() []SelectorCardinality {
+	if s == nil {
+		return nil
+	}
+
+	s.selectorCardinalitiesMtx.Lock()
+	defer s.selectorCardinalitiesMtx.Unlock()
+
+	if len(s.EstimatedSelectorCardinalities) == 0 {
+		return nil
+	}
+
+	return append([]SelectorCardinality(nil), s.EstimatedSelectorCardinalities...)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -300,63 +403,19 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddEncodeTime(other.LoadEncodeTime())
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
-	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
 	s.AddRemoteExecutionRequests(other.LoadRemoteExecutionRequestCount())
 	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
-}
+	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
+	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
+	s.AddRetries(other.LoadRetries())
 
-func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
-	if s == nil {
-		return
-	}
-	// Hold the lock for the entire merge operation to make it atomic
-	s.mx.Lock()
-	defer s.mx.Unlock()
-
-	this := s.SamplesProcessedPerStep // Access directly since we hold the lock
-
-	if len(other) == 0 {
-		// Nothing to merge
-		return
+	for _, sc := range other.LoadSeenSelectorCardinalities() {
+		s.AddSeenSelectorCardinality(sc)
 	}
 
-	merged := make([]StepStat, 0, len(this)+len(other))
-	i, j := 0, 0
-	confilctsNum := 0
-	var sum int64
-
-	for i < len(this) && j < len(other) {
-		if this[i].Timestamp < other[j].Timestamp {
-			merged = append(merged, this[i])
-			sum += this[i].Value
-			i++
-		} else if other[j].Timestamp < this[i].Timestamp {
-			merged = append(merged, other[j])
-			sum += other[j].Value
-			j++
-		} else {
-			confilctsNum++
-			summed := StepStat{
-				Timestamp: this[i].Timestamp,
-				Value:     this[i].Value + other[j].Value,
-			}
-			merged = append(merged, summed)
-			sum += summed.Value
-			i++
-			j++
-		}
+	for _, sc := range other.LoadEstimatedSelectorCardinalities() {
+		s.AddEstimatedSelectorCardinality(sc)
 	}
-
-	// Append any remaining elements
-	for ; i < len(this); i++ {
-		merged = append(merged, this[i])
-		sum += this[i].Value
-	}
-	for ; j < len(other); j++ {
-		merged = append(merged, other[j])
-		sum += other[j].Value
-	}
-	s.SamplesProcessedPerStep = merged // Set directly since we hold the lock
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

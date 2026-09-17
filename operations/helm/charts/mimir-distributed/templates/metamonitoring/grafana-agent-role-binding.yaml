@@ -1,0 +1,20 @@
+{{- $usePSP := (eq (include "mimir.rbac.usePodSecurityPolicy" .) "true") }}
+{{- $useSCC := (eq (include "mimir.rbac.useSecurityContextConstraints" .) "true") }}
+{{- with (.Values.metaMonitoring).grafanaAgent }}
+{{- if and .enabled (.serviceAccount).create (or $usePSP $useSCC) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ "component" "meta-monitoring") | nindent 4 }}
+  namespace: {{ .namespace | default $.Release.Namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mimir.metaMonitoring.grafanaAgent.serviceAccountName" $ }}
+{{- end }}
+{{- end }}

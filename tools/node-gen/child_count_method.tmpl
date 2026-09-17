@@ -1,0 +1,24 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.templateStructData*/ -}}
+
+{{define "children_field" -}}
+func ({{.Receiver}} *{{.Type}}) ChildCount() int {
+	return len({{.Receiver}}.{{.ChildrenField}})
+}
+{{- end }}
+
+{{define "child_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ChildCount() int {
+	{{- if .LastField.Nilable }}
+	if {{.Receiver}}.{{.LastField.Name}} == nil {
+		return {{.CountWithoutLast}}
+	}
+	{{- end }}
+	return {{len .ChildFields}}
+}
+{{- end }}
+
+{{define "no_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ChildCount() int {
+	return 0
+}
+{{- end }}

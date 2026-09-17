@@ -49,6 +49,10 @@ func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWit
 		if errors.As(originalErr, &softErr) {
 			errorDetails.Soft = true
 		}
+		var counts softErrorWithRejectedSamples
+		if errors.As(originalErr, &counts) {
+			errorDetails.RejectedSamples = counts.rejectedSamples
+		}
 	}
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
@@ -65,6 +69,14 @@ type softError interface {
 }
 
 type softErrorFunction func() softError
+
+type softErrorWithRejectedSamples struct {
+	err             error
+	rejectedSamples int64
+}
+
+func (e softErrorWithRejectedSamples) Error() string { return e.err.Error() }
+func (e softErrorWithRejectedSamples) Unwrap() error { return e.err }
 
 // wrapOrAnnotateWithUser prepends the given userID to the given error.
 // If the given error matches one of the errors from this package, the

@@ -152,6 +152,15 @@ eval instant at 0m series{system!="http_requests", system!~".*bananas.*"}
   series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
   series{system="cache_requests", backend="memcached"} 33
 
+# not-equals matcher and overlapping positive regex matcher
+eval instant at 0m series{system!="", system=~".+requests"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cache_requests", backend="memcached"} 33
+
 # not-equals matcher and overlapping equals matcher
 eval instant at 0m series{system!="", system="http_requests"}
   series{system="http_requests", method="GET", status="200", handler="/api"} 10
@@ -203,3 +212,4 @@ eval instant at 0m series{system=~".*", method=~".*"}
   series{system="http_requests", method="GET", status="504", handler="/api"} 50
   series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
   series{system="cache_requests", backend="memcached"} 33
+

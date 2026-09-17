@@ -23,17 +23,16 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
+// TODO: maybe move these into prometheus/common?
+
 // Transport wraps the provided http.RoundTripper with one that starts a span
 // and injects the span context into the outbound request headers. If the
 // provided http.RoundTripper is nil, http.DefaultTransport will be used as the
 // base http.RoundTripper.
-func Transport(rt http.RoundTripper, name string) http.RoundTripper {
+func Transport(rt http.RoundTripper) http.RoundTripper {
 	rt = otelhttp.NewTransport(rt,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
-			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}),
-		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-			return name + "/HTTP " + r.Method
+			return otelhttptrace.NewClientTrace(ctx)
 		}),
 	)
 

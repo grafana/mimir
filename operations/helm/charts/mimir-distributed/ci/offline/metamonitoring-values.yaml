@@ -12,6 +12,8 @@ metaMonitoring:
   grafanaAgent:
     enabled: true
     installOperator: true
+    serviceAccount:
+      create: true
     metrics:
       # Leave the remote empty to use the default to send it to Mimir directly
       # remote: #

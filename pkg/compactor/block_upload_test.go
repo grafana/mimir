@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta) {
@@ -473,7 +474,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			setUpBucketMock:         setUpPartialBlock,
 			meta:                    &validMeta,
 			maxBlockUploadSizeBytes: 1,
-			expBadRequest:           fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
+			expBadRequest:           fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
 			name:                   "block with too big time range",
@@ -1249,12 +1250,14 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		errorInjector          func(op bucket.Operation, name string) error
 		disableBlockUpload     bool
 		enableValidation       bool // should only be set to true for tests that fail before validation is started
+		notStarted             bool
 		maxConcurrency         int
 		setConcurrency         int64
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
 		expTooManyRequests     bool
+		expServiceUnavailable  bool
 		expInternalServerError bool
 	}{
 		{
@@ -1342,6 +1345,13 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			setConcurrency:     2,
 			expTooManyRequests: true,
 		},
+		{
+			name:                  "compactor not yet started",
+			tenantID:              tenantID,
+			blockID:               blockID,
+			notStarted:            true,
+			expServiceUnavailable: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1365,6 +1375,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			c.compactorCfg.MaxBlockUploadValidationConcurrency = tc.maxConcurrency
 			if tc.setConcurrency > 0 {
 				c.blockUploadValidations.Add(tc.setConcurrency)
+			}
+			if tc.notStarted {
+				c.Service = services.NewIdleService(nil, nil)
 			}
 
 			c.compactorCfg.DataDir = t.TempDir()
@@ -1399,6 +1412,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			case tc.expTooManyRequests:
 				assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 				assert.Equal(t, "too many block upload validations in progress, limit is 2\n", string(body))
+			case tc.expServiceUnavailable:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				assert.Equal(t, "compactor not ready\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
@@ -1601,7 +1617,16 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			populateFileList: true,
 			maximumBlockSize: 1,
 			expectError:      true,
-			expectedMsg:      fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
+			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
+		},
+		{
+			name:             "maximum block size exceeded before preparing block",
+			lbls:             validLabels,
+			populateFileList: true,
+			maximumBlockSize: 1,
+			missing:          MissingMeta,
+			expectError:      true,
+			expectedMsg:      fmt.Sprintf(blockvalidation.MaxBlockSizeBytesFormat, 1),
 		},
 		{
 			name:        "missing meta file",
@@ -1983,75 +2008,6 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
-		})
-	}
-}
-
-func TestMultitenantCompactor_ValidateMaximumBlockSize(t *testing.T) {
-	const userID = "user"
-
-	type testCase struct {
-		maximumBlockSize int64
-		fileSizes        []int64
-		expectErr        bool
-	}
-
-	for name, tc := range map[string]testCase{
-		"no limit": {
-			maximumBlockSize: 0,
-			fileSizes:        []int64{math.MaxInt64},
-			expectErr:        false,
-		},
-		"under limit": {
-			maximumBlockSize: 4,
-			fileSizes:        []int64{1, 2},
-			expectErr:        false,
-		},
-		"under limit - zero size file included": {
-			maximumBlockSize: 2,
-			fileSizes:        []int64{1, 0},
-			expectErr:        false,
-		},
-		"under limit - negative size file included": {
-			maximumBlockSize: 2,
-			fileSizes:        []int64{2, -1},
-			expectErr:        true,
-		},
-		"exact limit": {
-			maximumBlockSize: 3,
-			fileSizes:        []int64{1, 2},
-			expectErr:        false,
-		},
-		"over limit": {
-			maximumBlockSize: 1,
-			fileSizes:        []int64{1, 1},
-			expectErr:        true,
-		},
-		"overflow": {
-			maximumBlockSize: math.MaxInt64,
-			fileSizes:        []int64{math.MaxInt64, math.MaxInt64, math.MaxInt64},
-			expectErr:        true,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			files := make([]block.File, len(tc.fileSizes))
-			for i, size := range tc.fileSizes {
-				files[i] = block.File{SizeBytes: size}
-			}
-
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadMaxBlockSizeBytes[userID] = tc.maximumBlockSize
-			c := &MultitenantCompactor{
-				logger:      log.NewNopLogger(),
-				cfgProvider: cfgProvider,
-			}
-
-			err := c.validateMaximumBlockSize(c.logger, files, userID)
-			if tc.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
 		})
 	}
 }

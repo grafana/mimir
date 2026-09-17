@@ -9,8 +9,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/prometheus/alertmanager/alert"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -319,17 +320,6 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 		# TYPE cortex_alertmanager_state_persist_total counter
 		cortex_alertmanager_state_persist_total 0
-		# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
-		# TYPE cortex_alertmanager_notify_hook_noop_total counter
-		cortex_alertmanager_notify_hook_noop_total 0
-		# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
-		# TYPE cortex_alertmanager_notify_hook_total counter
-		cortex_alertmanager_notify_hook_total 0
-		# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
-		# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
-		cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
-		cortex_alertmanager_notify_hook_duration_seconds_sum 0
-		cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 		# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 		# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -677,17 +667,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 						# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 						# TYPE cortex_alertmanager_state_persist_total counter
 						cortex_alertmanager_state_persist_total 0
-						# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
-						# TYPE cortex_alertmanager_notify_hook_noop_total counter
-						cortex_alertmanager_notify_hook_noop_total 0
-						# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
-						# TYPE cortex_alertmanager_notify_hook_total counter
-						cortex_alertmanager_notify_hook_total 0
-						# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
-						# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
-						cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
-						cortex_alertmanager_notify_hook_duration_seconds_sum 0
-						cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 						# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 						# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -976,17 +955,6 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 			# HELP cortex_alertmanager_state_persist_total Number of times we have tried to persist the running state to storage.
 			# TYPE cortex_alertmanager_state_persist_total counter
 			cortex_alertmanager_state_persist_total 0
-			# HELP cortex_alertmanager_notify_hook_noop_total Number of times a pre-notify hook was invoked successfully but did nothing.
-			# TYPE cortex_alertmanager_notify_hook_noop_total counter
-			cortex_alertmanager_notify_hook_noop_total 0
-			# HELP cortex_alertmanager_notify_hook_total Number of times a pre-notify hook was invoked.
-	  		# TYPE cortex_alertmanager_notify_hook_total counter
-			cortex_alertmanager_notify_hook_total 0
-			# HELP cortex_alertmanager_notify_hook_duration_seconds Time spent invoking pre-notify hooks.
-			# TYPE cortex_alertmanager_notify_hook_duration_seconds histogram
-			cortex_alertmanager_notify_hook_duration_seconds_bucket{le="+Inf"} 0
-			cortex_alertmanager_notify_hook_duration_seconds_sum 0
-			cortex_alertmanager_notify_hook_duration_seconds_count 0
 
 			# HELP cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total Number of times when dispatcher failed to create new aggregation group due to limit.
 			# TYPE cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total counter
@@ -1061,8 +1029,8 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	}
 
 	m := newMarkerMetrics(reg)
-	m.alerts.WithLabelValues(string(types.AlertStateActive)).Add(base)
-	m.alerts.WithLabelValues(string(types.AlertStateSuppressed)).Add(base * 2)
+	m.alerts.WithLabelValues(string(alert.AlertStateActive)).Add(base)
+	m.alerts.WithLabelValues(string(alert.AlertStateSuppressed)).Add(base * 2)
 
 	v1APIMetrics := newAPIMetrics("v1", reg)
 	v1APIMetrics.firing.Add(base * 2)
@@ -1205,17 +1173,17 @@ func newSilenceMetrics(r prometheus.Registerer) *silenceMetrics {
 	m.silencesActive = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name:        "alertmanager_silences",
 		Help:        "How many silences by state.",
-		ConstLabels: prometheus.Labels{"state": string(types.SilenceStateActive)},
+		ConstLabels: prometheus.Labels{"state": string(silence.SilenceStateActive)},
 	})
 	m.silencesPending = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name:        "alertmanager_silences",
 		Help:        "How many silences by state.",
-		ConstLabels: prometheus.Labels{"state": string(types.SilenceStatePending)},
+		ConstLabels: prometheus.Labels{"state": string(silence.SilenceStatePending)},
 	})
 	m.silencesExpired = promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name:        "alertmanager_silences",
 		Help:        "How many silences by state.",
-		ConstLabels: prometheus.Labels{"state": string(types.SilenceStateExpired)},
+		ConstLabels: prometheus.Labels{"state": string(silence.SilenceStateExpired)},
 	})
 
 	return m

@@ -1,0 +1,232 @@
+prometheus.scrape "metrics_local_mimir_compartments" {
+        targets = concat(
+                [{
+                        __address__ = "distributor-wc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "distributor",
+                        job         = "mimir-compartments/distributor",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "distributor-wc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "distributor",
+                        job         = "mimir-compartments/distributor",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-a-rc-0-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-a-rc-0-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-a-rc-1-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-a-rc-1-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-b-rc-0-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-b-rc-0-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-b-rc-1-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ingester-zone-b-rc-1-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ingester",
+                        job         = "mimir-compartments/ingester",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "querier:8080",
+                        cluster     = "docker-compose",
+                        container   = "querier",
+                        job         = "mimir-compartments/querier",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "query-frontend:8080",
+                        cluster     = "docker-compose",
+                        container   = "query-frontend",
+                        job         = "mimir-compartments/query-frontend",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "query-scheduler:8080",
+                        cluster     = "docker-compose",
+                        container   = "query-scheduler",
+                        job         = "mimir-compartments/query-scheduler",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "compactor-rc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "compactor",
+                        job         = "mimir-compartments/compactor",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "compactor-rc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "compactor",
+                        job         = "mimir-compartments/compactor",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-a-rc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-compartments/store-gateway",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-b-rc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-compartments/store-gateway",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-a-rc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-compartments/store-gateway",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "store-gateway-zone-b-rc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "store-gateway",
+                        job         = "mimir-compartments/store-gateway",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ruler-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-compartments/ruler",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ruler-2:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-compartments/ruler",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "ruler-3:8080",
+                        cluster     = "docker-compose",
+                        container   = "ruler",
+                        job         = "mimir-compartments/ruler",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "alertmanager-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-compartments/alertmanager",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "alertmanager-2:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-compartments/alertmanager",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "alertmanager-3:8080",
+                        cluster     = "docker-compose",
+                        container   = "alertmanager",
+                        job         = "mimir-compartments/alertmanager",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "block-builder-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder",
+                        job         = "mimir-compartments/block-builder",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "block-builder-scheduler-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder-scheduler",
+                        job         = "mimir-compartments/block-builder-scheduler",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-a-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-compartments/usage-tracker",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-a-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-compartments/usage-tracker",
+                        namespace   = "mimir-compartments",
+                }],
+                [{
+                        __address__ = "usage-tracker-zone-b-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "usage-tracker",
+                        job         = "mimir-compartments/usage-tracker",
+                        namespace   = "mimir-compartments",
+                }],
+        )
+        forward_to      = [prometheus.remote_write.metrics_local.receiver]
+        scrape_interval = "5s"
+        scrape_timeout  = "5s"
+
+        enable_protobuf_negotiation = true
+        scrape_classic_histograms = true
+}
+
+prometheus.remote_write "metrics_local" {
+        endpoint {
+                name                   = "local"
+                url                    = "http://distributor:8080/api/v1/push"
+                send_native_histograms = true
+
+                queue_config { }
+
+                metadata_config { }
+        }
+}

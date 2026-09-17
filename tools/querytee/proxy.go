@@ -115,6 +115,11 @@ type BackendConfig struct {
 	RequestHeaders    http.Header `json:"request_headers" yaml:"request_headers"`
 	RequestProportion *float64    `json:"request_proportion,omitempty" yaml:"request_proportion,omitempty"`
 	MinDataQueriedAge string      `json:"min_data_queried_age,omitempty" yaml:"min_data_queried_age,omitempty"`
+	// ExcludeTenants is the list of tenant IDs (as found in the X-Scope-OrgID header) whose
+	// requests must not be sent to this backend. A request is skipped for this backend only if
+	// all of its tenants are excluded. This setting has no effect on the preferred backend, which
+	// always receives all traffic.
+	ExcludeTenants []string `json:"exclude_tenants,omitempty" yaml:"exclude_tenants,omitempty"`
 }
 
 func exampleJSONBackendConfig() string {
@@ -125,6 +130,7 @@ func exampleJSONBackendConfig() string {
 		},
 		RequestProportion: &proportion,
 		MinDataQueriedAge: "24h",
+		ExcludeTenants:    []string{"tenant-a", "tenant-b"},
 	}
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
@@ -363,6 +369,16 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 				return fmt.Errorf("backend %s: invalid min_data_queried_age format %q: %w", configuredBackend, backendCfg.MinDataQueriedAge, err)
 			}
 		}
+
+		// exclude_tenants has no effect on the preferred backend, it always receives all traffic.
+		// Reject the configuration to avoid a misleading setup.
+		if len(backendCfg.ExcludeTenants) > 0 {
+			for _, actualBackend := range backends {
+				if actualBackend.Name() == configuredBackend && actualBackend.Preferred() {
+					return fmt.Errorf("backend %s: exclude_tenants cannot be set on the preferred backend", configuredBackend)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -397,7 +413,7 @@ func (p *Proxy) Start() error {
 
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.
-	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{})
+	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{}, p.logger)
 
 	// register routes
 	for _, route := range p.routes {

@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -21,43 +20,32 @@ import (
 )
 
 func TestActiveSeriesWithQuerySharding(t *testing.T) {
-	for _, tc := range []struct {
-		shardingEnabled bool
-	}{
-		{false},
-		{true},
-	} {
-		config := queryFrontendTestConfig{
-			queryStatsEnabled:           true,
-			shardActiveSeriesQueries:    tc.shardingEnabled,
-			querySchedulerDiscoveryMode: "ring",
-			setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
-				flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
-				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-				require.NoError(t, s.StartAndWaitReady(minio))
+	config := queryFrontendTestConfig{
+		queryStatsEnabled:           true,
+		querySchedulerDiscoveryMode: "ring",
+		setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio))
 
-				return "", flags
-			},
-		}
-
-		testName := fmt.Sprintf("query query_sharding=%v",
-			tc.shardingEnabled,
-		)
-		t.Run("active series/"+testName, func(t *testing.T) {
-			runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
-		})
-
-		t.Run("active native histograms/"+testName, func(t *testing.T) {
-			runTestActiveNativeHistogramMetricsWithQueryShardingHTTPTest(t, config)
-		})
+			return "", flags
+		},
 	}
+
+	t.Run("active series", func(t *testing.T) {
+		runTestActiveSeriesHTTPTest(t, config)
+	})
+
+	t.Run("active native histograms", func(t *testing.T) {
+		runTestActiveNativeHistogramMetricsHTTPTest(t, config)
+	})
 }
 
 const (
 	metricName = "test_metric"
 )
 
-func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
+func runTestActiveSeriesHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
 	numSeries := 100
 	s, c := setupComponentsForActiveSeriesTest(t, cfg, numSeries)
 	defer s.Close()
@@ -76,17 +64,12 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 		require.Len(t, response.Data, numSeries)
 	}
 
-	var err error
-	_, err = c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
-	if cfg.shardActiveSeriesQueries {
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
-	} else {
-		require.NoError(t, err)
-	}
+	_, err := c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
 }
 
-func runTestActiveNativeHistogramMetricsWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
+func runTestActiveNativeHistogramMetricsHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
 	numSeries := 100
 	s, c := setupComponentsForActiveSeriesTest(t, cfg, numSeries)
 	defer s.Close()
@@ -113,14 +96,9 @@ func runTestActiveNativeHistogramMetricsWithQueryShardingHTTPTest(t *testing.T, 
 		})
 	}
 
-	var err error
-	_, err = c.ActiveNativeHistogramMetrics(metricName, e2emimir.WithQueryShards(512))
-	if cfg.shardActiveSeriesQueries {
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
-	} else {
-		require.NoError(t, err)
-	}
+	_, err := c.ActiveNativeHistogramMetrics(metricName, e2emimir.WithQueryShards(512))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
 }
 
 func setupComponentsForActiveSeriesTest(t *testing.T, cfg queryFrontendTestConfig, numSeries int) (*e2e.Scenario, *e2emimir.Client) {
@@ -158,10 +136,6 @@ func setupComponentsForActiveSeriesTest(t *testing.T, cfg queryFrontendTestConfi
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	}
-
-	if cfg.shardActiveSeriesQueries {
-		flags["-query-frontend.shard-active-series-queries"] = "true"
 	}
 
 	// Start the query-frontend.

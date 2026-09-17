@@ -36,6 +36,10 @@ func (b *globalMarkersBucket) Provider() objstore.ObjProvider {
 
 // Upload implements objstore.Bucket.
 func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	if err := objstore.ValidateUploadOptions(b.SupportedObjectUploadOptions(), opts...); err != nil {
+		return err
+	}
+
 	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
 	if globalMarkPath == "" {
 		return b.parent.Upload(ctx, name, r, opts...)
@@ -54,6 +58,21 @@ func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Read
 
 	// Upload it to the global markers location too.
 	return b.parent.Upload(ctx, globalMarkPath, bytes.NewReader(body), opts...)
+}
+
+// SupportedObjectUploadOptions implements objstore.Bucket.
+func (b *globalMarkersBucket) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	parentOptions := b.parent.SupportedObjectUploadOptions()
+	filtered := make([]objstore.ObjectUploadOptionType, 0, len(parentOptions))
+	for _, option := range parentOptions {
+		switch option {
+		case objstore.IfNotExists, objstore.IfMatch, objstore.IfNotMatch:
+			continue
+		default:
+			filtered = append(filtered, option)
+		}
+	}
+	return filtered
 }
 
 // Delete implements objstore.Bucket.
@@ -148,6 +167,11 @@ func (b *globalMarkersBucket) IsObjNotFoundErr(err error) bool {
 // IsAccessDeniedErr implements objstore.Bucket.
 func (b *globalMarkersBucket) IsAccessDeniedErr(err error) bool {
 	return b.parent.IsAccessDeniedErr(err)
+}
+
+// IsConditionNotMetErr implements objstore.Bucket.
+func (b *globalMarkersBucket) IsConditionNotMetErr(err error) bool {
+	return b.parent.IsConditionNotMetErr(err)
 }
 
 // Attributes implements objstore.Bucket.

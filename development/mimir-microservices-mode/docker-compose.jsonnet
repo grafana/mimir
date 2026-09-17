@@ -4,6 +4,13 @@ std.manifestYamlDoc({
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
 
+    // When debug is true, controls which targets run under Delve.
+    // If empty, all components run under Delve.
+    // If non-empty, only the listed components run under Delve.
+    // Example: ['querier', 'ingester'] to debug only querier and ingester.
+    // Available targets: distributor, ingester, querier, query-frontend, query-scheduler, compactor, ruler, alertmanager, store-gateway, continuous-test.
+    debug_targets: [],
+
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
 
@@ -234,6 +241,7 @@ std.manifestYamlDoc({
     // and has `/bin/mimir` set as an entrypoint. That requires passing CLI flags in 'command' instead
     // of a string that will be passed to a shell.
     local isLocalImage = options.image == 'mimir',
+    local useDelve = $._config.debug && (std.length($._config.debug_targets) == 0 || std.member($._config.debug_targets, options.target)),
     local flags = [
       '-config.file=/etc/mimir/mimir.yaml',
       '-target=%(target)s' % options,
@@ -242,6 +250,10 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
+      // Mimir reads mimir_cluster_seed.json from object storage on startup and waits up to 5 minutes
+      // from its creation time before becoming ready. The file persists in the MinIO volume across
+      // restarts, so without this flag any component starting within 5 minutes of the previous run blocks.
+      '-usage-stats.enabled=false',
     ] + options.extraArguments,
 
     // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
@@ -250,7 +262,7 @@ std.manifestYamlDoc({
     local command = if isLocalImage then ['/bin/sh', '-c', std.join(' ', [
       // some of the following expressions use "... else null", which std.join seem to ignore.
       (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
-      (if $._config.debug then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
+      (if useDelve then 'exec /bin/dlv exec /bin/mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec /bin/mimir'),
     ] + flags)] else flags,
 
     build: if isLocalImage then {
@@ -264,7 +276,7 @@ std.manifestYamlDoc({
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
-           if $._config.debug then [
+           if useDelve then [
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],
     depends_on: options.dependsOn,
@@ -307,9 +319,12 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    local buckets = ['mimir-tsdb', 'mimir-ruler', 'mimir-alertmanager'],
     minio: {
-      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      command: ['server', '--console-address', ':9001', '/data'],
+      image: 'quay.io/minio/minio:RELEASE.2025-05-24T17-08-30Z',
+      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // starts empty, so create the buckets the dev cluster needs before starting the server.
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
@@ -337,10 +352,11 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       command: [
         if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
+        '--enable-feature=promql-experimental-functions',
       ],
       volumes: [
         './config:/etc/prometheus',

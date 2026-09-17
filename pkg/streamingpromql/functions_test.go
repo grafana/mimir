@@ -73,6 +73,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"histogram_count":              `histogram_count({__name__=~"histogram.*"})`,
 		"histogram_fraction":           `histogram_fraction(0, 0.1, {__name__=~"histogram.*"})`,
 		"histogram_quantile":           `histogram_quantile(0.1, {__name__=~"histogram.*"})`,
+		"histogram_quantiles":          `histogram_quantiles({__name__=~"histogram.*"}, "q", 0.1)`,
 		"histogram_stddev":             `histogram_stddev({__name__=~"histogram.*"})`,
 		"histogram_stdvar":             `histogram_stdvar({__name__=~"histogram.*"})`,
 		"histogram_sum":                `histogram_sum({__name__=~"histogram.*"})`,

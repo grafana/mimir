@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -253,55 +254,57 @@ func TestLifecycler_CheckReady(t *testing.T) {
 
 	for _, implName := range []string{"classic Lifecycler", "tokenlessLifecycler"} {
 		t.Run(implName, func(t *testing.T) {
-			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.MinReadyDuration = minReadyDuration
-			kvClient := cfg.IngesterRing.KVStore.Mock
-			testRing := createTestRing(t, cfg.IngesterRing)
+			synctest.Test(t, func(t *testing.T) {
+				cfg := defaultIngesterTestConfig(t)
+				cfg.IngesterRing.MinReadyDuration = minReadyDuration
+				kvClient := cfg.IngesterRing.KVStore.Mock
+				testRing := createTestRing(t, cfg.IngesterRing)
 
-			var lifecycler ingesterLifecycler
-			switch implName {
-			case "classic Lifecycler":
-				lifecycler = createClassicLifecycler(t, cfg.IngesterRing, false, &noopFlushTransferer{}, nil)
-			case "tokenlessLifecycler":
-				cfg.IngesterRing.NumTokens = 0
-				lifecycler = createTokenlessLifecycler(t, cfg.IngesterRing, kvClient, false, nil, nil)
-			}
+				var lifecycler ingesterLifecycler
+				switch implName {
+				case "classic Lifecycler":
+					lifecycler = createClassicLifecycler(t, cfg.IngesterRing, false, &noopFlushTransferer{}, nil)
+				case "tokenlessLifecycler":
+					cfg.IngesterRing.NumTokens = 0
+					lifecycler = createTokenlessLifecycler(t, cfg.IngesterRing, kvClient, false, nil, nil)
+				}
 
-			ctx := context.Background()
+				ctx := context.Background()
 
-			// Before starting: CheckReady should return an error.
-			require.Error(t, lifecycler.CheckReady(ctx))
+				// Before starting: CheckReady should return an error.
+				require.Error(t, lifecycler.CheckReady(ctx))
 
-			// Start the lifecycler.
-			require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+				// Start the lifecycler.
+				require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, lifecycler))
+				})
+
+				// Wait for instance to be ACTIVE in the ring.
+				require.NoError(t, ring.WaitInstanceState(ctx, testRing, cfg.IngesterRing.InstanceID, ring.ACTIVE))
+
+				// Verify token count matches expected for this lifecycler type.
+				tokenCount, exists := getInstanceTokenCount(t, kvClient, IngesterRingKey, cfg.IngesterRing.InstanceID)
+				require.True(t, exists)
+				require.Equal(t, cfg.IngesterRing.NumTokens, tokenCount)
+
+				// Immediately after ACTIVE: CheckReady should return error because
+				// MinReadyDuration hasn't elapsed yet.
+				require.ErrorContains(t, lifecycler.CheckReady(ctx), "waiting for")
+
+				// Wait for MinReadyDuration to fully elapse.
+				time.Sleep(minReadyDuration)
+
+				// After MinReadyDuration: CheckReady should return nil.
+				require.NoError(t, lifecycler.CheckReady(ctx))
+
+				// Change instance to read-only. The ready state should be latched,
+				// so CheckReady should still return nil.
+				require.NoError(t, lifecycler.ChangeReadOnlyState(ctx, true))
+
+				// CheckReady should still return nil (latched ready state).
+				require.NoError(t, lifecycler.CheckReady(ctx))
 			})
-
-			// Wait for instance to be ACTIVE in the ring.
-			require.NoError(t, ring.WaitInstanceState(ctx, testRing, cfg.IngesterRing.InstanceID, ring.ACTIVE))
-
-			// Verify token count matches expected for this lifecycler type.
-			tokenCount, exists := getInstanceTokenCount(t, kvClient, IngesterRingKey, cfg.IngesterRing.InstanceID)
-			require.True(t, exists)
-			require.Equal(t, cfg.IngesterRing.NumTokens, tokenCount)
-
-			// Immediately after ACTIVE: CheckReady should return error because
-			// MinReadyDuration hasn't elapsed yet.
-			require.ErrorContains(t, lifecycler.CheckReady(ctx), "waiting for")
-
-			// Wait for MinReadyDuration to fully elapse.
-			time.Sleep(minReadyDuration)
-
-			// After MinReadyDuration: CheckReady should return nil.
-			require.NoError(t, lifecycler.CheckReady(ctx))
-
-			// Change instance to read-only. The ready state should be latched,
-			// so CheckReady should still return nil.
-			require.NoError(t, lifecycler.ChangeReadOnlyState(ctx, true))
-
-			// CheckReady should still return nil (latched ready state).
-			require.NoError(t, lifecycler.CheckReady(ctx))
 		})
 	}
 }

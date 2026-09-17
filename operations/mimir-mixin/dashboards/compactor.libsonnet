@@ -62,10 +62,26 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       max by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{%(job)s}[1h]) > 0))
       or
       max by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+      and max by(%(instance)s) (cortex_compactor_last_successful_run_timestamp_seconds{%(job)s} == 0)
     ||| % {
       instance: $._config.per_instance_label,
       job: $.jobMatcher($._config.job_names.compactor),
     },
+
+  local lastContactThresholds = {
+    local ok = 3 * 60,  // 3 minutes
+    local late = 5 * 60,  // 5 minutes
+    local veryLate = 15 * 60,  // 15 minutes
+
+    mappings: [
+      $.mappingRange('-Infinity', 0, { color: 'transparent', text: 'N/A' }),
+      $.mappingRange(0, ok, { color: 'green', text: 'Ok' }),
+      $.mappingRange(ok, late, { color: 'yellow', text: 'Delayed' }),
+      $.mappingRange(late, veryLate, { color: 'orange', text: 'Late' }),
+      $.mappingRange(veryLate, 'Infinity', { color: 'red', text: 'Very late' }),
+      $.mappingSpecial('null+nan', { color: 'transparent', text: 'Unknown' }),
+    ],
+  },
 
   local lastRunCommonTransformations = [
     $.transformation('organize', {
@@ -89,8 +105,10 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     ($.dashboard('Compactor') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addShowNativeLatencyVariable($.latencyVariableDefault())
-    .addRow(
-      $.row('Summary')
+    .addRowIf(
+      $._config.compactor_standalone_enabled,
+      ($.row(if $._config.compactor_scheduler_enabled then 'Summary (standalone mode)' else 'Summary') +
+       { collapse: $._config.compactor_standalone_summary_collapsed })
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
@@ -129,6 +147,25 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           'Tenants compaction progress',
           |||
             In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Estimated Compaction Jobs') +
+        $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
+                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
+        $.panelDescription(
+          'Estimated Compaction Jobs',
+          |||
+            Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
+            and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
+
+            Metric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if
+            there were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more
+            jobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job
+            covering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.
+
+            In other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.
           |||
         ),
       )
@@ -235,29 +272,143 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             sortBy: [{ desc: true, displayName: 'Last run' }],
           },
         },
-      )
+      ) + {
+        local spans = [3, 2, 2, 2, 3],
+        panels: [super.panels[i] { span: spans[i] } for i in std.range(0, std.length(super.panels) - 1)],
+      }
     )
-    .addRow(
-      $.row('')
+    .addRowIf(
+      $._config.compactor_scheduler_enabled,
+      $.row(if $._config.compactor_standalone_enabled then 'Summary (scheduler mode)' else 'Summary')
       .addPanel(
-        $.timeseriesPanel('Estimated Compaction Jobs') +
-        $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
-                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
+        $.timeseriesPanel('Pending jobs') +
+        $.queryPanel(
+          'sum by (job_type) (cortex_compactor_scheduler_pending_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        $.stack +
         $.panelDescription(
-          'Estimated Compaction Jobs',
+          'Pending jobs',
           |||
-            Estimated number of compaction jobs based on latest version of bucket index. Ingesters upload new blocks every 2 hours (shortly after 01:00 UTC, 03:00 UTC, 05:00 UTC, etc.),
-            and compactors should process all of them within 2h interval. If this graph regularly goes to zero (or close to zero) in 2 hour intervals, then compaction works as designed.
-
-            Metric with number of compaction jobs is computed from blocks in bucket index, which is updated regularly. Metric doesn't change between bucket index updates, even if
-            there were compaction jobs finished in this time. When computing compaction jobs, only jobs that can be executed at given moment are counted. There can be more
-            jobs, but if they are blocked, they are not counted in the metric. For example if there is a split compaction job pending for some time range, no merge job
-            covering the same time range can run. In this case only split compaction job is counted toward the metric, but merge job isn't.
-
-            In other words, computed number of compaction jobs is the minimum number of compaction jobs based on latest version of bucket index.
+            Number of jobs queued waiting for a worker, by type. This is the scheduler's backlog: rising trends indicate
+            workers cannot keep up; falling trends indicate the queue is draining.
           |||
         ),
       )
+      .addPanel(
+        $.timeseriesPanel('Active jobs') +
+        $.queryPanel(
+          'sum by (job_type) (cortex_compactor_scheduler_active_jobs{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        $.stack +
+        $.panelDescription(
+          'Active jobs',
+          'Number of jobs currently leased by workers, by type.',
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Incomplete compaction job bytes') +
+        $.queryPanel(
+          'sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{%s})' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{compaction_type}}',
+        ) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
+        $.aliasColors({ split: '#2A66CF', merge: '#FF780A' }) +
+        $.panelDescription(
+          'Incomplete compaction job bytes',
+          'Total bytes of source blocks across compaction jobs that have not yet completed (pending or active), broken down by split vs merge. Job size varies a lot, so this is usually a more accurate gauge of outstanding work than the raw job count.',
+        ),
+      )
+      .addPanel(
+        $.panel('Time since last scheduler contact') +
+        $.queryPanel(
+          |||
+            min by(%(instance)s) (time() - (max_over_time(cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s}[1h]) > 0))
+            and on(%(instance)s) up{%(job)s}
+            or
+            min by(%(instance)s) (time() - max_over_time(process_start_time_seconds{%(job)s}[1h]))
+            and on(%(instance)s) up{%(job)s}
+            and min by(%(instance)s) (cortex_compactor_last_scheduler_contact_timestamp_seconds{%(job)s} == 0)
+          ||| % {
+            instance: $._config.per_instance_label,
+            job: $.jobMatcher($._config.job_names.compactor),
+          },
+          'Last contact',
+        ) {
+          type: 'table',
+          targets: [target { format: 'table', instant: true } for target in super.targets],
+          transformations: [
+            $.transformation('organize', {
+              renameByName: {
+                Value: 'Last contact',
+                ['%s' % $._config.per_instance_label]: 'Worker',
+              },
+            }),
+            $.transformation('sortBy', {
+              sort: [{ desc: true, field: 'Last contact' }],
+            }),
+            $.transformationCalculateField('One', 'Last contact', '/', 'Last contact'),
+            $.transformationCalculateField('Status', 'Last contact', '*', 'One'),
+            $.transformation('filterFieldsByName', {
+              include: {
+                names: ['Worker', 'Last contact', 'Status'],
+              },
+            }),
+          ],
+          fieldConfig: {
+            overrides: [
+              $.overrideFieldByName('Status', [
+                $.overrideProperty('custom.displayMode', 'color-background'),
+                $.overrideProperty('mappings', lastContactThresholds.mappings),
+                $.overrideProperty('custom.width', 86),
+                $.overrideProperty('custom.align', 'center'),
+              ]),
+              $.overrideFieldByName('Last contact', [
+                $.overrideProperty('unit', 's'),
+                $.overrideProperty('custom.width', 74),
+                $.overrideProperty('mappings', [
+                  $.mappingRange('-Infinity', 0, { text: 'Never' }),
+                ]),
+              ]),
+            ],
+          },
+        } + {
+          options+: {
+            sortBy: [{ desc: true, displayName: 'Last contact' }],
+          },
+        },
+      )
+      .addPanel(
+        $.timeseriesPanel('Jobs completed / sec') +
+        $.queryPanel(
+          'sum by(job_type) (rate(cortex_compactor_scheduler_jobs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{job_type}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Repeated job failures / sec') +
+        $.queryPanel(
+          'sum(rate(cortex_compactor_scheduler_repeated_job_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          'failures',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.aliasColors({ failures: $._colors.failed }),
+      )
+      .addPanel(
+        $.timeseriesPanel('Scheduler RPC') +
+        $.queryPanel(
+          'label_replace(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{%s, route=~"/compactorschedulerpb.CompactorScheduler/.*"}[$__rate_interval]))), "method", "$1", "route", "/compactorschedulerpb.CompactorScheduler/(.*)")' % $.jobMatcher($._config.job_names.compactor_scheduler),
+          '{{method}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+      .splitIntoLines([4, 3])
+    )
+    .addRow(
+      $.row('Compaction')
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
         $.ncLatencyPanel('cortex_compactor_block_max_time_delta_seconds', $.jobMatcher($._config.job_names.compactor)) +
@@ -291,9 +442,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
         ),
       )
-    )
-    .addRow(
-      $.row('')
       .addPanel(
         $.timeseriesPanel('Average blocks / tenant') +
         $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
@@ -309,6 +457,49 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ) +
         $.showAllTooltip,
       )
+      .addPanel(
+        local selector = $.jobMatcher($._config.job_names.compactor);
+        local byLevel = utils.ncHistogramQuantile('0.90', 'cortex_compactor_block_compaction_delay_seconds', 'level=~"[0-4]", %s' % selector, sum_by=['level']);
+        local highLevels = utils.ncHistogramQuantile('0.90', 'cortex_compactor_block_compaction_delay_seconds', 'level!~"[0-4]", %s' % selector);
+        $.timeseriesPanel('p90 compaction delay by level') +
+        $.queryPanel(
+          [
+            utils.showClassicHistogramQuery(byLevel),
+            utils.showNativeHistogramQuery(byLevel),
+            utils.showClassicHistogramQuery(highLevels),
+            utils.showNativeHistogramQuery(highLevels),
+          ],
+          ['{{level}}', '{{level}}', '5+', '5+'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 's', custom+: { showPoints: 'auto' } } } } +
+        $.panelDescription(
+          'p90 compaction delay by level',
+          |||
+            p90 delay between a block being uploaded and compacted, by compaction level.
+            A rising delay suggests the compactor is falling behind ingestion.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Store-gateway blocks queried by level') +
+        $.panelDescription(
+          'Store-gateway blocks queried by level',
+          |||
+            Rate of blocks queried by store-gateways, by compaction level.
+            A rising share of low levels suggests the compactor is falling behind ingestion, though read traffic patterns also influence this.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          ],
+          ['{{level}}', '5+'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.stack,
+      )
+      .splitIntoLines([3, 4])
     )
     .addRow(
       $.row('Garbage collector')
@@ -379,6 +570,15 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     )
     .addRowIf(
       $._config.autoscaling.compactor.enabled,
-      $.cpuBasedAutoScalingRow('Compactor'),
+      $.row('Compactor – autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('compactor')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('compactor', scalingMetricName='', scalingMetricID='')
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('compactor')
+      )
     ),
 }

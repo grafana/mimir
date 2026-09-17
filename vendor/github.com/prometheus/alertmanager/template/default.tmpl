@@ -32,6 +32,7 @@ Source: {{ .GeneratorURL }}
 {{ define "slack.default.iconurl" }}{{ end }}
 {{ define "slack.default.text" }}{{ end }}
 {{ define "slack.default.footer" }}{{ end }}
+{{ define "slack.default.color" }}{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}{{ end }}
 
 
 {{ define "pagerduty.default.description" }}{{ template "__subject" . }}{{ end }}
@@ -123,6 +124,7 @@ Alerts Resolved:
 {{ end }}
 {{ end }}
 
+{{ define "discord.default.content" }}{{ end }}
 {{ define "discord.default.title" }}{{ template "__subject" . }}{{ end }}
 {{ define "discord.default.message" }}
 {{ if gt (len .Alerts.Firing) 0 }}
@@ -209,3 +211,26 @@ Alerts Resolved:
 {{- end -}}
 {{- $priority -}}
 {{- end -}}
+
+{{ define "rocketchat.default.title" }}{{ template "__subject" . }}{{ end }}
+{{ define "rocketchat.default.alias" }}{{ template "__alertmanager" . }}{{ end }}
+{{ define "rocketchat.default.titlelink" }}{{ template "__alertmanagerURL" . }}{{ end }}
+{{ define "rocketchat.default.emoji" }}{{ end }}
+{{ define "rocketchat.default.iconurl" }}{{ end }}
+{{ define "rocketchat.default.text" }}{{ end }}
+
+{{ define "mattermost.default.color" }}{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}{{ end }}
+{{ define "mattermost.default.username" }}{{ template "__alertmanager" . }}{{ end }}
+{{ define "mattermost.default.title" }}{{ template "__subject" . }}{{ end }}
+{{ define "mattermost.default.titlelink" }}{{ template "__alertmanagerURL" . }}{{ end }}
+{{ define "mattermost.default.fallback" }}{{ template "mattermost.default.title" . }} | {{ template "mattermost.default.titlelink" . }}{{ end }}
+{{ define "mattermost.default.text" }}
+{{ if gt (len .Alerts.Firing) 0 }}
+# Alerts Firing:
+{{ template "__text_alert_list_markdown" .Alerts.Firing }}
+{{ end }}
+{{ if gt (len .Alerts.Resolved) 0 }}
+# Alerts Resolved:
+{{ template "__text_alert_list_markdown" .Alerts.Resolved }}
+{{ end }}
+{{ end }}

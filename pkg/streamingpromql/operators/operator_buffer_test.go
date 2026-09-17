@@ -57,7 +57,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series0Data}, series)
 	require.Empty(t, buffer.buffer) // Should not buffer series that was immediately returned.
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -66,7 +66,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series2Data}, series)
 	require.Empty(t, buffer.buffer) // Should not buffer series at index 1 that won't be used.
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -75,7 +75,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series4Data}, series)
 	require.Len(t, buffer.buffer, 1) // Should only have buffered a single series (index 3).
-	require.True(t, inner.Finalized, "inner operator should be finalized after reading last series that will be used")
+	require.True(t, inner.FinishedReadingCalled, "inner operator should have FinishedReading called after reading last series that will be used")
 	require.False(t, inner.Closed, "inner operator should not be closed after reading last series that will be used")
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -84,7 +84,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series3Data}, series)
 	require.Empty(t, buffer.buffer) // Series that has been returned should be removed from buffer once it's returned.
-	require.True(t, inner.Finalized)
+	require.True(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -92,13 +92,13 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	series, err = buffer.GetSeries(ctx, []int{5, 6})
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series5Data, series6Data}, series)
-	require.True(t, inner.Finalized)
+	require.True(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 	types.PutInstantVectorSeriesData(series[1], memoryConsumptionTracker)
 
-	buffer.Finalize()
-	require.True(t, inner.Finalized)
+	buffer.FinishedReading()
+	require.True(t, inner.FinishedReadingCalled)
 	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after test, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
@@ -142,7 +142,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series0Data}, series)
 	require.Empty(t, buffer.buffer) // Should not buffer series that was immediately returned.
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -151,7 +151,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series2Data}, series)
 	require.Len(t, buffer.buffer, 1) // Should only have buffered a single series (index 1).
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -160,7 +160,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series4Data}, series)
 	require.Len(t, buffer.buffer, 2) // Should only have buffered two series (indices 1 and 3).
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -169,7 +169,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series3Data}, series)
 	require.Len(t, buffer.buffer, 1) // Series that has been returned should be removed from buffer once it's returned.
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -178,7 +178,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series1Data}, series)
 	require.Empty(t, buffer.buffer)
-	require.False(t, inner.Finalized)
+	require.False(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 
@@ -186,17 +186,17 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	series, err = buffer.GetSeries(ctx, []int{5, 6})
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series5Data, series6Data}, series)
-	require.True(t, inner.Finalized)
+	require.True(t, inner.FinishedReadingCalled)
 	require.False(t, inner.Closed)
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 	types.PutInstantVectorSeriesData(series[1], memoryConsumptionTracker)
 
-	buffer.Finalize()
-	require.True(t, inner.Finalized)
+	buffer.FinishedReading()
+	require.True(t, inner.FinishedReadingCalled)
 	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after test, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
-func TestInstantVectorOperatorBuffer_FinalizeReleasesBufferedData(t *testing.T) {
+func TestInstantVectorOperatorBuffer_FinishedReadingReleasesBufferedData(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -230,7 +230,7 @@ func TestInstantVectorOperatorBuffer_FinalizeReleasesBufferedData(t *testing.T) 
 	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
 	require.Len(t, buffer.buffer, 1, "should have buffered first series")
 
-	// Finalizing the buffer should release the buffered series.
-	buffer.Finalize()
-	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after Finalize, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+	// Calling FinishedReading on the buffer should release the buffered series.
+	buffer.FinishedReading()
+	require.Equalf(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected 0 memory consumption after FinishedReading, but have\n%s", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }

@@ -20,3 +20,4 @@ spec:
   selector:
     app: minio
     release: test-ingress-values
+

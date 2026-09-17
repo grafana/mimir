@@ -15,14 +15,22 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  {{- /* Only emit the clients: key when at least one client has a URL. Emitting an
+        empty sequence would produce `clients: null` which fails CRD validation on
+        ServerSideApply (see grafana/mimir#11200). */ -}}
+  {{- $hasClient := false -}}
+  {{- if (.logs).remote -}}{{- if (.logs).remote.url -}}{{- $hasClient = true -}}{{- end -}}{{- end -}}
+  {{- range ((.logs).additionalClientConfigs | default list) -}}
+  {{- if .url -}}{{- $hasClient = true -}}{{- end -}}
+  {{- end -}}
+  {{- if $hasClient }}
   clients:
-    {{- if or (.logs).additionalClientConfigs (.logs).remote }}
     {{- range $i, $cfg := prepend ((.logs).additionalClientConfigs | default list) (.logs).remote }}
     {{- with $cfg }}
     {{- include "mimir.metaMonitoring.logs.client" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i)) | nindent 6 -}}
     {{- end }}
     {{- end }}
-    {{- end }}
+  {{- end }}
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the LogsInstance CR

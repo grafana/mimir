@@ -3,11 +3,13 @@
 package ingest
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,7 +18,9 @@ import (
 	"github.com/grafana/dskit/backoff"
 	dskittls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/warpstream-go/pkg/wgo"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -25,18 +29,47 @@ const (
 	consumeFromStart      = "start"
 	consumeFromEnd        = "end"
 	consumeFromTimestamp  = "timestamp"
+
+	kafkaCompressionDefault = ""
+	kafkaCompressionNone    = "none"
+	kafkaCompressionGzip    = "gzip"
+	kafkaCompressionSnappy  = "snappy"
+	kafkaCompressionLz4     = "lz4"
+	kafkaCompressionZstd    = "zstd"
 )
 
+// KafkaBackend identifies the producer implementation used by the ingest writer.
+const (
+	KafkaBackendKafka      = "kafka"
+	KafkaBackendWarpstream = "warpstream"
+)
+
+const (
+	// DefaultKafkaRequestTimeoutOverhead is the default overhead applied by the writer on top of
+	// every Kafka write timeout. It accounts for the extra time a request sits in the client's
+	// buffer before being sent on the wire, plus the time to send it over the network and have
+	// Kafka start processing it.
+	DefaultKafkaRequestTimeoutOverhead = 2 * time.Second
+
+	// MinKafkaRequestTimeoutOverhead is the minimum allowed request timeout overhead. It matches
+	// the lower bound the franz-go client enforces on its request timeout overhead.
+	MinKafkaRequestTimeoutOverhead = 100 * time.Millisecond
+)
+
+var kafkaBackendOptions = []string{KafkaBackendKafka, KafkaBackendWarpstream}
+
 var (
+	ErrInvalidKafkaBackend = fmt.Errorf("the configured kafka backend is invalid, must be one of: %s", util.JoinStrings(kafkaBackendOptions, ", "))
+
 	ErrMissingKafkaAddress               = errors.New("the Kafka address has not been configured")
 	ErrMissingKafkaTopic                 = errors.New("the Kafka topic has not been configured")
-	ErrInvalidWriteClients               = errors.New("the configured number of write clients is invalid (must be greater than 0)")
 	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
 	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
 	ErrSASLOauthbearerBadConfig          = fmt.Errorf("exactly one of OAuth token, file path, or HTTP socket path must be configured to enable SASL OAUTHBEARER authentication")
+	ErrSASLMSKIAMBadConfig               = fmt.Errorf("exactly one of static credentials, file path, or HTTP socket path must be configured to enable SASL AWS_MSK_IAM authentication")
 	ErrInvalidSASLMechanism              = fmt.Errorf("the configured SASL mechanism is invalid, must be one of: %s", util.JoinStrings(saslMechanismOptions, ", "))
 
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
@@ -45,8 +78,25 @@ var (
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
 	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 	ErrInvalidWriteLogsFsyncConcurrency  = errors.New("the configured number of tenants to fsync concurrently before Kafka offsets are committed must be at least 1")
+	ErrInvalidWriteTimeoutOverhead       = fmt.Errorf("ingest-storage.kafka.write-timeout-overhead must be at least %s", MinKafkaRequestTimeoutOverhead)
+	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than or equal to twice ingest-storage.kafka.write-timeout-overhead when ingest-storage.kafka.backend=%s", KafkaBackendWarpstream)
+
+	ErrInvalidProducerCompression = fmt.Errorf("the configured Kafka producer compression codec is invalid, must be one of: %s", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "))
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
+
+	kafkaProducerCompressionConfigurableOptions = []string{
+		kafkaCompressionNone,
+		kafkaCompressionGzip,
+		kafkaCompressionSnappy,
+		kafkaCompressionLz4,
+		kafkaCompressionZstd,
+	}
+
+	kafkaProducerCompressionAllOptions = append(
+		[]string{kafkaCompressionDefault},
+		kafkaProducerCompressionConfigurableOptions...,
+	)
 
 	defaultFetchBackoffConfig = backoff.Config{
 		MinBackoff: 250 * time.Millisecond,
@@ -56,19 +106,24 @@ var (
 )
 
 type Config struct {
-	Enabled     bool            `yaml:"enabled"`
-	KafkaConfig KafkaConfig     `yaml:"kafka"`
-	Migration   MigrationConfig `yaml:"migration"`
+	Enabled            bool                     `yaml:"enabled"`
+	KafkaConfig        KafkaConfig              `yaml:"kafka"`
+	Migration          MigrationConfig          `yaml:"migration"`
+	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
+
+	IngesterPartitionMetricLabelEnabled bool `yaml:"ingester_partition_metric_label_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 4, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.")
+	f.BoolVar(&cfg.IngesterPartitionMetricLabelEnabled, "ingest-storage.ingester-partition-metric-label-enabled", false, "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
+	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
 }
 
 // Validate the config.
@@ -86,19 +141,37 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 
+	if err := cfg.OrderedConsumption.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
+	// Backend selects the producer implementation. See KafkaBackend* constants.
+	Backend string `yaml:"backend" category:"experimental"`
+
 	// Address is a list of seed brokers. The config name is singular for backward compatibility.
-	Address      flagext.StringSliceCSV `yaml:"address"`
-	Topic        string                 `yaml:"topic"`
-	ClientID     string                 `yaml:"client_id"`
-	ClientRack   string                 `yaml:"client_rack"`
-	DialTimeout  time.Duration          `yaml:"dial_timeout"`
-	WriteTimeout time.Duration          `yaml:"write_timeout"`
-	WriteClients int                    `yaml:"write_clients"`
+	Address              flagext.StringSliceCSV `yaml:"address"`
+	Topic                string                 `yaml:"topic"`
+	ClientID             string                 `yaml:"client_id"`
+	ClientRack           string                 `yaml:"client_rack"`
+	DialTimeout          time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout         time.Duration          `yaml:"write_timeout"`
+	WriteTimeoutOverhead time.Duration          `yaml:"write_timeout_overhead" category:"experimental"`
+
+	// Warpstream-only settings, ignored when Backend != KafkaBackendWarpstream.
+	WarpstreamHealthCheckSlowMultiplier    float64 `yaml:"warpstream_health_check_slow_multiplier" category:"experimental"`
+	WarpstreamHealthCheckMaxSlowFraction   float64 `yaml:"warpstream_health_check_max_slow_fraction" category:"experimental"`
+	WarpstreamHealthCheckFaultyThreshold   float64 `yaml:"warpstream_health_check_faulty_threshold" category:"experimental"`
+	WarpstreamHealthCheckMaxFaultyFraction float64 `yaml:"warpstream_health_check_max_faulty_fraction" category:"experimental"`
+
+	WarpstreamHedgeMinDelay  time.Duration `yaml:"warpstream_hedge_min_delay" category:"experimental"`
+	WarpstreamHedgeMaxAgents int           `yaml:"warpstream_hedge_max_agents" category:"experimental"`
+
+	WarpstreamDemoterProbeInterval time.Duration `yaml:"warpstream_demoter_probe_interval" category:"experimental"`
 
 	SASL       KafkaAuthConfig `yaml:",inline"`
 	TLSEnabled bool            `yaml:"tls_enabled"`
@@ -123,12 +196,13 @@ type KafkaConfig struct {
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
 
-	ProducerMaxRecordSizeBytes int   `yaml:"producer_max_record_size_bytes"`
-	ProducerMaxBufferedBytes   int64 `yaml:"producer_max_buffered_bytes"`
+	ProducerMaxRecordSizeBytes int    `yaml:"producer_max_record_size_bytes"`
+	ProducerMaxBufferedBytes   int64  `yaml:"producer_max_buffered_bytes"`
+	ProducerCompression        string `yaml:"producer_compression"`
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
-	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+	ProducerRecordVersion int `yaml:"producer_record_version"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
@@ -142,19 +216,18 @@ type KafkaConfig struct {
 	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
 
 	// IngestionConcurrencyQueueCapacity controls how many batches can be enqueued for flushing series to the TSDB HEAD.
-	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
+	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence a small buffer.
 	// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
-	// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
 	// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
 	IngestionConcurrencyQueueCapacity int `yaml:"ingestion_concurrency_queue_capacity"`
 
 	// IngestionConcurrencyTargetFlushesPerShard is the number of flushes we want to target per shard.
 	// There is some overhead in the parallelization. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization.
-	// the default of 80 was devised experimentally to keep the memory and CPU usage low ongoing consumption, while keeping replay speed high during cold replay.
+	// The default was devised experimentally to keep the memory and CPU usage low during ongoing consumption, while keeping replay speed high during cold replay.
 	IngestionConcurrencyTargetFlushesPerShard int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
 
 	// IngestionConcurrencyEstimatedBytesPerSample is the estimated number of bytes per sample.
-	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
+	// Our data indicates that the average sample size is somewhere between ~100 and ~200 bytes. We'll use 200 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
@@ -163,6 +236,14 @@ type KafkaConfig struct {
 
 	// DisableLinger disables producer linger. This setting is just used in tests.
 	DisableLinger bool `yaml:"-"`
+
+	// MaxInflightProduceRequests is the max number of in-flight Produce requests per broker.
+	// This setting is just used in tests. 0 uses the default.
+	MaxInflightProduceRequests int `yaml:"-"`
+
+	// Dialer replaces the default TCP dialer with a custom dialer function.
+	// Used in tests with kfake.VirtualNetwork for testing/synctest support.
+	Dialer func(ctx context.Context, network, address string) (net.Conn, error) `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -172,13 +253,24 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
 
+	f.StringVar(&cfg.Backend, prefix+"backend", KafkaBackendKafka, fmt.Sprintf("The Kafka backend implementation. Supported values: %s.", util.JoinStrings(kafkaBackendOptions, ", ")))
 	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
+
+	f.Float64Var(&cfg.WarpstreamHealthCheckSlowMultiplier, prefix+"warpstream-health-check-slow-multiplier", wgo.DefaultHealthCheckSlowMultiplier, "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckMaxSlowFraction, prefix+"warpstream-health-check-max-slow-fraction", wgo.DefaultHealthCheckMaxSlowFraction, "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckFaultyThreshold, prefix+"warpstream-health-check-faulty-threshold", wgo.DefaultHealthCheckFaultyThreshold, "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckMaxFaultyFraction, prefix+"warpstream-health-check-max-faulty-fraction", wgo.DefaultHealthCheckMaxFaultyFraction, "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
+	f.DurationVar(&cfg.WarpstreamHedgeMinDelay, prefix+"warpstream-hedge-min-delay", wgo.DefaultHedgerMinHedgeDelay, "Floor on the dynamically-computed hedge delay. Only applies when -"+prefix+"backend=warpstream.")
+	f.IntVar(&cfg.WarpstreamHedgeMaxAgents, prefix+"warpstream-hedge-max-agents", wgo.DefaultHedgerMaxHedgeAgents, "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -"+prefix+"backend=warpstream.")
+	f.DurationVar(&cfg.WarpstreamDemoterProbeInterval, prefix+"warpstream-demoter-probe-interval", wgo.DefaultDemoterProbeInterval, "Minimum wall-clock gap between probes to a demoted agent. Only applies when -"+prefix+"backend=warpstream.")
+
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
-	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.")
-	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
+	// The client rack is only supported with the kafka backend because WarpStream does not support rack-aware clients.
+	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when "+prefix+"backend=kafka.")
+	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
-	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
+	f.DurationVar(&cfg.WriteTimeoutOverhead, prefix+"write-timeout-overhead", DefaultKafkaRequestTimeoutOverhead, "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+"consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
@@ -201,21 +293,22 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.IntVar(&cfg.ProducerMaxRecordSizeBytes, prefix+"producer-max-record-size-bytes", maxProducerRecordDataBytesLimit, "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.")
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+"producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
+	f.StringVar(&cfg.ProducerCompression, prefix+"producer-compression", kafkaCompressionDefault, fmt.Sprintf("The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: %s. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to %q to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "), kafkaCompressionNone))
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
-	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 2, "The record version that this producer sends.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
-	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
+	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 12, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+"use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
-	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
+	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 1_000_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
 
-	f.IntVar(&cfg.IngestionConcurrencyMax, prefix+"ingestion-concurrency-max", 0, "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
+	f.IntVar(&cfg.IngestionConcurrencyMax, prefix+"ingestion-concurrency-max", 8, "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
 	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+"ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 5, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 80, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 3, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 40, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 200, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 
 	cfg.SASL.RegisterFlagsWithPrefix(prefix+"sasl-", f)
 	f.BoolVar(&cfg.TLSEnabled, prefix+"tls-enabled", false, "Enable TLS for the Kafka client connection.")
@@ -223,21 +316,22 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 }
 
 func (cfg *KafkaConfig) Validate() error {
+	if !slices.Contains(kafkaBackendOptions, cfg.Backend) {
+		return ErrInvalidKafkaBackend
+	}
 	if cfg.Address.String() == "" {
 		return ErrMissingKafkaAddress
 	}
 	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
 	}
-	if cfg.WriteClients < 1 {
-		return ErrInvalidWriteClients
-	}
 	if !slices.Contains(consumeFromPositionOptions, cfg.ConsumeFromPositionAtStartup) {
 		return ErrInvalidConsumePosition
 	}
 	if cfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
 		// We only do a simple soundness check for the value be a millisecond precision timestamp.
-		if cfg.ConsumeFromTimestampAtStartup < 1e12 {
+		// This allows any timestamps after 2000-01-01, which is the initial time in a goroutine bubble (ref https://pkg.go.dev/testing/synctest#hdr-Time).
+		if cfg.ConsumeFromTimestampAtStartup < 9e11 {
 			return fmt.Errorf("%w: configured timestamp must be a millisecond timestamp", ErrInvalidConsumePosition)
 		}
 	} else {
@@ -247,6 +341,9 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.ProducerMaxRecordSizeBytes < minProducerRecordDataBytesLimit || cfg.ProducerMaxRecordSizeBytes > maxProducerRecordDataBytesLimit {
 		return ErrInvalidProducerMaxRecordSizeBytes
+	}
+	if !slices.Contains(kafkaProducerCompressionAllOptions, cfg.ProducerCompression) {
+		return ErrInvalidProducerCompression
 	}
 	if (cfg.TargetConsumerLagAtStartup != 0) != (cfg.MaxConsumerLagAtStartup != 0) {
 		return ErrInconsistentConsumerLagAtStartup
@@ -295,7 +392,74 @@ func (cfg *KafkaConfig) Validate() error {
 		}
 	}
 
+	// The franz-go client rejects a request timeout overhead below 100ms, and the Warpstream
+	// backend requires a positive overhead. Enforce the franz-go floor for both backends so a
+	// misconfiguration surfaces here instead of as a cryptic client construction error.
+	if cfg.WriteTimeoutOverhead < MinKafkaRequestTimeoutOverhead {
+		return fmt.Errorf("%w, is %s", ErrInvalidWriteTimeoutOverhead, cfg.WriteTimeoutOverhead)
+	}
+
+	// The Warpstream backend derives the per-attempt produce timeout as write-timeout minus the
+	// request overhead, then adds the overhead back as client-side slack. That split only holds
+	// when write-timeout is at least twice the overhead, so the per-attempt timeout stays positive.
+	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout < cfg.WriteTimeoutOverhead*2 {
+		return fmt.Errorf("%w (write-timeout=%s, write-timeout-overhead=%s)", ErrInvalidWarpstreamWriteTimeout, cfg.WriteTimeout, cfg.WriteTimeoutOverhead)
+	}
+
+	// The dialer is only expected to be used in tests.
+	if cfg.Dialer != nil {
+		if cfg.TLSEnabled {
+			return fmt.Errorf("kafka config: can't enable TSL with custom dialer")
+		}
+	}
+
 	return nil
+}
+
+// ToWarpstreamClientOptions maps the Warpstream-relevant subset of KafkaConfig
+// to wgo client options. The returned options start from wgo.DefaultConfig and
+// override only the fields Mimir controls.
+func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
+	opts := []wgo.Opt{
+		wgo.WithAddress(cfg.Address...),
+		wgo.WithTopic(cfg.Topic),
+		wgo.WithClientID(cfg.ClientID),
+		wgo.WithDialTimeout(cfg.DialTimeout),
+		wgo.WithWriteTimeout(cfg.WriteTimeout),
+		wgo.WithSASL(kafkaAuthOptions(cfg.SASL)...),
+		wgo.WithLinger(defaultProducerLinger),
+		wgo.WithBatchMaxBytes(producerBatchMaxBytes),
+		wgo.WithHealthCheckSlowMultiplier(cfg.WarpstreamHealthCheckSlowMultiplier),
+		wgo.WithHealthCheckMaxSlowFraction(cfg.WarpstreamHealthCheckMaxSlowFraction),
+		wgo.WithHealthCheckFaultyThreshold(cfg.WarpstreamHealthCheckFaultyThreshold),
+		wgo.WithHealthCheckMaxFaultyFraction(cfg.WarpstreamHealthCheckMaxFaultyFraction),
+		wgo.WithHedgerMinHedgeDelay(cfg.WarpstreamHedgeMinDelay),
+		wgo.WithHedgerMaxHedgeAgents(cfg.WarpstreamHedgeMaxAgents),
+		wgo.WithDemoterProbeInterval(cfg.WarpstreamDemoterProbeInterval),
+		wgo.WithClusterStatsTTL(time.Second),
+		wgo.WithMetadataRefreshInterval(DefaultMetadataRefreshInterval),
+		// WriteTimeout bounds the whole hedge cascade, so the per-attempt produce
+		// timeout plus its overhead must fit within it (wgo rejects a config where
+		// they don't). Validate guarantees WriteTimeout is at least twice the overhead,
+		// so the per-attempt timeout stays positive.
+		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - cfg.WriteTimeoutOverhead),
+		wgo.WithProduceRequestTimeoutOverhead(cfg.WriteTimeoutOverhead),
+	}
+
+	// The dialer is only expected to be used in tests (e.g. kfake's virtual network).
+	if cfg.Dialer != nil {
+		opts = append(opts, wgo.WithDialer(cfg.Dialer))
+	}
+
+	if cfg.TLSEnabled {
+		tlsConfig, err := cfg.TLS.GetTLSConfig()
+		if err != nil {
+			return nil, fmt.Errorf("invalid Kafka TLS config: %w", err)
+		}
+		opts = append(opts, wgo.WithTLSConfig(tlsConfig))
+	}
+
+	return opts, nil
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.
@@ -305,6 +469,55 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 	}
 
 	return strings.ReplaceAll(cfg.ConsumerGroup, "<partition>", strconv.Itoa(int(partitionID)))
+}
+
+// WriteCompartmentConfig returns a copy of cfg targeting the given write compartment's Kafka cluster:
+// the compartments.WriteCompartmentIDPlaceholder in the Kafka address and SASL username/password is
+// replaced with the write compartment ID. The topic is left unchanged (it is templated by read
+// compartment, not by write compartment).
+func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConfig {
+	c := *cfg
+
+	addresses := make(flagext.StringSliceCSV, len(cfg.Address))
+	for i, addr := range cfg.Address {
+		addresses[i] = compartments.ReplaceWriteCompartment(addr, writeCompartmentID)
+	}
+	c.Address = addresses
+
+	c.SASL.Username = compartments.ReplaceWriteCompartment(cfg.SASL.Username, writeCompartmentID)
+	c.SASL.Password = flagext.SecretWithValue(compartments.ReplaceWriteCompartment(cfg.SASL.Password.String(), writeCompartmentID))
+
+	return c
+}
+
+// WriteCompartmentConfigs returns one KafkaConfig per write compartment, each targeting
+// that compartment's Kafka cluster and the given read compartment's topic. Because a
+// separate Kafka client is created per compartment, the per-client resource budgets are divided across the compartments so
+// that fanning out keeps peak resource usage independent of the compartment count.
+func WriteCompartmentConfigs(base KafkaConfig, numCompartments int, topic string) []KafkaConfig {
+	fetchConcurrencyMax := divideBudget(base.FetchConcurrencyMax, numCompartments)
+	maxBufferedBytes := divideBudget(base.MaxBufferedBytes, numCompartments)
+	ingestionConcurrencyMax := divideBudget(base.IngestionConcurrencyMax, numCompartments)
+	out := make([]KafkaConfig, numCompartments)
+	for i := range out {
+		c := base.WriteCompartmentConfig(i)
+		c.Topic = topic
+		c.FetchConcurrencyMax = fetchConcurrencyMax
+		c.MaxBufferedBytes = maxBufferedBytes
+		c.IngestionConcurrencyMax = ingestionConcurrencyMax
+		out[i] = c
+	}
+	return out
+}
+
+// divideBudget splits a per-client resource budget across numCompartments clients.
+// A non-positive budget (commonly 0, meaning disabled or unlimited) is left untouched. A
+// positive budget is floored at 1 so it never collapses to 0.
+func divideBudget(budget, numCompartments int) int {
+	if budget <= 0 || numCompartments <= 1 {
+		return budget
+	}
+	return max(1, budget/numCompartments)
 }
 
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be
@@ -351,9 +564,10 @@ const (
 	SASLMechanismScramSHA256 SASLMechanism = "SCRAM-SHA-256"
 	SASLMechanismScramSHA512 SASLMechanism = "SCRAM-SHA-512"
 	SASLMechanismOauthbearer SASLMechanism = "OAUTHBEARER"
+	SASLMechanismMSKIAM      SASLMechanism = "AWS_MSK_IAM"
 )
 
-var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer}
+var saslMechanismOptions = []SASLMechanism{SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismOauthbearer, SASLMechanismMSKIAM}
 
 type KafkaAuthConfig struct {
 	Mechanism SASLMechanism `yaml:"sasl_mechanism"`
@@ -363,15 +577,9 @@ type KafkaAuthConfig struct {
 	Username string         `yaml:"sasl_username"`
 	Password flagext.Secret `yaml:"sasl_password"`
 
-	// For OAUTHBEARER mechanism
+	Oauthbearer KafkaAuthOauthbearerConfig `yaml:",inline"`
 
-	OauthbearerToken      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
-	OauthbearerZid        string                    `yaml:"sasl_oauthbearer_zid"`
-	OauthbearerExtensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
-
-	OauthbearerFilePath          string        `yaml:"sasl_oauthbearer_file_path"`
-	OauthbearerHTTPSocketPath    string        `yaml:"sasl_oauthbearer_http_socket_path"`
-	OauthbearerHTTPSocketTimeout time.Duration `yaml:"sasl_oauthbearer_http_socket_timeout"`
+	MSKIAM KafkaAuthMSKIAMConfig `yaml:",inline"`
 }
 
 func (cfg *KafkaAuthConfig) RegisterFlags(f *flag.FlagSet) {
@@ -383,18 +591,8 @@ func (cfg *KafkaAuthConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.Var(&cfg.Mechanism, prefix+"mechanism", fmt.Sprintf("The SASL mechanism used to authenticate to Kafka. Supported values: %s. For backwards-compatibility, PLAIN with no username nor password disables SASL.", util.JoinStrings(saslMechanismOptions, ", ")))
 	f.StringVar(&cfg.Username, prefix+"username", "", "The username used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
 	f.Var(&cfg.Password, prefix+"password", "The password used to authenticate to Kafka using SASL. To enable SASL, configure both the username and password.")
-
-	f.Var(&cfg.OauthbearerToken, prefix+"oauthbearer-token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"oauthbearer-file-path instead.")
-	f.StringVar(&cfg.OauthbearerZid, prefix+"oauthbearer-zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
-	if !cfg.OauthbearerExtensions.IsInitialized() {
-		cfg.OauthbearerExtensions = flagext.NewLimitsMap[string](nil)
-	}
-	f.Var(&cfg.OauthbearerExtensions, prefix+"oauthbearer-extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
-
-	f.StringVar(&cfg.OauthbearerFilePath, prefix+"oauthbearer-file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}}`)
-
-	f.StringVar(&cfg.OauthbearerHTTPSocketPath, prefix+"oauthbearer-http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`oauthbearer-file-path.`)
-	f.DurationVar(&cfg.OauthbearerHTTPSocketTimeout, prefix+"oauthbearer-http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket.")
+	cfg.Oauthbearer.RegisterFlagsWithPrefix(prefix+"oauthbearer-", f)
+	cfg.MSKIAM.RegisterFlagsWithPrefix(prefix+"msk-iam-", f)
 }
 
 func (cfg *KafkaAuthConfig) Validate() error {
@@ -410,29 +608,154 @@ func (cfg *KafkaAuthConfig) Validate() error {
 		}
 
 	case SASLMechanismOauthbearer:
-		hasToken := cfg.OauthbearerToken.String() != ""
-		hasFile := cfg.OauthbearerFilePath != ""
-		hasSocket := cfg.OauthbearerHTTPSocketPath != ""
-		// Exactly one of the three options must be configured.
-		numSet := 0
-		if hasToken {
-			numSet++
-		}
-		if hasFile {
-			numSet++
-		}
-		if hasSocket {
-			numSet++
-		}
-		if numSet != 1 {
-			return ErrSASLOauthbearerBadConfig
-		}
+		return cfg.Oauthbearer.Validate()
+
+	case SASLMechanismMSKIAM:
+		return cfg.MSKIAM.Validate()
 
 	default:
 		return ErrInvalidSASLMechanism
 	}
 
 	return nil
+}
+
+// kafkaSASLConfig defines how to get a SASL secret: either from a static secret
+// provided in config, from a file, or with HTTP through a domain socket.
+//
+// Exactly one source must be configured; call Validate to enforce this.
+//
+// Because this struct is generic, it cannot have distinct YAML struct tags
+// for each kind of staticSecretConfig. Concrete structs with the same shape (so
+// they can be converted to kafkaSASLConfig) are used instead.
+type kafkaSASLConfig[T saslSecretConfig] struct {
+	Secret            T
+	FilePath          string
+	HTTPSocketPath    string
+	HTTPSocketTimeout time.Duration
+}
+
+var errNoSecret = errors.New("no static credentials provided")
+
+var errIncompleteMSKIAMSecret = errors.New("both access key and secret key must be configured for static AWS_MSK_IAM credentials")
+
+// Validate returns errMultipleSources unless exactly one of the static secret,
+// file path, or HTTP socket path is configured.
+func (cfg kafkaSASLConfig[T]) Validate(errNoSingleSource error) error {
+	err := cfg.Secret.Validate()
+	if err != nil && !errors.Is(err, errNoSecret) {
+		return err
+	}
+	hasStaticSecret := err == nil
+	sourceFound := false
+	for _, source := range []bool{
+		hasStaticSecret,
+		cfg.FilePath != "",
+		cfg.HTTPSocketPath != "",
+	} {
+		if source {
+			if sourceFound {
+				return errNoSingleSource
+			}
+			sourceFound = true
+		}
+	}
+	if !sourceFound {
+		return errNoSingleSource
+	}
+	return nil
+}
+
+// KafkaAuthOauthbearerConfig holds OAUTHBEARER-specific SASL configuration.
+type KafkaAuthOauthbearerConfig struct {
+	Secret            KafkaOauthbearerStaticConfig `yaml:",inline"`
+	FilePath          string                       `yaml:"sasl_oauthbearer_file_path"`
+	HTTPSocketPath    string                       `yaml:"sasl_oauthbearer_http_socket_path"`
+	HTTPSocketTimeout time.Duration                `yaml:"sasl_oauthbearer_http_socket_timeout"`
+}
+
+func (cfg *KafkaAuthOauthbearerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing an OAuth token to authenticate to Kafka. Mutually exclusive with `+prefix+`http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh tokens. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}, "zid": {"type": "string"}, "extensions": {"type": "object", "additionalProperties": {"type": "string"}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch an OAuth token from via HTTP. Mutually exclusive with `+prefix+`file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting the token from the HTTP socket. Effective when "+prefix+"http-socket-path is set.")
+}
+
+func (cfg KafkaAuthOauthbearerConfig) Validate() error {
+	return (kafkaSASLConfig[KafkaOauthbearerStaticConfig])(cfg).Validate(ErrSASLOauthbearerBadConfig)
+}
+
+// KafkaOauthbearerStaticConfig holds static OAUTHBEARER credentials.
+type KafkaOauthbearerStaticConfig struct {
+	Token      flagext.Secret            `yaml:"sasl_oauthbearer_token"`
+	Zid        string                    `yaml:"sasl_oauthbearer_zid"`
+	Extensions flagext.LimitsMap[string] `yaml:"sasl_oauthbearer_extensions"`
+}
+
+// Validate returns ErrSecretNotProvided when no token has been set.
+func (s KafkaOauthbearerStaticConfig) Validate() error {
+	if s.Token.String() == "" {
+		return errNoSecret
+	}
+	return nil
+}
+
+func (s *KafkaOauthbearerStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&s.Token, prefix+"token", "The OAuth token to use to authenticate to Kafka. Consider "+prefix+"file-path instead.")
+	f.StringVar(&s.Zid, prefix+"zid", "", "Optional authorization ID to use when authenticating to Kafka using SASL OAUTHBEARER.")
+	if !s.Extensions.IsInitialized() {
+		s.Extensions = flagext.NewLimitsMap[string](nil)
+	}
+	f.Var(&s.Extensions, prefix+"extensions", "Optional additional OAuth extensions to include when authenticating to Kafka using SASL OAUTHBEARER as a JSON object.")
+}
+
+// KafkaAuthMSKIAMConfig holds AWS_MSK_IAM-specific SASL configuration.
+type KafkaAuthMSKIAMConfig struct {
+	Secret            KafkaMSKIAMStaticConfig `yaml:",inline"`
+	FilePath          string                  `yaml:"sasl_msk_iam_file_path"`
+	HTTPSocketPath    string                  `yaml:"sasl_msk_iam_http_socket_path"`
+	HTTPSocketTimeout time.Duration           `yaml:"sasl_msk_iam_http_socket_timeout"`
+}
+
+func (cfg *KafkaAuthMSKIAMConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Secret.RegisterFlagsWithPrefix(prefix, f)
+	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with `+prefix+`http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}`)
+	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with `+prefix+`file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
+	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting AWS credentials from the HTTP socket. Effective when "+prefix+"http-socket-path is set.")
+}
+
+func (cfg KafkaAuthMSKIAMConfig) Validate() error {
+	return (kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg).Validate(ErrSASLMSKIAMBadConfig)
+}
+
+// KafkaMSKIAMStaticConfig holds static AWS_MSK_IAM credentials.
+type KafkaMSKIAMStaticConfig struct {
+	AccessKey    flagext.Secret `yaml:"sasl_msk_iam_access_key"`
+	SecretKey    flagext.Secret `yaml:"sasl_msk_iam_secret_key"`
+	SessionToken flagext.Secret `yaml:"sasl_msk_iam_session_token"`
+	UserAgent    string         `yaml:"sasl_msk_iam_user_agent"`
+}
+
+// Validate returns errNoSecret when no access key and secret key have been set.
+func (s KafkaMSKIAMStaticConfig) Validate() error {
+	hasAccessKey := s.AccessKey.String() != ""
+	hasSecretKey := s.SecretKey.String() != ""
+
+	if !hasAccessKey && !hasSecretKey {
+		return errNoSecret
+	}
+	if !hasAccessKey || !hasSecretKey {
+		return errIncompleteMSKIAMSecret
+	}
+
+	return nil
+}
+
+func (s *KafkaMSKIAMStaticConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Var(&s.AccessKey, prefix+"access-key", "The AWS access key ID to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&s.SecretKey, prefix+"secret-key", "The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider "+prefix+"file-path instead.")
+	f.Var(&s.SessionToken, prefix+"session-token", "Optional AWS session token to authenticate to Kafka using SASL AWS_MSK_IAM.")
+	f.StringVar(&s.UserAgent, prefix+"user-agent", "", "Optional user agent to use when authenticating to Kafka using SASL AWS_MSK_IAM.")
 }
 
 type TLSClientConfig struct {

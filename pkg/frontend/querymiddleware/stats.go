@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -65,7 +65,11 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 	s.trackQueryExpressionSize(ctx, req)
 	s.populateQueryDetails(ctx, req)
 
-	return s.next.Do(ctx, req)
+	resp, err := s.next.Do(ctx, req)
+	if err == nil {
+		s.populateResponseDetails(ctx, resp)
+	}
+	return resp, err
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
@@ -101,7 +105,7 @@ func (s queryStatsMiddleware) trackQueryExpressionSize(ctx context.Context, req 
 }
 
 func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req MetricsQueryRequest) {
-	details := QueryDetailsFromContext(ctx)
+	details := querydetails.QueryDetailsFromContext(ctx)
 	if details == nil {
 		return
 	}
@@ -133,6 +137,21 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 }
 
+func (s queryStatsMiddleware) populateResponseDetails(ctx context.Context, resp Response) {
+	details := querydetails.QueryDetailsFromContext(ctx)
+	if details == nil || resp == nil {
+		return
+	}
+	pr, ok := resp.GetPrometheusResponse()
+	if !ok || pr == nil || pr.Data == nil {
+		return
+	}
+	details.ResponseSeriesCount += len(pr.Data.Result)
+	for _, stream := range pr.Data.Result {
+		details.ResponseSamplesCount += len(stream.Samples) + len(stream.Histograms)
+	}
+}
+
 func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 	consistency, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok {
@@ -142,46 +161,6 @@ func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 	for _, tenantID := range tenants {
 		s.consistencyCounter.WithLabelValues(tenantID, consistency).Inc()
 	}
-}
-
-type QueryDetails struct {
-	QuerierStats *stats.SafeStats
-
-	// Start and End are the parsed start and end times of the unmodified user request.
-	Start, End time.Time
-	// MinT and MaxT are the earliest and latest points in time which the query might try to use.
-	// For example, they account for range selectors and @ modifiers.
-	// MinT and MaxT may be zero-valued if the query doesn't process samples.
-	MinT, MaxT    time.Time
-	Step          time.Duration
-	LookbackDelta time.Duration
-
-	ResultsCacheMissBytes int
-	ResultsCacheHitBytes  int
-}
-
-type contextKey int
-
-var ctxKey = contextKey(0)
-
-// ContextWithEmptyDetails returns a context with empty QueryDetails.
-// The returned context also has querier stats.Stats injected. The stats pointer in the context
-// and the stats pointer in the QueryDetails are the same.
-func ContextWithEmptyDetails(ctx context.Context) (*QueryDetails, context.Context) {
-	s, ctx := stats.ContextWithEmptyStats(ctx)
-	details := &QueryDetails{QuerierStats: s}
-	ctx = context.WithValue(ctx, ctxKey, details)
-	return details, ctx
-}
-
-// QueryDetailsFromContext gets the QueryDetails out of the Context. Returns nil if stats have not
-// been initialised in the context.
-func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
-	o := ctx.Value(ctxKey)
-	if o == nil {
-		return nil
-	}
-	return o.(*QueryDetails)
 }
 
 // ExtractMinMaxTime extracts the min and max timestamps that may be accessed by the query.

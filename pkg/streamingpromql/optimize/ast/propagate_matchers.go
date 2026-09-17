@@ -5,13 +5,50 @@ package ast
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
+
+// PropagateMatchers optimizes queries by propagating matchers across binary operations.
+type PropagateMatchers struct {
+	propagateMatchersAttempts prometheus.Counter
+	propagateMatchersRewrites prometheus.Counter
+}
+
+func NewPropagateMatchers(reg prometheus.Registerer) *PropagateMatchers {
+	return &PropagateMatchers{
+		propagateMatchersAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.",
+		}),
+		propagateMatchersRewrites: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_propagate_matchers_rewritten_total",
+			Help: "Total number of queries where the optimization pass has rewritten the query by propagating matchers.",
+		}),
+	}
+}
+
+func (p *PropagateMatchers) Name() string {
+	return "Propagate matchers"
+}
+
+func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
+	p.propagateMatchersAttempts.Inc()
+	mapper := NewPropagateMatchersMapper()
+	newExpr, err := mapper.Map(ctx, expr)
+	if mapper.HasChanged() {
+		p.propagateMatchersRewrites.Inc()
+	}
+	return newExpr, err
+}
 
 // NewPropagateMatchersMapper optimizes queries by propagating matchers across binary operations.
 func NewPropagateMatchersMapper() *astmapper.ASTExprMapperWithState {
@@ -50,6 +87,10 @@ type enrichedVectorSelector struct {
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	if e.Op == parser.LOR {
+		// Matchers cannot propagate across an `or`, but we still need to recurse into both
+		// sides so that any nested BinaryExprs within each arm are processed.
+		mapper.extractVectorSelectors(e.LHS)
+		mapper.extractVectorSelectors(e.RHS)
 		return nil, nil
 	}
 
@@ -72,6 +113,10 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
 		// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
 		newMatchersL = make([]*labels.Matcher, 0)
+	} else if e.VectorMatching.FillValues.RHS != nil {
+		// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
+		// produces output. RHS matchers must not narrow the LHS.
+		newMatchersL = make([]*labels.Matcher, 0)
 	} else {
 		newMatchersL = mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
@@ -81,11 +126,17 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
-	for _, vsR := range vssR {
-		if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
-			vsR.vs.LabelMatchers = newLabelMatchers
-			mapper.changed = true
+	var newMatchersR []*labels.Matcher
+	if e.VectorMatching.FillValues.LHS != nil || e.VectorMatching.FillValues.RHS != nil {
+		// Prometheus validates every right-side match group when any fill modifier is active.
+		newMatchersR = make([]*labels.Matcher, 0)
+	} else {
+		newMatchersR = mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
+		for _, vsR := range vssR {
+			if newLabelMatchers, changed := combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.include); changed {
+				vsR.vs.LabelMatchers = newLabelMatchers
+				mapper.changed = true
+			}
 		}
 	}
 	vss := append(vssL, vssR...)
@@ -114,6 +165,11 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 			}
 			return mapper.extractVectorSelectors(e.Args[i])
 		}
+		// Even for unsupported functions, recurse into all args to process any nested
+		// BinaryExprs (e.g. `scalar(up{foo="bar"} * down)` nested inside another BinaryExpr).
+		for _, arg := range e.Args {
+			mapper.extractVectorSelectors(arg)
+		}
 		return nil, nil
 	case *parser.AggregateExpr:
 		return mapper.extractVectorSelectorsFromAggregateExpr(e)
@@ -132,7 +188,10 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *parser.AggregateExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
 	include := !e.Without
 	if len(e.Grouping) == 0 && include {
-		// Shortcut if there are no labels allowed to propagate inwards or outwards.
+		// No labels are allowed to propagate inwards or outwards, but we still need to
+		// recurse into the inner expression so that any nested binary expressions are
+		// processed (e.g. propagating matchers within an "and on(...)" inside the aggregate).
+		mapper.extractVectorSelectors(e.Expr)
 		return nil, nil
 	}
 	vss, labelMatchers := mapper.extractVectorSelectors(e.Expr)
@@ -207,17 +266,19 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	// Time
 	case "minute", "hour", "day_of_week", "day_of_month", "day_of_year", "days_in_month", "month", "year":
 		return 0, nil
-	case "timestamp":
+	case "timestamp", "start_timestamp":
 		return 0, nil
 	// No vector/matrix selectors
-	case "pi", "time", "vector":
+	case "end", "max_of", "min_of", "pi", "range", "start", "step", "time", "vector":
 		return -1, nil
 	// Explicitly not supported because it's not valid to propagate matchers across these functions.
-	case "scalar", "absent", "absent_over_time":
+	case "scalar", "absent", "absent_over_time", core.ScalarEvaluationRootFunctionName:
 		return -1, nil
 	// Explicitly not supported because we want to avoid unexpected interactions with labels or ordering.
 	case "label_join", "label_replace", "info", "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
 		return -1, nil
+	case core.VectorEvaluationRootFunctionName:
+		return 0, nil
 	default:
 		return -1, fmt.Errorf("function support unknown: %s", funcName)
 	}
@@ -232,7 +293,7 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	}
 	matchersToAdd := make([]*labels.Matcher, 0, length)
 	for _, m := range matchersSrc {
-		if isMetricNameMatcher(m) {
+		if isInternalMatcher(m) {
 			continue
 		}
 		if include != labelsSet.Contains(m.Name) {
@@ -261,8 +322,8 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 	return matchers, changed
 }
 
-func isMetricNameMatcher(m *labels.Matcher) bool {
-	return m.Name == model.MetricNameLabel
+func isInternalMatcher(m *labels.Matcher) bool {
+	return strings.HasPrefix(m.Name, "__")
 }
 
 type stringSet map[string]struct{}

@@ -152,7 +152,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	for idx, node := range nodes {
 		nodeRequests = append(nodeRequests, streamingpromql.NodeEvaluationRequest{
 			Node:      node,
-			TimeRange: req.Nodes[idx].TimeRange.ToDecodedTimeRange(),
+			TimeRange: req.Nodes[idx].TimeRange.Decode(),
 		})
 
 		nodeToIndexMap[node] = req.Nodes[idx].NodeIndex
@@ -185,6 +185,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		timeNow:                        d.timeNow,
 		originalExpression:             req.Plan.OriginalExpression,
 		batchSize:                      req.BatchSize,
+		seriesMetadataBatchSize:        req.SeriesMetadataBatchSize,
+		sendPerNodeAnnotations:         req.EnablePerNodeAnnotations,
 		instantVectorSeriesDataBatches: make(map[planning.Node]*instantVectorSeriesDataBatch, instantVectorNodeCount),
 	}
 
@@ -332,11 +334,13 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 }
 
 type evaluationObserver struct {
-	w           *queryResponseWriter
-	nodeIndices map[planning.Node]int64
-	batchSize   uint64
-	startTime   time.Time
-	timeNow     func() time.Time
+	w                       *queryResponseWriter
+	nodeIndices             map[planning.Node]int64
+	batchSize               uint64
+	seriesMetadataBatchSize uint64
+	sendPerNodeAnnotations  bool
+	startTime               time.Time
+	timeNow                 func() time.Time
 
 	instantVectorSeriesDataBatches map[planning.Node]*instantVectorSeriesDataBatch
 
@@ -364,23 +368,36 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 		return err
 	}
 
-	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
-
-	for _, s := range series {
-		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-			Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
-			DropName: s.DropName,
-		})
+	batchSize := int(o.seriesMetadataBatchSize)
+	if batchSize == 0 {
+		// Frontend doesn't support batching metadata, so send everything in one batch.
+		batchSize = len(series)
 	}
 
-	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
-		Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-			SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-				NodeIndex: nodeIndex,
-				Series:    protoSeries,
+	sentOne := false
+
+	// Note the slightly unusual condition: we always send at least one message, even when there are no series.
+	for startIdx := 0; startIdx < len(series) || (len(series) == 0 && !sentOne); startIdx += batchSize {
+		endIdx := min(startIdx+batchSize, len(series))
+		batch := series[startIdx:endIdx]
+		protoSeries := querierpb.EncodeSeriesMetadataSlice(batch)
+
+		if err := o.w.Write(ctx, querierpb.EvaluateQueryResponse{
+			Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+				SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+					NodeIndex:               nodeIndex,
+					Series:                  protoSeries,
+					TotalSeriesCountForNode: int64(len(series)),
+				},
 			},
-		},
-	})
+		}); err != nil {
+			return err
+		}
+
+		sentOne = true
+	}
+
+	return nil
 }
 
 func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
@@ -417,12 +434,9 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 	series := make([]querierpb.InstantVectorSeriesData, 0, len(batch.unsentSeries))
 
 	for _, d := range batch.unsentSeries {
-		series = append(series, querierpb.InstantVectorSeriesData{
-			// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
-			// serializing the message and sending it before the deferred return to the pool occurs above.
-			Floats:     mimirpb.FromFPointsToSamples(d.Floats),
-			Histograms: mimirpb.FromHPointsToHistograms(d.Histograms),
-		})
+		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
+		// serializing the message and sending it before the deferred return to the pool occurs above.
+		series = append(series, querierpb.EncodeInstantVectorSeriesData(d))
 	}
 
 	msg := querierpb.EvaluateQueryResponse{
@@ -484,7 +498,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 
 				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
 				// serializing the message and sending it before returning (and therefore before anything else can modify the slices).
-				Floats:     mimirpb.FromFPointsToSamples(floats),
+				Floats:     mimirpb.FromFPointsToFloatSamples(floats),
 				Histograms: mimirpb.FromHPointsToHistograms(histograms),
 			},
 		},
@@ -527,9 +541,9 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
 				NodeIndex: nodeIndex,
 
-				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
+				// The method below does an unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
 				// serializing the message and sending it before the deferred return to the pool occurs above.
-				Values: mimirpb.FromFPointsToSamples(data.Samples),
+				Values: mimirpb.FromFPointsToFloatSamples(data.Samples),
 			},
 		},
 	})
@@ -551,7 +565,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, nodeInfo map[planning.Node]streamingpromql.NodeCompletionInfo) error {
 	for _, batch := range o.instantVectorSeriesDataBatches {
 		if len(batch.unsentSeries) > 0 {
 			// Send any outstanding data now.
@@ -561,30 +575,64 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		}
 	}
 
-	var annos querierpb.Annotations
+	// If the request came from a frontend that does not support per-node annotations, merge them into a single
+	// set for backwards compatibility.
+	var combinedAnnos annotations.Annotations
 
-	if annotations != nil {
-		annos.Warnings, annos.Infos = annotations.AsStrings(o.originalExpression, 0, 0)
+	encodedStats := make(map[int64]types.EncodedOperatorEvaluationStats, len(nodeInfo))
+	encodedAnnotations := make(map[int64]querierpb.Annotations, len(nodeInfo))
+	for node, s := range nodeInfo {
+		nodeIndex, err := o.nodeToIndex(node)
+		if err != nil {
+			return err
+		}
+
+		encodedStats[nodeIndex] = s.Stats.Encode()
+
+		if !o.sendPerNodeAnnotations {
+			combinedAnnos = combinedAnnos.Merge(s.Annotations)
+		} else if len(s.Annotations) > 0 {
+			// Only bother populating the map if there are any annotations.
+			encodedAnnotations[nodeIndex] = querierpb.EncodeAnnotations(s.Annotations, o.originalExpression)
+		}
 	}
+
+	defer func() {
+		// The EncodedOperatorEvaluationStats instances may share pooled memory with the original OperatorEvaluationStats
+		// instances, so we can't close them until the message below is marshalled.
+		for _, s := range nodeInfo {
+			s.Stats.Close()
+		}
+	}()
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-				Annotations: annos,
-				Stats:       o.populateStats(ctx, evaluationStats),
+				Annotations:        querierpb.EncodeAnnotations(combinedAnnos, o.originalExpression),
+				Stats:              o.populateStats(ctx, nodeInfo),
+				PerNodeStats:       encodedStats,
+				PerNodeAnnotations: encodedAnnotations,
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats *types.QueryStats) querier_stats.Stats {
+func (o *evaluationObserver) populateStats(ctx context.Context, nodeInfo map[planning.Node]streamingpromql.NodeCompletionInfo) querier_stats.Stats {
 	querierStats := querier_stats.FromContext(ctx)
 	if querierStats == nil {
 		return querier_stats.Stats{}
 	}
 
-	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
 	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
+
+	// Calculate the total number of samples processed, in case we're talking to an old query-frontend that doesn't read the per-node stats.
+	// This can be removed once we're guaranteed to not be talking to old query-frontends (ie. all query-frontends have https://github.com/grafana/mimir/pull/15282).
+	totalSamplesProcessed := int64(0)
+	for _, info := range nodeInfo {
+		totalSamplesProcessed += info.Stats.GetTotalSamplesProcessed()
+	}
+
+	querierStats.AddSamplesProcessed(uint64(totalSamplesProcessed))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the
 	// stats after we return them for serialization.

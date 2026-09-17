@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/types"
 	gogoStatus "github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -49,12 +48,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -134,14 +133,14 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT, 1).
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block1, block2).
 						addFetchedIndexBytes(50).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -209,13 +208,41 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_blocks_consistency_checks_total 1
 			`,
 		},
+		"a single store-gateway instance holds the required blocks split into multiple partitions": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
+						addValue(metricNameLabel, minT, 1).
+						addValue(metricNameLabel, minT+1, 2).
+						addBlocks(block1, block2).
+						addFetchedIndexBytes(50).
+						build(),
+					}: {{block1}, {block2}},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+		},
 		"a single store-gateway instance holds the required blocks (single returned series) - multiple chunks per series for stats": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1},
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addChunks(metricNameLabel,
 							createAggrChunkWithSamples(promql.FPoint{T: minT, F: 1}),
@@ -224,7 +251,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						addBlocks(block1, block2).
 						addFetchedIndexBytes(50).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -298,14 +325,14 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addValue(series2Label, minT, 3).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -384,17 +411,17 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT, 1).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2},
+					}: {{block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -468,18 +495,18 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT, 1).
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2},
+					}: {{block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -553,25 +580,25 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT+1, 2).
 						addValue(series2Label, minT, 1).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2},
+					}: {{block2}},
 					&storeGatewayClientMock{remoteAddr: "3.3.3.3", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series2Label, minT, 1).
 						addValue(series2Label, minT+1, 3).
 						addBlocks(block3).
 						build(),
-					}: {block3},
+					}: {{block3}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -648,15 +675,15 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().addBlocks(block1).build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -668,15 +695,15 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2", mockedSeriesResponses: nil,
-					}: {block1},
+					}: {{block1}},
 				},
 				// Third attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
@@ -692,13 +719,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 				},
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
@@ -769,17 +796,17 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2},
+					}: {{block2}},
 				},
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
@@ -850,33 +877,33 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addBlocks(block1).
 						build(),
-					}: {block1, block3},
+					}: {{block1, block3}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series2Label, minT, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2, block4},
+					}: {{block2, block4}},
 				},
 				// Second attempt returns 1 missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "3.3.3.3", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block3).
 						build(),
-					}: {block3, block4},
+					}: {{block3, block4}},
 				},
 				// Third attempt returns the last missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "4.4.4.4", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series2Label, minT+1, 3).
 						addBlocks(block4).
 						build(),
-					}: {block4},
+					}: {{block4}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -952,38 +979,38 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block1},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "3.3.3.3",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "4.4.4.4",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "5.5.5.5",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "6.6.6.6",
 						mockedSeriesResponses: newSeriesResponseBuilder().
 							addValue(series1Label, minT, 2).
 							addBlocks(block1).
 							build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1053,13 +1080,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 3},
@@ -1133,13 +1160,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1205,13 +1232,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1280,33 +1307,33 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addBlocks(block1).
 						build(),
-					}: {block1, block3},
+					}: {{block1, block3}},
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series2Label, minT, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2, block4},
+					}: {{block2, block4}},
 				},
 				// Second attempt returns 1 missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "3.3.3.3", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block3).
 						build(),
-					}: {block3, block4},
+					}: {{block3, block4}},
 				},
 				// Third attempt returns the last missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "4.4.4.4", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series2Label, minT+1, 3).
 						addBlocks(block4).
 						build(),
-					}: {block4},
+					}: {{block4}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1319,13 +1346,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series2Label, minT+1, 2).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1338,13 +1365,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 1).
 						addValue(series1Label, minT+1, 2).
 						addBlocks(block1, block2).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
@@ -1360,13 +1387,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			queryShardID: "2_of_4",
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT, 1).
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block2).
 						build(),
-					}: {block2}, // Only block2 will be queried
+					}: {{block2}}, // Only block2 will be queried
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1442,13 +1469,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			queryShardID: "3_of_5",
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(metricNameLabel, minT, 1).
 						addValue(metricNameLabel, minT+1, 2).
 						addBlocks(block1, block2, block3, block4).
 						build(),
-					}: {block1, block2, block3, block4},
+					}: {{block1, block2, block3, block4}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1520,18 +1547,18 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block1},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr:      "1.1.1.1",
 						mockedSeriesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: newSeriesResponseBuilder().
 						addValue(series1Label, minT, 2).
 						addBlocks(block1).
 						build(),
-					}: {block1},
+					}: {{block1}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1603,7 +1630,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addFloatHistogramSamples(metricNameLabel,
 							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
@@ -1619,7 +1646,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						addBlocks(block1, block2).
 						addFetchedIndexBytes(50).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1645,7 +1672,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: newSeriesResponseBuilder().
 						addFloatHistogramSamples(metricNameLabel,
 							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
@@ -1665,7 +1692,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						addBlocks(block1, block2).
 						addFetchedIndexBytes(50).
 						build(),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
@@ -1690,21 +1717,23 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			// Count the number of series and chunks to check the stats later.
 			seriesCount, chunksCount := 0, 0
 			for _, res := range testData.storeSetResponses {
-				m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
+				m, ok := res.(map[BlocksStoreClient][][]ulid.ULID)
 				if !ok {
 					// If this isn't a success response we can't count series or chunks.
 					continue
 				}
 
-				for k := range m {
+				for k, partitions := range m {
 					mockClient := k.(*storeGatewayClientMock)
+					// Each partition is a separate RPC to the same client, so the mocked responses
+					// (and thus the fetched series/chunks) are received once per partition.
 					for _, sr := range mockClient.mockedSeriesResponses {
 						if s := sr.GetStreamingSeries(); s != nil {
-							seriesCount += len(s.Series)
+							seriesCount += len(s.Series) * len(partitions)
 						}
 
 						if c := sr.GetStreamingChunksEstimate(); c != nil {
-							chunksCount += int(c.EstimatedChunkCount)
+							chunksCount += int(c.EstimatedChunkCount) * len(partitions)
 						}
 					}
 				}
@@ -1726,12 +1755,11 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               minT,
 				maxT:               maxT,
-				finder:             finder,
-				stores:             stores,
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, reg),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(reg),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 				limits:             testData.limits,
 			}
 
@@ -1824,14 +1852,14 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 
 	block := ulid.MustNew(1, nil)
 	storeSetResponses := []interface{}{
-		map[BlocksStoreClient][]ulid.ULID{
+		map[BlocksStoreClient][][]ulid.ULID{
 			&storeGatewayClientMock{
 				remoteAddr: "1.1.1.1",
 				mockedSeriesResponses: newSeriesResponseBuilder().
 					addValue(labels.FromStrings(model.MetricNameLabel, "some_metric"), minT, 1).
 					addBlocks(block).
 					build(),
-			}: {block},
+			}: {{block}},
 		},
 	}
 
@@ -1850,12 +1878,11 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	querier := &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
-		finder:             finder,
-		stores:             stores,
+		compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 		dynamicReplication: newDynamicReplication(),
 		consistency:        NewBlocksConsistency(0, reg),
 		logger:             log.NewNopLogger(),
-		metrics:            newBlocksStoreQueryableMetrics(reg),
+		metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 		limits:             &blocksStoreLimitsMock{},
 	}
 
@@ -1924,21 +1951,20 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
 			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
 			// when the tests fail because the request is retried (even if we expect not to be retried).
-			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
-			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
-			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][][]ulid.ULID{client: {{block1}}},
+			map[BlocksStoreClient][][]ulid.ULID{client: {{block1}}},
+			map[BlocksStoreClient][][]ulid.ULID{client: {{block1}}},
 		}}
 
 		reg := prometheus.NewPedanticRegistry()
 		q := &blocksStoreQuerier{
 			minT:               minT,
 			maxT:               maxT,
-			finder:             finder,
-			stores:             stores,
+			compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 			dynamicReplication: newDynamicReplication(),
 			consistency:        NewBlocksConsistency(0, reg),
 			logger:             logger,
-			metrics:            newBlocksStoreQueryableMetrics(reg),
+			metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 			limits:             &blocksStoreLimitsMock{},
 		}
 
@@ -2132,7 +2158,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}
 
 			stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{storeGateway: {block}},
+				map[BlocksStoreClient][][]ulid.ULID{storeGateway: {{block}}},
 				errors.New("no store-gateway remaining after exclude"),
 			}}
 
@@ -2144,12 +2170,11 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               minT,
 				maxT:               maxT,
-				finder:             finder,
-				stores:             stores,
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(reg),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 				limits:             &blocksStoreLimitsMock{},
 			}
 
@@ -2203,8 +2228,10 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			expectedErrRegex: "",
 		},
 		"error while finding blocks matching the query time range": {
-			finderErr:        errors.New("unable to find blocks"),
-			expectedErrRegex: "unable to find blocks",
+			finderErr: errors.New("unable to find blocks"),
+			// Anchored: with compartments disabled the error must reach the caller verbatim, with no read
+			// compartment prefixed to it.
+			expectedErrRegex: "^unable to find blocks$",
 		},
 		"error while getting clients to query the store-gateway": {
 			finderResult: bucketindex.Blocks{
@@ -2214,7 +2241,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			storeSetResponses: []interface{}{
 				errors.New("no client found"),
 			},
-			expectedErrRegex: "no client found",
+			expectedErrRegex: "^no client found$",
 		},
 		"a single store-gateway instance holds the required blocks": {
 			finderResult: bucketindex.Blocks{
@@ -2222,22 +2249,45 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1, block2),
 							ResponseHints: mockNamesResponseHints(block1, block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1, block2),
 							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
-					}: {block1, block2},
+					}: {{block1, block2}},
+				},
+			},
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
+		},
+		"a single store-gateway instance holds the required blocks split into multiple partitions": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1",
+						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
+							Names:         namesFromSeries(series1, series2),
+							Warnings:      []string{},
+							ResponseHints: mockNamesResponseHints(block1, block2),
+						},
+						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
+							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
+							Warnings:      []string{},
+							ResponseHints: mockValuesResponseHints(block1, block2),
+						},
+					}: {{block1}, {block2}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
@@ -2249,7 +2299,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
@@ -2262,7 +2312,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Warnings:      []string{},
 							ResponseHints: mockValuesResponseHints(block1, block2),
 						},
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
@@ -2274,37 +2324,33 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
-					}: {block2},
+					}: {{block2}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
@@ -2316,37 +2362,33 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
-					}: {block2},
+					}: {{block2}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1),
@@ -2361,52 +2403,46 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			// Block2 has only series1
 			// Block3 has only series2
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
-					}: {block2},
+					}: {{block2}},
 					&storeGatewayClientMock{
 						remoteAddr: "3.3.3.3",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block3),
 							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block3),
 							ResponseHints: mockValuesResponseHints(block3),
 						},
-					}: {block3},
+					}: {{block3}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
@@ -2448,22 +2484,20 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
@@ -2479,37 +2513,33 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
-					}: {block2},
+					}: {{block2}},
 				},
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
@@ -2529,73 +2559,65 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			},
 			storeSetResponses: []interface{}{
 				// First attempt returns a client whose response does not include all expected blocks.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "1.1.1.1",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1, block3},
+					}: {{block1, block3}},
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block2),
 							ResponseHints: mockNamesResponseHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block2),
 							ResponseHints: mockValuesResponseHints(block2),
 						},
-					}: {block2, block4},
+					}: {{block2, block4}},
 				},
 				// Second attempt returns 1 missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "3.3.3.3",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1, series2),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block3),
 							ResponseHints: mockNamesResponseHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block3),
 							ResponseHints: mockValuesResponseHints(block3),
 						},
-					}: {block3, block4},
+					}: {{block3, block4}},
 				},
 				// Third attempt returns the last missing block.
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "4.4.4.4",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         []string{},
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block4),
 							ResponseHints: mockNamesResponseHints(block4),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        []string{},
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block4),
 							ResponseHints: mockValuesResponseHints(block4),
 						},
-					}: {block4},
+					}: {{block4}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1, series2),
@@ -2638,29 +2660,27 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block1},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr:           "1.1.1.1",
 						mockedLabelNamesErr:  errors.New("failed to receive from store-gateway"),
 						mockedLabelValuesErr: errors.New("failed to receive from store-gateway"),
-					}: {block1},
+					}: {{block1}},
 				},
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr: "2.2.2.2",
 						mockedLabelNamesResponse: &storepb.LabelNamesResponse{
 							Names:         namesFromSeries(series1),
 							Warnings:      []string{},
-							Hints:         mockNamesHints(block1),
 							ResponseHints: mockNamesResponseHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
 							Values:        valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings:      []string{},
-							Hints:         mockValuesHints(block1),
 							ResponseHints: mockValuesResponseHints(block1),
 						},
-					}: {block1},
+					}: {{block1}},
 				},
 			},
 			expectedLabelNames:  namesFromSeries(series1),
@@ -2701,12 +2721,12 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				{ID: block2},
 			},
 			storeSetResponses: []interface{}{
-				map[BlocksStoreClient][]ulid.ULID{
+				map[BlocksStoreClient][][]ulid.ULID{
 					&storeGatewayClientMock{
 						remoteAddr:           "1.1.1.1",
 						mockedLabelNamesErr:  status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
 						mockedLabelValuesErr: status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
-					}: {block1, block2},
+					}: {{block1, block2}},
 				},
 			},
 			expectedErrRegex: "non-retriable error while fetching label (names|values) from store: rpc error: code = Code\\(422\\) desc = limit exceeded",
@@ -2727,12 +2747,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				q := &blocksStoreQuerier{
 					minT:               minT,
 					maxT:               maxT,
-					finder:             finder,
-					stores:             stores,
+					compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 					dynamicReplication: newDynamicReplication(),
 					consistency:        NewBlocksConsistency(0, nil),
 					logger:             log.NewNopLogger(),
-					metrics:            newBlocksStoreQueryableMetrics(reg),
+					metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 					limits:             &blocksStoreLimitsMock{},
 				}
 
@@ -2787,7 +2806,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-					map[BlocksStoreClient][]ulid.ULID{storeGateway: {block1}},
+					map[BlocksStoreClient][][]ulid.ULID{storeGateway: {{block1}}},
 					errors.New("no store-gateway remaining after exclude"),
 				}}
 
@@ -2799,12 +2818,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				q := &blocksStoreQuerier{
 					minT:               minT,
 					maxT:               maxT,
-					finder:             finder,
-					stores:             stores,
+					compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 					dynamicReplication: newDynamicReplication(),
 					consistency:        NewBlocksConsistency(0, nil),
 					logger:             log.NewNopLogger(),
-					metrics:            newBlocksStoreQueryableMetrics(reg),
+					metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 					limits:             &blocksStoreLimitsMock{},
 				}
 
@@ -2877,12 +2895,11 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
-				finder:             finder,
-				stores:             &blocksStoreSetMock{},
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{}}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(nil),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, nil),
 				limits:             &blocksStoreLimitsMock{},
 				queryStoreAfter:    testData.queryStoreAfter,
 			}
@@ -2981,12 +2998,11 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
-				finder:             finder,
-				stores:             &blocksStoreSetMock{},
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{}}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(nil),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, nil),
 				limits: &blocksStoreLimitsMock{
 					maxLabelsQueryLength: testData.maxLabelsQueryLength,
 				},
@@ -3126,16 +3142,19 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			stores := &blocksStoreSetMock{
 				Service: services.NewIdleService(nil, nil),
 				mockedResponses: []interface{}{
-					map[BlocksStoreClient][]ulid.ULID{
-						gateway1: {block1},
-						gateway2: {block2},
+					map[BlocksStoreClient][][]ulid.ULID{
+						gateway1: {{block1}},
+						gateway2: {{block2}},
 					},
 				},
 			}
 
 			// Instantiate the querier that will be executed to run the query.
 			logger := log.NewNopLogger()
-			queryable, err := NewBlocksStoreQueryable(stores, storegateway.NewNopDynamicReplication(3), finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+			// The store-gateway clients pool is required but unused here (the store set is mocked), so give
+			// it an empty discovery.
+			clientsPool := newStoreGatewayClientPool(func() ([]string, error) { return nil, nil }, StoreGatewayClientConfig{}, logger, nil)
+			queryable, err := NewBlocksStoreQueryable([]blocksStoreCompartment{{finder: finder, stores: stores}}, clientsPool, compartments.Config{}, storegateway.NewNopDynamicReplication(3), NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 			defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -3268,7 +3287,7 @@ type blocksStoreSetMock struct {
 	nextResult      int
 }
 
-func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
+func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
 	if m.nextResult >= len(m.mockedResponses) {
 		panic("not enough mocked results")
 	}
@@ -3279,7 +3298,7 @@ func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map
 	if err, ok := res.(error); ok {
 		return nil, err
 	}
-	if clients, ok := res.(map[BlocksStoreClient][]ulid.ULID); ok {
+	if clients, ok := res.(map[BlocksStoreClient][][]ulid.ULID); ok {
 		return clients, nil
 	}
 
@@ -3327,6 +3346,14 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
+func (m *storeGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *storeGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
+}
+
 func (m *storeGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
 }
@@ -3344,6 +3371,12 @@ type storeGatewaySeriesClientMock struct {
 func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 	// Ensure some concurrency occurs.
 	time.Sleep(10 * time.Millisecond)
+
+	// Mirror a real gRPC stream, which fails once its context is cancelled. The querier reads a stream's
+	// chunks lazily, after the query returns, so cancelling the stream's context early will surface bugs.
+	if err := m.Context().Err(); err != nil {
+		return nil, err
+	}
 
 	if len(m.mockedResponses) == 0 {
 		return nil, io.EOF
@@ -3408,6 +3441,14 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 	return nil, ctx.Err()
 }
 
+func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *cancelerStoreGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
+}
+
 func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
 }
@@ -3419,6 +3460,7 @@ func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
 type blocksStoreLimitsMock struct {
 	maxLabelsQueryLength               time.Duration
 	maxChunksPerQuery                  int
+	maxBlocksPerStoreRequest           int
 	storeGatewayTenantShardSize        int
 	storeGatewayTenantShardSizePerZone int
 	storeGatewayExpandedReplication    bool
@@ -3430,6 +3472,10 @@ func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
 
 func (m *blocksStoreLimitsMock) MaxChunksPerQuery(_ string) int {
 	return m.maxChunksPerQuery
+}
+
+func (m *blocksStoreLimitsMock) MaxBlocksPerStoreRequest(_ string) int {
+	return m.maxBlocksPerStoreRequest
 }
 
 func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSize(_ string) int {
@@ -3571,35 +3617,16 @@ func mockStatsResponse(fetchedIndexBytes uint64) *storepb.SeriesResponse {
 }
 
 func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
-	hints := &hintspb.SeriesResponseHints{}
+	hints := &storepb.SeriesResponseHints{}
 	for _, id := range ids {
 		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
 	}
 
 	return &storepb.SeriesResponse{
-		Result: &storepb.SeriesResponse_Hints{
-			Hints: marshalled,
+		Result: &storepb.SeriesResponse_ResponseHints{
+			ResponseHints: hints,
 		},
 	}
-}
-
-func mockNamesHints(ids ...ulid.ULID) *types.Any {
-	hints := &hintspb.LabelNamesResponseHints{}
-	for _, id := range ids {
-		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
-	}
-
-	return marshalled
 }
 
 func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
@@ -3608,20 +3635,6 @@ func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
 		hints.AddQueriedBlock(id)
 	}
 	return hints
-}
-
-func mockValuesHints(ids ...ulid.ULID) *types.Any {
-	hints := &hintspb.LabelValuesResponseHints{}
-	for _, id := range ids {
-		hints.AddQueriedBlock(id)
-	}
-
-	marshalled, err := types.MarshalAny(hints)
-	if err != nil {
-		panic(err)
-	}
-
-	return marshalled
 }
 
 func mockValuesResponseHints(ids ...ulid.ULID) *storepb.LabelValuesResponseHints {
@@ -3782,6 +3795,34 @@ func TestShouldRetry(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, shouldRetry(testData.err))
+		})
+	}
+}
+
+func TestCreateSeriesRequest_Limit(t *testing.T) {
+	tests := map[string]struct {
+		hints         *storage.SelectHints
+		expectedLimit int64
+	}{
+		"nil hints results in no limit": {
+			hints:         nil,
+			expectedLimit: 0,
+		},
+		"hints with a zero limit results in no limit": {
+			hints:         &storage.SelectHints{Limit: 0},
+			expectedLimit: 0,
+		},
+		"hints with a positive limit are propagated to the request": {
+			hints:         &storage.SelectHints{Limit: 100},
+			expectedLimit: 100,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req, err := createSeriesRequest(0, 1000, nil, true, testData.hints, nil, 256)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedLimit, req.Limit)
 		})
 	}
 }

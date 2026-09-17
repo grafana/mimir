@@ -46,7 +46,8 @@ type aggregateOverDuplicate struct {
 	aggregate                *core.AggregateExpression
 	aggregateParent          planning.Node
 	indexOfAggregateInParent int
-	filters                  []*core.LabelMatcher
+	filters                  []core.LabelMatcher
+	subsetIndex              int64
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
@@ -59,7 +60,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	ineligibleDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate]struct{})
 	candidateDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate][]aggregateOverDuplicate)
 
-	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
 		// If we've reached a Duplicate node, check that its parent on this path is a supported aggregation.
 		// If it's not, then we can't apply this optimisation to this Duplicate node.
 		duplicate, isDuplicate := node.(*commonsubexpressionelimination.Duplicate)
@@ -67,7 +68,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			_, isIneligible := ineligibleDuplicateNodes[duplicate]
 			if isIneligible {
 				// We already know this Duplicate node is ineligible, so there's nothing more to do.
-				return nil
+				return true, nil
 			}
 
 			parent := path[len(path)-1]
@@ -83,7 +84,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			if !isAggregate {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
 			}
@@ -96,12 +97,13 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			aggregate, isAggregate := child.(*core.AggregateExpression)
 			if !isAggregate {
 				continue
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				continue
 			}
 
 			duplicate, isDuplicate := aggregate.Inner.(*commonsubexpressionelimination.Duplicate)
-			var filters []*core.LabelMatcher
+			var filters []core.LabelMatcher
+			var subsetIndex int64
 
 			if !isDuplicate {
 				if !filteringSupported {
@@ -115,6 +117,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				}
 
 				filters = duplicateFilter.Filters
+				subsetIndex = duplicateFilter.SubsetIndex
 				duplicate = duplicateFilter.Inner
 			}
 
@@ -127,10 +130,11 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				aggregateParent:          node,
 				indexOfAggregateInParent: idx,
 				filters:                  filters,
+				subsetIndex:              subsetIndex,
 			})
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	if err != nil {
@@ -169,8 +173,10 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 			MultiAggregationInstanceDetails: &MultiAggregationInstanceDetails{
 				Aggregation: aggregateOverDuplicate.aggregate.AggregateExpressionDetails,
 				Filters:     aggregateOverDuplicate.filters,
+				SubsetIndex: aggregateOverDuplicate.subsetIndex,
 			},
 			Group: group,
+			Param: aggregateOverDuplicate.aggregate.Param,
 		}
 
 		if err := aggregateOverDuplicate.aggregateParent.ReplaceChild(aggregateOverDuplicate.indexOfAggregateInParent, consumer); err != nil {
@@ -181,7 +187,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 	return nil
 }
 
-func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) {
+func IsSupportedAggregationOperation(o core.AggregationOperation, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (bool, error) {
 	switch o {
 	case core.AGGREGATION_SUM:
 		return true, nil
@@ -199,9 +205,9 @@ func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) 
 		return true, nil
 	case core.AGGREGATION_STDDEV:
 		return true, nil
-
 	case core.AGGREGATION_QUANTILE:
-		return false, nil
+		return maximumSupportedQueryPlanVersion >= planning.QueryPlanV15, nil
+
 	case core.AGGREGATION_COUNT_VALUES:
 		return false, nil
 	case core.AGGREGATION_TOPK:

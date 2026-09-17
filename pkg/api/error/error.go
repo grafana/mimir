@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -68,13 +69,13 @@ func TypeForError(err error, fallback Type) Type {
 	}
 
 	if s, ok := grpcutil.ErrorToStatus(err); ok {
-		return typeForCode(s.Code(), fallback)
+		return typeForCode(s.Code(), err, fallback)
 	}
 
 	return fallback
 }
 
-func typeForCode(code codes.Code, fallback Type) Type {
+func typeForCode(code codes.Code, err error, fallback Type) Type {
 	switch code {
 	case codes.Canceled:
 		return TypeCanceled
@@ -88,6 +89,12 @@ func typeForCode(code codes.Code, fallback Type) Type {
 		return TypeNotFound
 	case codes.InvalidArgument:
 		return TypeBadData
+	case codes.ResourceExhausted:
+		if strings.Contains(err.Error(), "message larger than max") {
+			return TypeTooLargeEntry
+		}
+
+		return fallback
 	default:
 		return fallback
 	}

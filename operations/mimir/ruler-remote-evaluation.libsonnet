@@ -15,7 +15,8 @@
   local useRulerQueryFrontend = $._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled,
 
   ruler_args+:: if !useRulerQueryFrontend then {} else {
-    'ruler.query-frontend.address': 'dns:///ruler-query-frontend.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
+    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    'ruler.query-frontend.address': 'dns:///ruler-query-frontend-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
 
     // The ruler send a query request to the ruler-query-frontend.
     'ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
@@ -35,6 +36,7 @@
 
   ruler_querier_args+::
     $.querier_args +
+    $.ruler_range_vector_splitting_caching_config +
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
     } +
@@ -72,6 +74,7 @@
     // The ruler remote evaluation connects to ruler-query-frontend via gRPC.
     $._config.grpcIngressConfig +
     $.query_frontend_args +
+    $.ruler_range_vector_splitting_caching_config +
     $.queryFrontendUseQuerySchedulerArgs(rulerQuerySchedulerName) +
     {
       // Result caching is of no benefit to rule evaluation, but the cache can be used for storing cardinality estimates.
@@ -98,8 +101,11 @@
     $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container, $.ruler_query_frontend_node_affinity_matchers),
 
   ruler_query_frontend_service: if !$._config.ruler_remote_evaluation_enabled then {} else
+    $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels),
+
+  ruler_query_frontend_headless_service: if !$._config.ruler_remote_evaluation_enabled then null else
     $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels) +
-    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    service.mixin.metadata.withName('ruler-query-frontend-headless') +
     service.mixin.spec.withClusterIp('None'),
 
   ruler_query_frontend_pdb: if !$._config.ruler_remote_evaluation_enabled then null else

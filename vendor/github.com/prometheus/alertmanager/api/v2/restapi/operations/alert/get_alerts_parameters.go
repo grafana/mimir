@@ -60,35 +60,45 @@ func NewGetAlertsParams() GetAlertsParams {
 //
 // swagger:parameters getAlerts
 type GetAlertsParams struct {
-
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Show active alerts
+	/*Include active alerts in results. If false, excludes active alerts and returns only suppressed (silenced or inhibited) alerts.
 	  In: query
 	  Default: true
 	*/
 	Active *bool
-	/*A list of matchers to filter alerts by
+
+	/*A matcher expression to filter alerts. For example `alertname="MyAlert"`. It can be repeated to apply multiple matchers.
 	  In: query
 	  Collection Format: multi
 	*/
 	Filter []string
-	/*Show inhibited alerts
+
+	/*Include inhibited alerts in results. If false, excludes inhibited alerts. Note that true (default) shows both inhibited and non-inhibited alerts.
 	  In: query
 	  Default: true
 	*/
 	Inhibited *bool
+
 	/*A regex matching receivers to filter alerts by
 	  In: query
 	*/
 	Receiver *string
-	/*Show silenced alerts
+
+	/*A matcher expression to filter by receiver labels. For example `owner="my-team"`. Can be repeated to apply multiple matchers.
+	  In: query
+	  Collection Format: multi
+	*/
+	ReceiverMatchers []string
+
+	/*Include silenced alerts in results. If false, excludes silenced alerts. Note that true (default) shows both silenced and non-silenced alerts.
 	  In: query
 	  Default: true
 	*/
 	Silenced *bool
-	/*Show unprocessed alerts
+
+	/*Include unprocessed alerts in results. If false, excludes unprocessed alerts. Note that true (default) shows both processed and unprocessed alerts.
 	  In: query
 	  Default: true
 	*/
@@ -103,7 +113,6 @@ func (o *GetAlertsParams) BindRequest(r *http.Request, route *middleware.Matched
 	var res []error
 
 	o.HTTPRequest = r
-
 	qs := runtime.Values(r.URL.Query())
 
 	qActive, qhkActive, _ := qs.GetOK("active")
@@ -123,6 +132,11 @@ func (o *GetAlertsParams) BindRequest(r *http.Request, route *middleware.Matched
 
 	qReceiver, qhkReceiver, _ := qs.GetOK("receiver")
 	if err := o.bindReceiver(qReceiver, qhkReceiver, route.Formats); err != nil {
+		res = append(res, err)
+	}
+
+	qReceiverMatchers, qhkReceiverMatchers, _ := qs.GetOK("receiver_matchers")
+	if err := o.bindReceiverMatchers(qReceiverMatchers, qhkReceiverMatchers, route.Formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -225,6 +239,28 @@ func (o *GetAlertsParams) bindReceiver(rawData []string, hasKey bool, formats st
 		return nil
 	}
 	o.Receiver = &raw
+
+	return nil
+}
+
+// bindReceiverMatchers binds and validates array parameter ReceiverMatchers from query.
+//
+// Arrays are parsed according to CollectionFormat: "multi" (defaults to "csv" when empty).
+func (o *GetAlertsParams) bindReceiverMatchers(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	// CollectionFormat: multi
+	receiverMatchersIC := rawData
+	if len(receiverMatchersIC) == 0 {
+		return nil
+	}
+
+	var receiverMatchersIR []string
+	for _, receiverMatchersIV := range receiverMatchersIC {
+		receiverMatchersI := receiverMatchersIV
+
+		receiverMatchersIR = append(receiverMatchersIR, receiverMatchersI)
+	}
+
+	o.ReceiverMatchers = receiverMatchersIR
 
 	return nil
 }

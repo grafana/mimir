@@ -25,6 +25,10 @@ local filename = 'mimir-writes-resources.json';
         $.containerGoHeapInUsePanelByComponent('write') +
         $.stack,
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('write') +
+        $.stack,
+      )
     )
     .addRowIf(
       $._config.gateway_enabled,
@@ -50,9 +54,24 @@ local filename = 'mimir-writes-resources.json';
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('distributor'),
       )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('distributor'),
+      )
     )
     .addRow(
       $.row('Ingester')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('ingester'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('ingester'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('ingester'),
+      )
       .addPanel(
         $.timeseriesPanel('In-memory series') +
         $.queryPanel(
@@ -83,21 +102,7 @@ local filename = 'mimir-writes-resources.json';
           },
         },
       )
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('ingester'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryRSSPanelByComponent('ingester'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('ingester'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ingester'),
-      )
+      .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
     )
     .addRow(
       $.row('')

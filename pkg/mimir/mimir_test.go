@@ -292,6 +292,62 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	}
 }
 
+// TestMimirServerShutdownWhileModuleIsStarting asserts that a shutdown signal received
+// before all modules finished starting is not reported as a failure. Cancelling the start
+// context leaves those modules in Failed state, which must not be mistaken for a crash.
+func TestMimirServerShutdownWhileModuleIsStarting(t *testing.T) {
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	cfg.Target = []string{Querier}
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
+
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	// Register a module that never finishes starting and make the target depend on it,
+	// so the signal below is guaranteed to arrive while startup is still in progress.
+	starting := make(chan struct{})
+	c.ModuleManager.RegisterModule("test-blocking-module", func() (services.Service, error) {
+		return services.NewBasicService(func(ctx context.Context) error {
+			close(starting)
+			<-ctx.Done()
+			return ctx.Err()
+		}, nil, nil), nil
+	})
+	require.NoError(t, c.ModuleManager.AddDependency(Querier, "test-blocking-module"))
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	select {
+	case <-starting:
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "test module didn't reach starting state in time")
+	}
+
+	proc, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+
+	// Mimir reacts on SIGINT and does shutdown.
+	require.NoError(t, proc.Signal(syscall.SIGINT))
+
+	select {
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "Mimir didn't stop in time")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
 func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 	// This test checks that our /metrics endpoint handler supports metric filtering through the usage of name[] query param.
 	// This is added to prometheus/client_golang in https://github.com/prometheus/client_golang/pull/1925,
@@ -543,6 +599,207 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: false,
 		},
+		{
+			name: "should fail if compartments are enabled but ingest storage is disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.IngestStorage.Enabled = false
+				cfg.Compartments.Enabled = true
+				cfg.Compartments.Read.NumCompartments = 2
+				cfg.Compartments.Write.NumCompartments = 2
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-compartment-<read-compartment-id>"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if compartments are enabled together with ingest storage distributor-send-to-ingesters",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.Migration.DistributorSendToIngestersEnabled = true
+				cfg.Compartments.Enabled = true
+				cfg.Compartments.Read.NumCompartments = 2
+				cfg.Compartments.Write.NumCompartments = 2
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-compartment-<read-compartment-id>"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if ingester read compartment ID is non-zero when compartments are disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.Compartments.Enabled = false
+				cfg.Ingester.ReadCompartmentID = 1
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass with a valid compartments configuration",
+			getTestConfig: func() *Config {
+				return validCompartmentsConfig()
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if compartments are enabled but the Kafka topic is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if only the ingester is enabled and the Kafka topic uses an explicit read compartment instead of the placeholder",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if the ingester is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the ingester is enabled with more than one write compartment but only some of the Kafka addresses are parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092", "localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if there is a single write compartment and the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Compartments.Write.NumCompartments = 1
+				cfg.Distributor.WriteCompartmentID = 0
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should pass if the ingester is not enabled and the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Distributor}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if the query-frontend is enabled but the Kafka topic is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the query-frontend is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if compartments and the distributor are enabled with Kafka topic auto-creation on",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = true
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if compartments are enabled but the blocks bucket name is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if only the store-gateway is enabled and the blocks bucket name is explicit",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should pass if the ruler is enabled and the blocks bucket name is not parameterised, since the ruler queries via remote rule evaluation",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Compartments.Write.NumCompartments = 2
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass with the offset catalogue enabled together with a single write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Compartments.Write.NumCompartments = 1
+				cfg.Distributor.WriteCompartmentID = 0
+				cfg.BlocksStorage.TSDB.OffsetCatalogue.Enabled = true
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if distributor write compartment ID is out of range",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Distributor.WriteCompartmentID = cfg.Compartments.Write.NumCompartments
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if distributor write compartment ID is non-zero when compartments are disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.Compartments.Enabled = false
+				cfg.Distributor.WriteCompartmentID = 1
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())
@@ -555,6 +812,23 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// validCompartmentsConfig returns a config with a valid compartments setup (compartments and ingest
+// storage enabled, a read-compartment-templated topic, and two read and write compartments).
+func validCompartmentsConfig() *Config {
+	cfg := newDefaultConfig()
+	cfg.IngestStorage.Enabled = true
+	cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+	cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-<read-compartment-id>"
+	cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = false
+	cfg.Compartments.Enabled = true
+	cfg.Compartments.Read.NumCompartments = 2
+	cfg.Compartments.Write.NumCompartments = 2
+	cfg.Distributor.WriteCompartmentID = 1
+	cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-<read-compartment-id>"
+	return cfg
 }
 
 func TestConfig_ValidateLimits(t *testing.T) {
@@ -916,6 +1190,7 @@ func TestFlagDefaults(t *testing.T) {
 
 	minTimeChecked := false
 	pingWithoutStreamChecked := false
+	compressionAlgoChecked := false
 	for {
 		line, err := buf.ReadString(delim)
 		if errors.Is(err, io.EOF) {
@@ -937,10 +1212,18 @@ func TestFlagDefaults(t *testing.T) {
 			assert.Contains(t, nextLine, "(default true)")
 			pingWithoutStreamChecked = true
 		}
+
+		if strings.Contains(line, "-memberlist.compression-algorithm") {
+			nextLine, err := buf.ReadString(delim)
+			require.NoError(t, err)
+			assert.Contains(t, nextLine, `(default "lzw")`)
+			compressionAlgoChecked = true
+		}
 	}
 
 	require.True(t, minTimeChecked)
 	require.True(t, pingWithoutStreamChecked)
+	require.True(t, compressionAlgoChecked)
 
 	require.Equal(t, true, c.Server.GRPCServerPingWithoutStreamAllowed)
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)

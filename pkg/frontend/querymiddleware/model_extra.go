@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -67,7 +68,7 @@ type PrometheusRangeQueryRequest struct {
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
-	options Options
+	options requestoptions.Options
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
@@ -81,7 +82,7 @@ func NewPrometheusRangeQueryRequest(
 	start, end, step int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
-	options Options,
+	options requestoptions.Options,
 	hints *Hints,
 	stats string,
 ) *PrometheusRangeQueryRequest {
@@ -160,16 +161,22 @@ func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
+	if r.minT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
+	if r.maxT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.maxT
 }
 
-func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+func (r *PrometheusRangeQueryRequest) GetOptions() requestoptions.Options {
 	return r.options
 }
 
@@ -294,7 +301,7 @@ type PrometheusInstantQueryRequest struct {
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
-	options Options
+	options requestoptions.Options
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
@@ -308,7 +315,7 @@ func NewPrometheusInstantQueryRequest(
 	time int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
-	options Options,
+	options requestoptions.Options,
 	hints *Hints,
 	stats string,
 ) *PrometheusInstantQueryRequest {
@@ -389,16 +396,22 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMinT() int64 {
+	if r.minT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.minT
 }
 
 // GetMaxT returns the maximum timestamp in milliseconds of data to be queried,
 // as determined from the end timestamp and any offset in the query.
 func (r *PrometheusInstantQueryRequest) GetMaxT() int64 {
+	if r.maxT == 0 {
+		r.updateMinMaxT()
+	}
 	return r.maxT
 }
 
-func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+func (r *PrometheusInstantQueryRequest) GetOptions() requestoptions.Options {
 	return r.options
 }
 
@@ -887,14 +900,14 @@ func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		v.Result.ToVal(&sv)
 		d.Result = []SampleStream{{
 			Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
-			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(sv.Timestamp)}},
 		}}
 
 	case model.ValScalar:
 		var sv model.Scalar
 		v.Result.ToVal(&sv)
 		d.Result = []SampleStream{{
-			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
 		}}
 
 	case model.ValVector:
@@ -1007,7 +1020,7 @@ func fromVectorSamples(vss []vectorSample) ([]SampleStream, string) {
 		}
 		ret[i] = SampleStream{
 			Labels:  s.Labels,
-			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
+			Samples: []mimirpb.FloatSample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
 		}
 	}
 	return ret, ""
@@ -1035,7 +1048,7 @@ func vectorSampleStreamEncode(vss []SampleStream, stream *jsoniter.Stream) {
 		stream.WriteMore()
 		if len(vs.Samples) == 1 {
 			stream.WriteObjectField(`value`)
-			mimirpb.SampleJsoniterEncode(vs.Samples[0], stream)
+			mimirpb.FloatSampleJsoniterEncode(vs.Samples[0], stream)
 		} else {
 			stream.WriteObjectField(`histogram`)
 			mimirpb.HistogramJsoniterEncode(vs.Histograms[0], stream)
@@ -1127,5 +1140,5 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 }
 
 func createQueryOpts(stats string, lookbackDelta time.Duration) (promql.QueryOpts, error) {
-	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta), nil
+	return promql.NewPrometheusQueryOpts(stats == "all", lookbackDelta, nil), nil
 }

@@ -4,16 +4,22 @@ package ast_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
-var testCasesPropagateMatchers = map[string]string{
+// These test cases are to be used in both TestPropagateMatchers and TestPropagateMatchersWithData, so the metrics and labels should be the same as the ones in the data loaded in TestPropagateMatchersWithData.
+var testCasesPropagateMatchersWithData = map[string]string{
 	`up`:                                 `up`,
 	`up{foo="bar"}`:                      `up{foo="bar"}`,
 	`up * on(foo) group_left down`:       `up * on(foo) group_left down`,
@@ -114,6 +120,14 @@ var testCasesPropagateMatchers = map[string]string{
 	`max by (foo, baz) (avg without (foo) (up)) / down{foo="bar", baz="fob"}`:                              `max by (foo, baz) (avg without (foo) (up{baz="fob"})) / down{foo="bar", baz="fob"}`,
 	`max without (baz) (avg by (foo, baz) (up)) / down{foo="bar", baz="fob"}`:                              `max without (baz) (avg by (foo, baz) (up{foo="bar"})) / down{foo="bar", baz="fob"}`,
 
+	// Conflicting matchers should be allowed to propagate. They'd produce empty results anyway so might as well not fetch the data for the individual selectors.
+	`up{foo="bar"} + up{foo="bar2"}`:                                     `up{foo="bar", foo="bar2"} + up{foo="bar", foo="bar2"}`,
+	`sum by (foo) (up{foo="bar"}) + sum by (foo) (up{foo="bar2"})`:       `sum by (foo) (up{foo="bar", foo="bar2"}) + sum by (foo) (up{foo="bar", foo="bar2"})`,
+	`sum without (x) (up{foo="bar"}) + sum without (x) (up{foo="bar2"})`: `sum without (x) (up{foo="bar", foo="bar2"}) + sum without (x) (up{foo="bar", foo="bar2"})`,
+	// Note that they won't propagate when that label is excluded from the grouping.
+	`sum by (x) (up{foo="bar"}) + sum by (x) (up{foo="bar2"})`:               `sum by (x) (up{foo="bar"}) + sum by (x) (up{foo="bar2"})`,
+	`sum without (foo) (up{foo="bar"}) + sum without (foo) (up{foo="bar2"})`: `sum without (foo) (up{foo="bar"}) + sum without (foo) (up{foo="bar2"})`,
+
 	// Not supported
 	`scalar(up{foo="bar"} * down)`:                                       `scalar(up{foo="bar"} * down{foo="bar"})`,
 	`scalar(up{foo="bar"}) * down`:                                       `scalar(up{foo="bar"}) * down`,
@@ -126,10 +140,57 @@ var testCasesPropagateMatchers = map[string]string{
 	`info(up{foo="bar"}) + info(down{baz="fob"})`:                                 `info(up{foo="bar"}) + info(down{baz="fob"})`,
 	`sort(up{foo="bar"}) + sort(down{baz="fob"})`:                                 `sort(up{foo="bar"}) + sort(down{baz="fob"})`,
 	`sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`: `sort_by_label(up{foo="bar"}, "boo") + sort_by_label(down{baz="fob"}, "faf")`,
+
+	// Ensure matchers are propagated across different kinds of nested expressions.
+
+	// Propagating matchers from the LHS of an "and on" into the RHS, inside a count() without grouping.
+	// "soo" is intentionally outside the on() label set so it does not propagate back to the LHS.
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down == 1)`:       `count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down{foo="bar", baz="fob"} == 1)`,
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar"} == 1)`: `count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar", foo="bar", baz="fob"} == 1)`,
+	// Single expression where the root is a BinaryExpr.
+	`count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down == 1) / count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar"} == 1) == 1`: `count(up{foo="bar", baz="fob"} and on (foo, baz, boo, faf) down{foo="bar", baz="fob"} == 1) / count(up{foo="bar", baz="fob"} and on (foo, baz, boo) left{soo="sar", foo="bar", baz="fob"} == 1) == 1`,
+	// Propagation should work inside LOR arms even when or is the root or nested.
+	// (Matchers cannot propagate across an `or`, but inner BinaryExprs within each arm should still be processed.)
+	`(up{foo="bar"} * down) or left`:                      `(up{foo="bar"} * down{foo="bar"}) or left`,
+	`up{foo="bar"} / ((left * down) or right{baz="fob"})`: `up{foo="bar"} / ((left * down) or right{baz="fob"})`,
+	// Propagation should work inside unsupported Call args when the Call is nested in a BinaryExpr.
+	`scalar(up{foo="bar"} * down) / left`: `scalar(up{foo="bar"} * down{foo="bar"}) / left`,
+	`sort(up{foo="bar"} * down) / left`:   `sort(up{foo="bar"} * down{foo="bar"}) / left`,
 }
 
+// These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
+var testCasesPropagateMatchersWithoutData = map[string]string{
+	// Ensure that internal matchers are not propagated, as they are not actual labels on the data.
+	`up{__query_shard__="bar"} + up{__query_shard__="bar2"}`:                                     `up{__query_shard__="bar"} + up{__query_shard__="bar2"}`,
+	`sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`: `sum without (x) (up{__query_shard__="bar"}) + sum without (x) (up{__query_shard__="bar2"})`,
+
+	// Check more complicated cases based on real world queries.
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
+	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
+
+	// Fill modifiers prevent matcher propagation that removes required series.
+	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down`,
+	`up + fill_right(0) down{foo="bar"}`: `up + fill_right(0) down{foo="bar"}`,
+	// fill_left preserves all right-side series because each series can produce output.
+	`up + fill_left(0) down{foo="bar"}`: `up{foo="bar"} + fill_left(0) down{foo="bar"}`,
+	`up{foo="bar"} + fill_left(0) down`: `up{foo="bar"} + fill_left(0) down`,
+	// fill preserves both sides because every series can produce output.
+	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
+	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
+}
+
+// TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
 func TestPropagateMatchers(t *testing.T) {
 	ctx := context.Background()
+
+	testCasesPropagateMatchers := make(map[string]string)
+	for k, v := range testCasesPropagateMatchersWithData {
+		testCasesPropagateMatchers[k] = v
+	}
+	for k, v := range testCasesPropagateMatchersWithoutData {
+		testCasesPropagateMatchers[k] = v
+	}
 
 	for input, expected := range testCasesPropagateMatchers {
 		t.Run(input, func(t *testing.T) {
@@ -137,21 +198,34 @@ func TestPropagateMatchers(t *testing.T) {
 			expectedExpr, err := promqlext.NewPromQLParser().ParseExpr(expected)
 			require.NoError(t, err)
 
-			inputExpr, err := promqlext.NewPromQLParser().ParseExpr(input)
-			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
-
-			optimizer := ast.NewPropagateMatchersMapper()
-			outputExpr, err := optimizer.Map(ctx, inputExpr)
-			require.NoError(t, err)
+			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+				return ast.NewPropagateMatchers(reg)
+			})
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
-			require.Equal(t, input != expected, optimizer.HasChanged())
+			expectedChanged := 0
+			if input != expected {
+				expectedChanged = 1
+			}
+			checkPropagateMatchersMetrics(t, reg, 1, expectedChanged)
 		})
 	}
 }
 
+func checkPropagateMatchersMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal, expectedChanged int) {
+	const metricNameTotal = "cortex_mimir_query_engine_propagate_matchers_attempted_total"
+	const metricNameChanged = "cortex_mimir_query_engine_propagate_matchers_rewritten_total"
+	expectedMetrics := fmt.Sprintf(`# HELP %[1]v Total number of queries that the optimization pass has attempted to rewrite by propagating matchers.
+# TYPE %[1]v counter
+%[1]v %[2]v
+# HELP %[3]v Total number of queries where the optimization pass has rewritten the query by propagating matchers.
+# TYPE %[3]v counter
+%[3]v %[4]v
+`, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
+}
+
+// TestPropagateMatchersWithData tests that the rewritten query produces the same results as the original one on sample data.
 func TestPropagateMatchersWithData(t *testing.T) {
 	testASTOptimizationPassWithData(t, `
 		load 1m
@@ -163,7 +237,7 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
-	`, testCasesPropagateMatchers)
+	`, testCasesPropagateMatchersWithData)
 }
 
 func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {

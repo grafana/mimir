@@ -21,6 +21,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 	"strconv"
 
 	"github.com/go-openapi/errors"
@@ -44,7 +45,11 @@ type AlertGroup struct {
 
 	// receiver
 	// Required: true
-	Receiver *Receiver `json:"receiver"`
+	Receiver *ReceiverReference `json:"receiver"`
+
+	// route labels
+	// Required: true
+	RouteLabels LabelSet `json:"routeLabels"`
 }
 
 // Validate validates this alert group
@@ -60,6 +65,10 @@ func (m *AlertGroup) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateReceiver(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateRouteLabels(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -82,11 +91,15 @@ func (m *AlertGroup) validateAlerts(formats strfmt.Registry) error {
 
 		if m.Alerts[i] != nil {
 			if err := m.Alerts[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("alerts" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("alerts" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}
@@ -104,11 +117,15 @@ func (m *AlertGroup) validateLabels(formats strfmt.Registry) error {
 
 	if m.Labels != nil {
 		if err := m.Labels.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("labels")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("labels")
 			}
+
 			return err
 		}
 	}
@@ -124,11 +141,39 @@ func (m *AlertGroup) validateReceiver(formats strfmt.Registry) error {
 
 	if m.Receiver != nil {
 		if err := m.Receiver.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("receiver")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("receiver")
 			}
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *AlertGroup) validateRouteLabels(formats strfmt.Registry) error {
+
+	if err := validate.Required("routeLabels", "body", m.RouteLabels); err != nil {
+		return err
+	}
+
+	if m.RouteLabels != nil {
+		if err := m.RouteLabels.Validate(formats); err != nil {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
+				return ve.ValidateName("routeLabels")
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
+				return ce.ValidateName("routeLabels")
+			}
+
 			return err
 		}
 	}
@@ -152,6 +197,10 @@ func (m *AlertGroup) ContextValidate(ctx context.Context, formats strfmt.Registr
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateRouteLabels(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
@@ -169,11 +218,15 @@ func (m *AlertGroup) contextValidateAlerts(ctx context.Context, formats strfmt.R
 			}
 
 			if err := m.Alerts[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
+				ve := new(errors.Validation)
+				if stderrors.As(err, &ve) {
 					return ve.ValidateName("alerts" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
+				}
+				ce := new(errors.CompositeError)
+				if stderrors.As(err, &ce) {
 					return ce.ValidateName("alerts" + "." + strconv.Itoa(i))
 				}
+
 				return err
 			}
 		}
@@ -186,11 +239,15 @@ func (m *AlertGroup) contextValidateAlerts(ctx context.Context, formats strfmt.R
 func (m *AlertGroup) contextValidateLabels(ctx context.Context, formats strfmt.Registry) error {
 
 	if err := m.Labels.ContextValidate(ctx, formats); err != nil {
-		if ve, ok := err.(*errors.Validation); ok {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
 			return ve.ValidateName("labels")
-		} else if ce, ok := err.(*errors.CompositeError); ok {
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
 			return ce.ValidateName("labels")
 		}
+
 		return err
 	}
 
@@ -202,13 +259,35 @@ func (m *AlertGroup) contextValidateReceiver(ctx context.Context, formats strfmt
 	if m.Receiver != nil {
 
 		if err := m.Receiver.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("receiver")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("receiver")
 			}
+
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (m *AlertGroup) contextValidateRouteLabels(ctx context.Context, formats strfmt.Registry) error {
+
+	if err := m.RouteLabels.ContextValidate(ctx, formats); err != nil {
+		ve := new(errors.Validation)
+		if stderrors.As(err, &ve) {
+			return ve.ValidateName("routeLabels")
+		}
+		ce := new(errors.CompositeError)
+		if stderrors.As(err, &ce) {
+			return ce.ValidateName("routeLabels")
+		}
+
+		return err
 	}
 
 	return nil

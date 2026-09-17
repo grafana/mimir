@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestSubquery_Describe(t *testing.T) {
@@ -249,6 +251,170 @@ func TestSubquery_Equivalence(t *testing.T) {
 
 			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a), "a should be equivalent to itself")
 			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b), "b should be equivalent to itself")
+		})
+	}
+}
+
+func TestSubquery_ChildrenTimeRange(t *testing.T) {
+	// Subquery: [60s:5s], no offset, no @ timestamp.
+	subquery := func() *Subquery {
+		return &Subquery{
+			SubqueryDetails: &SubqueryDetails{
+				Range: time.Minute,
+				Step:  5 * time.Second,
+			},
+		}
+	}
+
+	testCases := map[string]struct {
+		node     *Subquery
+		input    types.QueryTimeRange
+		expected types.QueryTimeRange
+	}{
+		"range query, end aligned to step": {
+			node: subquery(),
+			// Parent step grid: 200, 205, 210, 215, 220.
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(200_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(145_000), timestamp.Time(220_000), 5*time.Second),
+		},
+		"range query, end not aligned to step": {
+			// Regression test for https://github.com/prometheus/prometheus/pull/18598.
+			// Parent step grid: 201, 206, 211, 216 (last actual step); 220 is 4s past the last
+			// aligned step. The subquery's end should not extend past the parent's last actual step,
+			// because those samples will never be used.
+			node:     subquery(),
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(201_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(145_000), timestamp.Time(216_000), 5*time.Second),
+		},
+		"range query with subquery offset, end aligned to step": {
+			node: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:  time.Minute,
+					Step:   5 * time.Second,
+					Offset: time.Minute,
+				},
+			},
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(200_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(85_000), timestamp.Time(160_000), 5*time.Second),
+		},
+		"range query with subquery offset, end not aligned to step": {
+			node: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:  time.Minute,
+					Step:   5 * time.Second,
+					Offset: time.Minute,
+				},
+			},
+			// Parent's last aligned step is 216s; with subquery offset 60s, the inner end is 156s.
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(201_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(85_000), timestamp.Time(156_000), 5*time.Second),
+		},
+		"range query with subquery @ timestamp, ignores parent end": {
+			node: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:     time.Minute,
+					Step:      5 * time.Second,
+					Timestamp: timestampOf(123_456),
+				},
+			},
+			// The @ modifier pins the subquery to a fixed instant, so the parent's (unaligned) end
+			// is irrelevant. start = end = 123_456ms; first step-aligned sample is at 65_000ms.
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(201_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(65_000), timestamp.Time(123_456), 5*time.Second),
+		},
+		"range query with subquery @ timestamp and offset": {
+			node: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:     time.Minute,
+					Step:      5 * time.Second,
+					Offset:    time.Minute,
+					Timestamp: timestampOf(123_456),
+				},
+			},
+			// Similar to above, the @ modifier pins the subquery to a fixed instance, so the parent's unaligned end
+			// is not relevant.
+			input:    types.NewRangeQueryTimeRange(timestamp.Time(201_000), timestamp.Time(220_000), 5*time.Second),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(5_000), timestamp.Time(63_456), 5*time.Second),
+		},
+		"instant query": {
+			node:     subquery(),
+			input:    types.NewInstantQueryTimeRange(timestamp.Time(200_000)),
+			expected: types.NewRangeQueryTimeRange(timestamp.Time(145_000), timestamp.Time(200_000), 5*time.Second),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual := testCase.node.ChildrenTimeRange(testCase.input)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestSubquery_QueriedTimeRangeWithSubRange(t *testing.T) {
+	baseT := timestamp.Time(0)
+	originalTimestamp := baseT.Add(10 * time.Hour)
+	lookbackDelta := 5 * time.Minute
+
+	subquery := &Subquery{
+		SubqueryDetails: &SubqueryDetails{
+			Range:     time.Hour,
+			Step:      10 * time.Minute,
+			Offset:    20 * time.Minute,
+			Timestamp: &originalTimestamp,
+		},
+		Inner: &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				Offset: 2 * time.Minute,
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		queryTimeRange      types.QueryTimeRange
+		overrideRangeParams planning.RangeParams
+		expected            planning.QueriedTimeRange
+	}{
+		"range and positive offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:  true,
+				Range:  30 * time.Minute,
+				Offset: 5 * time.Minute,
+			},
+			// The override produces child evaluations from 1h40m to 2h. The inner selector then applies
+			// its own 2m offset and the 5m lookback delta.
+			expected: planning.NewQueriedTimeRange(baseT.Add(93*time.Minute+time.Millisecond), baseT.Add(118*time.Minute)),
+		},
+		"negative offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:  true,
+				Range:  30 * time.Minute,
+				Offset: -5 * time.Minute,
+			},
+			// The negative offset moves child evaluations forward to 1h50m through 2h10m.
+			expected: planning.NewQueriedTimeRange(baseT.Add(103*time.Minute+time.Millisecond), baseT.Add(128*time.Minute)),
+		},
+		"timestamp and offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:        true,
+				Range:        30 * time.Minute,
+				Offset:       5 * time.Minute,
+				HasTimestamp: true,
+				Timestamp:    baseT.Add(3*time.Hour + 5*time.Minute),
+			},
+			// The override timestamp produces child evaluations from 2h40m through 3h.
+			expected: planning.NewQueriedTimeRange(baseT.Add(153*time.Minute+time.Millisecond), baseT.Add(178*time.Minute)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual, err := subquery.QueriedTimeRangeWithSubRange(testCase.queryTimeRange, testCase.overrideRangeParams, lookbackDelta)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, actual)
 		})
 	}
 }

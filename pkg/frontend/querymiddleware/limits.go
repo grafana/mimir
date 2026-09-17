@@ -25,6 +25,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -50,6 +51,10 @@ type Limits interface {
 	// query may be. 0 means "unlimited".
 	MaxQueryExpressionSizeBytes(userID string) int
 
+	// MaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory
+	// a single query can consume, in bytes. 0 to disable.
+	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
+
 	// MaxCacheFreshness returns the period after which results are cacheable,
 	// to prevent caching of very recent results.
 	MaxCacheFreshness(userID string) time.Duration
@@ -65,6 +70,11 @@ type Limits interface {
 	// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
+
+	// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
+	// be run for a cardinality (active series and active native histogram metrics) request.
+	// 0 to fall back to QueryShardingMaxShardedQueries.
+	CardinalityShardingMaxShardedQueries(userID string) int
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
@@ -103,6 +113,9 @@ type Limits interface {
 
 	// EnabledPromQLExtendedRangeSelectors returns the names of PromQL experimental extended range selectors modifiers allowed for the tenant. ie smoothed and anchored
 	EnabledPromQLExtendedRangeSelectors(userID string) []string
+
+	// EnabledPromQLBinopFillModifiers returns the names of PromQL binary operation fill modifiers allowed for the tenant (i.e., fill, fill_left, fill_right).
+	EnabledPromQLBinopFillModifiers(userID string) []string
 
 	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
 	Prom2RangeCompat(userID string) bool
@@ -204,7 +217,14 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 
 	// Enforce the max query length.
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
-		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
+		// For range queries, use the explicit start/end for backwards compatibility.
+		// For instant queries (start == end), use GetMinT/GetMaxT which account for range selectors,
+		// subqueries, offsets, and lookback delta, so that queries like [30d:1m] are also checked.
+		minT, maxT := r.GetStart(), r.GetEnd()
+		if minT == maxT {
+			minT, maxT = r.GetMinT(), r.GetMaxT()
+		}
+		queryLen := timestamp.Time(maxT).Sub(timestamp.Time(minT))
 		if queryLen > maxQueryLength {
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
@@ -385,7 +405,8 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	}
 
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
-	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
+	ctx = ContextWithRequestHints(ctx, r.GetHints())
+	ctx = requestoptions.ContextWithOptions(ctx, r.GetOptions())
 	opts, err := r.GetQueryOpts()
 	if err != nil {
 		return nil, err
@@ -407,6 +428,17 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		return nil, err
 	}
 
+	// Ownership of q is transferred to the response finalizer on success. On any
+	// failure path before that hand-off we must Close q ourselves, otherwise the
+	// query's resources (memory consumption tracker, pooled buffers, evaluator
+	// context) leak.
+	shouldCloseQuery := true
+	defer func() {
+		if shouldCloseQuery {
+			q.Close()
+		}
+	}()
+
 	res := q.Exec(ctx)
 	if res.Err != nil {
 		err := convertToAPIError(res.Err, apierror.TypeExec)
@@ -424,16 +456,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	if localStats := stats.FromContext(ctx); localStats != nil {
 		engineStats := q.Stats()
 		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
-
-		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
-		for i, count := range engineStats.Samples.TotalSamplesPerStep {
-			stepStats = append(stepStats, stats.StepStat{
-				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
-				Value:     count,
-			})
-		}
-
-		localStats.AddSamplesProcessedPerStep(stepStats)
+		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
 	resp = &PrometheusResponseWithFinalizer{
@@ -449,6 +472,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		finalizer: q.Close,
 	}
 
+	shouldCloseQuery = false
 	return resp, nil
 }
 
@@ -490,14 +514,11 @@ type requestContextKeyType int
 
 const (
 	requestHintsKey requestContextKeyType = iota
-	requestOptionsKey
 	parallelismLimiterKey
 )
 
-func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
-	ctx = context.WithValue(ctx, requestHintsKey, hints)
-	ctx = context.WithValue(ctx, requestOptionsKey, options)
-	return ctx
+func ContextWithRequestHints(ctx context.Context, hints *Hints) context.Context {
+	return context.WithValue(ctx, requestHintsKey, hints)
 }
 
 func RequestHintsFromContext(ctx context.Context) *Hints {
@@ -506,14 +527,6 @@ func RequestHintsFromContext(ctx context.Context) *Hints {
 	}
 
 	return nil
-}
-
-func RequestOptionsFromContext(ctx context.Context) Options {
-	if v := ctx.Value(requestOptionsKey); v != nil {
-		return v.(Options)
-	}
-
-	return Options{}
 }
 
 func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {

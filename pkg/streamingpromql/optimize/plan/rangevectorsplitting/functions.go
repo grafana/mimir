@@ -38,7 +38,7 @@ func sumOverTimeGenerate(
 	step *types.RangeVectorStepData,
 	emitAnnotation types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
-) (SumOverTimeIntermediate, error) {
+) (SumOverTimeIntermediate, bool, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -46,7 +46,7 @@ func sumOverTimeGenerate(
 	haveHistograms := len(hHead) > 0 || len(hTail) > 0
 
 	if !haveFloats && !haveHistograms {
-		return SumOverTimeIntermediate{}, nil
+		return SumOverTimeIntermediate{}, false, nil
 	}
 
 	// Skip checking if both floats and histograms exist in generate.
@@ -76,15 +76,24 @@ func sumOverTimeGenerate(
 	}
 
 	if haveHistograms {
-		h, err := functions.SumHistograms(hHead, hTail, emitAnnotation)
+		h, comp, err := functions.KahanSumHistograms(hHead, hTail, emitAnnotation)
 		if err != nil {
-			return SumOverTimeIntermediate{}, err
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+				return SumOverTimeIntermediate{ForceEmptyResult: true}, true, nil
+			}
+			return SumOverTimeIntermediate{}, false, err
 		}
 		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 		result.SumH = &histProto
+
+		if comp != nil {
+			compProto := mimirpb.FromFloatHistogramToHistogramProto(0, comp)
+			result.CompH = &compProto
+		}
 	}
 
-	return result, nil
+	return result, true, nil
 }
 
 func sumOverTimeCombine(
@@ -96,27 +105,50 @@ func sumOverTimeCombine(
 ) (float64, bool, *histogram.FloatHistogram, error) {
 	haveFloats := false
 	sumF, c := 0.0, 0.0
-	var sumH *histogram.FloatHistogram
+	var sumH, compH *histogram.FloatHistogram
 	nhcbBoundsReconciledSeen := false
 
+	// addToSumH adds h to the running histogram sum using Kahan summation, so the compensation is retained across pieces
+	addToSumH := func(h *histogram.FloatHistogram) error {
+		if sumH == nil {
+			// First histogram we're seeing, copy it to create the accumulator.
+			sumH = h.Copy()
+			return nil
+		}
+
+		newCompH, _, nhcbBoundsReconciled, err := sumH.KahanAdd(h, compH)
+		if err != nil {
+			return err
+		}
+
+		compH = newCompH
+		if nhcbBoundsReconciled {
+			nhcbBoundsReconciledSeen = true
+		}
+
+		return nil
+	}
+
 	for _, p := range pieces {
+		if p.ForceEmptyResult {
+			return 0, false, nil, nil
+		}
 		if p.HasFloat {
 			haveFloats = true
 			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
 			sumF, c = floats.KahanSumInc(p.SumC, sumF, c)
 		}
 		if p.SumH != nil {
-			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
+			if err := addToSumH(mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)); err != nil {
+				err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return 0, false, nil, err
+			}
 
-			if sumH == nil {
-				// First histogram we're seeing, copy it to create the accumulator.
-				sumH = h.Copy()
-			} else {
-				if _, _, nhcbBoundsReconciled, err := sumH.Add(h); err != nil {
+			// CompH is nil for pieces written before compensations were stored, and for pieces with a single sample.
+			if p.CompH != nil {
+				if err := addToSumH(mimirpb.FromFloatHistogramProtoToFloatHistogram(p.CompH)); err != nil {
 					err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
-				} else if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
 				}
 			}
 		}
@@ -129,6 +161,14 @@ func sumOverTimeCombine(
 
 	if nhcbBoundsReconciledSeen {
 		emitAnnotation(functions.NewAggregationMismatchedCustomBucketsHistogramInfo)
+	}
+
+	if compH != nil {
+		// Use regular Add (not KahanAdd) to apply the final compensation.
+		if _, _, _, err := sumH.Add(compH); err != nil {
+			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return 0, false, nil, err
+		}
 	}
 
 	return sumF + c, haveFloats, sumH, nil
@@ -163,12 +203,12 @@ var SplitCountOverTime = NewSplitOperatorFactory[CountOverTimeIntermediate](
 	functions.FUNCTION_COUNT_OVER_TIME,
 )
 
-func countOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
+func countOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, bool, error) {
 	count, hasValue, _, err := functions.CountOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotation, memoryConsumptionTracker)
 	if err != nil {
-		return CountOverTimeIntermediate{}, err
+		return CountOverTimeIntermediate{}, false, err
 	}
-	return CountOverTimeIntermediate{F: count, HasFloat: hasValue}, nil
+	return CountOverTimeIntermediate{F: count, HasFloat: hasValue}, hasValue, nil
 }
 
 func countOverTimeCombine(pieces []CountOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -218,12 +258,12 @@ func minOverTimeGenerate(
 	step *types.RangeVectorStepData,
 	_ types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (MinMaxOverTimeIntermediate, error) {
+) (MinMaxOverTimeIntermediate, bool, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in minOverTime().
 	f, hasFloat, _, err := functions.MinOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
-		return MinMaxOverTimeIntermediate{}, err
+		return MinMaxOverTimeIntermediate{}, false, err
 	}
 
 	result := MinMaxOverTimeIntermediate{
@@ -235,7 +275,7 @@ func minOverTimeGenerate(
 		HasHistogram: step.Histograms.Any(),
 	}
 
-	return result, nil
+	return result, result.HasFloat || result.HasHistogram, nil
 }
 
 func minOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -270,12 +310,12 @@ var SplitMaxOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 	functions.FUNCTION_MAX_OVER_TIME,
 )
 
-func maxOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
+func maxOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, bool, error) {
 	// Pass a no-op emitAnnotation: the combine step will handle emitting the mixed float+histogram annotations so we
 	// can ignore the annotations emitted in maxOverTime().
 	f, hasFloat, _, err := functions.MaxOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
-		return MinMaxOverTimeIntermediate{}, err
+		return MinMaxOverTimeIntermediate{}, false, err
 	}
 
 	result := MinMaxOverTimeIntermediate{
@@ -287,7 +327,7 @@ func maxOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotation
 		HasHistogram: step.Histograms.Any(),
 	}
 
-	return result, nil
+	return result, result.HasFloat || result.HasHistogram, nil
 }
 
 func maxOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -344,10 +384,10 @@ var SplitFirstOverTime = NewSplitOperatorFactory[FirstLastOverTimeIntermediate](
 	functions.FUNCTION_FIRST_OVER_TIME,
 )
 
-func firstOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, error) {
+func firstOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, bool, error) {
 	f, hasFloat, h, err := functions.FirstOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
-		return FirstLastOverTimeIntermediate{}, err
+		return FirstLastOverTimeIntermediate{}, false, err
 	}
 
 	result := FirstLastOverTimeIntermediate{
@@ -360,7 +400,7 @@ func firstOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotati
 		result.H = &histProto
 	}
 
-	return result, nil
+	return result, hasFloat || h != nil, nil
 }
 
 func firstOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -384,10 +424,10 @@ var SplitLastOverTime = NewSplitOperatorFactory[FirstLastOverTimeIntermediate](
 	functions.FUNCTION_LAST_OVER_TIME,
 )
 
-func lastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, error) {
+func lastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (FirstLastOverTimeIntermediate, bool, error) {
 	f, hasFloat, h, err := functions.LastOverTime.StepFunc(step, nil, types.QueryTimeRange{}, emitAnnotationNoop, memoryConsumptionTracker)
 	if err != nil {
-		return FirstLastOverTimeIntermediate{}, err
+		return FirstLastOverTimeIntermediate{}, false, err
 	}
 
 	result := FirstLastOverTimeIntermediate{
@@ -400,7 +440,7 @@ func lastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotatio
 		result.H = &histProto
 	}
 
-	return result, nil
+	return result, hasFloat || h != nil, nil
 }
 
 func lastOverTimeCombine(pieces []FirstLastOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -437,5 +477,63 @@ func (c firstLastOverTimeCodec) Unmarshal(bytes []byte) ([]FirstLastOverTimeInte
 }
 
 var FirstLastOverTimeCodec = firstLastOverTimeCodec{}
+
+var SplitPresentOverTime = NewSplitOperatorFactory[PresentOverTimeIntermediate](
+	presentOverTimeGenerate,
+	presentOverTimeCombine,
+	PresentOverTimeCodec,
+	functions.PresentOverTime,
+	functions.FUNCTION_PRESENT_OVER_TIME,
+)
+
+func presentOverTimeGenerate(
+	step *types.RangeVectorStepData,
+	_ types.EmitAnnotationFunc,
+	_ *limiter.MemoryConsumptionTracker,
+) (PresentOverTimeIntermediate, bool, error) {
+	if step.Floats.Any() || step.Histograms.Any() {
+		return PresentOverTimeIntermediate{Present: true}, true, nil
+	}
+
+	return PresentOverTimeIntermediate{Present: false}, false, nil
+}
+
+func presentOverTimeCombine(
+	pieces []PresentOverTimeIntermediate,
+	_ int64,
+	_ int64,
+	_ types.EmitAnnotationFunc,
+	_ *limiter.MemoryConsumptionTracker,
+) (float64, bool, *histogram.FloatHistogram, error) {
+	for _, p := range pieces {
+		if p.Present {
+			return 1, true, nil, nil
+		}
+	}
+	return 0, false, nil, nil
+}
+
+type presentOverTimeCodec struct{}
+
+func (c presentOverTimeCodec) Marshal(results []PresentOverTimeIntermediate) ([]byte, error) {
+	listProto := &PresentOverTimeIntermediateList{
+		Results: results,
+	}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling present_over_time list")
+	}
+	return listBytes, nil
+}
+
+func (c presentOverTimeCodec) Unmarshal(bytes []byte) ([]PresentOverTimeIntermediate, error) {
+	var listProto PresentOverTimeIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling present_over_time list")
+	}
+	return listProto.Results, nil
+}
+
+var PresentOverTimeCodec = presentOverTimeCodec{}
 
 func emitAnnotationNoop(_ types.AnnotationGenerator) {}

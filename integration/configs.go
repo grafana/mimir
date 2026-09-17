@@ -130,12 +130,6 @@ var (
 		}
 	}
 
-	AlertmanagerGrafanaCompatibilityFlags = func() map[string]string {
-		return map[string]string{
-			"-alertmanager.grafana-alertmanager-compatibility-enabled": "true",
-		}
-	}
-
 	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-ruler.poll-interval":             "2s",
@@ -297,6 +291,18 @@ blocks_storage:
 
 		}
 		return flags
+	}
+
+	// CompartmentsFlags returns the flags shared by all components to run the compartments
+	// architecture on top of ingest storage, with one Kafka cluster per write compartment.
+	CompartmentsFlags = func(numWriteCompartments, numReadCompartments int) map[string]string {
+		return map[string]string{
+			"-compartments.enabled":                "true",
+			"-compartments.write.num-compartments": strconv.Itoa(numWriteCompartments),
+			"-compartments.read.num-compartments":  strconv.Itoa(numReadCompartments),
+			"-ingest-storage.kafka.topic":          "mimir-ingest-rc-<read-compartment-id>",
+			"-ingest-storage.kafka.address":        fmt.Sprintf("%s-kafka-wc-<write-compartment-id>:9092", networkName),
+		}
 	}
 )
 

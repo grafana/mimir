@@ -30,6 +30,7 @@ message JobSpec {
 message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
+  uint64 total_blocks_bytes = 3;
 }
 
 service CompactorScheduler {
@@ -39,8 +40,13 @@ service CompactorScheduler {
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
 }
 
+message LaneRequest {
+  JobType job_type = 1;
+}
+
 message LeaseJobRequest {
   string worker_id = 1;
+  repeated LaneRequest lane_requests = 2;
 }
 
 message LeaseJobResponse {
@@ -67,6 +73,7 @@ enum UpdateType {
   UPDATE_TYPE_COMPLETE = 2;
   UPDATE_TYPE_REASSIGN = 3;
   UPDATE_TYPE_ABANDON = 4;
+  UPDATE_TYPE_INTERRUPTED_REASSIGN = 5;
 }
 
 message UpdatePlanJobRequest {
@@ -106,4 +113,5 @@ message StoredCompactionJob {
 
 message PersistenceMetadata {
   uint32 shard_count = 1;
+  int64 creation_time = 2;
 }

@@ -46,6 +46,25 @@ var cardinalityBuckets = []cardinalityBucket{
 	{"1M+", -1},
 }
 
+// chunkCountBucket defines a histogram bucket for chunk counts.
+type chunkCountBucket struct {
+	name string
+	max  int // -1 means unbounded
+}
+
+// chunkCountBuckets defines the histogram buckets for chunk count distribution.
+var chunkCountBuckets = []chunkCountBucket{
+	{"1", 1},
+	{"2-10", 10},
+	{"11-50", 50},
+	{"51-100", 100},
+	{"101-500", 500},
+	{"501-1K", 1000},
+	{"1K-5K", 5000},
+	{"5K-10K", 10000},
+	{"10K+", -1},
+}
+
 // bytesToMB converts bytes to megabytes.
 func bytesToMB(b int64) float64 {
 	return float64(b) / (1024 * 1024)
@@ -78,6 +97,25 @@ func getLengthBucketName(length int) string {
 func lengthBucketNames() []string {
 	names := make([]string, len(lengthBuckets))
 	for i, b := range lengthBuckets {
+		names[i] = b.name
+	}
+	return names
+}
+
+// getChunkCountBucketName returns the bucket name for a given chunk count.
+func getChunkCountBucketName(count int) string {
+	for _, b := range chunkCountBuckets {
+		if b.max == -1 || count <= b.max {
+			return b.name
+		}
+	}
+	return chunkCountBuckets[len(chunkCountBuckets)-1].name
+}
+
+// chunkCountBucketNames returns a slice of all chunk count bucket names in order.
+func chunkCountBucketNames() []string {
+	names := make([]string, len(chunkCountBuckets))
+	for i, b := range chunkCountBuckets {
 		names[i] = b.name
 	}
 	return names

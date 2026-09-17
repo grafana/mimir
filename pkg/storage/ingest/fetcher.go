@@ -21,7 +21,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/twmb/franz-go/plugin/kotel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
@@ -272,7 +271,7 @@ type ConcurrentFetchers struct {
 	topicID     [16]byte
 	topicName   string
 	metrics     *ReaderMetrics
-	tracer      *kotel.Tracer
+	tracer      *sampledOnlyTracer
 
 	minBytesWaitTime time.Duration
 
@@ -330,9 +329,9 @@ func NewConcurrentFetchers(
 	var err error
 	switch startOffset {
 	case kafkaOffsetStart:
-		startOffset, err = offsetReader.FetchPartitionStartOffset(ctx, partition)
+		startOffset, err = offsetReader.FetchPartitionStartOffset(ctx, topic, partition)
 	case kafkaOffsetEnd:
-		startOffset, err = offsetReader.FetchPartitionLastProducedOffset(ctx, partition)
+		startOffset, err = offsetReader.FetchPartitionLastProducedOffset(ctx, topic, partition)
 		// End (-1) means "ignore all existing records". FetchPartitionLastProducedOffset returns the offset of an existing record.
 		// We need to start from the next one, which is still not produced.
 		startOffset++
@@ -365,7 +364,7 @@ func NewConcurrentFetchers(
 		rangeErrorPolicy:        rangeErrorPolicy,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
-		tracer:                  recordsTracer(),
+		tracer:                  newSampledOnlyTracer(),
 		orderedFetches:          make(chan fetchResult),
 		done:                    make(chan struct{}),
 		fetchBackoffConfig:      fetchBackoffConfig,

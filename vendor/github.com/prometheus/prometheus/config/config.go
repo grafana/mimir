@@ -32,6 +32,7 @@ import (
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/sigv4"
 	"go.yaml.in/yaml/v2"
@@ -81,6 +82,13 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	// When the config body is empty, UnmarshalYAML is never called, so
+	// TSDBConfig may still be nil.
+	if cfg.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		cfg.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	}
 
 	b := labels.NewScratchBuilder(0)
@@ -186,7 +194,8 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: getGoGC(),
+		GoGC:     getGoGC(),
+		LogLevel: LogLevel("info"),
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration. Users of this
@@ -276,6 +285,9 @@ var (
 		// For backwards compatibility.
 		LabelNamePreserveMultipleUnderscores: true,
 	}
+
+	// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
+	DefaultTSDBRetentionConfig TSDBRetentionConfig
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -403,6 +415,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
+	}
+
+	// If no storage.tsdb section is present, TSDBConfig is nil and its
+	// UnmarshalYAML never runs. Inject the default retention here.
+	if c.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		c.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -559,6 +578,7 @@ var (
 	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
+	OpenMetricsText2_0_0 ScrapeProtocol = "OpenMetricsText2.0.0"
 	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
@@ -567,6 +587,7 @@ var (
 		PrometheusText1_0_0:  "text/plain;version=1.0.0",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0: "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
@@ -713,10 +734,25 @@ func (c *GlobalConfig) isZero() bool {
 
 const DefaultGoGCPercentage = 75
 
+// LogLevel is a YAML representation of a promslog logging level.
+type LogLevel string
+
+// UnmarshalYAML validates and normalizes a log level.
+func (l *LogLevel) UnmarshalYAML(unmarshal func(any) error) error {
+	level := promslog.NewLevel()
+	if err := level.UnmarshalYAML(unmarshal); err != nil {
+		return err
+	}
+	*l = LogLevel(level.String())
+	return nil
+}
+
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
+	// The minimum severity emitted by the process logger.
+	LogLevel LogLevel `yaml:"log_level,omitempty"`
 
 	// Below are guidelines for adding a new field:
 	//
@@ -736,7 +772,7 @@ type RuntimeConfig struct {
 
 // isZero returns true iff the global config is the zero value.
 func (c *RuntimeConfig) isZero() bool {
-	return c.GoGC == 0
+	return c.GoGC == 0 && c.LogLevel == ""
 }
 
 type ScrapeConfigs struct {
@@ -848,7 +884,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
-	if len(c.JobName) == 0 {
+	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
 
@@ -1094,7 +1130,38 @@ type TSDBRetentionConfig struct {
 	Size units.Base2Bytes `yaml:"size,omitempty"`
 
 	// Maximum percentage of disk used for TSDB storage.
-	Percentage uint `yaml:"percentage,omitempty"`
+	Percentage float64 `yaml:"percentage,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = TSDBRetentionConfig{}
+	type plain TSDBRetentionConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+	if t.Size < 0 {
+		return fmt.Errorf("'storage.tsdb.retention.size' must be greater than or equal to 0, got %v", t.Size)
+	}
+	if t.Percentage < 0 || t.Percentage > 100 {
+		return fmt.Errorf("'storage.tsdb.retention.percentage' must be in the range [0, 100], got %v", t.Percentage)
+	}
+	return nil
+}
+
+const (
+	// FloatChunkEncodingXOR selects standard XOR encoding for float chunks.
+	FloatChunkEncodingXOR = "xor"
+	// FloatChunkEncodingXOR2 selects XOR2 encoding for float chunks.
+	FloatChunkEncodingXOR2 = "xor2"
+)
+
+// ChunkEncodingConfig configures per-chunk-type encoding overrides.
+type ChunkEncodingConfig struct {
+	// Floats selects the encoding used for float chunks.
+	// Valid values are "xor", "xor2", and "" (empty/absent). When empty, the
+	// encoding follows the --enable-feature=xor2-encoding flag.
+	Floats string `yaml:"floats,omitempty"`
 }
 
 // TSDBConfig configures runtime reloadable configuration options.
@@ -1114,6 +1181,9 @@ type TSDBConfig struct {
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
 
+	// ChunkEncoding configures per-chunk-type encoding overrides.
+	ChunkEncoding ChunkEncodingConfig `yaml:"chunk_encoding,omitempty"`
+
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 
@@ -1126,6 +1196,18 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	switch t.ChunkEncoding.Floats {
+	case "", FloatChunkEncodingXOR, FloatChunkEncodingXOR2:
+		// Valid; no action required.
+	default:
+		return fmt.Errorf("'storage.tsdb.chunk_encoding.floats' must be 'xor' or 'xor2', or the field must be omitted entirely, got %q", t.ChunkEncoding.Floats)
+	}
+
+	if t.Retention == nil {
+		retention := DefaultTSDBRetentionConfig
+		t.Retention = &retention
+	}
 
 	return nil
 }
@@ -1428,6 +1510,8 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
+	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1471,6 +1555,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.QueueConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -1564,6 +1652,29 @@ type QueueConfig struct {
 
 	// Samples older than the limit will be dropped.
 	SampleAgeLimit model.Duration `yaml:"sample_age_limit,omitempty"`
+}
+
+// Validate checks QueueConfig fields for invalid values.
+func (c *QueueConfig) Validate() error {
+	if c.MaxShards <= 0 {
+		return errors.New("remote write queue max_shards must be positive")
+	}
+	if c.MinShards <= 0 {
+		return errors.New("remote write queue min_shards must be positive")
+	}
+	if c.MinShards > c.MaxShards {
+		return errors.New("remote write queue min_shards must not be greater than max_shards")
+	}
+	if c.MaxSamplesPerSend <= 0 {
+		return errors.New("remote write queue max_samples_per_send must be positive")
+	}
+	if c.Capacity <= 0 {
+		return errors.New("remote write queue capacity must be positive")
+	}
+	if c.MaxBackoff < c.MinBackoff {
+		return errors.New("remote write queue max_backoff must not be less than min_backoff")
+	}
+	return nil
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

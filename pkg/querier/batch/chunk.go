@@ -17,7 +17,7 @@ import (
 // chunkIterator implement batchIterator over a chunk.  Its is designed to be
 // reused by calling reset() with a fresh chunk.
 type chunkIterator struct {
-	chunk GenericChunk
+	chunk chunk.Chunk
 	it    chunk.Iterator
 	batch chunk.Batch
 
@@ -25,9 +25,9 @@ type chunkIterator struct {
 	fhPool *zeropool.Pool[*histogram.FloatHistogram]
 }
 
-func (i *chunkIterator) reset(chunk GenericChunk) {
+func (i *chunkIterator) reset(chunk chunk.Chunk) {
 	i.chunk = chunk
-	i.it = chunk.Iterator(i.it)
+	i.it = chunk.Data.NewIterator(i.it)
 	i.batch.Length = 0
 	i.batch.Index = 0
 }
@@ -35,7 +35,7 @@ func (i *chunkIterator) reset(chunk GenericChunk) {
 func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
-	if i.chunk.MaxTime < t {
+	if int64(i.chunk.Through) < t {
 		return chunkenc.ValNone
 	}
 

@@ -156,7 +156,15 @@ local filename = 'mimir-queries.json';
       $.row('Query-frontend – query splitting and results cache')
       .addPanel(
         local query = utils.ncHistogramApplyTemplate(
-          template='sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / %s',
+          template=|||
+            sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))
+            /
+            (
+              (%s or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.
+              +
+              (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.
+            )
+          |||,
           query=utils.ncHistogramSumBy(
             query=utils.ncHistogramCountRate('cortex_frontend_query_range_duration_seconds', '$read_path_matcher, method="split_by_interval_and_results_cache"'),
           )
@@ -261,6 +269,10 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Query Expression Percentiles') +
         $.queryPanel(
+          'histogram_quantile(1.00, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '100th Percentile'
+        ) +
+        $.queryPanel(
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           '99th Percentile'
         ) +
@@ -272,7 +284,19 @@ local filename = 'mimir-queries.json';
           'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           'Average'
         ) +
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'bytes',
+              custom+: {
+                scaleDistribution: {
+                  type: 'log',
+                  log: 2,
+                },
+              },
+            },
+          },
+        }
       )
     )
     .addRowIf(
@@ -320,6 +344,79 @@ local filename = 'mimir-queries.json';
       $.row('Query-frontend - query engine')
       .addPanel(queryMemoryConsumptionPanel('query-frontend', $._config.job_names.query_frontend))
       .addPanel(mqeFallbackPanel('query-frontend', $._config.job_names.query_frontend))
+    )
+    .addRow(
+      ($.row('Query blocking and rate limiting') + { collapse: true })
+      .addPanel(
+        local title = 'Blocked and limited queries by tenant';
+        $.panel(title) +
+        // Two grouping labels (reason, user), sorted alphabetically, precede the Value column: Time(0), reason(1), user(2), Value(3).
+        { sort: { col: 3, desc: true } } +
+        $.tablePanel(
+          [
+            'sum by (user, reason) (rate(cortex_query_frontend_rejected_queries_total{$read_path_matcher, reason=~"blocked|limited"}[$__rate_interval]))',
+          ],
+          {
+            user: { alias: 'user', unit: 'string' },
+            reason: { alias: 'reason', unit: 'string' },
+            Value: { alias: 'rate', unit: 'reqps', decimals: 3 },
+          }
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Rate of queries rejected per tenant because they matched a blocked_queries or limited_queries rule.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Expired blocked-query rules by tenant';
+        $.panel(title) +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            // max by (user, id) collapses duplicate series from multiple overrides-exporter replicas
+            // (only relevant when the overrides-exporter ring is disabled) before counting distinct rules.
+            'count by (user) (max by (user, id) (cortex_blocked_query_rule_expires_at{%s}) < time())' % $.jobMatcher($._config.job_names.overrides_exporter),
+          ],
+          {
+            user: { alias: 'user', unit: 'string' },
+            Value: { alias: 'expired rules', decimals: 0 },
+          }
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Number of blocked_queries rules per tenant, keyed by id (rules without an id are grouped together), whose
+            expires_at has passed. This is informational only: an expired rule keeps being enforced until it is
+            explicitly removed from the tenant's configuration.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Expired limited-query rules by tenant';
+        $.panel(title) +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            // max by (user, id) collapses duplicate series from multiple overrides-exporter replicas
+            // (only relevant when the overrides-exporter ring is disabled) before counting distinct rules.
+            'count by (user) (max by (user, id) (cortex_limited_query_rule_expires_at{%s}) < time())' % $.jobMatcher($._config.job_names.overrides_exporter),
+          ],
+          {
+            user: { alias: 'user', unit: 'string' },
+            Value: { alias: 'expired rules', decimals: 0 },
+          }
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Number of limited_queries rules per tenant, keyed by id (rules without an id are grouped together), whose
+            expires_at has passed. This is informational only: an expired rule keeps being enforced until it is
+            explicitly removed from the tenant's configuration.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Ingester')

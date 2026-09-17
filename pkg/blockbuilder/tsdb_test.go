@@ -28,9 +28,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -294,7 +294,7 @@ func TestTSDBBuilder(t *testing.T) {
 				tc.verifyBlocksAfterCompaction(blocks)
 
 				if builder.cfg.GenerateSparseIndexHeaders {
-					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir)
+					blockIDsWithSparseHeader := validateSparseIndexHeadersInDir(t, ctx, shipperDir, config)
 					require.Equal(t, len(blocks), len(blockIDsWithSparseHeader))
 					for _, b := range blocks {
 						require.Contains(t, blockIDsWithSparseHeader, b.Meta().ULID)
@@ -319,6 +319,142 @@ type testSample struct {
 type testHistogram struct {
 	ts            int64
 	shouldDiscard bool
+}
+
+func TestTSDBBuilder_BiggerOOOBlocksForOldSamples(t *testing.T) {
+	const (
+		partitionID = int32(0)
+		userID      = "user1"
+	)
+
+	day := 24 * time.Hour.Milliseconds()
+	blockRange := 2 * time.Hour.Milliseconds()
+
+	// "now" is day 10 at 03:00.
+	now := 10*day + 3*time.Hour.Milliseconds()
+
+	for _, tc := range []struct {
+		name           string
+		enableFlag     bool
+		expBlockRanges []int64 // expected (maxT - minT) for each block, sorted by minT
+	}{
+		{
+			name:       "disabled produces 2h blocks",
+			enableFlag: false,
+			// All 4 samples each land in their own 2h block.
+			expBlockRanges: []int64{blockRange, blockRange, blockRange, blockRange},
+		},
+		{
+			name:       "enabled produces 24h blocks for previous days",
+			enableFlag: true,
+			// Day 7 and day 8 OOO samples each get a 24h block;
+			// day 10 OOO sample (current day) and in-order sample each get a 2h block.
+			expBlockRanges: []int64{day, day, blockRange, blockRange},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := map[string]*validation.Limits{
+				userID: {
+					OutOfOrderTimeWindow: model.Duration(30 * 24 * time.Hour),
+				},
+			}
+			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+			config.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples = tc.enableFlag
+
+			builder := NewTSDBBuilder(
+				partitionID, config, overrides, log.NewNopLogger(),
+				newTSDBBuilderMetrics(prometheus.NewPedanticRegistry()),
+				mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), log.NewNopLogger()),
+			)
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+
+			// Push an in-order sample at "now" first, then OOO samples on previous days.
+			for _, ts := range []int64{
+				now,                                 // in-order, day 10 03:00
+				7*day + 5*time.Hour.Milliseconds(),  // OOO, day 7
+				8*day + 11*time.Hour.Milliseconds(), // OOO, day 8
+				10*day + 1*time.Hour.Milliseconds(), // OOO, day 10 (current day)
+			} {
+				req := createWriteRequest(userID, floatSample(ts, float64(ts)), nil)
+				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+			}
+
+			shipperDir := t.TempDir()
+			_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+			require.NoError(t, err)
+
+			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, newDB.Close()) })
+
+			blocks := newDB.Blocks()
+			slices.SortFunc(blocks, func(a, b *tsdb.Block) int {
+				return cmp.Compare(a.Meta().MinTime, b.Meta().MinTime)
+			})
+
+			require.Len(t, blocks, len(tc.expBlockRanges), "unexpected number of blocks")
+			for i, b := range blocks {
+				got := b.Meta().MaxTime - b.Meta().MinTime
+				require.Equal(t, got, tc.expBlockRanges[i],
+					"block %d: minT=%d maxT=%d range=%d", i, b.Meta().MinTime, b.Meta().MaxTime, got)
+			}
+		})
+	}
+}
+
+func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
+	const (
+		user1       = "user1"
+		user2       = "user2"
+		user3       = "user3"
+		partitionID = int32(0)
+	)
+
+	config, overrides := blockBuilderConfig(t, "kafka:9092", nil)
+	config.BlocksStorage.TSDB.EarlyHeadCompactionMinInMemorySeries = 8
+
+	logger := log.NewNopLogger()
+	registry := prometheus.NewPedanticRegistry()
+	tsdbBuilderMetrics := newTSDBBuilderMetrics(prometheus.NewPedanticRegistry())
+	tsdbMetrics := mimir_tsdb.NewTSDBMetrics(registry, logger)
+	builder := NewTSDBBuilder(partitionID, config, overrides, logger, tsdbBuilderMetrics, tsdbMetrics)
+	t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+	// Push testSeriesPerTenant distinct series for each test tenants (15 total, above the threshold).
+	const testSeriesPerTenant = 5
+	processingRange := time.Hour.Milliseconds()
+	lastEnd := 2 * processingRange
+	ts := lastEnd + (processingRange / 2)
+	for seriesID := range testSeriesPerTenant {
+		for _, userID := range []string{user1, user2, user3} {
+			ctx := user.InjectOrgID(t.Context(), userID)
+			req := createWriteRequest(strconv.Itoa(seriesID), floatSample(ts, float64(seriesID)), nil)
+			require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+		}
+	}
+
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		require.Equal(t, uint64(testSeriesPerTenant), db.Head().NumSeries())
+		require.Empty(t, db.Blocks())
+	}
+
+	require.NoError(t, builder.CompactToReduceInMemorySeries(t.Context()))
+
+	// Early compaction compacts tenants with the most series first and stops once series count drops below the threshold.
+	// At least two tenant must have been compacted.
+	var compacted int
+	for _, userID := range []string{user1, user2, user3} {
+		db, err := builder.getOrCreateTSDB(tsdbTenant{partitionID: partitionID, tenantID: userID})
+		require.NoError(t, err)
+		if db.Head().NumSeries() == 0 {
+			require.NotEmpty(t, db.Blocks())
+			compacted++
+		}
+	}
+	require.Equal(t, 2, compacted)
 }
 
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
@@ -349,25 +485,37 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
-func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string) []ulid.ULID {
-	fsBkt, err := filesystem.NewBucket(dbDir)
-	if err != nil {
-		require.NoError(t, err)
-	}
-	var ids []ulid.ULID
-	require.NoError(t, fsBkt.Iter(ctx, "", func(n string) error {
-		if id, ok := block.IsBlockDir(n); !ok {
-			return nil
+func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir string, cfg Config) []ulid.ULID {
+	ll := log.NewNopLogger()
+
+	var blockIDs []ulid.ULID
+	dbDirItems, _ := os.ReadDir(dbDir)
+	for _, dbDirItem := range dbDirItems {
+		if blockID, ok := block.IsBlockDir(dbDirItem.Name()); !ok {
+			continue
 		} else {
-			ids = append(ids, id)
-			sparseHeadersPath := path.Join(id.String(), block.SparseIndexHeaderFilename)
-			if exists, _ := fsBkt.Exists(ctx, sparseHeadersPath); !exists {
-				return fmt.Errorf("expected sparse index headers not found %s", sparseHeadersPath)
-			}
+			blockIDs = append(blockIDs, blockID)
+			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
+
+			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
+			)
+
+			require.NoErrorf(t, err, "expected sparse index headers not found %s", sparseHeadersPath)
+
+			// Different tests will have different number of symbols, but we can check some basic correctness:
+			// 1. At least one symbol is sampled
+			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
+			//   this is always true even with only one symbol written because the block includes the empty string symbol.
+			require.NotEmpty(t, len(sparseSymbolsOffsets))
+			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+
+			require.NoError(t, err)
+			require.NotZero(t, len(sparsePostingsOffsets))
 		}
-		return nil
-	}))
-	return ids
+	}
+
+	return blockIDs
 }
 
 func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {
@@ -963,4 +1111,80 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		}
 		tcNumber++
 	}
+}
+
+// TestTSDBBuilderFloatChunkEncoding verifies that the block builder honors the
+// per-tenant float_chunk_encoding limit when building blocks: "xor2" produces
+// EncXOR2 chunks and the default ("" or "xor") produces EncXOR chunks.
+func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
+	const (
+		partitionID = int32(0)
+		userID      = "user1"
+	)
+
+	for _, tc := range []struct {
+		name        string
+		encoding    string
+		expectedEnc chunkenc.Encoding
+	}{
+		{name: "default is xor", encoding: "", expectedEnc: chunkenc.EncXOR},
+		{name: "xor", encoding: "xor", expectedEnc: chunkenc.EncXOR},
+		{name: "xor2", encoding: "xor2", expectedEnc: chunkenc.EncXOR2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := map[string]*validation.Limits{
+				userID: {FloatChunkEncoding: tc.encoding},
+			}
+			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+
+			logger := log.NewNopLogger()
+			builder := NewTSDBBuilder(partitionID, config, overrides, logger, newTSDBBuilderMetrics(prometheus.NewPedanticRegistry()), mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger))
+			t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+			var (
+				processingRange = time.Hour.Milliseconds()
+				lastEnd         = 2 * processingRange
+				ts              = lastEnd + (processingRange / 2)
+			)
+			ctx := user.InjectOrgID(t.Context(), userID)
+			for i := 0; i < 5; i++ {
+				req := createWriteRequest("1", floatSample(ts+int64(i*1000), float64(i)), nil)
+				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+			}
+
+			shipperDir := t.TempDir()
+			_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+			require.NoError(t, err)
+
+			db, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			require.NotEmpty(t, db.Blocks())
+
+			encs := blockFloatChunkEncodings(t, db)
+			require.NotEmpty(t, encs)
+			for _, e := range encs {
+				require.Equal(t, tc.expectedEnc, e)
+			}
+		})
+	}
+}
+
+func blockFloatChunkEncodings(t *testing.T, db *tsdb.DB) []chunkenc.Encoding {
+	t.Helper()
+	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+	var encs []chunkenc.Encoding
+	for ss.Next() {
+		it := ss.At().Iterator(nil)
+		for it.Next() {
+			encs = append(encs, it.At().Chunk.Encoding())
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, ss.Err())
+	return encs
 }

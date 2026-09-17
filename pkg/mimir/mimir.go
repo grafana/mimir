@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
@@ -51,6 +52,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -72,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -125,11 +128,12 @@ type Config struct {
 	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
 	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	Compartments                   compartments.Config             `yaml:"compartments" doc:"hidden"`
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
-	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
+	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
@@ -140,7 +144,7 @@ type Config struct {
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
 	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
 	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
-	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
+	RuntimeConfig       RuntimeConfigConfig                        `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
@@ -155,6 +159,10 @@ type Config struct {
 	CostAttributionEvictionInterval time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
 	CostAttributionRegistryPath     string        `yaml:"cost_attribution_registry_path" category:"experimental"`
 	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
+
+	InstrumentRefLeaks mimirpb.InstrumentRefLeaksConfig `yaml:"instrument_ref_leaks" category:"experimental"`
+
+	LabelAccessControlEnabled bool `yaml:"label_access_control_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -175,6 +183,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
+	f.BoolVar(&c.LabelAccessControlEnabled, "auth.label-access-control-enabled", false, "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
@@ -196,6 +205,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.Compartments.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
@@ -217,6 +227,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
+
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("instrument-reference-leaks.", f)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -238,9 +250,11 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_distributor_client":         &c.Ruler.Distributor.GRPCClientConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
+			"runtime_config_http_client":       &c.RuntimeConfig.HTTPClientClusterValidation,
 		},
 	}
 }
@@ -278,6 +292,58 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
+	if err := c.Compartments.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compartments config")
+	}
+	if c.Compartments.Enabled {
+		if !c.IngestStorage.Enabled {
+			return errors.New("compartments require ingest storage to be enabled")
+		}
+		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
+			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+		}
+		// The distributor produces to every read compartment's topic, and the query-frontend monitors every
+		// read compartment's topic to enforce strong read consistency, so both need the topic parameterised
+		// by read compartment. An ingester consumes a single read compartment's topic, so it may use either
+		// the placeholder (resolved at runtime from -ingester.read-compartment-id) or an already-resolved
+		// explicit topic.
+		if c.isDistributorEnabled() || c.isQueryFrontendEnabled() {
+			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and query-frontend", compartments.ReadCompartmentIDPlaceholder)
+			}
+		}
+		// The ingester consumes its partition from every write compartment's Kafka cluster, and the
+		// query-frontend monitors the last produced offsets of every write compartment's Kafka cluster,
+		// both resolving each configured address per write compartment. With more than one write
+		// compartment and an address without the placeholder, every compartment resolves to the same
+		// cluster: the ingester would consume each partition once per write compartment and duplicate
+		// samples, and the query-frontend would monitor the same cluster repeatedly. A single write
+		// compartment (or other components, like the distributor, that target just one cluster) doesn't
+		// need the placeholder.
+		if (c.isIngesterEnabled() || c.isQueryFrontendEnabled()) && c.Compartments.Write.NumCompartments > 1 {
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester and query-frontend", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
+		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
+		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
+		// space). Multi-cluster support for the offset catalogue is not implemented yet.
+		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
+			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
+		}
+		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
+		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
+		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and
+		// don't need it. The ruler queries blocks only through remote rule evaluation (required with
+		// compartments), so it doesn't build a local compartment-aware queryable.
+		if c.isQuerierEnabled() {
+			if !strings.HasSuffix(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must end with the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
+			}
+		}
+	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
@@ -289,7 +355,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
-	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
+	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
 	if err := c.Querier.Validate(); err != nil {
@@ -302,7 +368,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(log); err != nil {
+	if err := c.Ingester.Validate(c.Compartments); err != nil {
 		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
@@ -318,10 +384,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Frontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-frontend config")
 	}
-	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
+	if err := c.StoreGateway.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(log); err != nil {
+	if err := c.Compactor.Validate(c.Compartments, log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.CompactorScheduler.Validate(); err != nil {
@@ -357,7 +423,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
-	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+	if err := c.InstrumentRefLeaks.Validate(); err != nil {
 		return errors.Wrap(err, "invalid instrument-ref-leaks config")
 	}
 	if err := c.API.Validate(); err != nil {
@@ -374,6 +440,9 @@ func (c *Config) Validate(log log.Logger) error {
 
 // ValidateLimits validates the runtime limits.
 func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := limits.BlockedQueries.Validate(); err != nil {
+		return err
+	}
 	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
@@ -404,6 +473,18 @@ func (c *Config) isAlertManagerEnabled() bool {
 
 func (c *Config) isRulerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
+}
+
+func (c *Config) shouldInitRulerStorage() bool {
+	return !c.isAnyModuleExplicitlyTargeted(All) || !c.RulerStorage.IsDefaults()
+}
+
+func (c *Config) rulerRemoteWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address != ""
+}
+
+func (c *Config) rulerLocalWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address == ""
 }
 
 func (c *Config) isStoreGatewayEnabled() bool {
@@ -730,16 +811,11 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
-		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
-		for name, loc := range inheritance.InstrumentRefLeaksConfig {
-			specificInstrumentRefLeaksLocations[name] = loc
-		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
-				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -809,20 +885,17 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                  map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
-	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
-	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -839,7 +912,6 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
-	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -865,49 +937,51 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                              *api.API
-	Server                           *server.Server
-	ServerMetrics                    *server.Metrics
-	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
-	TenantLimits                     validation.TenantLimits
-	Overrides                        *validation.Overrides
-	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
-	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
-	Distributor                      *distributor.Distributor
-	Ingester                         *ingester.Ingester
-	RuntimeConfig                    *runtimeconfig.Manager
-	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable                prom_storage.ExemplarQueryable
-	AdditionalStorageQueryables      []querier.TimeRangeQueryable
-	MetadataSupplier                 querier.MetadataSupplier
-	QuerierEngine                    promql.QueryEngine
-	QuerierLifecycler                *ring.BasicLifecycler
-	QuerierRing                      *ring.Ring
-	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendTripperware         querymiddleware.Tripperware
-	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
-	QueryFrontendCodec               querymiddleware.Codec
-	Ruler                            *ruler.Ruler
-	RulerStorage                     rulestore.RuleStore
-	Alertmanager                     *alertmanager.MultitenantAlertmanager
-	Compactor                        *compactor.MultitenantCompactor
-	CompactorScheduler               *compactorscheduler.Scheduler
-	StoreGateway                     *storegateway.StoreGateway
-	MemberlistKV                     *memberlist.KVInitService
-	ActivityTracker                  *activitytracker.ActivityTracker
-	Vault                            *vault.Vault
-	UsageStatsReporter               *usagestats.Reporter
-	UsageTracker                     *usagetracker.UsageTracker
-	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
-	UsageTrackerInstanceRing         *ring.Ring
-	BlockBuilder                     *blockbuilder.BlockBuilder
-	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
-	ContinuousTestManager            *continuoustest.Manager
-	BuildInfoHandler                 http.Handler
-	CostAttributionManager           *costattribution.Manager
+	API                            *api.API
+	Server                         *server.Server
+	ServerMetrics                  *server.Metrics
+	IngesterRing                   *ring.Ring
+	IngesterPartitionRingWatchers  *ring.PartitionRingWatchers
+	IngesterPartitionInstanceRings *ring.PartitionInstanceRings
+	TenantLimits                   validation.TenantLimits
+	Overrides                      *validation.Overrides
+	QueryLimitsProvider            streamingpromql.QueryLimitsProvider
+	ActiveGroupsCleanup            *util.ActiveGroupsCleanupService
+	Distributor                    *distributor.Distributor
+	Ingester                       *ingester.Ingester
+	RuntimeConfig                  *runtimeconfig.Manager
+	QuerierQueryable               prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable              prom_storage.ExemplarQueryable
+	StoreQueryable                 prom_storage.Queryable
+	MetadataSupplier               querier.MetadataSupplier
+	QuerierEngine                  promql.QueryEngine
+	QuerierLifecycler              *ring.BasicLifecycler
+	QuerierRing                    *ring.Ring
+	QuerierStreamingEngine         *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine   *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendTripperware       querymiddleware.Tripperware
+	QueryFrontendOffsetsReader     querymiddleware.ReadConsistencyOffsetsReader
+	QueryFrontendCodec             querymiddleware.Codec
+	QueryFrontendCacheClient       cache.Cache
+	Ruler                          *ruler.Ruler
+	RulerDistributorClient         *ruler.DistributorGRPCClient
+	RulerStorage                   rulestore.RuleStore
+	Alertmanager                   *alertmanager.MultitenantAlertmanager
+	Compactor                      *compactor.MultitenantCompactor
+	CompactorScheduler             *compactorscheduler.Scheduler
+	StoreGateway                   *storegateway.StoreGateway
+	MemberlistKV                   *memberlist.KVInitService
+	ActivityTracker                *activitytracker.ActivityTracker
+	Vault                          *vault.Vault
+	UsageStatsReporter             *usagestats.Reporter
+	UsageTracker                   *usagetracker.UsageTracker
+	UsageTrackerPartitionRing      *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing       *ring.Ring
+	BlockBuilder                   *blockbuilder.BlockBuilder
+	BlockBuilderScheduler          *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager          *continuoustest.Manager
+	BuildInfoHandler               http.Handler
+	CostAttributionManager         *costattribution.Manager
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
@@ -923,6 +997,13 @@ type Mimir struct {
 	// Until then, we need separate instances as the remote execution optimisation pass must only be applied in query-frontends,
 	// including when running in monolithic and read/write modes.
 	QuerierQueryPlanner *streamingpromql.QueryPlanner
+
+	// ExtraQueryFrontendASTOptimizationPasses are registered on the query-frontend planner only (not the
+	// querier planner).
+	// They let downstream builds run query-mutating logic as MQE optimisation passes whose effect is visible
+	// via the analysis endpoint. They run after the built-in passes and before sharding/subquery-spinoff, and
+	// must be set before the query planner modules initialise.
+	ExtraQueryFrontendASTOptimizationPasses []optimize.ASTOptimizationPass
 }
 
 // New makes a new Mimir.
@@ -941,11 +1022,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	setUpGoRuntimeMetrics(cfg, reg)
 
 	mimirpb.CustomCodecConfig{
-		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
-			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
-			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
-			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
-		},
+		InstrumentRefLeaksConfig: cfg.InstrumentRefLeaks,
 	}.RegisterGlobally(reg)
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
@@ -974,6 +1051,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/schedulerpb.BlockBuilderScheduler/AssignJob",
+			"/schedulerpb.BlockBuilderScheduler/UpdateJob",
 			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 			"/usagetrackerpb.UsageTracker/TrackSeriesBatch",
 		})
@@ -1110,9 +1189,12 @@ func (t *Mimir) Run() error {
 		// let's find out which module failed
 		for m, s := range t.ServiceMap {
 			if s == service {
-				if errors.Is(service.FailureCase(), modules.ErrStopProcess) {
+				switch {
+				case errors.Is(service.FailureCase(), modules.ErrStopProcess):
 					level.Info(util_log.Logger).Log("msg", "received stop signal via return error", "module", m, "err", service.FailureCase())
-				} else {
+				case shutdownRequested.Load():
+					level.Info(util_log.Logger).Log("msg", "module startup aborted by shutdown signal", "module", m, "err", service.FailureCase())
+				default:
 					level.Error(util_log.Logger).Log("msg", "module failed", "module", m, "err", service.FailureCase())
 				}
 				return
@@ -1151,7 +1233,12 @@ func (t *Mimir) Run() error {
 
 	// If there is no error yet (= service manager started and then stopped without problems),
 	// but any service failed, report that failure as an error to caller.
-	if err == nil {
+	//
+	// A shutdown signal received while services are still starting cancels their start
+	// context and leaves them in Failed state. That is a requested shutdown, not a
+	// failure, so it must not be reported as one: doing so makes the process exit
+	// non-zero for what is a routine restart. The failures are logged either way.
+	if err == nil && !shutdownRequested.Load() {
 		if failed := sm.ServicesByState()[services.Failed]; len(failed) > 0 {
 			for _, f := range failed {
 				if !errors.Is(f.FailureCase(), modules.ErrStopProcess) {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -333,39 +334,41 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 	}
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			var count atomic.Int64
+			synctest.Test(t, func(t *testing.T) {
+				var count atomic.Int64
 
-			ctx, cancel := context.WithCancel(context.Background())
-			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-				count.Add(1)
-				if testCase.err != nil {
-					if grpcutil.IsCanceled(testCase.err) {
-						cancel()
+				ctx, cancel := context.WithCancel(context.Background())
+				mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+					count.Add(1)
+					if testCase.err != nil {
+						if grpcutil.IsCanceled(testCase.err) {
+							cancel()
+						}
+						return nil, testCase.err
 					}
-					return nil, testCase.err
+					return testCase.response, nil
 				}
-				return testCase.response, nil
-			}
-			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
-			require.Equal(t, int64(0), count.Load())
-			_, err := q.Query(ctx, "qs", time.Now())
-			if testCase.err == nil {
-				if testCase.expectedError == nil {
-					require.NoError(t, err)
+				q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
+				require.Equal(t, int64(0), count.Load())
+				_, err := q.Query(ctx, "qs", time.Now())
+				if testCase.err == nil {
+					if testCase.expectedError == nil {
+						require.NoError(t, err)
+					} else {
+						require.Error(t, err)
+						require.ErrorContains(t, err, testCase.expectedError.Error())
+					}
+					require.Equal(t, int64(1), count.Load())
 				} else {
 					require.Error(t, err)
 					require.ErrorContains(t, err, testCase.expectedError.Error())
+					if testCase.expectedRetries {
+						require.Greater(t, count.Load(), int64(1))
+					} else {
+						require.Equal(t, int64(1), count.Load())
+					}
 				}
-				require.Equal(t, int64(1), count.Load())
-			} else {
-				require.Error(t, err)
-				require.ErrorContains(t, err, testCase.expectedError.Error())
-				if testCase.expectedRetries {
-					require.Greater(t, count.Load(), int64(1))
-				} else {
-					require.Equal(t, int64(1), count.Load())
-				}
-			}
+			})
 		})
 	}
 }
@@ -874,25 +877,27 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-				return testCase.resp, testCase.err
-			}
-			logger := newLoggerWithCounter()
-			q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, logger)
+			synctest.Test(t, func(t *testing.T) {
+				mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+					return testCase.resp, testCase.err
+				}
+				logger := newLoggerWithCounter()
+				q := NewRemoteQuerier(newGrpcRoundTripper(mockHTTPGRPCClient(mockClientFn)), time.Minute, 1, formatJSON, prometheusGrpcURL, logger)
 
-			tm := time.Unix(1649092025, 515834)
+				tm := time.Unix(1649092025, 515834)
 
-			require.Equal(t, int64(0), logger.count())
-			_, err := q.Query(context.Background(), "qs", tm)
-
-			require.Error(t, err)
-			code := grpcutil.ErrorToStatusCode(err)
-			require.Equal(t, codes.Code(testCase.expectedCode), code)
-			if testCase.expectedLogs {
-				require.Greater(t, logger.count(), int64(0))
-			} else {
 				require.Equal(t, int64(0), logger.count())
-			}
+				_, err := q.Query(context.Background(), "qs", tm)
+
+				require.Error(t, err)
+				code := grpcutil.ErrorToStatusCode(err)
+				require.Equal(t, codes.Code(testCase.expectedCode), code)
+				if testCase.expectedLogs {
+					require.Greater(t, logger.count(), int64(0))
+				} else {
+					require.Equal(t, int64(0), logger.count())
+				}
+			})
 		})
 	}
 }

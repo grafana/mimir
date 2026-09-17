@@ -14,10 +14,10 @@ const reservedLabelPrefix = "__"
 // Label represents a label for cost attribution.
 type Label struct {
 	// Input is the source label name that exists in the input metrics.
-	Input string `yaml:"input" json:"input"`
+	Input string `yaml:"input" json:"input" doc:"description=Source label name to read from the incoming series."`
 	// Output is the label name that will be used at the output of the cost attribution.
 	// If empty, the input label should be used as the output label.
-	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+	Output string `yaml:"output,omitempty" json:"output,omitempty" doc:"description=Label name to use in the cost attribution output metrics. If empty, the input label name is used."`
 }
 
 func (l Label) Validate() error {

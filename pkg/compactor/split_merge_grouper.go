@@ -21,32 +21,24 @@ import (
 )
 
 type SplitAndMergeGrouper struct {
-	userID string
-	ranges []int64
-	logger log.Logger
-
-	// Number of shards to split source blocks into.
-	shardCount uint32
-
-	// Number of groups that blocks used for splitting are grouped into.
-	splitGroupsCount uint32
+	userID      string
+	ranges      []int64
+	cfgProvider ConfigProvider
+	logger      log.Logger
 }
 
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
-// If shardCount is 0, the splitting stage is disabled.
 func NewSplitAndMergeGrouper(
 	userID string,
 	ranges []int64,
-	shardCount uint32,
-	splitGroupsCount uint32,
+	cfgProvider ConfigProvider,
 	logger log.Logger,
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
-		userID:           userID,
-		ranges:           ranges,
-		shardCount:       shardCount,
-		splitGroupsCount: splitGroupsCount,
-		logger:           logger,
+		userID:      userID,
+		ranges:      ranges,
+		cfgProvider: cfgProvider,
+		logger:      logger,
 	}
 }
 
@@ -56,9 +48,11 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 		flatBlocks = append(flatBlocks, b)
 	}
 
-	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount, g.splitGroupsCount) {
+	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.cfgProvider) {
+		jobShardCount := effectiveShardCount(job.blocks, g.userID, g.cfgProvider)
+
 		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
-		if g.shardCount <= 0 && job.stage == stageSplit {
+		if jobShardCount <= 0 && job.stage == stageSplit {
 			return nil, fmt.Errorf("unexpected split stage job because splitting is disabled: %s", job.String())
 		}
 
@@ -82,7 +76,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 			externalLabels,
 			resolution,
 			job.stage == stageSplit,
-			g.shardCount,
+			jobShardCount,
 			job.shardingKey(),
 		)
 
@@ -99,10 +93,26 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 	return res, nil
 }
 
+// isOOOBlock returns true if the block is an out-of-order block.
+func isOOOBlock(b *block.Meta) bool {
+	return b.Thanos.Labels[block.OutOfOrderExternalLabel] == block.OutOfOrderExternalLabelValue
+}
+
+// effectiveShardCount returns the shard count to use for the given blocks.
+// OOO blocks use CompactorOOOSplitAndMergeShards if > 0, otherwise they fall back to CompactorSplitAndMergeShards.
+func effectiveShardCount(blocks []*block.Meta, userID string, cfgProvider ConfigProvider) uint32 {
+	if len(blocks) > 0 && isOOOBlock(blocks[0]) {
+		if oooShardCount := cfgProvider.CompactorOOOSplitAndMergeShards(userID); oooShardCount > 0 {
+			return uint32(oooShardCount)
+		}
+	}
+	return uint32(cfgProvider.CompactorSplitAndMergeShards(userID))
+}
+
 // planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
+func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProvider ConfigProvider) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}
@@ -115,13 +125,19 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 		mainGroups[key] = append(mainGroups[key], b)
 	}
 
+	splitGroups := uint32(cfgProvider.CompactorSplitGroups(userID))
+
 	for _, mainBlocks := range mainGroups {
 		// Sort blocks by min time.
 		sortMetasByMinTime(mainBlocks)
 
+		// Determine the effective shard count for this group.
+		// OOO blocks (identified by the __out_of_order__ label) may use a different shard count.
+		groupShardCount := effectiveShardCount(mainBlocks, userID, cfgProvider)
+
 		for _, tr := range ranges {
 		nextJob:
-			for _, job := range planCompactionByRange(userID, mainBlocks, tr, tr == ranges[0], shardCount, splitGroups) {
+			for _, job := range planCompactionByRange(userID, mainBlocks, tr, tr == ranges[0], groupShardCount, splitGroups) {
 				// We can plan a job only if it doesn't conflict with other jobs already planned.
 				// Since we run the planning for each compaction range in increasing order, we guarantee
 				// that a job for the current time range is planned only if there's no other job for the

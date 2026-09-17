@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/munnerz/goautoneg"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,10 +39,10 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -57,9 +59,9 @@ var (
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
 
 const maxResolutionPoints = 11000
@@ -69,8 +71,6 @@ const (
 	statusSuccess = "success"
 	// statusSuccess Prometheus error result.
 	statusError = "error"
-
-	totalShardsControlHeader = "Sharding-Control"
 
 	operationEncode = "encode"
 	operationDecode = "decode"
@@ -117,7 +117,7 @@ type MetricsQueryRequest interface {
 	// as determined from the end timestamp and any offset in the query.
 	GetMaxT() int64
 	// GetOptions returns the options for the given request.
-	GetOptions() Options
+	GetOptions() requestoptions.Options
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
@@ -231,13 +231,15 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	optionDecoder                                   requestoptions.OptionDecoder
 	injector                                        propagation.Injector
+	logger                                          log.Logger
 }
 
 type formatter interface {
-	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
-	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
-	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
+	EncodeQueryResponseTo(w io.Writer, resp *PrometheusResponse) error
+	EncodeLabelsResponseTo(w io.Writer, resp *PrometheusLabelsResponse) error
+	EncodeSeriesResponseTo(w io.Writer, resp *PrometheusSeriesResponse) error
 	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
@@ -258,14 +260,18 @@ func NewCodec(
 	queryResultResponseFormat string,
 	propagateHeaders []string,
 	injector propagation.Injector,
+	logger log.Logger,
 ) Codec {
+	propagateHeadersMetrics := append(codecPropagateHeadersMetrics, propagateHeaders...)
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
-		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersMetrics:            propagateHeadersMetrics,
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		optionDecoder:                      requestoptions.OptionDecoder{PropagatedHeaders: propagateHeadersMetrics},
 		injector:                           injector,
+		logger:                             logger,
 	}
 }
 
@@ -274,6 +280,19 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
 		return NewEmptyPrometheusResponse(), nil
 	}
+
+	// Ownership of the input responses transfers to the merged response's finalizer on
+	// success. Until then, any early return must close every input, otherwise resources
+	// held by them (e.g. an underlying *promql.Query and its memory consumption tracker)
+	// leak.
+	closeInputs := true
+	defer func() {
+		if closeInputs {
+			for _, res := range responses {
+				res.Close()
+			}
+		}
+	}()
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promCloses := make([]func(), 0, len(responses))
@@ -319,6 +338,7 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 		return cmp.Compare(firstSeriesTimestamp(a), firstSeriesTimestamp(b))
 	})
 
+	closeInputs = false
 	return &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -345,7 +365,7 @@ func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (Me
 	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
-		return nil, fmt.Errorf("unknown metrics query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown metrics query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 }
 
@@ -371,8 +391,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -404,8 +423,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	var options Options
-	DecodeOptions(r, &options)
+	options := c.optionDecoder.DecodeOptions(r)
 
 	stats := reqValues.Get("stats")
 
@@ -449,7 +467,7 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 // DecodeLabelsSeriesQueryRequest decodes a LabelsSeriesQueryRequest from an http request.
 func (Codec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http.Request) (LabelsSeriesQueryRequest, error) {
 	if !IsLabelsQuery(r.URL.Path) && !IsSeriesQuery(r.URL.Path) {
-		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", r.URL.Path)
+		return nil, fmt.Errorf("unknown labels or series query API endpoint %s", dskitlog.DropUnsafeChars(r.URL.Path))
 	}
 
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
@@ -689,31 +707,6 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func DecodeOptions(r *http.Request, opts *Options) {
-	opts.CacheDisabled = decodeCacheDisabledOption(r)
-
-	for _, value := range r.Header.Values(totalShardsControlHeader) {
-		shards, err := strconv.ParseInt(value, 10, 32)
-		if err != nil {
-			continue
-		}
-		opts.TotalShards = int32(shards)
-		if opts.TotalShards < 1 {
-			opts.ShardingDisabled = true
-		}
-	}
-}
-
-func decodeCacheDisabledOption(r *http.Request) bool {
-	for _, value := range r.Header.Values(cacheControlHeader) {
-		if strings.Contains(value, noStoreValue) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
 	var u *url.URL
@@ -767,7 +760,7 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		Header:     http.Header{},
 	}
 
-	encodeOptions(req, r.GetOptions())
+	requestoptions.EncodeOptions(req, r.GetOptions())
 
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
@@ -914,18 +907,6 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 	}
 
 	return r.WithContext(ctx), nil
-}
-
-func encodeOptions(req *http.Request, o Options) {
-	if o.CacheDisabled {
-		req.Header.Set(cacheControlHeader, noStoreValue)
-	}
-	if o.ShardingDisabled {
-		req.Header.Set(totalShardsControlHeader, "0")
-	}
-	if o.TotalShards > 0 {
-		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
-	}
 }
 
 // DecodeMetricsQueryResponse decodes a Response from an http response.
@@ -1091,7 +1072,22 @@ func findFormatter(contentType string) formatter {
 // EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
+
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
 
 	a, ok := res.GetPrometheusResponse()
 	if !ok {
@@ -1106,30 +1102,43 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	start := time.Now()
-	b, err := formatter.EncodeQueryResponse(a)
-	if err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-	}
-
-	encodeDuration := time.Since(start)
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
-
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddEncodeTime(encodeDuration)
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	closeResponse = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = formatter.EncodeQueryResponseTo(cw, a)
+		if encErr == nil {
+			encodeDuration := time.Since(start)
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+			// AddEncodeTime is called here, after encoding completes, but the handler has already
+			// read the stats to build the Server-Timing header before io.Copy drained this pipe.
+			// As a result, encode_time_seconds in Server-Timing is always 0 for streaming responses;
+			// the Prometheus histogram metric (codec_duration_seconds) is unaffected.
+			queryStats.AddEncodeTime(encodeDuration)
+		} else {
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", "failed to encode metrics query response", "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body: &prometheusReadCloser{
-			Reader:    bytes.NewBuffer(b),
-			finalizer: res.Close,
-		},
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1147,21 +1156,46 @@ func (prc *prometheusReadCloser) Close() error {
 	return nil
 }
 
+// countingWriter wraps an io.Writer and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
+}
+
 // EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
 func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.End()
+	endTraceSpan := true
+	defer func() {
+		if endTraceSpan {
+			sp.End()
+		}
+	}()
+
+	// Ownership of res is transferred to the streaming goroutine on success. Until then,
+	// any early return must close res itself, otherwise resources held by the response
+	// (e.g. an underlying *promql.Query and its memory consumption tracker) leak.
+	closeResponse := true
+	defer func() {
+		if closeResponse {
+			res.Close()
+		}
+	}()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
 
-	var start time.Time
-	var b []byte
+	var encodeFunc func(cw *countingWriter) error
 
-	switch isSeriesResponse {
-	case false:
+	if !isSeriesResponse {
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1169,14 +1203,8 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeLabelsResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
-	case true:
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeLabelsResponseTo(cw, a) }
+	} else {
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -1184,26 +1212,43 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		if a.Data != nil {
 			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
-
-		start = time.Now()
-		var err error
-		b, err = formatter.EncodeSeriesResponse(a)
-		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
-		}
+		encodeFunc = func(cw *countingWriter) error { return formatter.EncodeSeriesResponseTo(cw, a) }
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
-	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.SetAttributes(attribute.Int("bytes", len(b)))
+	pr, pw := io.Pipe()
+	endTraceSpan = false
+	closeResponse = false
+	go func() {
+		var encErr error
+		defer func() {
+			_ = pw.CloseWithError(encErr)
+			res.Close()
+			sp.End()
+		}()
+		cw := &countingWriter{w: pw}
+		start := time.Now()
+		encErr = encodeFunc(cw)
+		if encErr == nil {
+			c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+			c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(cw.n))
+			sp.SetAttributes(attribute.Int("bytes", int(cw.n)))
+		} else {
+			msg := "failed to encode labels query response"
+			if isSeriesResponse {
+				msg = "failed to encode series query response"
+			}
+			user, _ := user.ExtractOrgID(ctx)
+			level.Warn(c.logger).Log("msg", msg, "url", dskitlog.DropUnsafeChars(req.URL.Path), "user", user, "err", encErr)
+		}
+	}()
 
 	resp := http.Response{
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body:          pr,
 		StatusCode:    http.StatusOK,
-		ContentLength: int64(len(b)),
+		ContentLength: -1, // unknown: body is streamed without buffering
 	}
 	return &resp, nil
 }
@@ -1289,16 +1334,14 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 		}
 	}
 
-	keys := make([]string, 0, len(output))
-	for key := range output {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-
 	result := make([]SampleStream, 0, len(output))
-	for _, key := range keys {
-		result = append(result, *output[key])
+	for _, s := range output {
+		result = append(result, *s)
 	}
+
+	slices.SortFunc(result, func(a, b SampleStream) int {
+		return mimirpb.CompareLabelAdapters(a.Labels, b.Labels)
+	})
 
 	return result
 }
@@ -1307,7 +1350,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 // return a sub slice whose first element's is the smallest timestamp that is strictly
 // bigger than the given minTs. Empty slice is returned if minTs is bigger than all the
 // timestamps in samples
-func sliceFloatSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
+func sliceFloatSamples(samples []mimirpb.FloatSample, minTs int64) []mimirpb.FloatSample {
 	if len(samples) <= 0 || minTs < samples[0].TimestampMs {
 		return samples
 	}

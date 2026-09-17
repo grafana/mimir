@@ -8,19 +8,28 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
+// stripSlogFields removes slog-added fields (caller, time) from logfmt lines so
+// tests can compare against expected output that was written for plain go-kit logging.
+var slogFieldRe = regexp.MustCompile(`\s*(caller|time)=\S+`)
+
+func stripSlogFields(line string) string {
+	return strings.TrimSpace(slogFieldRe.ReplaceAllString(line, ""))
+}
+
 func TestValidateMatchersInConfigDesc(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   alertspb.AlertConfigDesc
+		config   *alertspb.AlertConfigDesc
 		expected []string
 	}{{
 		name: "config is accepted",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "1",
 			RawConfig: `
 route:
@@ -41,7 +50,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config contains invalid input",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "2",
 			RawConfig: `
 route:
@@ -65,7 +74,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config is accepted in matchers/parse but not pkg/labels",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "3",
 			RawConfig: `
 route:
@@ -86,7 +95,7 @@ inhibit_rules:
 		},
 	}, {
 		name: "config is accepted in pkg/labels but not matchers/parse",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "4",
 			RawConfig: `
 route:
@@ -102,15 +111,15 @@ inhibit_rules:
 		},
 		expected: []string{
 			`level=debug user=4 msg="Parsing with UTF-8 matchers parser, with fallback to classic matchers parser" input="foo=" origin=test`,
-			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue." input="foo=" origin=test err="end of input: expected label value" suggestion="foo=\"\""`,
+			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted and backslashes are escaped. If you are still seeing this message please open an issue." input="foo=" origin=test err="end of input: expected label value" suggestion="foo=\"\""`,
 			`level=debug user=4 msg="Parsing with UTF-8 matchers parser, with fallback to classic matchers parser" input="bar=" origin=test`,
-			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue." input="bar=" origin=test err="end of input: expected label value" suggestion="bar=\"\""`,
+			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted and backslashes are escaped. If you are still seeing this message please open an issue." input="bar=" origin=test err="end of input: expected label value" suggestion="bar=\"\""`,
 			`level=debug user=4 msg="Parsing with UTF-8 matchers parser, with fallback to classic matchers parser" input="baz=" origin=test`,
-			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue." input="baz=" origin=test err="end of input: expected label value" suggestion="baz=\"\""`,
+			`level=warn user=4 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted and backslashes are escaped. If you are still seeing this message please open an issue." input="baz=" origin=test err="end of input: expected label value" suggestion="baz=\"\""`,
 		},
 	}, {
 		name: "config contains disagreement",
-		config: alertspb.AlertConfigDesc{
+		config: &alertspb.AlertConfigDesc{
 			User: "5",
 			RawConfig: `
 route:
@@ -138,7 +147,14 @@ inhibit_rules:
 		t.Run(test.name, func(t *testing.T) {
 			buf := bytes.Buffer{}
 			validateMatchersInConfigDesc(log.NewLogfmtLogger(&buf), "test", test.config)
-			lines := strings.Split(strings.Trim(buf.String(), "\n"), "\n")
+			allLines := strings.Split(strings.Trim(buf.String(), "\n"), "\n")
+			// Filter out the SlogFromGoKit probe line.
+			var lines []string
+			for _, l := range allLines {
+				if !strings.Contains(l, "probe=") {
+					lines = append(lines, stripSlogFields(l))
+				}
+			}
 			require.Equal(t, len(test.expected), len(lines))
 			for i := range lines {
 				require.Equal(t, test.expected[i], lines[i])

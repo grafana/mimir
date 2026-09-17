@@ -10,6 +10,7 @@ import (
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -71,6 +72,16 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, querierAligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querierUnaligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
+	// Wait until the query-frontends have updated the querier ring.
+	// Both query-frontends will see both queriers, but this is OK for this test given the configuration only applies to the query-frontend.
+	require.NoError(t, queryFrontendAligned.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	require.NoError(t, queryFrontendUnaligned.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	// Push a series for each user to Mimir.
 	const user = "user"
 
@@ -110,7 +121,7 @@ func runTestPushSeriesAndUnalignedQuery(t *testing.T, c *e2emimir.Client, queryF
 		c, err := e2emimir.NewClient("", queryFrontendAligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange(seriesName, start, end, step)
+		res, _, _, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned range has sample appearing after "sampleTime", all ts are step-aligned (truncated to step).
@@ -125,7 +136,7 @@ func runTestPushSeriesAndUnalignedQuery(t *testing.T, c *e2emimir.Client, queryF
 		c, err := e2emimir.NewClient("", queryFrontendUnaligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange(seriesName, start, end, step)
+		res, _, _, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned result is not step-aligned ("now" is not step-aligned)

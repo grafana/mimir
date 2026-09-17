@@ -22,21 +22,21 @@ import (
 func TestMergeIter(t *testing.T) {
 	for _, enc := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
 		t.Run(enc.String(), func(t *testing.T) {
-			chunk1 := mkGenericChunk(t, 0, 100, enc)
-			chunk2 := mkGenericChunk(t, model.TimeFromUnix(25), 100, enc)
-			chunk3 := mkGenericChunk(t, model.TimeFromUnix(50), 100, enc)
-			chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, enc)
-			chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, enc)
+			chunk1 := mkChunk(t, 0, 100, enc)
+			chunk2 := mkChunk(t, model.TimeFromUnix(25), 100, enc)
+			chunk3 := mkChunk(t, model.TimeFromUnix(50), 100, enc)
+			chunk4 := mkChunk(t, model.TimeFromUnix(75), 100, enc)
+			chunk5 := mkChunk(t, model.TimeFromUnix(100), 100, enc)
 
-			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 
 			// Re-use iterator.
-			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), []chunk.Chunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
@@ -45,7 +45,7 @@ func TestMergeIter(t *testing.T) {
 func TestMergeHarder(t *testing.T) {
 	var (
 		numChunks = 24 * 15
-		chunks    = make([]GenericChunk, 0, numChunks)
+		chunks    = make([]chunk.Chunk, 0, numChunks)
 		offset    = 30
 		samples   = 100
 	)
@@ -54,7 +54,7 @@ func TestMergeHarder(t *testing.T) {
 			chunks = chunks[:0]
 			from := model.Time(0)
 			for i := 0; i < numChunks; i++ {
-				chunks = append(chunks, mkGenericChunk(t, from, samples, enc))
+				chunks = append(chunks, mkChunk(t, from, samples, enc))
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
 			iter := newMergeIterator(nil, chunks)
@@ -96,14 +96,14 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 		t.Run(enc.String(), func(t *testing.T) {
 			for _, tc := range []struct {
 				name            string
-				chunks          []GenericChunk
+				chunks          []chunk.Chunk
 				expectedSamples []checkHintTestSample
 			}{
 				{
 					name: "no overlapping iterators",
-					chunks: []GenericChunk{
-						mkGenericChunk(t, 0, 5, enc),
-						mkGenericChunk(t, model.TimeFromUnix(5), 5, enc),
+					chunks: []chunk.Chunk{
+						mkChunk(t, 0, 5, enc),
+						mkChunk(t, model.TimeFromUnix(5), 5, enc),
 					},
 					expectedSamples: []checkHintTestSample{
 						{t: 0, v: 0, hint: histogram.UnknownCounterReset},
@@ -120,9 +120,9 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 				{
 					name: "duplicated chunks",
-					chunks: []GenericChunk{
-						mkGenericChunk(t, 0, 10, enc),
-						mkGenericChunk(t, 0, 10, enc),
+					chunks: []chunk.Chunk{
+						mkChunk(t, 0, 10, enc),
+						mkChunk(t, 0, 10, enc),
 					},
 					expectedSamples: []checkHintTestSample{
 						{t: 0, v: 0, hint: histogram.UnknownCounterReset},       // 1 sample from c0
@@ -139,9 +139,9 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 				{
 					name: "overlapping chunks",
-					chunks: []GenericChunk{
-						mkGenericChunk(t, 0, 11, enc),
-						mkGenericChunk(t, 3000, 7, enc),
+					chunks: []chunk.Chunk{
+						mkChunk(t, 0, 11, enc),
+						mkChunk(t, 3000, 7, enc),
 					},
 					expectedSamples: []checkHintTestSample{
 						{t: 0, v: 0, hint: histogram.UnknownCounterReset},       // 1 sample from c0
@@ -159,7 +159,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 				{
 					name: "different values at same timestamp",
-					chunks: func() []GenericChunk {
+					chunks: func() []chunk.Chunk {
 						chk1, err := chunk.NewForEncoding(enc)
 						require.NoError(t, err)
 						addFunc(chk1, 0, 0)
@@ -174,9 +174,9 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk2, 2, 9)
 						addFunc(chk2, 3, 10)
 						addFunc(chk2, 4, 11)
-						return []GenericChunk{
-							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
-							NewGenericChunk(0, 4, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 4).Data.NewIterator),
+						return []chunk.Chunk{
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7),
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 4),
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
@@ -191,7 +191,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 				{
 					name: "overlapping and interleaved samples",
-					chunks: func() []GenericChunk {
+					chunks: func() []chunk.Chunk {
 						chk1, err := chunk.NewForEncoding(enc)
 						require.NoError(t, err)
 						addFunc(chk1, 0, 0)
@@ -208,9 +208,9 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk2, 6, 9)
 						addFunc(chk2, 7, 10)
 						addFunc(chk2, 9, 11)
-						return []GenericChunk{
-							NewGenericChunk(0, 8, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 8).Data.NewIterator),
-							NewGenericChunk(1, 9, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 9).Data.NewIterator),
+						return []chunk.Chunk{
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 8),
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 9),
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
@@ -231,7 +231,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 				{
 					name: "histogram and float samples",
-					chunks: func() []GenericChunk {
+					chunks: func() []chunk.Chunk {
 						chk1, err := chunk.NewForEncoding(enc)
 						require.NoError(t, err)
 						addFunc(chk1, 0, 0)
@@ -250,10 +250,10 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						chk3, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 						require.NoError(t, err)
 						addFunc(chk3, 4, 2)
-						return []GenericChunk{
-							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
-							NewGenericChunk(1, 9, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 9).Data.NewIterator),
-							NewGenericChunk(4, 4, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk3, 4, 4).Data.NewIterator),
+						return []chunk.Chunk{
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7),
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 9),
+							chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk3, 4, 4),
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
@@ -271,7 +271,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
+					iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
 					for i, s := range tc.expectedSamples {
 						valType := iter.Next()
 						require.NotEqual(t, chunkenc.ValNone, valType, "expectedSamples has extra samples")
@@ -306,41 +306,41 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 }
 
 func BenchmarkPartitionChunks(b *testing.B) {
-	testCases := map[string][]GenericChunk{
+	testCases := map[string][]chunk.Chunk{
 		"one chunk": {
-			NewGenericChunk(0, 100, nil),
+			mkEmptyChunk(0, 100),
 		},
 		"two non-overlapping chunks": {
-			NewGenericChunk(0, 100, nil),
-			NewGenericChunk(200, 300, nil),
+			mkEmptyChunk(0, 100),
+			mkEmptyChunk(200, 300),
 		},
 		"five non-overlapping chunks": {
-			NewGenericChunk(0, 100, nil),
-			NewGenericChunk(300, 400, nil),
-			NewGenericChunk(500, 600, nil),
-			NewGenericChunk(700, 800, nil),
-			NewGenericChunk(900, 1000, nil),
+			mkEmptyChunk(0, 100),
+			mkEmptyChunk(300, 400),
+			mkEmptyChunk(500, 600),
+			mkEmptyChunk(700, 800),
+			mkEmptyChunk(900, 1000),
 		},
 		"two overlapping chunks": {
-			NewGenericChunk(0, 100, nil),
-			NewGenericChunk(50, 150, nil),
+			mkEmptyChunk(0, 100),
+			mkEmptyChunk(50, 150),
 		},
 		"five overlapping chunks": {
-			NewGenericChunk(0, 100, nil),
-			NewGenericChunk(50, 150, nil),
-			NewGenericChunk(100, 200, nil),
-			NewGenericChunk(150, 250, nil),
-			NewGenericChunk(200, 300, nil),
+			mkEmptyChunk(0, 100),
+			mkEmptyChunk(50, 150),
+			mkEmptyChunk(100, 200),
+			mkEmptyChunk(150, 250),
+			mkEmptyChunk(200, 300),
 		},
 		"three sets of overlapping chunks, each with 2 chunks": {
-			NewGenericChunk(0, 100, nil),
-			NewGenericChunk(50, 150, nil),
+			mkEmptyChunk(0, 100),
+			mkEmptyChunk(50, 150),
 
-			NewGenericChunk(200, 300, nil),
-			NewGenericChunk(250, 350, nil),
+			mkEmptyChunk(200, 300),
+			mkEmptyChunk(250, 350),
 
-			NewGenericChunk(400, 500, nil),
-			NewGenericChunk(450, 550, nil),
+			mkEmptyChunk(400, 500),
+			mkEmptyChunk(450, 550),
 		},
 	}
 
@@ -362,24 +362,23 @@ func TestMergeIteratorSeek(t *testing.T) {
 		{110, 120},
 	}
 
-	var genericChunks []GenericChunk
+	var chunks []chunk.Chunk
 	for _, samples := range chunkSamples {
-		ch := chunkenc.NewXORChunk()
-		app, err := ch.Appender()
+		writable := chunkenc.NewXORChunk()
+		app, err := writable.Appender()
 		require.NoError(t, err)
 		for _, ts := range samples {
 			app.Append(0, ts, 1)
 		}
 
-		genericChunks = append(genericChunks, NewGenericChunk(samples[0], samples[len(samples)-1], func(reuse chunk.Iterator) chunk.Iterator {
-			chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
-			require.NoError(t, err)
-			require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
-			return chk.NewIterator(reuse)
-		}))
+		encoded, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+		require.NoError(t, err)
+		require.NoError(t, encoded.UnmarshalFromBuf(writable.Bytes()))
+
+		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), encoded, model.Time(samples[0]), model.Time(samples[len(samples)-1])))
 	}
 
-	c3It := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), genericChunks)
+	c3It := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
 
 	c3It.Seek(15)
 	// These Next() calls are necessary to reproduce the bug.

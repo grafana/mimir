@@ -51,18 +51,18 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, firstLineIndent, sub
 		// so here we've just to write down the reference without re-iterating on it.
 		if e.Root {
 			// Description
-			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, 0)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, subsequentLineIndent, 0)
 			w.writeExample(e.FieldExample, subsequentLineIndent)
 
 			if e.Block.FlagsPrefix != "" {
-				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), subsequentLineIndent, 0)
+				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), subsequentLineIndent, subsequentLineIndent, 0)
 			}
 
 			// Block reference without entries, because it's a root block
 			w.out.WriteString(pad(subsequentLineIndent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
 		} else {
 			// Description
-			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, 0)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), firstLineIndent, subsequentLineIndent, 0)
 			w.writeExample(e.FieldExample, subsequentLineIndent)
 
 			// Name
@@ -75,7 +75,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, firstLineIndent, sub
 
 	case parse.KindField:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, subsequentLineIndent, 0)
 		w.writeExample(e.FieldExample, subsequentLineIndent)
 		w.writeFlag(e.FieldFlag, subsequentLineIndent)
 
@@ -96,7 +96,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, firstLineIndent, sub
 
 	case parse.KindMap:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, subsequentLineIndent, 0)
 		w.writeExample(e.FieldExample, subsequentLineIndent)
 		w.writeFlag(e.FieldFlag, subsequentLineIndent)
 
@@ -113,7 +113,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, firstLineIndent, sub
 
 	case parse.KindSlice:
 		// Description
-		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, 0)
+		w.writeComment(w.modifyDescriptions(e.Description()), firstLineIndent, subsequentLineIndent, 0)
 		w.writeExample(e.FieldExample, subsequentLineIndent)
 
 		// Name
@@ -133,13 +133,14 @@ func (w *specWriter) writeFlag(name string, indent int) {
 	w.out.WriteString(pad(indent) + "# CLI flag: -" + name + "\n")
 }
 
-func (w *specWriter) writeComment(comment string, indent, innerIndent int) {
+func (w *specWriter) writeComment(comment string, firstLineIndent, continuationIndent, innerIndent int) {
 	if comment == "" {
 		return
 	}
 
-	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-indent-innerIndent-2))
-	w.writeWrappedString(wrapped, indent, innerIndent)
+	maxIndent := max(firstLineIndent, continuationIndent)
+	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-maxIndent-innerIndent-2))
+	w.writeWrappedString(wrapped, firstLineIndent, continuationIndent, innerIndent)
 }
 
 func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
@@ -147,9 +148,9 @@ func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 		return
 	}
 
-	w.writeComment("Example:", indent, 0)
+	w.writeComment("Example:", indent, indent, 0)
 	if example.Comment != "" {
-		w.writeComment(w.modifyDescriptions(example.Comment), indent, 2)
+		w.writeComment(w.modifyDescriptions(example.Comment), indent, indent, 2)
 	}
 
 	data, err := yaml.Marshal(example.Yaml)
@@ -157,12 +158,16 @@ func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 		panic(fmt.Errorf("can't render example: %w", err))
 	}
 
-	w.writeWrappedString(string(data), indent, 2)
+	w.writeWrappedString(string(data), indent, indent, 2)
 }
 
-func (w *specWriter) writeWrappedString(s string, indent, innerIndent int) {
+func (w *specWriter) writeWrappedString(s string, firstLineIndent, continuationIndent, innerIndent int) {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
-	for _, line := range lines {
+	for i, line := range lines {
+		indent := firstLineIndent
+		if i > 0 {
+			indent = continuationIndent
+		}
 		w.out.WriteString(pad(indent) + "# " + pad(innerIndent) + line + "\n")
 	}
 }

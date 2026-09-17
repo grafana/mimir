@@ -797,6 +797,7 @@ type mockProxyBackend struct {
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
 	requestProportion     float64
+	excludeTenants        bool
 }
 
 func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
@@ -839,6 +840,10 @@ func (b *mockProxyBackend) MinDataQueriedAge() time.Duration {
 
 func (b *mockProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	return true // Default to handling all queries in tests
+}
+
+func (b *mockProxyBackend) ShouldHandleTenants(_ []string) bool {
+	return !b.excludeTenants
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
@@ -929,6 +934,26 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProxyEndpoint_ServeHTTP_NoBackendsSelected(t *testing.T) {
+	// Two non-preferred backends that both reject the request's tenant, and no preferred
+	// backend, so backend selection yields an empty list. This should return 400.
+	backends := []ProxyBackendInterface{
+		&mockProxyBackend{name: "backend-1", excludeTenants: true},
+		&mockProxyBackend{name: "backend-2", excludeTenants: true},
+	}
+
+	endpoint := NewProxyEndpoint(backends, Route{RouteName: "test"}, nil, newMockLogger(), nil, 0, 1.0, false, newTestQueryDecoder())
+
+	req, err := http.NewRequest("GET", "http://test/api/v1/query", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Scope-OrgID", "tenant-a")
+
+	resp := httptest.NewRecorder()
+	endpoint.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
 func Test_ProxyEndpoint_MultipleSecondaryBackends(t *testing.T) {

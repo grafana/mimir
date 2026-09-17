@@ -6,7 +6,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
@@ -17,6 +16,9 @@ import (
 
 // Range represents a time range within a query split.
 // Start is exclusive, End is inclusive.
+// For matrix selectors, Start and End are in storage time after applying the selector's offset/@ modifier.
+// For subqueries, they are in the subquery's split time. Modifiers in nested expressions can produce a different storage
+// time range.
 type Range struct {
 	Start     int64
 	End       int64
@@ -24,11 +26,13 @@ type Range struct {
 }
 
 // SplitGenerateFunc generates an intermediate result for a single split range.
+// hasValue indicates whether the step produced any data for the current series.
+// If false, the series is excluded from the cached results for this range in order to reduce cache entry size
 type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (T, error)
+) (t T, hasValue bool, err error)
 
 // SplitCombineFunc combines intermediate results from multiple split ranges.
 // Histograms within the input ranges must not be modified in place. These histograms can share references with
@@ -46,10 +50,9 @@ type SplitOperatorFactory func(
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
 	ranges []Range,
-	cacheKey string,
+	cacheKey []byte,
 	irCache *cache.CacheFactory,
 	expressionPosition posrange.PositionRange,
-	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 	logger log.Logger,
@@ -67,10 +70,9 @@ func NewSplitOperatorFactory[T any](
 		materializer *planning.Materializer,
 		timeRange types.QueryTimeRange,
 		ranges []Range,
-		cacheKey string,
+		cacheKey []byte,
 		irCache *cache.CacheFactory,
 		expressionPosition posrange.PositionRange,
-		annotations *annotations.Annotations,
 		memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 		enableDelayedNameRemoval bool,
 		logger log.Logger,
@@ -88,7 +90,6 @@ func NewSplitOperatorFactory[T any](
 			combine,
 			codec,
 			expressionPosition,
-			annotations,
 			memoryConsumptionTracker,
 			enableDelayedNameRemoval,
 			logger,

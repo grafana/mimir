@@ -10,26 +10,73 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
+
+var ErrBlockInvalid = errors.New("block is invalid")
+
+func (c *MimirClient) doBackfillRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: %s %s: %s", ErrBlockInvalid, req.Method, req.URL.String(), body)
+	}
+
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	}
+
+	return resp, nil
+}
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
+	buckets := make(map[string]objstore.BucketReader, 1)
 	for _, b := range blocks {
 		logctx := log.With(c.logger, "path", b)
-		if err := c.backfillBlock(ctx, b, logctx, sleepTime); err != nil {
-			if errors.Is(err, errConflict) {
+
+		dir := filepath.Dir(b)
+		fsBkt, ok := buckets[dir]
+		if !ok {
+			var err error
+			fsBkt, err = filesystem.NewBucket(dir)
+			if err != nil {
+				level.Error(logctx).Log("msg", "failed to create filesystem bucket", "err", err)
+				failed++
+				continue
+			}
+			buckets[dir] = fsBkt
+		}
+
+		blockID, err := ulid.Parse(filepath.Base(b))
+		if err != nil {
+			level.Error(logctx).Log("msg", "failed to parse block ID from path", "err", err)
+			failed++
+			continue
+		}
+
+		if err := c.backfillBlock(ctx, fsBkt, blockID, logctx, sleepTime); err != nil {
+			if errors.Is(err, ErrConflict) {
 				level.Warn(logctx).Log("msg", "block already exists on the server")
 				alreadyExists++
 			} else {
@@ -52,23 +99,23 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 	return nil
 }
 
+// BackfillBlock uploads a single TSDB block from a bucket to a Mimir instance
+// via the block upload API.
+func (c *MimirClient) BackfillBlock(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, sleepTime time.Duration) error {
+	return c.backfillBlock(ctx, bkt, blockID, c.logger, sleepTime)
+}
+
 // drainAndCloseBody drains and closes the body to let the transport reuse the connection.
 func drainAndCloseBody(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx log.Logger, sleepTime time.Duration) error {
-	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
-	blockMeta, err := GetBlockMeta(blockDir)
+func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, logctx log.Logger, sleepTime time.Duration) error {
+	blockMeta, err := GetBlockMeta(ctx, bkt, blockID)
 	if err != nil {
 		return err
 	}
-
-	blockID := blockMeta.ULID.String()
-	logctx = log.With(logctx, "block", blockID)
-
-	level.Info(logctx).Log("msg", "making request to start block upload", "file", block.MetaFilename)
 
 	const (
 		endpointPrefix    = "/api/v1/upload/block"
@@ -78,11 +125,17 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		checkBlockUpload  = "check"
 	)
 
+	blockIDStr := blockMeta.ULID.String()
+	blockPath := path.Join(endpointPrefix, url.PathEscape(blockIDStr))
+	logctx = log.With(logctx, "block", blockIDStr)
+
+	level.Info(logctx).Log("msg", "making request to start block upload", "file", block.MetaFilename)
+
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	resp, err := c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doBackfillRequest(ctx, path.Join(blockPath, startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
@@ -95,13 +148,13 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 			continue
 		}
 
-		if err := c.uploadBlockFile(ctx, tf, blockDir, path.Join(endpointPrefix, url.PathEscape(blockID), uploadFile), logctx); err != nil {
+		if err := c.uploadBlockFile(ctx, bkt, blockID, tf, path.Join(blockPath, uploadFile), logctx); err != nil {
 			return err
 		}
 	}
 
 	for {
-		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
+		resp, err = c.doBackfillRequest(ctx, path.Join(blockPath, finishBlockUpload), http.MethodPost, nil, -1)
 		if err == nil {
 			drainAndCloseBody(resp)
 			break
@@ -110,11 +163,15 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 			return errors.Wrap(err, "request to finish block upload failed")
 		}
 		level.Warn(logctx).Log("msg", "will sleep and try again", "err", err)
-		time.Sleep(sleepTime)
+		select {
+		case <-time.After(sleepTime):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	for {
-		uploadResult, err := c.getBlockUpload(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))
+		uploadResult, err := c.getBlockUpload(ctx, path.Join(blockPath, checkBlockUpload))
 		if err != nil {
 			return errors.Wrap(err, "failed to check state of block upload")
 		}
@@ -126,11 +183,15 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		}
 
 		if uploadResult.State == "failed" {
-			return errors.Errorf("block validation failed: %s", uploadResult.Error)
+			return fmt.Errorf("%w: block validation failed: %s", ErrBlockInvalid, uploadResult.Error)
 		}
 
 		// Sleep and then try to get the state again.
-		time.Sleep(sleepTime)
+		select {
+		case <-time.After(sleepTime):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
@@ -140,59 +201,59 @@ type result struct {
 }
 
 func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, error) {
-	resp, err := c.doRequest(ctx, url, http.MethodGet, nil, -1)
+	resp, err := c.doBackfillRequest(ctx, url, http.MethodGet, nil, -1)
 	if err != nil {
 		return result{}, err
 	}
 	defer drainAndCloseBody(resp)
 
 	var r result
-
-	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(&r); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 		return result{}, err
 	}
-
 	return r, nil
 }
 
-func (c *MimirClient) uploadBlockFile(ctx context.Context, tf block.File, blockDir, fileUploadEndpoint string, logctx log.Logger) error {
-	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
-	f, err := os.Open(pth)
+func (c *MimirClient) uploadBlockFile(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, tf block.File, fileUploadEndpoint string, logctx log.Logger) error {
+	objectName := path.Join(blockID.String(), tf.RelPath)
+	r, err := bkt.Get(ctx, objectName)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open %q", pth)
+		return errors.Wrapf(err, "failed to read %q from bucket", objectName)
 	}
 	defer func() {
-		_ = f.Close()
+		_ = r.Close()
 	}()
 
 	level.Info(logctx).Log("msg", "uploading block file", "file", tf.RelPath, "size", tf.SizeBytes)
 
-	resp, err := c.doRequest(ctx, fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, f, tf.SizeBytes)
+	resp, err := c.doBackfillRequest(ctx, fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, r, tf.SizeBytes)
 	if err != nil {
-		return errors.Wrapf(err, "request to upload file %q failed", pth)
+		return errors.Wrapf(err, "request to upload file %q failed", objectName)
 	}
 	drainAndCloseBody(resp)
 
 	return nil
 }
 
-// GetBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
-// list of local files from the local block.
-func GetBlockMeta(blockDir string) (block.Meta, error) {
+// GetBlockMeta reads meta.json from the bucket and adds (or replaces)
+// the thanos.files section with the list of files from the block in the bucket.
+func GetBlockMeta(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID) (block.Meta, error) {
 	var blockMeta block.Meta
 
-	metaPath := filepath.Join(blockDir, block.MetaFilename)
-	f, err := os.Open(metaPath)
+	blockPrefix := blockID.String()
+	metaPath := path.Join(blockPrefix, block.MetaFilename)
+	r, err := bkt.Get(ctx, metaPath)
 	if err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to open %q", metaPath)
+		return blockMeta, errors.Wrapf(err, "failed to read %q", metaPath)
 	}
-	defer func() {
-		_ = f.Close()
-	}()
 
-	if err := json.NewDecoder(f).Decode(&blockMeta); err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to decode %q", metaPath)
+	decErr := json.NewDecoder(r).Decode(&blockMeta)
+	closeErr := r.Close()
+	if decErr != nil {
+		return blockMeta, errors.Wrapf(decErr, "failed to decode %q", metaPath)
+	}
+	if closeErr != nil {
+		return blockMeta, errors.Wrapf(closeErr, "failed to close %q", metaPath)
 	}
 
 	if blockMeta.Version != 1 {
@@ -200,42 +261,28 @@ func GetBlockMeta(blockDir string) (block.Meta, error) {
 			block.MetaFilename, blockMeta.Version)
 	}
 
-	blockMeta.Thanos.Files = []block.File{
-		{
-			RelPath: block.MetaFilename,
-		},
+	blockMeta.Thanos.Files = []block.File{{RelPath: block.MetaFilename}}
+
+	appendFile := func(relPath string) error {
+		objPath := path.Join(blockPrefix, relPath)
+		attrs, err := bkt.Attributes(ctx, objPath)
+		if err != nil {
+			return errors.Wrapf(err, "failed to get attributes for %q", objPath)
+		}
+		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{RelPath: relPath, SizeBytes: attrs.Size})
+		return nil
 	}
 
-	relPaths := []string{block.IndexFilename}
-
-	// Add segment files to relPaths.
-	{
-		chunksDir := filepath.Join(blockDir, block.ChunksDirname)
-		entries, err := os.ReadDir(chunksDir)
-		if err != nil {
-			return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
-		}
-
-		for _, c := range entries {
-			relPaths = append(relPaths, path.Join(block.ChunksDirname, c.Name()))
-		}
+	if err := appendFile(block.IndexFilename); err != nil {
+		return blockMeta, err
 	}
 
-	for _, relPath := range relPaths {
-		p := filepath.Join(blockDir, filepath.FromSlash(relPath))
-		st, err := os.Stat(p)
-		if err != nil {
-			return blockMeta, errors.Wrapf(err, "failed to stat %q", p)
-		}
-
-		if !st.Mode().IsRegular() {
-			return blockMeta, fmt.Errorf("not a file: %q", p)
-		}
-
-		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{
-			RelPath:   relPath,
-			SizeBytes: st.Size(),
-		})
+	chunksPrefix := path.Join(blockPrefix, block.ChunksDirname)
+	err = bkt.Iter(ctx, chunksPrefix, func(name string) error {
+		return appendFile(strings.TrimPrefix(name, blockPrefix+"/"))
+	})
+	if err != nil {
+		return blockMeta, errors.Wrapf(err, "failed to list chunks in %q", chunksPrefix)
 	}
 
 	return blockMeta, nil

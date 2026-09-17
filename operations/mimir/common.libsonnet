@@ -206,4 +206,10 @@
   mimirRuntimeConfigFile:: {
     'runtime-config.file': std.join(',', $._config.runtime_config_files),
   },
+
+  // Container mixin requesting node-local ephemeral storage, so pods reserve scratch space for
+  // logs and temporary files. No-op when ephemeral_storage_request_size is null.
+  mimirEphemeralStorageRequest::
+    if $._config.ephemeral_storage_request_size == null then {}
+    else $.core.v1.container.mixin.resources.withRequestsMixin({ 'ephemeral-storage': $._config.ephemeral_storage_request_size }),
 }

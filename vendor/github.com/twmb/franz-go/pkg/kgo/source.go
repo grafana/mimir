@@ -1,6 +1,7 @@
 package kgo
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -8,12 +9,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo/internal/xsync"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -28,7 +29,7 @@ type readerFrom interface {
 // another fetch in the background.
 type source struct {
 	cl     *Client // our owning client, for cfg, metadata triggering, context, etc.
-	nodeID int32   // the node ID of the broker this sink belongs to
+	nodeID int32   // the node ID of the broker this source belongs to
 
 	// Tracks how many _failed_ fetch requests we have in a row (unable to
 	// receive a response). Any response, even responses with an ErrorCode
@@ -41,9 +42,25 @@ type source struct {
 
 	session fetchSession // supports fetch sessions as per KIP-227
 
-	cursorsMu    sync.Mutex
+	cursorsMu    xsync.Mutex
 	cursors      []*cursor // contains all partitions being consumed on this source
 	cursorsStart int       // incremented every fetch req to ensure all partitions are fetched
+
+	share sourceShare
+}
+
+type sourceShare struct {
+	s  *source // back-pointer for hook, sem, maybeShareConsume
+	sc *shareConsumer
+
+	mu           xsync.Mutex
+	cursors      []*shareCursor
+	cursorsStart int
+	sessionEpoch int32              // 0=new, incremented on success, -1=close
+	sessionParts map[tidp]struct{}  // broker-confirmed session partitions; createShareFetchReq diffs WANT against this to compute add/forget
+	ackCh        chan struct{}      // acks pending, batch on timer
+	ackFlushCh   chan struct{}      // flush acks immediately
+	buffered     shareBufferedFetch // decoded share fetch waiting for poll
 }
 
 func (cl *Client) newSource(nodeID int32) *source {
@@ -55,6 +72,11 @@ func (cl *Client) newSource(nodeID int32) *source {
 	if cl.cfg.disableFetchSessions {
 		s.session.kill()
 	}
+	s.share.s = s
+	s.share.sc = cl.consumer.s
+	s.share.ackCh = make(chan struct{}, 1)
+	s.share.ackFlushCh = make(chan struct{}, 1)
+	s.share.sessionParts = make(map[tidp]struct{})
 	close(s.sem)
 	return s
 }
@@ -95,7 +117,17 @@ func (s *source) removeCursor(rm *cursor) {
 
 // cursor is where we are consuming from for an individual partition.
 type cursor struct {
-	topic     string
+	topic string
+	// topicID is written once at cursor creation and is deliberately
+	// never re-adopted if a delete+recreate hands back a new ID for the
+	// same name: a recreated topic stalls loudly (UNKNOWN_TOPIC_ID, see
+	// the UnknownTopicID arm below) and the user must purge+re-add. This
+	// is the principled alternative to librdkafka/Java's adopt-and-gamble;
+	// issue #908 records why auto-adoption was backed out (PR #391/#377:
+	// OffsetForLeaderEpoch has no TopicID field, so an adopted ID cannot
+	// be validated against truncation). The metadata merge copies this
+	// pointer over rather than swapping the ID; do not "fix" the stall
+	// into an adopt without solving #908.
 	topicID   [16]byte
 	partition int32
 
@@ -275,7 +307,25 @@ func (p *cursorOffsetPreferred) move() {
 	c.source.cl.sinksAndSourcesMu.Unlock()
 
 	if !exists {
+		// The preferred replica is a broker we have not yet learned from
+		// metadata - e.g. a freshly added replica that the broker we
+		// fetched from already knows about, before our periodic refresh
+		// caught up. We force a metadata update so the source comes to
+		// exist for a future move, but we must ALSO re-enable the cursor
+		// on its current (leader) source. The caller (source.fetch) deletes
+		// this cursor from the request's used offsets right after we return,
+		// so neither the fetch's used-offset finishing nor a later buffered
+		// poll will re-enable it: leaving it unusable here would strand the
+		// partition. The leader is unchanged, so no cursor
+		// migration re-enables it, and a metadata refresh that merely
+		// learns the new broker never touches cursor usability - the
+		// partition would silently never be consumed again until an
+		// unrelated session restart (rebalance, assign, leader change).
+		//
+		// Re-enabling on the current source keeps us consuming from the
+		// leader until a later fetch's preferred replica can be honored.
 		c.source.cl.triggerUpdateMetadataNow("cursor moving to a different broker that is not yet known")
+		c.allowUsable()
 		return
 	}
 
@@ -305,19 +355,7 @@ func (cs cursorPreferreds) String() string {
 	for t, ps := range ts {
 		tsorted = append(tsorted, t)
 		slices.SortFunc(ps, func(l, r pnext) int {
-			if l.p < r.p {
-				return -1
-			}
-			if l.p > r.p {
-				return 1
-			}
-			if l.next < r.next {
-				return -1
-			}
-			if l.next > r.next {
-				return 1
-			}
-			return 0
+			return cmp.Or(cmp.Compare(l.p, r.p), cmp.Compare(l.next, r.next))
 		})
 	}
 	slices.Sort(tsorted)
@@ -384,40 +422,17 @@ func (os usedOffsets) finishUsingAll() {
 type bufferedFetch struct {
 	fetch Fetch
 
-	doneFetch   chan<- struct{} // when unbuffered, we send down this
-	usedOffsets usedOffsets     // what the offsets will be next if this fetch is used
+	doneFetch   chan<- bool // when unbuffered, we send down this
+	usedOffsets usedOffsets // what the offsets will be next if this fetch is used
 }
 
-func (s *source) hook(f *Fetch, buffered, polled bool) {
+func (s *source) hookBuffered(f *Fetch) {
+	// Collect matching hooks once, then fuse dispatch with the metrics walk
+	// so we visit each record exactly once regardless of hook count.
+	var bufH []HookFetchRecordBuffered
 	s.cl.cfg.hooks.each(func(h Hook) {
-		if buffered {
-			h, ok := h.(HookFetchRecordBuffered)
-			if !ok {
-				return
-			}
-			for i := range f.Topics {
-				t := &f.Topics[i]
-				for j := range t.Partitions {
-					p := &t.Partitions[j]
-					for _, r := range p.Records {
-						h.OnFetchRecordBuffered(r)
-					}
-				}
-			}
-		} else {
-			h, ok := h.(HookFetchRecordUnbuffered)
-			if !ok {
-				return
-			}
-			for i := range f.Topics {
-				t := &f.Topics[i]
-				for j := range t.Partitions {
-					p := &t.Partitions[j]
-					for _, r := range p.Records {
-						h.OnFetchRecordUnbuffered(r, polled)
-					}
-				}
-			}
+		if h, ok := h.(HookFetchRecordBuffered); ok {
+			bufH = append(bufH, h)
 		}
 	})
 
@@ -429,17 +444,96 @@ func (s *source) hook(f *Fetch, buffered, polled bool) {
 			p := &t.Partitions[j]
 			nrecs += len(p.Records)
 			for k := range p.Records {
-				nbytes += p.Records[k].userSize()
+				r := p.Records[k]
+				nbytes += r.userSize()
+				for _, h := range bufH {
+					h.OnFetchRecordBuffered(r)
+				}
 			}
 		}
 	}
-	if buffered {
-		s.cl.consumer.bufferedRecords.Add(int64(nrecs))
-		s.cl.consumer.bufferedBytes.Add(nbytes)
-	} else {
-		s.cl.consumer.bufferedRecords.Add(-int64(nrecs))
-		s.cl.consumer.bufferedBytes.Add(-nbytes)
+	s.cl.consumer.bufferedRecords.Add(int64(nrecs))
+	s.cl.consumer.bufferedBytes.Add(nbytes)
+}
+
+// hookDeferUnbuffered is the unbuffered counterpart of hookBuffered, split
+// because its dispatch must NOT run at the call sites: every take/discard
+// path holds c.sourcesReadyMu, and the poll path additionally holds c.mu
+// (the invalidation path holds c.mu and sessionChangeMu too). User hook
+// code invoked there can re-enter the client -- the hook docs bless
+// interceptor usage and warn only about slowness -- and a re-entrant call
+// that needs c.mu (polling, AddConsumeTopics, ...) would park forever with
+// c.mu held, wedging every future poll, every rebalance's assign, and
+// Close. So this captures what dispatch needs NOW and queues the user-code
+// dispatch on the consumer, to run once the locks release.
+//
+// The capture must be eager for a second reason: callers compact the
+// fetch's Topics/Partitions slices in place after this returns (pause
+// stripping reuses the same backing arrays), so a closure over f would
+// observe a corrupted view. Records themselves are never mutated; we
+// flatten the record pointers. Gauge accounting is atomic and happens
+// immediately -- only user code is deferred, and only when an unbuffered
+// hook is actually registered.
+//
+// Must be called with c.sourcesReadyMu held.
+func (s *source) hookDeferUnbuffered(f *Fetch, polled bool) {
+	var unbH []HookFetchRecordUnbuffered
+	s.cl.cfg.hooks.each(func(h Hook) {
+		if h, ok := h.(HookFetchRecordUnbuffered); ok {
+			unbH = append(unbH, h)
+		}
+	})
+
+	c := &s.cl.consumer
+	var nrecs int
+	var nbytes int64
+	if len(unbH) == 0 {
+		// No hook to dispatch. The gauges still need the walk (bytes
+		// are per-record), but nothing is captured and nothing is
+		// allocated.
+		for i := range f.Topics {
+			t := &f.Topics[i]
+			for j := range t.Partitions {
+				p := &t.Partitions[j]
+				nrecs += len(p.Records)
+				for k := range p.Records {
+					nbytes += p.Records[k].userSize()
+				}
+			}
+		}
+		c.bufferedRecords.Add(-int64(nrecs))
+		c.bufferedBytes.Add(-nbytes)
+		return
 	}
+
+	var recs []*Record
+	for i := range f.Topics {
+		t := &f.Topics[i]
+		for j := range t.Partitions {
+			p := &t.Partitions[j]
+			nrecs += len(p.Records)
+			for k := range p.Records {
+				r := p.Records[k]
+				nbytes += r.userSize()
+				recs = append(recs, r)
+			}
+		}
+	}
+	c.bufferedRecords.Add(-int64(nrecs))
+	c.bufferedBytes.Add(-nbytes)
+
+	if len(recs) == 0 {
+		return
+	}
+	c.deferredFetchHooks = append(c.deferredFetchHooks, func() {
+		// unbH is almost always length one; keeping it outermost keeps
+		// the per-record loop free of the hook-slice ranging.
+		for _, h := range unbH {
+			for _, r := range recs {
+				h.OnFetchRecordUnbuffered(r, polled)
+			}
+		}
+	})
 }
 
 // takeBuffered drains a buffered fetch and updates offsets.
@@ -537,13 +631,14 @@ func (s *source) takeNBuffered(paused pausedTopics, n int) (Fetch, int, bool) {
 	bf := &b.fetch
 	for len(bf.Topics) > 0 && n > 0 {
 		t := &bf.Topics[0]
+		tCursors := b.usedOffsets[t.Topic]
 
 		// If the topic is outright paused, we allowUsable all
 		// partitions in the topic and skip the topic entirely.
 		if paused.has(t.Topic, -1) {
 			rstrip.Topics = append(rstrip.Topics, *t)
 			bf.Topics = bf.Topics[1:]
-			for _, pCursor := range b.usedOffsets[t.Topic] {
+			for _, pCursor := range tCursors {
 				pCursor.from.allowUsable()
 			}
 			delete(b.usedOffsets, t.Topic)
@@ -568,8 +663,6 @@ func (s *source) takeNBuffered(paused pausedTopics, n int) (Fetch, int, bool) {
 			rtstrip = &rstrip.Topics[len(rstrip.Topics)-1]
 			rtstrip.Partitions = nil
 		}
-
-		tCursors := b.usedOffsets[t.Topic]
 
 		for len(t.Partitions) > 0 && n > 0 {
 			p := &t.Partitions[0]
@@ -628,9 +721,9 @@ func (s *source) takeNBuffered(paused pausedTopics, n int) (Fetch, int, bool) {
 	}
 
 	if len(rstrip.Topics) > 0 {
-		s.hook(&rstrip, false, true)
+		s.hookDeferUnbuffered(&rstrip, true)
 	}
-	s.hook(&r, false, true) // unbuffered, polled
+	s.hookDeferUnbuffered(&r, true) // unbuffered, polled
 
 	drained := len(bf.Topics) == 0
 	if drained {
@@ -643,10 +736,10 @@ func (s *source) takeBufferedFn(polled bool, offsetFn func(usedOffsets)) Fetch {
 	r := s.buffered
 	s.buffered = bufferedFetch{}
 	offsetFn(r.usedOffsets)
-	r.doneFetch <- struct{}{}
+	r.doneFetch <- true
 	close(s.sem)
 
-	s.hook(&r.fetch, false, polled) // unbuffered, potentially polled
+	s.hookDeferUnbuffered(&r.fetch, polled) // unbuffered, potentially polled
 
 	return r.fetch
 }
@@ -678,10 +771,12 @@ func (s *source) createReq() *fetchRequest {
 	var rechecks cursorPreferreds
 	defer func() {
 		if len(rechecks) > 0 {
-			s.cl.cfg.logger.Log(LogLevelInfo, "redirecting follower fetchers back to their leader to re-check if a new follower should be chosen",
-				"from_broker", s.nodeID,
-				"moves", rechecks.String(),
-			)
+			if s.cl.cfg.logger.Level() >= LogLevelInfo {
+				s.cl.cfg.logger.Log(LogLevelInfo, "redirecting follower fetchers back to their leader to re-check if a new follower should be chosen",
+					"from_broker", s.nodeID,
+					"moves", rechecks.String(),
+				)
+			}
 			for _, c := range rechecks {
 				c.move()
 			}
@@ -769,7 +864,7 @@ func (s *source) loopFetch() {
 
 	// We receive on canFetch when we can fetch, and we send back when we
 	// are done fetching.
-	canFetch := make(chan chan struct{}, 1)
+	canFetch := make(chan chan bool, 1)
 
 	again := true
 	for again {
@@ -797,7 +892,7 @@ func (s *source) loopFetch() {
 			// to avoid calling fetch with a canceled context just because it passed
 			// the above selects by chance due to pseudo-random select behavior.
 			if session.ctx.Err() != nil {
-				doneFetch <- struct{}{}
+				doneFetch <- false
 				s.fetchState.hardFinish()
 				return
 			}
@@ -843,7 +938,7 @@ func (s *source) killSessionOnClose(ctx context.Context) {
 // *even if* the source needs to be stopped. The knowledge of which preferred
 // replica to use would not be out of date even if the consumer session is
 // changing.
-func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct{}) (fetched bool) {
+func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- bool) (fetched bool) {
 	req := s.createReq()
 
 	// For all returns, if we do not buffer our fetch, then we want to
@@ -863,7 +958,7 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 				}
 			}
 			if !alreadySentToDoneFetch {
-				doneFetch <- struct{}{}
+				doneFetch <- false
 			}
 		}
 	}()
@@ -907,7 +1002,7 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 		// We preemptively allow more fetches (since we are not buffering)
 		// and reset our session because of the error (who knows if kafka
 		// processed the request but the client failed to receive it).
-		doneFetch <- struct{}{}
+		doneFetch <- false
 		alreadySentToDoneFetch = true
 		s.session.reset()
 		didBackoff = true
@@ -961,19 +1056,18 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	// or reloading cursors from being modified when the records that were
 	// fetched are finally polled.
 	if len(preferreds) > 0 {
-		s.cl.cfg.logger.Log(LogLevelInfo, "fetch partitions returned preferred replicas",
-			"from_broker", s.nodeID,
-			"moves", preferreds.String(),
-		)
+		if s.cl.cfg.logger.Level() >= LogLevelInfo {
+			s.cl.cfg.logger.Log(LogLevelInfo, "fetch partitions returned preferred replicas",
+				"from_broker", s.nodeID,
+				"moves", preferreds.String(),
+			)
+		}
 		preferreds.eachPreferred(func(c cursorOffsetPreferred) {
 			c.move()
 			deleteReqUsedOffset(c.from.topic, c.from.partition)
 		})
 	}
 	reloadOffsets.each(deleteReqUsedOffset)
-
-	// The session on the request was updated; we keep those updates.
-	s.session = req.session
 
 	// handleReqResp only parses the body of the response, not the top
 	// level error code.
@@ -982,6 +1076,8 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	// there was an error, the body was empty (so processing is basically a
 	// no-op). We process the fetch session error now.
 	switch err := kerr.ErrorForCode(resp.ErrorCode); err {
+	case nil:
+		// success; fall through to session bump below
 	case kerr.FetchSessionIDNotFound:
 		if s.session.epoch == 0 {
 			// If the epoch was zero, the broker did not even
@@ -1004,6 +1100,24 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 		s.session.reset()
 		s.cl.triggerUpdateMetadataNow("topic id issues")
 		return fetched
+
+	default:
+		// Any other top-level error is unexpected: current brokers only
+		// emit session-related codes here, and every one of those arms
+		// above self-heals in a single round-trip (a reset re-establishes
+		// the session at epoch 0, which the broker then accepts). An
+		// unexpected code has no such bounded heal: a non-conformant or
+		// future broker that returns one persistently would spin this
+		// fetch at round-trip pace, re-logging on every iteration, because
+		// nothing here paces the loop. Back off rather than bumping the
+		// session epoch against a failed request; backoff also resets the
+		// session defensively so the next request re-establishes state the
+		// broker agrees with. This mirrors the transport-error and
+		// all-partitions-stripped paths, and the share fetch loop's
+		// top-level-error arm.
+		s.cl.cfg.logger.Log(LogLevelWarn, "fetch response has unexpected top-level error, resetting session and backing off", "broker", logID(s.nodeID), "err", err)
+		backoff(err)
+		return fetched
 	}
 
 	// At this point, we have successfully processed the response. Even if
@@ -1018,6 +1132,9 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 		s.session.kill()
 	} else {
 		s.session.bumpEpoch(resp.SessionID)
+		// Commit the request's session-used mutations now that the
+		// broker has acknowledged the request.
+		s.session.commitFromReq(req.committedTopics, req.committedForgotten)
 	}
 
 	// If we have a reason to update (per-partition fetch errors), and the
@@ -1048,7 +1165,7 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 			usedOffsets: req.usedOffsets,
 		}
 		s.sem = make(chan struct{})
-		s.hook(&fetch, true, false) // buffered, not polled
+		s.hookBuffered(&fetch) // buffered, not polled
 		s.cl.consumer.addSourceReadyForDraining(s)
 	} else if allErrsStripped {
 		// If we stripped all errors from the response, we are likely
@@ -1078,6 +1195,15 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 		numErrsStripped  int
 		kip320           = s.cl.supportsOffsetForLeaderEpoch()
 		kmove            kip951move
+		// seen guards against a broker returning the same partition (or the
+		// same topic) more than once in a single fetch response. Each
+		// requested partition maps to one stable *cursorOffsetNext for the
+		// life of the request; processing one twice would double-advance its
+		// offset / double-append its records, or enqueue two move()s for one
+		// cursor (the #1167 concurrent-source hazard). We must not dedup by
+		// deleting from req.usedOffsets - that map re-enables the cursor
+		// after the response - so we track seen pointers separately.
+		seen map[*cursorOffsetNext]struct{}
 	)
 	defer kmove.maybeBeginMove(s.cl)
 
@@ -1127,6 +1253,18 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 				)
 				continue
 			}
+			if _, dup := seen[partOffset]; dup {
+				s.cl.cfg.logger.Log(LogLevelWarn, "broker returned a duplicate partition in a fetch response, ignoring the duplicate",
+					"broker", logID(s.nodeID),
+					"topic", topic,
+					"partition", partition,
+				)
+				continue
+			}
+			if seen == nil {
+				seen = make(map[*cursorOffsetNext]struct{}, req.numOffsets)
+			}
+			seen[partOffset] = struct{}{}
 			c := partOffset.from
 
 			// If we are fetching from the replica already, Kafka replies with a -1
@@ -1140,6 +1278,7 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 				continue
 			}
 
+			priorOffset := partOffset.offset
 			fp := partOffset.processRespPartition(br, rp, s.cl.cfg.decompressor, s.cl.cfg.hooks)
 			if fp.Err != nil {
 				if moving := kmove.maybeAddFetchPartition(resp, rp, c); moving {
@@ -1147,6 +1286,25 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 					continue
 				}
 				updateWhy.add(topic, partition, fp.Err)
+			}
+
+			// A response can carry batch data for a partition yet
+			// advance nothing: every batch's last offset below our
+			// requested offset (a broker violating "return the batch
+			// containing the fetch offset"). Nothing buffers, no error
+			// is set, and the cursor re-enables at the same offset --
+			// without intervention the next fetch re-requests
+			// immediately and the loop runs hot at round-trip pace,
+			// silently, forever. Strip the partition: if the WHOLE
+			// response is such non-progress, the allErrsStripped
+			// backoff below paces us like any other all-stripped
+			// response. Legitimate empties are excluded: a caught-up
+			// partition has no batch bytes, control/aborted records
+			// advance the offset even when not kept, and a compacted
+			// empty batch advances via its preserved last offset.
+			if fp.Err == nil && len(fp.Records) == 0 && partOffset.offset == priorOffset && len(rp.RecordBatches) > 0 {
+				strip(topic, partition, errFetchNoProgress)
+				continue
 			}
 
 			// We only keep the partition if it has no error, or an
@@ -1393,6 +1551,11 @@ type ProcessFetchPartitionOpts struct {
 
 	// Pools contain potential pools to use for memory pooling.
 	Pools []Pool
+
+	// shareAckSlab, if non-nil, is called once per decoded batch
+	// to allocate a slab for share group ack state tracking. The
+	// slab is injected into each record's context via shareAckKey.
+	shareAckSlab func(numRecords int, firstRecord *Record) *shareAckSlab
 }
 
 // ProcessFetchPartition processes all records in all batches or message sets
@@ -1473,7 +1636,13 @@ func ProcessFetchPartition(o ProcessFetchPartitionOpts, rp *kmsg.FetchResponseTo
 		offset := int64(binary.BigEndian.Uint64(in))
 		length = int32(binary.BigEndian.Uint32(in[8:]))
 		length += 12 // for the int64 offset we skipped and int32 length field itself
-		if len(in) < int(length) {
+		// length is read as a signed int32: a high-bit-set length field (or a
+		// near-MaxInt32 one, which overflows negative once we add 12) is
+		// negative and would slip past the truncation check below, panicking
+		// check()'s in[:length] with a negative bound. Treat a negative length
+		// as an untrustworthy/truncated batch and stop, matching the negative
+		// guards already in parseReadSize and the xerial decoder.
+		if length < 0 || len(in) < int(length) {
 			break
 		}
 
@@ -1570,6 +1739,25 @@ func buildAborter(rp *kmsg.FetchResponseTopicPartition) aborter {
 	for _, abort := range rp.AbortedTransactions {
 		a[abort.ProducerID] = append(a[abort.ProducerID], abort.FirstOffset)
 	}
+	// shouldAbortBatch and trackAbortedPID below both treat a[pid][0] as the
+	// smallest remaining aborted first offset for that producer: a batch is
+	// aborted once its FirstOffset reaches a[pid][0], and each abort marker
+	// pops a[pid][0]. The broker is NOT required to return a producer's aborted
+	// transactions sorted by first offset, though. Apache Kafka happens to (its
+	// transaction index is appended in last-offset order, which for one
+	// producer's strictly sequential transactions coincides with first-offset
+	// order), but Redpanda concatenates its newest in-memory aborted ranges
+	// (highest offsets) ahead of older on-disk snapshot ranges, so one
+	// producer's entries can arrive highest-first-offset first. With a[pid][0]
+	// not the smallest, a lower aborted transaction slips past the
+	// `FirstOffset < pidAborts[0]` guard and its records are surfaced to the
+	// application as committed - a read_committed violation. Sort each
+	// producer's first offsets ascending to restore the invariant the rest of
+	// the filtering relies on (the Java client makes the same guarantee with a
+	// first-offset-ordered priority queue).
+	for pid := range a {
+		slices.Sort(a[pid])
+	}
 	return a
 }
 
@@ -1590,7 +1778,16 @@ func (a aborter) shouldAbortBatch(b *kmsg.RecordBatch) bool {
 }
 
 func (a aborter) trackAbortedPID(producerID int64) {
-	remaining := a[producerID][1:]
+	pidAborts := a[producerID]
+	if len(pidAborts) == 0 {
+		// Already exhausted for this PID. A well-formed response pops once
+		// per aborted transaction (one abort marker each), so this is only
+		// reachable from a buggy/hostile broker; reslicing a[producerID][1:]
+		// on the nil/empty slice would panic. Java removes the PID from a Set
+		// here, which is idempotent - mirror that.
+		return
+	}
+	remaining := pidAborts[1:]
 	if len(remaining) == 0 {
 		delete(a, producerID)
 	} else {
@@ -1602,22 +1799,24 @@ func (a aborter) trackAbortedPID(producerID int64) {
 // processing records to fetch part //
 //////////////////////////////////////
 
-// readRawRecordsInto reads records from in and returns them, returning early
-// if there were partial records.
-func readRawRecordsInto(rs []kmsg.Record, in []byte) []kmsg.Record {
+// readRawRecordsInto reads records from in and returns them and the total
+// number of headers they hold, returning early if there were partial records.
+func readRawRecordsInto(rs []kmsg.Record, in []byte) ([]kmsg.Record, int) {
+	var nheaders int
 	for i := range rs {
 		length, used := kbin.Varint(in)
 		total := used + int(length)
 		if used == 0 || length < 0 || len(in) < total {
-			return rs[:i]
+			return rs[:i], nheaders
 		}
 		if err := (&rs[i]).ReadFrom(in[:total]); err != nil {
 			rs[i] = kmsg.Record{} // clear any invalid partial data
-			return rs[:i]
+			return rs[:i], nheaders
 		}
+		nheaders += len(rs[i].Headers)
 		in = in[total:]
 	}
-	return rs
+	return rs, nheaders
 }
 
 func (o *ProcessFetchPartitionOpts) processRecordBatch(
@@ -1668,6 +1867,43 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 	uncompressedBytes := len(rawRecords)
 
 	numRecords := int(batch.NumRecords)
+	// NumRecords is decoded straight off the wire and is therefore
+	// attacker/bug controlled. A negative count would panic the slice
+	// sizing below (ensureLen does s[:n], which panics for n<0); reject it
+	// as a corrupt batch, matching the Java client's InvalidRecordException
+	// guard (DefaultRecordBatch: "Found invalid record count"). A count
+	// larger than the available record bytes is likewise impossible for a
+	// well-formed batch - every record needs at least one byte - so clamp
+	// the up-front allocation to the byte count to keep a bogus huge count
+	// from driving a massive allocation. The true decodable count is
+	// recomputed by readRawRecordsInto, and the truncation defer below
+	// leaves the offset unadvanced whenever it disagrees with numRecords.
+	if numRecords < 0 {
+		fp.Err = fmt.Errorf("invalid record batch: negative record count %d", numRecords)
+		return 0, 0
+	}
+	if numRecords > len(rawRecords) {
+		// A batch claiming records with ZERO record bytes deserves a
+		// special word: the clamp below would make it decode zero
+		// records "successfully", and the KAFKA-5443 defer would then
+		// advance the offset past the batch's whole claimed range -- a
+		// silent skip of offsets the broker asserts hold records. The
+		// legitimate compacted-empty batch (KAFKA-5443) claims ZERO
+		// records, so claiming more with no bytes is corruption; error
+		// loudly like the Java client's InvalidRecordException instead
+		// of silently skipping.
+		if len(rawRecords) == 0 {
+			fp.Err = fmt.Errorf("invalid record batch: %d claimed records with no record bytes", numRecords)
+			return 0, uncompressedBytes
+		}
+		numRecords = len(rawRecords)
+	}
+
+	// Presize for the first batch; later batches grow the slice normally.
+	if cap(fp.Records) == 0 {
+		fp.Records = make([]*Record, 0, numRecords)
+	}
+
 	var krecords []kmsg.Record
 	var krecordsPool PoolKRecords
 	pools(o.Pools).each(func(p Pool) bool {
@@ -1685,7 +1921,7 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 		}()
 	}
 	krecords = ensureLen(krecords, numRecords)
-	krecords = readRawRecordsInto(krecords, rawRecords)
+	krecords, nheaders := readRawRecordsInto(krecords, rawRecords)
 
 	// KAFKA-5443: compacted topics preserve the last offset in a batch,
 	// even if the last record is removed, meaning that using offsets from
@@ -1716,18 +1952,58 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 	})
 	rrecords = ensureLen(rrecords, numRecords)
 
+	hslab := make([]RecordHeader, nheaders) // headers are dropped together, same as records, with the same slab tradeoffs above
+
 	var p *recordPools
 	var poolsCtx context.Context
 	if usesPools {
 		p, poolsCtx = recordPoolsCtx(o.Pools, decompressBytes, rrecords)
 	}
+
+	recordCtx := poolsCtx
+	var slabbed bool
+	if o.shareAckSlab != nil && len(rrecords) > 0 {
+		if slab := o.shareAckSlab(numRecords, &rrecords[0]); slab != nil {
+			slabbed = true
+			parent := poolsCtx
+			if parent == nil {
+				parent = context.Background()
+			}
+			recordCtx = context.WithValue(parent, shareAckKey, slab)
+		}
+	}
 	var nkept int
 	defer func() {
-		if p != nil && nkept > 0 {
-			p.n.Add(int64(nkept))
+		if p == nil {
+			return
 		}
+		if nkept > 0 {
+			p.n.Add(int64(nkept))
+			return
+		}
+		// No record from this batch was kept: an aborted transaction's
+		// data batch, a control/marker batch, or a batch wholly below
+		// the requested offset. Nothing will ever call Recycle, so the
+		// recordPools put-back would never run and abort-heavy
+		// read_committed workloads would leak every pool Get. Release
+		// the pooled slices now, zeroing the written-then-discarded
+		// records like Recycle would have. Skip when a share-ack slab
+		// was created: the slab indexes rrecords by pointer, and putting
+		// the slice back would let the pool hand out memory the slab
+		// still references.
+		if slabbed {
+			return
+		}
+		clear(p.recs)
+		p.release()
 	}()
 
+	// A control batch ends at most one aborted transaction for its producer,
+	// so we pop the aborter at most once per batch. A well-formed control
+	// batch holds a single marker record; a buggy/hostile broker can pack many
+	// (and Java inspects only a control batch's first record), so without this
+	// guard a second abort marker would pop an already-empty aborter slice.
+	abortMarkerHandled := false
 	for i := range krecords {
 		record := &rrecords[i]
 		recordToRecord(
@@ -1736,19 +2012,26 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 			batch,
 			&krecords[i],
 			record,
+			&hslab,
 		)
-		record.Context = poolsCtx   //nolint:fatcontext // not a nested context
-		krecords[i] = kmsg.Record{} // prevent the kmsg.Record from hanging onto anything
+		record.Context = recordCtx //nolint:fatcontext // not a nested context
+
+		// Prevent the kmsg.Record from hanging onto anything. The
+		// header slice is kept: the decoder reuses its capacity.
+		clear(krecords[i].Headers)
+		krecords[i] = kmsg.Record{Headers: krecords[i].Headers}
+
 		if kept := o.maybeKeepRecord(fp, record, abortBatch); kept {
 			nkept++
 		}
 
-		if abortBatch && record.Attrs.IsControl() {
+		if abortBatch && !abortMarkerHandled && record.Attrs.IsControl() {
 			// A control record has a key and a value where the key
 			// is int16 version and int16 type. Aborted records
 			// have a type of 0.
 			if key := record.Key; len(key) >= 4 && key[2] == 0 && key[3] == 0 {
 				aborter.trackAbortedPID(batch.ProducerID)
+				abortMarkerHandled = true
 			}
 		}
 	}
@@ -1784,7 +2067,10 @@ out:
 	for len(rawInner) > 17 { // magic at byte 17
 		length := int32(binary.BigEndian.Uint32(rawInner[8:]))
 		length += 12 // offset and length fields
-		if len(rawInner) < int(length) {
+		// A negative length (high-bit-set length field, signed int32) would
+		// slip past the truncation check and panic rawInner[:length]; treat it
+		// as a truncated message set. See the record-batch loop's guard.
+		if length < 0 || len(rawInner) < int(length) {
 			break
 		}
 
@@ -1834,18 +2120,53 @@ out:
 		return 0, uncompressedBytes
 	}
 
-	firstOffset := message.Offset - int64(len(innerMessages)) + 1
+	// Inner offsets: the log cleaner preserves each retained inner
+	// message's original offset, so a compacted compressed message set
+	// legally contains offset gaps. For a v1 wrapper, inner offsets are
+	// stored relative to the set's first offset and the wrapper carries
+	// the absolute offset of the LAST inner message, so absolute =
+	// (wrapper - lastInner) + inner. We previously relabeled inner
+	// messages contiguously counting back from the wrapper offset, which
+	// mislabels every record before a gap; a commit taken mid-set then
+	// names an offset that skips real records for any other client
+	// reading the log honestly. Kafka and librdkafka both honor the
+	// stored offsets; downstream we already handle gapped offsets (see
+	// maybeKeepRecord's compaction comment).
+	//
+	// Two wrapper quirks, matching Kafka's own consumer: a wrapper
+	// offset of 0 means the inner offsets are used as-is (certain
+	// versions of librdkafka produced wrapper offset 0), and a wrapper
+	// offset below the last inner offset is an invalid set that we
+	// surface rather than guess at.
+	innerOffset := func(m readerFrom) int64 {
+		switch m := m.(type) {
+		case *kmsg.MessageV0:
+			return m.Offset
+		case *kmsg.MessageV1:
+			return m.Offset
+		}
+		return 0
+	}
+	var base int64
+	if message.Offset != 0 {
+		lastInner := innerOffset(innerMessages[len(innerMessages)-1])
+		if message.Offset < lastInner {
+			fp.Err = fmt.Errorf("invalid compressed message set: wrapper offset %d is less than the last inner offset %d", message.Offset, lastInner)
+			return 0, uncompressedBytes
+		}
+		base = message.Offset - lastInner
+	}
 	for i := range innerMessages {
 		innerMessage := innerMessages[i]
 		switch innerMessage := innerMessage.(type) {
 		case *kmsg.MessageV0:
-			innerMessage.Offset = firstOffset + int64(i)
+			innerMessage.Offset += base
 			innerMessage.Attributes |= int8(compression)
 			if !o.processV0Message(fp, innerMessage) {
 				return i, uncompressedBytes
 			}
 		case *kmsg.MessageV1:
-			innerMessage.Offset = firstOffset + int64(i)
+			innerMessage.Offset += base
 			innerMessage.Attributes |= int8(compression)
 			if !o.processV1Message(fp, innerMessage) {
 				return i, uncompressedBytes
@@ -1897,7 +2218,10 @@ func (o *ProcessFetchPartitionOpts) processV0OuterMessage(
 	for len(rawInner) > 17 { // magic at byte 17
 		length := int32(binary.BigEndian.Uint32(rawInner[8:]))
 		length += 12 // offset and length fields
-		if len(rawInner) < int(length) {
+		// A negative length (high-bit-set length field, signed int32) would
+		// slip past the truncation check and panic rawInner[:length]; treat it
+		// as a truncated message set. See the record-batch loop's guard.
+		if length < 0 || len(rawInner) < int(length) {
 			break // truncated batch
 		}
 		var m kmsg.MessageV0
@@ -1922,11 +2246,16 @@ func (o *ProcessFetchPartitionOpts) processV0OuterMessage(
 		return 0, uncompressedBytes
 	}
 
-	firstOffset := message.Offset - int64(len(innerMessages)) + 1
+	// For a v0 wrapper, inner offsets are stored ABSOLUTE (magic-0-era
+	// brokers rewrote compressed sets server-side on append), so we use
+	// them as-is; Kafka's own consumer does the same. The log cleaner
+	// preserves retained messages' offsets, so gaps from compaction are
+	// legal and handled downstream (see maybeKeepRecord). We previously
+	// relabeled contiguously counting back from the wrapper offset,
+	// mislabeling every record before a gap.
 	for i := range innerMessages {
 		innerMessage := &innerMessages[i]
 		innerMessage.Attributes |= int8(compression)
-		innerMessage.Offset = firstOffset + int64(i)
 		if !o.processV0Message(fp, innerMessage) {
 			return i, uncompressedBytes
 		}
@@ -1992,13 +2321,17 @@ func recordToRecord(
 	batch *kmsg.RecordBatch,
 	krecord *kmsg.Record,
 	r *Record,
+	hslab *[]RecordHeader,
 ) {
-	h := make([]RecordHeader, 0, len(krecord.Headers))
-	for _, kv := range krecord.Headers {
-		h = append(h, RecordHeader{
-			Key:   kv.Key,
-			Value: kv.Value,
-		})
+	var h []RecordHeader
+	if n := len(krecord.Headers); n > 0 {
+		h, *hslab = (*hslab)[:n:n], (*hslab)[n:]
+		for i, kv := range krecord.Headers {
+			h[i] = RecordHeader{
+				Key:   kv.Key,
+				Value: kv.Value,
+			}
+		}
 	}
 	*r = Record{
 		Key:           krecord.Key,
@@ -2118,6 +2451,15 @@ type fetchRequest struct {
 	// built. If the source is reset, the session it has is reset at the
 	// field level only. Our view of the original session is still valid.
 	session fetchSession
+
+	// Snapshots of the topic / forgotten-topic slices from the
+	// serialized kmsg.FetchRequest, captured at AppendTo time so fetch()
+	// can apply them to s.session.used after a successful response.
+	// Overwritten by each AppendTo call; the last call wins, which is
+	// correct because only the last serialization made it onto the
+	// wire.
+	committedTopics    []kmsg.FetchRequestTopic
+	committedForgotten []kmsg.FetchRequestForgottenTopic
 }
 
 func (f *fetchRequest) addCursor(c *cursor) {
@@ -2418,7 +2760,12 @@ func (f *fetchRequest) AppendTo(dst []byte) []byte {
 	}
 
 	// Now for everything that we did not use in our session, add it to
-	// forgotten topics and remove it from the session.
+	// forgotten topics. The resulting ForgottenTopics list is what the
+	// broker is asked to drop; the actual mutation of f.session.used and
+	// f.session.t2id happens only after the response is processed, via
+	// fetchSession.commitFromReq. Doing the mutation here would be
+	// unsafe under broker.go's zero-bytes-written retry path, which can
+	// call AppendTo a second time on the same *fetchRequest.
 	if sessionUsed != nil {
 		for topic, partitions := range f.session.used {
 			var forgottenTopic *kmsg.FetchRequestForgottenTopic
@@ -2437,28 +2784,15 @@ func (f *fetchRequest) AppendTo(dst []byte) []byte {
 					forgottenTopic = &req.ForgottenTopics[len(req.ForgottenTopics)-1]
 				}
 				forgottenTopic.Partitions = append(forgottenTopic.Partitions, partition)
-				delete(partitions, partition)
-			}
-			if len(partitions) == 0 {
-				delete(f.session.used, topic)
-				id := f.session.t2id[topic]
-				delete(f.session.t2id, topic)
-				// If we deleted a topic that was missing an ID, then we clear the
-				// previous disableIDs state. We potentially *reenable* disableIDs
-				// if any remaining topics in our session are also missing their ID.
-				var noID [16]byte
-				if id == noID {
-					f.session.disableIDs = false
-					for _, id := range f.session.t2id {
-						if id == noID {
-							f.session.disableIDs = true
-							break
-						}
-					}
-				}
 			}
 		}
 	}
+
+	// Snapshot the topics / forgotten-topics so fetch() can commit them
+	// to s.session.used after a successful response. Last AppendTo wins
+	// (the last serialization is what actually went on the wire).
+	f.committedTopics = req.Topics
+	f.committedForgotten = req.ForgottenTopics
 
 	return req.AppendTo(dst)
 }
@@ -2507,6 +2841,70 @@ func (s *fetchSession) reset() {
 	s.disableIDs = false
 }
 
+// commitFromReq applies to s the session-used mutations implied by a
+// successful fetch request: partitions in req.Topics were TOLD to the
+// broker at their FetchOffset/CurrentLeaderEpoch, and partitions in
+// req.ForgottenTopics were TOLD to be removed. We call this only after
+// the broker has acknowledged the request via a successful (non-error)
+// response, guaranteeing the broker's session state matches what we're
+// recording here.
+func (s *fetchSession) commitFromReq(topics []kmsg.FetchRequestTopic, forgotten []kmsg.FetchRequestForgottenTopic) {
+	if s.killed {
+		return
+	}
+	if s.used == nil {
+		s.used = make(map[string]map[int32]fetchSessionOffsetEpoch)
+		s.t2id = make(map[string][16]byte)
+	}
+	var noID [16]byte
+	for _, rt := range topics {
+		topic := rt.Topic
+		if topic == "" {
+			continue
+		}
+		t := s.used[topic]
+		if t == nil {
+			t = make(map[int32]fetchSessionOffsetEpoch)
+			s.used[topic] = t
+			s.t2id[topic] = rt.TopicID
+			if rt.TopicID == noID {
+				s.disableIDs = true
+			}
+		}
+		for _, rp := range rt.Partitions {
+			t[rp.Partition] = fetchSessionOffsetEpoch{rp.FetchOffset, rp.CurrentLeaderEpoch}
+		}
+	}
+	for _, rft := range forgotten {
+		topic := rft.Topic
+		if topic == "" {
+			continue
+		}
+		t, ok := s.used[topic]
+		if !ok {
+			continue
+		}
+		for _, p := range rft.Partitions {
+			delete(t, p)
+		}
+		if len(t) == 0 {
+			id := s.t2id[topic]
+			delete(s.used, topic)
+			delete(s.t2id, topic)
+			if id == noID {
+				// Recompute disableIDs from remaining topics.
+				s.disableIDs = false
+				for _, tid := range s.t2id {
+					if tid == noID {
+						s.disableIDs = true
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 // bumpEpoch bumps the epoch and saves the session id.
 //
 // Kafka replies with the session ID of the session to use. When it does, we
@@ -2553,12 +2951,117 @@ type fetchSessionOffsetEpoch struct {
 
 type fetchSessionTopic map[int32]fetchSessionOffsetEpoch
 
+// hasPartitionAt is a pure query: does s already track partition at the
+// given offset/epoch? It MUST NOT mutate s. Session-used writes happen
+// only after a successful response, via fetchSession.commitFromReq.
 func (s fetchSessionTopic) hasPartitionAt(partition int32, offset int64, epoch int32) bool {
 	if s == nil { // if we are nil, the session was killed
 		return false
 	}
 	at, exists := s[partition]
-	now := fetchSessionOffsetEpoch{offset, epoch}
-	s[partition] = now
-	return exists && at == now
+	return exists && at == fetchSessionOffsetEpoch{offset, epoch}
+}
+
+///////////
+// SHARE //
+///////////
+
+type shareBufferedFetch struct {
+	fetch     Fetch
+	doneFetch chan<- bool
+}
+
+func (s *source) signalShareAcks() {
+	select {
+	case s.share.ackCh <- struct{}{}:
+	default:
+	}
+	s.maybeShareConsume()
+}
+
+func (s *source) signalShareAckFlush() {
+	select {
+	case s.share.ackFlushCh <- struct{}{}:
+	default:
+	}
+	s.maybeShareConsume()
+}
+
+func (s *source) resetShareSession() {
+	s.share.mu.Lock()
+	prev := s.share.sessionEpoch
+	s.share.sessionEpoch = 0
+	clear(s.share.sessionParts) // must also be cleared, else we'll have a corrupted session
+	s.share.mu.Unlock()
+	s.cl.cfg.logger.Log(LogLevelDebug, "resetting share session",
+		"broker", logID(s.nodeID),
+		"prev_session_epoch", prev,
+	)
+}
+
+// bumpShareSessionEpochIfCurrent increments the session epoch only if
+// it still matches the caller-supplied epoch. Used after top-level
+// errors that are NOT session-destroying: a concurrent manage
+// goroutine may have reset our session mid-flight (UnknownMemberID
+// path), in which case we must not bump because the reset set the
+// epoch to 0.
+func (s *source) bumpShareSessionEpochIfCurrent(epoch int32) {
+	s.share.mu.Lock()
+	if s.share.sessionEpoch == epoch {
+		s.share.sessionEpoch++
+	}
+	s.share.mu.Unlock()
+}
+
+func (s *source) removeShareCursor(c *shareCursor) {
+	s.share.mu.Lock()
+	if c.cursorsIdx != len(s.share.cursors)-1 {
+		s.share.cursors[c.cursorsIdx], s.share.cursors[len(s.share.cursors)-1] = s.share.cursors[len(s.share.cursors)-1], nil
+		s.share.cursors[c.cursorsIdx].cursorsIdx = c.cursorsIdx
+	} else {
+		s.share.cursors[c.cursorsIdx] = nil
+	}
+	s.share.cursors = s.share.cursors[:len(s.share.cursors)-1]
+	if s.share.cursorsStart == len(s.share.cursors) {
+		s.share.cursorsStart = 0
+	}
+	s.share.mu.Unlock()
+	// We don't need to wake the source to send this as a forgotten
+	// partition, but it doesn't hurt.
+	s.maybeShareConsume()
+}
+
+func (s *source) addShareCursor(add *shareCursor) {
+	s.share.mu.Lock()
+	add.cursorsIdx = len(s.share.cursors)
+	s.share.cursors = append(s.share.cursors, add)
+	s.share.mu.Unlock()
+	// A cursor migrating between sources may carry pending acks
+	// from the old source. Signal the new source's loop so those
+	// acks are drained rather than stranded.
+	//
+	// No lost-signal window with concurrent appendAck on the same
+	// cursor: appendAck always (a) acquires c.ackMu to append the
+	// new entry, then (b) releases c.ackMu, then (c) atomically
+	// loads c.source and signals it. The interleavings:
+	//
+	//   - addShareCursor reads pending under c.ackMu BEFORE
+	//     appendAck appends: hasPending may be false here, but
+	//     appendAck's later c.source.Load() returns this new
+	//     source (applyMoves stored it before calling
+	//     addShareCursor) and signals us directly.
+	//   - addShareCursor reads pending AFTER appendAck appends:
+	//     hasPending is true and we signal here. appendAck's
+	//     concurrent c.source-read+signal is a harmless duplicate.
+	//
+	// Either way, every appended entry is followed by a signal to
+	// the cursor's current source. The same reasoning covers
+	// pendingGaps via enqueueGaps' signal.
+	add.ackMu.Lock()
+	hasPending := len(add.pendingAcks) > 0 || len(add.pendingGaps) > 0
+	add.ackMu.Unlock()
+	if hasPending {
+		s.signalShareAcks()
+	}
+	s.maybeShareConsume()
 }

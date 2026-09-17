@@ -95,8 +95,9 @@ data:
       compression_enabled: false
       join_members:
       - dns+test-ingress-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+      rejoin_interval: 60s
     querier:
-      max_concurrent: 16
+      max_concurrent: 8
     query_scheduler:
       max_outstanding_requests_per_tenant: 800
     ruler:
@@ -125,3 +126,4 @@ data:
         zone_awareness_enabled: true
     usage_stats:
       installation_mode: helm
+

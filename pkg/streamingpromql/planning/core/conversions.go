@@ -16,8 +16,24 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+// IsExcludeMatching reports whether these hints use exclude-matching mode
+// (without/ignoring/default matching semantics). Exclude-matching means matchers
+// are built from all LHS labels except those in Exclude.
+//
+// The convention is:
+//   - nil hints → no hints at all (no optimization applied).
+//   - Non-nil hints with non-empty Include → include-matching (on-matching).
+//   - Non-nil hints with empty Include → exclude-matching (without/ignoring/default).
+//
+// This method centralises the check so callers don't rely on the implicit
+// "len(Include) == 0 on a non-nil pointer" convention directly.
+func (h *BinaryExpressionHints) IsExcludeMatching() bool {
+	return h != nil && len(h.Include) == 0
+}
 
 func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	if h == nil {
@@ -25,6 +41,7 @@ func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	}
 	return &binops.Hints{
 		Include: slices.Clone(h.Include),
+		Exclude: slices.Clone(h.Exclude),
 	}
 }
 
@@ -96,16 +113,15 @@ func (p PositionRange) ToPrometheusType() posrange.PositionRange {
 	return posrange.PositionRange(p)
 }
 
-func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []*LabelMatcher {
+func LabelMatchersFromPrometheusType(matchers []*labels.Matcher) []LabelMatcher {
 	if len(matchers) == 0 {
 		return nil
 	}
 
-	converted := make([]*LabelMatcher, 0, len(matchers))
+	converted := make([]LabelMatcher, 0, len(matchers))
 
 	for _, m := range matchers {
-		matcher := LabelMatcherFromPrometheusType(m)
-		converted = append(converted, &matcher)
+		converted = append(converted, LabelMatcherFromPrometheusType(m))
 	}
 
 	return converted
@@ -119,7 +135,7 @@ func LabelMatcherFromPrometheusType(m *labels.Matcher) LabelMatcher {
 	}
 }
 
-func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
+func LabelMatchersToOperatorType(matchers []LabelMatcher) types.Matchers {
 	if len(matchers) == 0 {
 		return nil
 	}
@@ -136,7 +152,28 @@ func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 	return converted
 }
 
-func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
+func SubsetsToSelectorType(subsets []SubsetMatchers) ([]selectors.Subset, error) {
+	if len(subsets) == 0 {
+		return nil, nil
+	}
+
+	converted := make([]selectors.Subset, 0, len(subsets))
+	for _, subset := range subsets {
+		filter, err := LabelMatchersToPrometheusType(subset.Filter)
+		if err != nil {
+			return nil, err
+		}
+
+		converted = append(converted, selectors.Subset{
+			Filter:      filter,
+			AllMatchers: LabelMatchersToOperatorType(subset.AllMatchers),
+		})
+	}
+
+	return converted, nil
+}
+
+func LabelMatchersToPrometheusType(matchers []LabelMatcher) ([]*labels.Matcher, error) {
 	if len(matchers) == 0 {
 		return nil, nil
 	}
@@ -153,10 +190,6 @@ func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher,
 	}
 
 	return converted, nil
-}
-
-func matchersEqual(a, b *LabelMatcher) bool {
-	return a.Equal(b)
 }
 
 // LabelMatchersStringer generates a human-readable version of multiple LabelMatchers
@@ -224,22 +257,24 @@ func (o AggregationOperation) ToItemType() (parser.ItemType, bool) {
 }
 
 var itemTypeToBinaryOperation = map[parser.ItemType]BinaryOperation{
-	parser.LAND:    BINARY_LAND,
-	parser.LOR:     BINARY_LOR,
-	parser.LUNLESS: BINARY_LUNLESS,
-	parser.ATAN2:   BINARY_ATAN2,
-	parser.SUB:     BINARY_SUB,
-	parser.ADD:     BINARY_ADD,
-	parser.MUL:     BINARY_MUL,
-	parser.MOD:     BINARY_MOD,
-	parser.DIV:     BINARY_DIV,
-	parser.POW:     BINARY_POW,
-	parser.EQLC:    BINARY_EQLC,
-	parser.NEQ:     BINARY_NEQ,
-	parser.LTE:     BINARY_LTE,
-	parser.LSS:     BINARY_LSS,
-	parser.GTE:     BINARY_GTE,
-	parser.GTR:     BINARY_GTR,
+	parser.LAND:       BINARY_LAND,
+	parser.LOR:        BINARY_LOR,
+	parser.LUNLESS:    BINARY_LUNLESS,
+	parser.ATAN2:      BINARY_ATAN2,
+	parser.SUB:        BINARY_SUB,
+	parser.ADD:        BINARY_ADD,
+	parser.MUL:        BINARY_MUL,
+	parser.MOD:        BINARY_MOD,
+	parser.DIV:        BINARY_DIV,
+	parser.POW:        BINARY_POW,
+	parser.EQLC:       BINARY_EQLC,
+	parser.NEQ:        BINARY_NEQ,
+	parser.LTE:        BINARY_LTE,
+	parser.LSS:        BINARY_LSS,
+	parser.GTE:        BINARY_GTE,
+	parser.GTR:        BINARY_GTR,
+	parser.TRIM_UPPER: BINARY_TRIM_UPPER,
+	parser.TRIM_LOWER: BINARY_TRIM_LOWER,
 }
 
 var binaryOperationToItemType = invert(itemTypeToBinaryOperation)

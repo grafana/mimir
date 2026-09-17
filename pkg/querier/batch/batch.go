@@ -15,27 +15,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
-// GenericChunk is a generic chunk used by the batch iterator, in order to make the batch
-// iterator general purpose.
-type GenericChunk struct {
-	MinTime int64
-	MaxTime int64
-
-	iterator func(reuse chunk.Iterator) chunk.Iterator
-}
-
-func NewGenericChunk(minTime, maxTime int64, iterator func(reuse chunk.Iterator) chunk.Iterator) GenericChunk {
-	return GenericChunk{
-		MinTime:  minTime,
-		MaxTime:  maxTime,
-		iterator: iterator,
-	}
-}
-
-func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
-	return c.iterator(reuse)
-}
-
 // iterator iterates over batches.
 type iterator interface {
 	// Seek advances the iterator forward to batch containing the sample at or after the given timestamp.
@@ -60,16 +39,6 @@ type iterator interface {
 
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
 func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk) chunkenc.Iterator {
-	converted := make([]GenericChunk, len(chunks))
-	for i, c := range chunks {
-		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
-	}
-
-	return NewGenericChunkMergeIterator(it, lbls, converted)
-}
-
-// NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
-func NewGenericChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []GenericChunk) chunkenc.Iterator {
 	var iter *mergeIterator
 
 	adapter, ok := it.(*iteratorAdapter)

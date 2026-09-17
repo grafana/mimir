@@ -6,7 +6,6 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -17,6 +16,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+const LabelBytesBufferSize = 1024 // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 
 type SeriesMetadata struct {
 	Labels   labels.Labels
@@ -143,6 +144,10 @@ type RangeVectorStepData struct {
 	// may be modified on subsequent calls to NextStepSamples.
 	Histograms *HPointRingBufferView
 
+	// MixedInExtendedRange is set to true when the extended look-back/look-ahead window of an
+	// Anchored or Smoothed range vector contains both floats and histograms.
+	MixedInExtendedRange bool
+
 	// StepT is the timestamp of this time step.
 	StepT int64
 
@@ -163,39 +168,6 @@ type RangeVectorStepData struct {
 
 	// Smoothed is set to true when the smoothed modifier has been requested on a range query
 	Smoothed bool
-}
-
-// SubStep returns a substep with the same StepT but filtered to range (rangeStart, rangeEnd].
-// If previousSubStep is provided, it will be reused to create the new substep. previousSubStep must be a previous
-// substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
-// after the samples of the previous subviews).
-func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
-	if s.Anchored || s.Smoothed {
-		return nil, errors.New("substep not supported for range vectors with anchored or smoothed modifiers")
-	}
-
-	if rangeStart < s.RangeStart {
-		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
-	}
-	if rangeEnd > s.RangeEnd {
-		return nil, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
-	}
-	if rangeStart >= rangeEnd {
-		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
-	}
-
-	if previousSubStep == nil {
-		previousSubStep = &RangeVectorStepData{}
-	}
-
-	previousSubStep.StepT = s.StepT
-	previousSubStep.RangeStart = rangeStart
-	previousSubStep.RangeEnd = rangeEnd
-
-	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
-	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
-
-	return previousSubStep, nil
 }
 
 type ScalarData struct {
@@ -294,4 +266,105 @@ func (q *QueryTimeRange) Equal(other QueryTimeRange) bool {
 		q.IntervalMilliseconds == other.IntervalMilliseconds &&
 		q.StepCount == other.StepCount &&
 		q.IsInstant == other.IsInstant
+}
+
+// FirstPointIndexAfter returns the index of the first step with a timestamp strictly greater than t.
+// Returns q.StepCount if no such step exists.
+func (q *QueryTimeRange) FirstPointIndexAfter(t int64) int {
+	offset := t - q.StartT
+	if offset < 0 {
+		return 0
+	}
+	idx := int(offset/q.IntervalMilliseconds) + 1
+	if idx > q.StepCount {
+		return q.StepCount
+	}
+	return idx
+}
+
+// LastPointIndexAtOrBefore returns the index of the last step with a timestamp at or before t.
+// Returns -1 if no such step exists.
+func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
+	if t < q.StartT {
+		return -1
+	}
+	offset := t - q.StartT
+	idx := int(offset / q.IntervalMilliseconds)
+	if idx >= q.StepCount {
+		return q.StepCount - 1
+	}
+	return idx
+}
+
+func (q *QueryTimeRange) String() string {
+	if q.IsInstant {
+		return fmt.Sprintf("instant query at %v (%s)", q.StartT, timestamp.Time(q.StartT).Format(time.RFC3339Nano))
+	} else {
+		return fmt.Sprintf("range query from %v (%s) to %v (%s), %s step (%d steps)", q.StartT, timestamp.Time(q.StartT).Format(time.RFC3339Nano), q.EndT, timestamp.Time(q.EndT).Format(time.RFC3339Nano), time.Duration(q.IntervalMilliseconds)*time.Millisecond, q.StepCount)
+	}
+}
+
+func (q *QueryTimeRange) Encode() EncodedQueryTimeRange {
+	return EncodedQueryTimeRange{
+		StartT:               q.StartT,
+		EndT:                 q.EndT,
+		IntervalMilliseconds: q.IntervalMilliseconds,
+		IsInstant:            q.IsInstant,
+	}
+}
+
+func (e *EncodedQueryTimeRange) Decode() QueryTimeRange {
+	if e.IsInstant {
+		return NewInstantQueryTimeRange(timestamp.Time(e.StartT))
+	}
+
+	return NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
+}
+
+func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
+	for _, matcher := range matchers {
+		if !matcher.Matches(lbls.Get(matcher.Name)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// AppendHPointCopies copies the points in src to the end of dest, acquiring a new slice from the pool if needed.
+// FloatHistogram instances in src are deep copied. Existing FloatHistogram instances in dest are reused if possible.
+// src is not modified and not returned to the pool.
+func AppendHPointCopies(dest []promql.HPoint, src []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	newPointCount := len(src)
+	existingPointCount := len(dest)
+	neededSliceCapacity := existingPointCount + newPointCount
+
+	if cap(dest) < neededSliceCapacity {
+		oldSlice := dest
+		var err error
+		dest, err = HPointSlicePool.Get(neededSliceCapacity, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+		dest = append(dest, oldSlice...)
+		clear(oldSlice)
+		HPointSlicePool.Put(&oldSlice, memoryConsumptionTracker)
+	}
+
+	dest = dest[:neededSliceCapacity]
+
+	for i := range newPointCount {
+		sourcePoint := src[i]
+		destinationIdx := existingPointCount + i
+		dest[destinationIdx].T = sourcePoint.T
+
+		// Reuse existing FloatHistogram instance in the destination slice if we can.
+		if dest[destinationIdx].H == nil {
+			dest[destinationIdx].H = sourcePoint.H.Copy()
+		} else {
+			sourcePoint.H.CopyTo(dest[destinationIdx].H)
+		}
+	}
+
+	return dest, nil
 }

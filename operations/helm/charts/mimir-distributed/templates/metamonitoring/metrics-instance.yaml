@@ -15,14 +15,19 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  {{- /* remoteWrite entries always have a url (either user-supplied or a fallback to
+        Mimir's in-cluster URL via `mimir.remoteWriteUrl.inCluster`), so at least one
+        entry is always produced. Keep the existing outer guard so we don't emit an
+        empty sequence — that would produce `remoteWrite: null` which fails CRD
+        validation on ServerSideApply (see grafana/mimir#11200). */ -}}
+  {{- if or (.metrics).additionalRemoteWriteConfigs (.metrics).remote }}
   remoteWrite:
-    {{- if or (.metrics).additionalRemoteWriteConfigs (.metrics).remote }}
     {{- range $i, $cfg := prepend ((.metrics).additionalRemoteWriteConfigs | default list) (.metrics).remote }}
     {{- with $cfg }}
     {{- include "mimir.metaMonitoring.metrics.remoteWrite" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i) "headers" .headers "sigv4" .sigv4 ) | nindent 6 -}}
     {{- end }}
     {{- end }}
-    {{- end }}
+  {{- end }}
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the MetricsInstance CR

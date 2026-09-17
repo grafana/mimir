@@ -45,7 +45,7 @@ func NewBucketClient(cfg Config, _ string, logger log.Logger) (objstore.Bucket, 
 
 	// Thanos currently doesn't support passing the config as is, but expects a YAML,
 	// so we're going to serialize it.
-	serialized, err := yaml.Marshal(bucketConfig)
+	serialized, err := yaml.Marshal(bucketConfig) //nolint:gosec // YAML contains credentials by necessity; consumed by Thanos, not logged.
 	if err != nil {
 		return nil, err
 	}

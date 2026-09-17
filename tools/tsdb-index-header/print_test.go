@@ -44,6 +44,14 @@ func TestPrintIndexInfo_FullIndex(t *testing.T) {
 		Size:          10485760, // 10 MB
 		IsIndexHeader: false,
 		IndexVersion:  2,
+
+		FullIndexSymbolsSize:           1048576, // 1 MB
+		FullIndexSeriesSize:            5242880, // 5 MB
+		FullIndexLabelIndicesSize:      0,
+		FullIndexPostingsSize:          3145728, // 3 MB
+		FullIndexLabelIndicesTableSize: 524288,  // 0.5 MB
+		FullIndexPostingsTableSize:     524236,  // ~0.5 MB
+		FullIndexTOCSize:               52,
 	}
 
 	var buf bytes.Buffer
@@ -53,6 +61,13 @@ func TestPrintIndexInfo_FullIndex(t *testing.T) {
 Index type:                Full Index
 Index size:                10485760 (10.00 MB)
 TSDB index version:        2
+Symbols size:              1048576 (1.00 MB)
+Series size:               5242880 (5.00 MB)
+Label indices size:        0 (0.00 MB)
+Postings size:             3145728 (3.00 MB)
+Label indices table size:  524288 (0.50 MB)
+Postings offset table:     524236 (0.50 MB)
+TOC + CRC32:               52
 `
 	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
 }
@@ -153,6 +168,49 @@ Length distribution:
       1. [3 bytes] "foo"
       2. [3 bytes] "bar"
       3. [3 bytes] "baz"
+`
+	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
+}
+
+func TestPrintChunkStats(t *testing.T) {
+	stats := &ChunkStats{
+		TotalSeries: 1000,
+		TotalChunks: 5000,
+		MinChunks:   1,
+		MaxChunks:   120,
+		ChunksPerSeriesHistogram: map[string]int{
+			"1":       200,
+			"2-10":    500,
+			"11-50":   250,
+			"51-100":  40,
+			"101-500": 10,
+		},
+		TopSeries: []SeriesChunkCount{
+			{Labels: `{__name__="up", instance="localhost:9090"}`, ChunkCount: 120},
+			{Labels: `{__name__="process_cpu_seconds_total", instance="localhost:9090"}`, ChunkCount: 95},
+		},
+	}
+
+	var buf bytes.Buffer
+	printChunkStats(context.Background(), &buf, stats)
+
+	expected := `
+Total series:              1000
+Total chunks:              5000
+Average chunks per series: 5.00
+Min chunks per series:     1
+Max chunks per series:     120
+
+Chunks per series distribution:
+          1:        200 series (20.00%)
+       2-10:        500 series (50.00%)
+      11-50:        250 series (25.00%)
+     51-100:         40 series ( 4.00%)
+    101-500:         10 series ( 1.00%)
+
+Top 20 series by chunk count:
+   1. [   120 chunks] {__name__="up", instance="localhost:9090"}
+   2. [    95 chunks] {__name__="process_cpu_seconds_total", instance="localhost:9090"}
 `
 	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
 }

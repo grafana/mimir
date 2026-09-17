@@ -30,9 +30,10 @@ local filename = 'federation-frontend.json';
         utils.latencyRecordingRulePanel(
           'cortex_request_duration_seconds',
           $.jobSelector($._config.job_names.federation_frontend) +
-          [utils.selector.re('route', $.queries.read_http_routes_regex)]
+          [utils.selector.re('route', $.queries.read_http_routes_regex)],
+          multiplier='',
         ) +
-        { fieldConfig+: { defaults+: { unit: 'ms' } } }
+        { fieldConfig+: { defaults+: { unit: 's' } } }
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +

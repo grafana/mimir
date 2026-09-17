@@ -35,19 +35,19 @@ load 1h
   mixed_minmax{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
 
 eval instant at 6h min_over_time(mixed_minmax[5h])
-  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax" (1:15)
   {env="prod"} 10
 
 eval instant at 6h min_over_time(mixed_minmax[5h])
-  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax" (1:15)
   {env="prod"} 10
 
 eval instant at 6h max_over_time(mixed_minmax[5h])
-  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax" (1:15)
   {env="prod"} 20
 
 eval instant at 6h max_over_time(mixed_minmax[5h])
-  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax" (1:15)
   {env="prod"} 20
 
 clear
@@ -105,10 +105,10 @@ load 1h
   mixed_sum{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
 
 eval instant at 6h sum_over_time(mixed_sum[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum" (1:15)
 
 eval instant at 6h sum_over_time(mixed_sum[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum" (1:15)
 
 clear
 
@@ -117,10 +117,10 @@ load 1h
   mixed_sum_a{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ 20 _
 
 eval instant at 6h sum_over_time(mixed_sum_a[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a" (1:15)
 
 eval instant at 6h sum_over_time(mixed_sum_a[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a" (1:15)
 
 clear
 
@@ -129,10 +129,45 @@ load 1h
   mixed_sum_b{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:200 count:20 buckets:[20]}} _
 
 eval instant at 6h sum_over_time(mixed_sum_b[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b" (1:15)
 
 eval instant at 6h sum_over_time(mixed_sum_b[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b" (1:15)
+
+clear
+
+# Mixed histogram schema
+load 1h
+  mixed_histo_sum{env="prod"} _ _ {{schema:0 sum:100 count:10 buckets:[10]}} {{schema:-53 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:100 count:10 buckets:[10]}} _
+
+eval instant at 6h sum_over_time(mixed_histo_sum[5h])
+  expect warn regex: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_sum"( \([0-9]+:[0-9]+\))?
+
+eval instant at 6h sum_over_time(mixed_histo_sum[5h])
+  expect warn regex: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_sum"( \([0-9]+:[0-9]+\))?
+
+clear
+
+# Histogram sums where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+eval instant at 3h sum_over_time(kahan_metric[4h])
+  {env="prod"} {{count:10 sum:2}}
+
+clear
+
+load 1h
+  kahan_schema_metric{env="prod"} {{schema:2 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:1e100 buckets:[1]}} {{schema:0 count:1 sum:1 buckets:[1]}} {{schema:2 count:1 sum:-1e100 buckets:[1]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
+
+eval instant at 3h sum_over_time(kahan_schema_metric[4h])
+  {env="prod"} {{schema:0 count:4 sum:2 buckets:[4]}}
 
 clear
 
@@ -233,10 +268,10 @@ load 1m
   mixed_rate{env="prod"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
 
 eval instant at 6h rate(mixed_rate[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"( \([0-9]+:[0-9]+\))?
 
 eval instant at 6h rate(mixed_rate[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"( \([0-9]+:[0-9]+\))?
 
 clear
 
@@ -351,11 +386,11 @@ load 1m
   gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
 eval instant at 6h rate(gauge_histogram[5h])
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
+  expect warn regex: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"( \([0-9]+:[0-9]+\))?
   {env="prod"} {{counter_reset_hint:gauge}}
 
 eval instant at 6h rate(gauge_histogram[5h])
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
+  expect warn regex: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"( \([0-9]+:[0-9]+\))?
   {env="prod"} {{counter_reset_hint:gauge}}
 
 clear
@@ -369,10 +404,10 @@ load 1m
   dedup_metric{series="3"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
 
 eval instant at 6h rate(dedup_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"( \([0-9]+:[0-9]+\))?
 
 eval instant at 6h rate(dedup_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"( \([0-9]+:[0-9]+\))?
 
 clear
 
@@ -383,13 +418,13 @@ load 1m
   multi_anno{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
 eval instant at 6h rate(multi_anno[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "multi_anno"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"( \([0-9]+:[0-9]+\))?
+  expect warn regex: PromQL warning: this native histogram metric is not a counter: "multi_anno"( \([0-9]+:[0-9]+\))?
   {series="3"} {{counter_reset_hint:gauge}}
 
 eval instant at 6h rate(multi_anno[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "multi_anno"
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"( \([0-9]+:[0-9]+\))?
+  expect warn regex: PromQL warning: this native histogram metric is not a counter: "multi_anno"( \([0-9]+:[0-9]+\))?
   {series="3"} {{counter_reset_hint:gauge}}
 
 clear
@@ -537,15 +572,50 @@ eval instant at 6h avg_over_time(avg_hist[5h])
 
 clear
 
+# Histogram averages where the Kahan compensation of one split range matters once the other split ranges are added.
+load 1h
+  kahan_avg_metric{env="prod"} {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+eval instant at 3h avg_over_time(kahan_avg_metric[4h])
+  {env="prod"} {{count:2.5 sum:0.5}}
+
+clear
+
+# Histogram averages where counts near MaxFloat64 overflow.
+load 1h
+  overflow_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:2}} {{schema:0 count:1e-6 sum:0}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+eval instant at 6h avg_over_time(overflow_avg_metric[7h])
+  {env="prod"} {{count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+clear
+
+load 1h
+  double_rounding_avg_metric{env="prod"} {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:0}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
+
+eval instant at 6h avg_over_time(double_rounding_avg_metric[7h])
+  {env="prod"} {{count:3.996704478374737e+307 sum:0.9}}
+
+clear
+
 # Floats in one split, histograms in another
 load 1h
   mixed_avg{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
 
 eval instant at 6h avg_over_time(mixed_avg[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg" (1:15)
 
 eval instant at 6h avg_over_time(mixed_avg[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg" (1:15)
 
 clear
 
@@ -554,10 +624,10 @@ load 1h
   mixed_avg_a{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ 20 _
 
 eval instant at 6h avg_over_time(mixed_avg_a[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a" (1:15)
 
 eval instant at 6h avg_over_time(mixed_avg_a[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_a" (1:15)
 
 clear
 
@@ -566,10 +636,10 @@ load 1h
   mixed_avg_b{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:200 count:20 buckets:[20]}} _
 
 eval instant at 6h avg_over_time(mixed_avg_b[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b" (1:15)
 
 eval instant at 6h avg_over_time(mixed_avg_b[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_avg_b" (1:15)
 
 clear
 
@@ -578,9 +648,431 @@ load 1h
   mixed_histo_avg{env="prod"} _ _ {{schema:0 sum:100 count:10 buckets:[10]}} {{schema:-53 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:100 count:10 buckets:[10]}} _
 
 eval instant at 6h avg_over_time(mixed_histo_avg[5h])
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
+  expect warn regex: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"( \([0-9]+:[0-9]+\))?
 
 eval instant at 6h avg_over_time(mixed_histo_avg[5h])
-  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"
+  expect warn regex: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_histo_avg"( \([0-9]+:[0-9]+\))?
+
+clear
+
+# Splitting disables skipping buckets.
+# Test queries that would usually skip histogram buckets (e.g. histogram_count()).
+
+load 1h
+  hist_no_tail{env="prod"} _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}} {{schema:0 sum:14400 count:14400 buckets:[14400]}}
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h]))
+  {env="prod"} 1
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+eval instant at 6h histogram_count(rate(hist_no_tail[5h])) + histogram_fraction(0, 10, rate(hist_no_tail[5h]))
+  {env="prod"} 2
+
+clear
+
+# ===== present_over_time =====
+
+# floats
+load 1h
+  pot_metric{env="prod"} 1 2 3 4 5 6 7 8
+
+eval instant at 6h present_over_time(pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 6h present_over_time(pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 13h present_over_time(pot_metric[5h])
+
+eval instant at 13h present_over_time(pot_metric[5h])
+
+clear
+
+# histograms
+load 1h
+  hist_pot_metric{env="prod"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}}
+
+eval instant at 6h present_over_time(hist_pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 6h present_over_time(hist_pot_metric[5h])
+  {env="prod"} 1
+
+eval instant at 13h present_over_time(hist_pot_metric[5h])
+
+eval instant at 13h present_over_time(hist_pot_metric[5h])
+
+clear
+
+# test with empty splits
+load 1h
+  pot_metric2{env="prod", job="early"} _ 2 _ _ _ _ _ _
+  pot_metric2{env="prod", job="late" } _ _ _ _ 5 _ _ _
+
+eval instant at 2h present_over_time(pot_metric2[2h])
+  {env="prod", job="early"} 1
+
+eval instant at 2h present_over_time(pot_metric2[2h])
+  {env="prod", job="early"} 1
+
+eval instant at 5h present_over_time(pot_metric2[2h])
+  {env="prod", job="late"} 1
+
+eval instant at 5h present_over_time(pot_metric2[2h])
+  {env="prod", job="late"} 1
+
+eval instant at 3h present_over_time(pot_metric2[2h])
+
+eval instant at 3h present_over_time(pot_metric2[2h])
+
+eval instant at 6h present_over_time(pot_metric2[6h])
+  {env="prod", job="early"} 1
+  {env="prod", job="late"} 1
+
+eval instant at 6h present_over_time(pot_metric2[6h])
+  {env="prod", job="early"} 1
+  {env="prod", job="late"} 1
+
+clear
+
+# mixed histograms and floats, present_over_time doesn't emit warnings
+load 1h
+  pot_mixed{env="prod"} 1 2 3 {{schema:0 sum:100 count:10 buckets:[10]}} {{schema:0 sum:100 count:10 buckets:[10]}}
+
+eval instant at 5h present_over_time(pot_mixed[5h])
+  {env="prod"} 1
+   expect no_warn
+   expect no_info
+
+eval instant at 5h present_over_time(pot_mixed[5h])
+  {env="prod"} 1
+   expect no_warn
+   expect no_info
+
+clear
+
+# metric with stale data
+load 1h
+  pot_stale_metric{env="prod"} stale stale stale stale stale stale stale stale stale stale stale stale
+
+eval instant at 6h present_over_time(pot_stale_metric[5h])
+
+eval instant at 6h present_over_time(pot_stale_metric[5h])
+
+clear
+
+# Resets between all samples, but the resets can only be detected by comparing the buckets.
+# Load three values at 1h, 3h and 5h. There are resets between all samples, but the resets can only be detected by
+# comparing buckets.
+# At ingest time, the resets between the samples will be detected, and a chunk is cut for each reset. However, the
+# CounterReset hint is ignored at read time and instead the hint for the first sample for each chunk is marked as
+# UnknownCounterReset. This is because we don't know if the preceding chunk during ingest is still the preceding chunk
+# during query (e.g. backfill or OOO might insert chunks in-between).
+# This means reset detection must be done again at read time.
+load 1h
+  hist_bucket_only_reset{env="prod"} _ {{schema:0 sum:8 count:4 buckets:[0 4]}} _ {{schema:0 sum:16 count:4 buckets:[0 0 4]}} _ {{schema:0 sum:32 count:4 buckets:[0 0 0 4]}}
+
+# increase() stores the first sample for each split range as part of its intermediate results, so the delta between
+# the last sample in the previous result and the first sample of this result can be taken into account, including any
+# resets.
+# The 3h sample will be the first sample for the (2h-1ms, 4h-1ms] cache entry. Its hint within the cached entry will
+# be UnknownCounterReset, as a) it's the first sample in a chunk, b) it's the first sample being read by the query, so
+# no prior samples to compare with.
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[5h]))
+  {env="prod"} 10
+
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[5h]))
+  {env="prod"} 10
+
+# This query will load the (2h-1ms, 4h-1ms] cache entry with the 3h sample with UnknownCounterReset. This means there
+# will be reset detection between the 1h and 3h samples which requires comparing buckets to get the correct reset.
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
+  {env="prod"} 12
+
+eval instant at 6h histogram_count(increase(hist_bucket_only_reset[6h]))
+  {env="prod"} 12
+
+clear
+
+# ===== subqueries =====
+
+load 1h
+  subquery_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+eval instant at 9h sum_over_time(max_over_time(subquery_metric[1h])[5h:1h])
+  {env="prod"} 40
+
+clear
+
+load 1h
+  subquery_metric_mod{env="prod"} 1 2 3 4 5 6 7
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 6h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h])
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+eval instant at 7h sum_over_time(max_over_time(subquery_metric_mod[1h])[5h:1h] offset 1h)
+  {env="prod"} 25
+
+clear
+
+# A subquery whose own inner expression is itself a subquery.
+
+load 1h
+  nested_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+eval instant at 9h sum_over_time(min_over_time(max_over_time(nested_metric[1h])[3h:1h])[6h:1h])
+  {env="prod"} 33
+
+clear
+
+# A subquery nested inside another subquery, with a step that doesn't line up with the split interval.
+load 1h
+  nested_metric2{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+eval instant at 8h count_over_time(min_over_time(max_over_time(nested_metric2[1h])[3h:1h])[7h:3h])
+  {env="prod"} 2
+
+clear
+
+# Same shape, but with a step equal to the split interval.
+load 1h
+  nested_metric3{env="prod"} 1 2 3 4 5 6 7 8 9
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+eval instant at 8h max_over_time(sum_over_time(min_over_time(nested_metric3[1h])[2h:1h])[6h:2h])
+  {env="prod"} 17
+
+clear
+
+# query with subset selector elimination
+load 1h
+  sse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+  sse_subquery_metric{env="prod", code="err"} 100 200 300 400 500 600 700 800 900 1000
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
+
+eval instant at 6h sum_over_time(max_over_time(sse_subquery_metric{code!="err"}[1h])[5h:1h]) / min_over_time(max_over_time(sse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 8.33333333333333
+
+clear
+
+# count_over_time( sum_over_time( min_over_time(hour_collision_metric[2h]) [20h:2h] ) [5h:12h] )
+#
+#  S1, outer subquery:  sum_over_time(S2)                        [5h:12h]  range 5h,  step 12h
+#  S2, inner subquery:  min_over_time(hour_collision_metric[2h]) [20h:2h]  range 20h, step 2h
+#
+#      19h        20h                                 24h
+#      |-- Head --|----- Block1 + Block2, 2 steps -----|
+#        (~1h)     (20h->22h step, then 22h->24h step)
+#
+# S1 12h step aligns Head end (19h59m59.999s) and Block1+Block2 end (23h59m59.999s) to
+# the same instant, 24h. That shared instant becomes S2's own reference point, so S2 computes the identical 10-step
+# window regardless of which piece asked. Head range has zero steps of its own, so it never actually reads through this path,
+# but materialization happens regardless of that, so the same S2 operator still gets materialized for Head as for Block1+Block2.
+# To mitigate this, rvs wraps S2's own child (not S2 itself) in a Duplicate node.
+load 1h
+  hour_collision_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time(min_over_time(hour_collision_metric[2h])[20h:2h])[5h:12h])
+  {env="prod"} 1
+
+eval instant at 24h count_over_time(sum_over_time(min_over_time(hour_collision_metric[2h])[20h:2h])[5h:12h])
+  {env="prod"} 1
+
+clear
+
+# Different split blocks share the same step-invariant expression (eg. from the @ modifier).
+load 1h
+  step_invariant_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time(step_invariant_metric[2h] @ 10h)[5h:3h])
+  {env="prod"} 2
+
+eval instant at 24h count_over_time(sum_over_time(step_invariant_metric[2h] @ 10h)[5h:3h])
+  {env="prod"} 2
+
+# @ applied directly to the selector feeding the subquery, with no function call in between.
+eval instant at 24h count_over_time((step_invariant_metric @ 10h)[5h:3h])
+  {env="prod"} 2
+
+eval instant at 24h count_over_time((step_invariant_metric @ 10h)[5h:3h])
+  {env="prod"} 2
+
+# Step-invariant expression nested two levels deep, inside a subquery nested inside another split subquery.
+eval instant at 24h count_over_time(sum_over_time(avg_over_time(step_invariant_metric[1h] @ 10h)[3h:30m])[5h:12h])
+  {env="prod"} 1
+
+eval instant at 24h count_over_time(sum_over_time(avg_over_time(step_invariant_metric[1h] @ 10h)[3h:30m])[5h:12h])
+  {env="prod"} 1
+
+clear
+
+# vector(1) is step-invariant without an @ modifier
+load 1h
+  vector_binop_metric{env="prod"} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h sum_over_time((vector(1) + on() vector_binop_metric)[5h:1h])
+  {} 120
+
+eval instant at 24h sum_over_time((vector(1) + on() vector_binop_metric)[5h:1h])
+  {} 120
+
+clear
+
+# shared, split subquery deduplicated by common subexpression elimination
+load 1h
+  cse_subquery_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+eval instant at 6h sum_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h]) / count_over_time(max_over_time(cse_subquery_metric[1h])[5h:1h])
+  {env="prod", code="ok"} 5
+
+clear
+
+# Binary operation over a shared, step-invariant subquery: CSE sharing and split-block sharing together.
+load 1h
+  cse_stepinvariant_metric{env="prod", code="ok"} 1 2 3 4 5 6 7 8 9 10
+
+eval instant at 6h sum_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h]) / count_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h])
+  {env="prod", code="ok"} 4
+
+eval instant at 6h sum_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h]) / count_over_time(max_over_time(cse_stepinvariant_metric[1h] @ 3h)[5h:1h])
+  {env="prod", code="ok"} 4
+
+clear
+
+load 1h
+  sse_above_subquery_metric{env="prod", a="1"} 1 2 3 4 5 6 7 8 9 10
+  sse_above_subquery_metric{env="prod", a="2"} 100 200 300 400 500 600 700 800 900 1000
+
+eval instant at 6h sum_over_time(max_over_time(sse_above_subquery_metric{a="1"}[1h])[5h:1h]) / sum_over_time(max_over_time(sse_above_subquery_metric[1h])[5h:1h])
+  {env="prod", a="1"} 1
+
+eval instant at 6h sum_over_time(max_over_time(sse_above_subquery_metric{a="1"}[1h])[5h:1h]) / sum_over_time(max_over_time(sse_above_subquery_metric[1h])[5h:1h])
+  {env="prod", a="1"} 1
+
+clear
+
+# A DuplicateFilter ends up directly under a Subquery, shared between two split subqueries.
+load 1h
+  dup_filter_metric{a="1"} 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+
+eval instant at 24h count_over_time(sum_over_time((dup_filter_metric{a="1"})[20h:2h])[5h:12h]) + on() sum(sum_over_time((dup_filter_metric)[20h:2h]))
+  {} 151
+
+eval instant at 24h count_over_time(sum_over_time((dup_filter_metric{a="1"})[20h:2h])[5h:12h]) + on() sum(sum_over_time((dup_filter_metric)[20h:2h]))
+  {} 151
+
+clear
+
+# The subquery here emits unsorted series (RHS before LHS), check FunctionOverRangeVectorSplit#mergeSplitsMetadata handles that.
+load 1h
+  unsorted_merge_a{id="a"} 1 2 3 4 5
+  unsorted_merge_b{id="b"} 10 20 30 40 50
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+eval instant at 5h sum_over_time((unsorted_merge_a or unsorted_merge_b)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+
+clear
+
+# Same as above, but with three chained "or"
+load 1h
+  unsorted_merge_3way_a{id="a"} 1 2 3 4 5
+  unsorted_merge_3way_b{id="b"} 10 20 30 40 50
+  unsorted_merge_3way_c{id="c"} 100 200 300 400 500
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+eval instant at 5h sum_over_time((unsorted_merge_3way_a or unsorted_merge_3way_b or unsorted_merge_3way_c)[5h:1h])
+  {id="a"} 14
+  {id="b"} 140
+  {id="c"} 1400
+
+clear
+
+load 1h
+  shared_split_unsplit_metric{env="prod"} 1 1 3 3
+
+eval instant at 3h59m59s999ms sum_over_time(shared_split_unsplit_metric[4h:1h]) + stddev_over_time(shared_split_unsplit_metric[4h:1h])
+  {env="prod"} 9
+
+eval instant at 3h59m59s999ms sum_over_time(shared_split_unsplit_metric[4h:1h]) + stddev_over_time(shared_split_unsplit_metric[4h:1h])
+  {env="prod"} 9
+
+clear
+
+# Warning from inside a subquery should be preserved.
+load 1h
+  subquery_warn_metric{env="prod"} 1 2 3 4 5 {{schema:0 sum:100 count:10 buckets:[10]}} 7 8
+
+eval instant at 8h count_over_time(sum_over_time(subquery_warn_metric[2h])[8h:2h])
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name .*?
+  {env="prod"} 3
+
+eval instant at 8h count_over_time(sum_over_time(subquery_warn_metric[2h])[8h:2h])
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name .*?
+  {env="prod"} 3
+
+eval instant at 8h count_over_time(sum_over_time(avg_over_time(subquery_warn_metric[1h])[2h:1h])[8h:2h])
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name .*?
+  {env="prod"} 3
+
+eval instant at 8h count_over_time(sum_over_time(avg_over_time(subquery_warn_metric[1h])[2h:1h])[8h:2h])
+  expect warn regex: PromQL warning: encountered a mix of histograms and floats for metric name .*?
+  {env="prod"} 3
+
+clear
+
+# A fixed-time subquery whose range contains exactly one aligned step: splitting produces zero-step
+# fragments for this, which shoudn't trigger sort warning.
+load 1h
+  subquery_sort_warning_metric{series="a"} 0 1 2 3 4 5 6 7 8 9 10 11 12
+
+eval instant at 12h7m sum_over_time((sort_desc(subquery_sort_warning_metric))[3h:3h] @ 12h)
+  expect no_warn
+  {series="a"} 12
+
+eval instant at 12h7m sum_over_time((sort_desc(subquery_sort_warning_metric))[3h:3h] @ 12h)
+  expect no_warn
+  {series="a"} 12
 
 clear

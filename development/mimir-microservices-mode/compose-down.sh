@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 # Provenance-includes-location: https://github.com/cortexproject/cortex/development/tsdb-blocks-storage-s3/compose-down.sh
 # Provenance-includes-license: Apache-2.0
@@ -15,4 +15,4 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down --remove-orphans

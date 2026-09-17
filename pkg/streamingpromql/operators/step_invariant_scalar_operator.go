@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -43,8 +44,8 @@ func (s *StepInvariantScalarOperator) AfterPrepare(ctx context.Context) error {
 	return s.inner.AfterPrepare(ctx)
 }
 
-func (s *StepInvariantScalarOperator) Finalize(ctx context.Context) error {
-	return s.inner.Finalize(ctx)
+func (s *StepInvariantScalarOperator) FinishedReading(ctx context.Context) error {
+	return s.inner.FinishedReading(ctx)
 }
 
 func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.ScalarData, error) {
@@ -54,6 +55,11 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 	}
 
 	if s.originalTimeRange.IsInstant || s.originalTimeRange.StepCount <= 1 {
+		// The inner operator will be evaluated at T=0, so we still need to set the correct timestamp for any output samples.
+		for i := range data.Samples {
+			data.Samples[i].T = s.originalTimeRange.StartT
+		}
+
 		return data, nil
 	}
 
@@ -68,9 +74,7 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 			return types.ScalarData{}, err
 		}
 
-		floats = append(floats, data.Samples[0])
-
-		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
+		for ts := s.originalTimeRange.StartT; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			floats = append(floats, promql.FPoint{
 				T: ts,
 				F: data.Samples[0].F,
@@ -84,12 +88,13 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 	return data, nil
 }
 
-func (s *StepInvariantScalarOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	inner, err := s.inner.Stats(ctx)
+func (s *StepInvariantScalarOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	inner, annos, err := s.inner.Finalize(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer inner.Close()
-	return inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	stats, err := inner.ExtendStepInvariantToFullRange(s.originalTimeRange)
+	return stats, annos, err
 }

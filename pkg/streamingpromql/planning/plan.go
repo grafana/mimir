@@ -12,11 +12,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -62,7 +60,55 @@ const QueryPlanV7 = QueryPlanVersion(7)
 // QueryPlanV8 introduces support for subset selector elimination in multi-aggregation nodes.
 const QueryPlanV8 = QueryPlanVersion(8)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV8
+// QueryPlanV9 introduces the NoOp node.
+const QueryPlanV9 = QueryPlanVersion(9)
+
+// QueryPlanV10 introduces a matrix variant of the NoOp node.
+const QueryPlanV10 = QueryPlanVersion(10)
+
+// QueryPlanV11 introduces support for deduplicating range vector selectors in range queries as part of
+// common subexpression elimination.
+const QueryPlanV11 = QueryPlanVersion(11)
+
+// QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
+const QueryPlanV12 = QueryPlanVersion(12)
+
+// QueryPlanV13 derives the SplitFunctionCall inner-node cache key at materialize time
+// rather than reading it from the proto.
+const QueryPlanV13 = QueryPlanVersion(13)
+
+// QueryPlanV14 introduces support for splitting a range query into smaller sub ranges.
+const QueryPlanV14 = QueryPlanVersion(14)
+
+// QueryPlanV15 introduces support for quantile aggregation in multi-aggregation nodes.
+const QueryPlanV15 = QueryPlanVersion(15)
+
+// QueryPlanV16 introduces support for caching the result of an instant vector operator.
+const QueryPlanV16 = QueryPlanVersion(16)
+
+// QueryPlanV17 introduces the EvaluationRoot node used when spinning off subqueries from instant
+// queries. EvaluationRoot nodes only ever run in query-frontends, so queriers do not need to support
+// this version.
+const QueryPlanV17 = QueryPlanVersion(17)
+
+// QueryPlanV18 computes the SplitFunctionCall split ranges at materialize time rather than storing
+// them in the proto. The split ranges depend on the out-of-order window and current time, which are
+// evaluated on the querier when the operator is materialized.
+const QueryPlanV18 = QueryPlanVersion(18)
+
+// QueryPlanV19 introduces support for deduplicating scalar expressions.
+const QueryPlanV19 = QueryPlanVersion(19)
+
+// QueryPlanV20 introduces support for the fill_left and fill_right modifiers in binary expressions.
+// Queriers that do not support this version would silently ignore the fill modifier and produce
+// incorrect results.
+const QueryPlanV20 = QueryPlanVersion(20)
+
+// QueryPlanV21 introduces support for splitting subqueries in range vector splitting, in addition
+// to range vector selectors.
+const QueryPlanV21 = QueryPlanVersion(21)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV21
 
 type QueryPlan struct {
 	Root       Node
@@ -164,7 +210,7 @@ type Node interface {
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
 	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
-	MinimumRequiredPlanVersion() QueryPlanVersion
+	MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (QueryPlanVersion, error)
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -233,8 +279,6 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
@@ -261,10 +305,11 @@ type SplitNode interface {
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
 
-	// SplittingCacheKey returns a cache key for this node's intermediate results.
-	SplittingCacheKey() string
-
 	GetRangeParams() RangeParams
+
+	// QueriedTimeRangeWithSubRange returns the range of data queried from ingesters and store-gateways when this node
+	// is evaluated with overrideRangeParams instead of its original range parameters.
+	QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams RangeParams, lookbackDelta time.Duration) (QueriedTimeRange, error)
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.
@@ -282,7 +327,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
+		TimeRange:                p.Parameters.TimeRange.Encode(),
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
@@ -321,34 +366,30 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	if p.Root == nil {
 		return errors.New("query plan version can not be determined without a root node")
 	}
-	p.Version = MinimumRequiredPlanVersion(p.Root)
-	return nil
+
+	var err error
+	p.Version, err = MinimumRequiredPlanVersion(p.Root, p.Parameters.TimeRange)
+	return err
 }
 
 // MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
-func MinimumRequiredPlanVersion(node Node) QueryPlanVersion {
-	maxVersion := node.MinimumRequiredPlanVersion()
+func MinimumRequiredPlanVersion(node Node, timeRange types.QueryTimeRange) (QueryPlanVersion, error) {
+	maxVersion, err := node.MinimumRequiredPlanVersion(timeRange)
+	if err != nil {
+		return 0, err
+	}
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
 	for child := range ChildrenIter(node) {
-		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child))
-	}
-	return maxVersion
-}
+		childVersion, err := MinimumRequiredPlanVersion(child, childTimeRange)
+		if err != nil {
+			return 0, err
+		}
 
-func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
-	return EncodedQueryTimeRange{
-		StartT:               t.StartT,
-		EndT:                 t.EndT,
-		IntervalMilliseconds: t.IntervalMilliseconds,
-		IsInstant:            t.IsInstant,
-	}
-}
-
-func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
-	if e.IsInstant {
-		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
+		maxVersion = max(maxVersion, childVersion)
 	}
 
-	return types.NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
+	return maxVersion, nil
 }
 
 type queryPlanEncoder struct {
@@ -423,7 +464,7 @@ func NodeTypeName(n Node) string {
 // DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
 func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 	if p.Version > MaximumSupportedQueryPlanVersion {
-		return nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+		return nil, apierror.Newf(apierror.TypeNotAcceptable, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
@@ -443,7 +484,7 @@ func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 	return &QueryParameters{
 		OriginalExpression:       p.OriginalExpression,
-		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
 	}

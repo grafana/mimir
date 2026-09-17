@@ -37,9 +37,11 @@ func marshalDetails(m proto.Message) []byte {
 
 func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
+	instantQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
-	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	rangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
+	emptyRangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(5000), timestamp.Time(3000), time.Second)
+	emptyRangeQueryEncodedTimeRange := types.EncodedQueryTimeRange{StartT: 5000, EndT: 3000, IntervalMilliseconds: 1000}
 	lookbackDelta := 3 * time.Minute
 
 	testCases := map[string]struct {
@@ -61,7 +63,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
@@ -88,7 +90,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
@@ -116,7 +118,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(0),
@@ -141,7 +143,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(0),
@@ -160,6 +162,31 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"vector selector with '@ 0' empty range query": {
+			expr:      `some_metric @ 0`,
+			timeRange: emptyRangeQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:     emptyRangeQueryEncodedTimeRange,
+				LookbackDelta: lookbackDelta,
+				RootNode:      0,
+				Version:       0,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Timestamp:          timestampOf(0),
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
+					},
+				},
+			},
+		},
 		"vector selector with '@ start()'": {
 			expr:      `some_metric @ start()`,
 			timeRange: rangeQuery,
@@ -173,7 +200,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(3000),
@@ -205,7 +232,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Timestamp:          timestampOf(5000),
@@ -236,7 +263,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Offset:             30 * time.Second,
@@ -260,7 +287,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -284,7 +311,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -310,7 +337,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -363,7 +390,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -415,7 +442,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -530,7 +557,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
@@ -573,7 +600,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
@@ -607,7 +634,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 14, End: 25},
@@ -642,7 +669,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 19, End: 30},
@@ -678,7 +705,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 8, End: 19},
@@ -821,7 +848,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
@@ -863,7 +890,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -915,7 +942,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -926,7 +953,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 14, End: 31},
@@ -961,7 +988,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -972,7 +999,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 23, End: 40},
@@ -1010,7 +1037,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1021,7 +1048,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 29, End: 46},
@@ -1059,7 +1086,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1070,7 +1097,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 46, End: 63},
@@ -1110,7 +1137,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1145,7 +1172,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1180,7 +1207,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1217,7 +1244,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
@@ -1256,7 +1283,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
@@ -1298,7 +1325,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Offset:                 0,
@@ -1353,7 +1380,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Timestamp:              timestampOf(1000),
@@ -1408,7 +1435,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
 						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "metric"},
 							},
 							Timestamp:              timestampOf(1000),
@@ -1480,7 +1507,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -1506,7 +1533,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
 						Details: marshalDetails(&core.MatrixSelectorDetails{
-							Matchers: []*core.LabelMatcher{
+							Matchers: []core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
@@ -1515,6 +1542,90 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s] smoothed`,
+					},
+				},
+			},
+		},
+
+		"info function with no data label selectors": {
+			expr:      `info(metric)`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 1,
+				Version:                  planning.QueryPlanVersionZero,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"info function with data label selectors": {
+			expr:      `info(metric, {__name__="svc_info"})`,
+			timeRange: instantQuery,
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				LookbackDelta:            lookbackDelta,
+				RootNode:                 2,
+				Version:                  planning.QueryPlanV12,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							ExpressionPosition:     core.PositionRange{Start: 5, End: 11},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_DATA_LABEL_SELECTOR,
+						Details: marshalDetails(&core.DataLabelSelectorDetails{
+							Matchers: []core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "svc_info"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 13, End: 34},
+						}),
+						Type:        "DataLabelSelector",
+						Description: `{__name__="svc_info"}`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_INFO,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 35},
+						}),
+						Type:           "FunctionCall",
+						Description:    `info(...)`,
+						Children:       []int64{0, 1},
+						ChildrenLabels: []string{"param 0", "param 1"},
 					},
 				},
 			},
@@ -1607,29 +1718,6 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 	require.Equal(t, []int64{1, 1}, nodes)
 	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[0].NodeType)
 	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
-}
-
-func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
-	require.NoError(t, err)
-
-	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
-
-	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
-	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
-	require.Nil(t, plan)
-}
-
-type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
-	return "test optimization pass"
-}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
-	return plan, nil
 }
 
 func TestPlanVersioning(t *testing.T) {
@@ -2165,6 +2253,58 @@ func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error
 	return posrange.PositionRange{}, nil
 }
 
-func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersion(t.Value)
+func (t *versioningTestNode) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersion(t.Value), nil
+}
+
+// TestInfoQueriedTimeRangeCoversPinnedTime is a regression test for info() with a pinned range
+// selector as its first argument. The info series are looked up (with lookback) as of the pinned
+// time, but a range selector's queried time range does not include the lookback delta, so the
+// info series' lookback window must be contributed by the info data label selector. Previously it
+// was not, so the overall queried time range - which drives remote-execution data fetching - could
+// miss the info series and silently drop enrichment.
+func TestInfoQueriedTimeRange(t *testing.T) {
+	lookbackDelta := 5 * time.Minute
+	// Evaluate well after any pinned time so a range pinned to a selector doesn't reach it.
+	evalTime := timestamp.Time(0).Add(40 * time.Minute)
+
+	// The +1ms on MinT excludes the sample exactly one lookback delta before (see ComputeQueriedTimeRange).
+	testCases := map[string]struct {
+		expr         string
+		expectedMinT time.Time
+		expectedMaxT time.Time
+	}{
+		// A uniform reference pins the lookup to the shared time; the range selector alone queries
+		// no lookback, so the info series' lookback window must come from the data label selector.
+		"uniform reference pins to the shared time": {
+			expr:         "info(last_over_time(metric[1m] @ 120))",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: timestamp.Time(120_000),
+		},
+		// Selectors pinned at different times aren't uniform: info series are matched per step, so
+		// the range must reach the evaluation time rather than be capped at the pinned times.
+		"non-uniform references use evaluation time": {
+			expr:         "info(metric @ 120 or other_metric @ 180)",
+			expectedMinT: timestamp.Time(120_000 - lookbackDelta.Milliseconds() + 1),
+			expectedMaxT: evalTime,
+		},
+	}
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	queryTimeRange := types.NewInstantQueryTimeRange(evalTime)
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedMinT, queried.MinT)
+			require.Equal(t, tc.expectedMaxT, queried.MaxT)
+		})
+	}
 }

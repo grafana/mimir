@@ -45,6 +45,10 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 
 	c.printer.PrintLine(fmt.Sprintf("Number of partitions before creating additional partitions: %d", len(details.Partitions)))
 
+	// getTopicDetails serves metadata from the kgo client cache (up to MetadataMinAge).
+	// Purge it so the post-create read below reflects the new partition count rather than the value just cached above.
+	client.PurgeTopicsFromClient(c.topic)
+
 	// Create new partitions.
 	responses, err := adm.CreatePartitions(context.Background(), c.numPartitions, c.topic)
 	if err != nil {

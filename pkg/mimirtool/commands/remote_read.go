@@ -91,6 +91,11 @@ type RemoteReadCommand struct {
 	apiKey   string
 	apiUser  string
 
+	tlsCAPath             string
+	tlsCertPath           string
+	tlsKeyPath            string
+	tlsInsecureSkipVerify bool
+
 	readTimeout time.Duration
 	tsdbPath    string
 
@@ -135,6 +140,22 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
+		cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").
+			Default("").
+			Envar(envVars.TLSCAPath).
+			StringVar(&c.tlsCAPath)
+		cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCertPath+".").
+			Default("").
+			Envar(envVars.TLSCertPath).
+			StringVar(&c.tlsCertPath)
+		cmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").
+			Default("").
+			Envar(envVars.TLSKeyPath).
+			StringVar(&c.tlsKeyPath)
+		cmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").
+			Default("false").
+			Envar(envVars.TLSInsecureSkipVerify).
+			BoolVar(&c.tlsInsecureSkipVerify)
 		cmd.Flag("read-timeout", "timeout for read requests").
 			Default("30s").
 			DurationVar(&c.readTimeout)
@@ -212,6 +233,12 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 			BasicAuth: &config_util.BasicAuth{
 				Username: cmp.Or(c.apiUser, c.tenantID),
 				Password: config_util.Secret(c.apiKey),
+			},
+			TLSConfig: config_util.TLSConfig{
+				CAFile:             c.tlsCAPath,
+				CertFile:           c.tlsCertPath,
+				KeyFile:            c.tlsKeyPath,
+				InsecureSkipVerify: c.tlsInsecureSkipVerify,
 			},
 		},
 		ChunkedReadLimit: c.readSizeLimit,

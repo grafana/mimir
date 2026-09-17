@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/user"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -54,7 +55,7 @@ func (m *activityTrackingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Re
 			return
 		}
 		// This is not expected to happen but if there was an error here and the request body can not be restored then the request is no longer valid.
-		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "path", r.URL.Path, "contentType", r.Header.Get("Content-Type"), "err", err)
+		level.Error(m.log).Log("msg", "failed to parse request params for activity tracking", "path", dskitlog.DropUnsafeChars(r.URL.Path), "contentType", dskitlog.DropUnsafeChars(r.Header.Get("Content-Type")), "err", err)
 		http.Error(w, "failed to parse request params for activity tracking", http.StatusInternalServerError)
 		return
 	}

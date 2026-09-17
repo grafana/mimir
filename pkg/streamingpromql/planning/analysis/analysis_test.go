@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 func TestHandler(t *testing.T) {
@@ -156,6 +157,53 @@ func TestHandler(t *testing.T) {
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
 					"originalExpression": "up @ start()",
+					"version": 0
+				  }
+				}
+			  ],
+			  "planVersion": 0
+			}`,
+			expectedStatusCode: http.StatusOK,
+		},
+
+		"valid request with overridden lookback delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{`6m`},
+			},
+			expectedResponse: `{
+			  "originalExpression": "up",
+			  "timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+			  "astStages": [
+				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up"},
+				{"name": "Final expression", "duration": null, "outputExpression": "up"}
+			  ],
+			  "planningStages": [
+				{
+				  "name": "Original plan",
+				  "duration": 1234000000,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
+					"version": 0
+				  }
+				},
+				{
+				  "name": "Final plan",
+				  "duration": null,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"lookbackDelta": 360000000000,
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
+					],
+					"originalExpression": "up",
 					"version": 0
 				  }
 				}
@@ -307,12 +355,39 @@ func TestHandler(t *testing.T) {
 			expectedResponse:   `parsing expression failed: 1:2: parse error: unexpected end of input`,
 			expectedStatusCode: http.StatusBadRequest,
 		},
+		"invalid lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"foo"},
+			},
+			expectedResponse:   `could not parse 'lookback_delta' parameter: cannot parse "foo" to a valid duration`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"zero lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"0"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
+		"negative lookback_delta": {
+			params: url.Values{
+				"query":          []string{`up`},
+				"time":           []string{"2022-01-01T00:00:00Z"},
+				"lookback_delta": []string{"-300"},
+			},
+			expectedResponse:   `lookback_delta must be greater than 0`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
 	}
 
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
-	handler := Handler(planner, streamingpromql.NewStaticQueryLimitsProvider())
+	handler := NewHandler(planner, streamingpromql.NewStaticQueryLimitsProvider(), streamingpromql.NewTestEngineOpts(), requestoptions.OptionDecoder{})
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -338,7 +413,7 @@ func TestHandler(t *testing.T) {
 }
 
 func TestHandler_PlanningDisabled(t *testing.T) {
-	handler := Handler(nil, nil)
+	handler := NewHandler(nil, nil, streamingpromql.NewTestEngineOpts(), requestoptions.OptionDecoder{})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	resp := httptest.NewRecorder()
@@ -371,8 +446,8 @@ func TestHandler_Sharding(t *testing.T) {
 			  "astStages": [
 				{"name": "Parsing", "duration": 1234000000, "outputExpression": "sum(up)"},
 				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "sum(up)"},
-				{"name": "Sharding", "duration": 1234000000, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_3\"}),\n    sum(up{__query_shard__=\"2_of_3\"}),\n    sum(up{__query_shard__=\"3_of_3\"})\n  )\n)"},
-				{"name": "Final expression", "duration": null, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_3\"}),\n    sum(up{__query_shard__=\"2_of_3\"}),\n    sum(up{__query_shard__=\"3_of_3\"})\n  )\n)"}
+				{"name": "Sharding", "duration": 1234000000, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_4\"}),\n    sum(up{__query_shard__=\"2_of_4\"}),\n    sum(up{__query_shard__=\"3_of_4\"}),\n    sum(up{__query_shard__=\"4_of_4\"})\n  )\n)"},
+				{"name": "Final expression", "duration": null, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_4\"}),\n    sum(up{__query_shard__=\"2_of_4\"}),\n    sum(up{__query_shard__=\"3_of_4\"}),\n    sum(up{__query_shard__=\"4_of_4\"})\n  )\n)"}
 			  ],
 			  "planningStages": [
 				{
@@ -382,17 +457,19 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3, 5], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2"]},
-					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
+					  {"type": "AggregateExpression", "children": [8], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7,
+					"rootNode": 9,
 					"version": 0
 				  }
 				},
@@ -403,17 +480,19 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3, 5], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2"]},
-					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
+					  {"type": "AggregateExpression", "children": [8], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7,
+					"rootNode": 9,
 					"version": 0
 				  }
 				}
@@ -487,9 +566,9 @@ func TestHandler_Sharding(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
-	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
+	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, log.NewNopLogger()))
 
-	handler := middleware.AuthenticateUser(Handler(planner, streamingpromql.NewStaticQueryLimitsProvider()))
+	handler := middleware.AuthenticateUser(NewHandler(planner, streamingpromql.NewStaticQueryLimitsProvider(), streamingpromql.NewTestEngineOpts(), requestoptions.OptionDecoder{}))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {

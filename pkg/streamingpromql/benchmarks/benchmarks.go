@@ -145,6 +145,50 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "rate(a_X[2h] anchored)",
 			Steps: 10000,
 		},
+		// Native histogram equivalents of the smoothed/anchored cases above, to track parity with
+		// the float implementation.
+		{
+			Expr: "rate(nh_X[1m] smoothed)",
+		},
+		{
+			Expr:  "rate(nh_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[2h] smoothed)",
+		},
+		{
+			Expr:  "rate(nh_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(nh_X[1m] smoothed)",
+		},
+		{
+			Expr:  "delta(nh_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(nh_X[2h] smoothed)",
+		},
+		{
+			Expr:  "delta(nh_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[1m] anchored)",
+		},
+		{
+			Expr:  "rate(nh_X[1m] anchored)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[2h] anchored)",
+		},
+		{
+			Expr:  "rate(nh_X[2h] anchored)",
+			Steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",
@@ -229,6 +273,15 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "h_X * on(l) group_left() a_X",
+		},
+		// Test the hint-based narrowing for group_left/group_right: the one side selects only 2
+		// out of 2000 distinct "l" values, so the optimizer passes {l=~"1|3"} to the many side
+		// and reduces the series it needs to fetch from ~12000 down to ~12.
+		{
+			Expr: `h_2000 * on(l) group_left() a_2000{l=~"[13]"}`,
+		},
+		{
+			Expr: `a_2000{l=~"[13]"} * on(l) group_right() h_2000`,
 		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
@@ -398,6 +451,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "a_X + a_X",
 		},
+		// Multi-aggregation with quantile
+		{
+			Expr: "quantile(0.95, a_X) - min(a_X)",
+		},
+		{
+			Expr: "quantile(0.95, a_X) - quantile(0.4, a_X)",
+		},
 		{
 			Expr: "sum(a_X) + sum(a_X)",
 		},
@@ -453,6 +513,11 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: `info(info_dense_2000, {__name__="target_info_X"})`,
+		},
+		// CSE eligible query that uses longer range selectors than the step
+		{
+			Expr:  `histogram_count(sum(rate(nh_X[1h]))) / histogram_fraction(0, +Inf, sum(increase(nh_X[1h])))`,
+			Steps: 50,
 		},
 	}
 

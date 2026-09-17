@@ -82,4 +82,5 @@ spec:
             claimName: test-vault-agent-values-minio
         - name: minio-user
           secret:
-            secretName: test-vault-agent-values-minio
+            secretName: test-vault-agent-values-minio        
+

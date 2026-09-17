@@ -38,6 +38,15 @@ var (
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
 
+// skipMissingMetricsIfZero returns e2e.SkipMissingMetrics when value == 0, otherwise a no-op.
+func skipMissingMetricsIfZero(value float64) e2e.MetricsOption {
+	return func(opts *e2e.MetricsOptions) {
+		if value == 0 {
+			opts.SkipMissingMetrics = true
+		}
+	}
+}
+
 func generateFloatSeriesModel(name string, ts time.Time, additionalLabels ...prompb.Label) prompb.TimeSeries {
 	series, _, _ := generateFloatSeries(name, ts, additionalLabels...)
 	return series[0]

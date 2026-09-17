@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
@@ -44,6 +45,19 @@ func (a *fullIndexAnalyzer) LabelValues(ctx context.Context, name string) ([]str
 func (a *fullIndexAnalyzer) SeriesWithLabel(ctx context.Context, labelName string) SeriesIterator {
 	postings := a.reader.PostingsForAllLabelValues(ctx, labelName)
 	return &fullIndexSeriesIterator{
+		reader:   a.reader,
+		postings: postings,
+		builder:  labels.NewScratchBuilder(10),
+	}
+}
+
+func (a *fullIndexAnalyzer) AllChunkSeries(ctx context.Context) ChunkSeriesIterator {
+	name, value := index.AllPostingsKey()
+	postings, err := a.reader.Postings(ctx, name, value)
+	if err != nil {
+		return &errChunkSeriesIterator{err: err}
+	}
+	return &fullChunkSeriesIterator{
 		reader:   a.reader,
 		postings: postings,
 		builder:  labels.NewScratchBuilder(10),
@@ -106,3 +120,45 @@ func (a *stringIterAdapter) At() string {
 func (a *stringIterAdapter) Err() error {
 	return a.iter.Err()
 }
+
+// fullChunkSeriesIterator iterates over all series, providing labels and chunk counts.
+type fullChunkSeriesIterator struct {
+	reader     *index.Reader
+	postings   index.Postings
+	builder    labels.ScratchBuilder
+	current    labels.Labels
+	chunkCount int
+	chks       []chunks.Meta
+	err        error
+}
+
+func (it *fullChunkSeriesIterator) Next() bool {
+	for it.postings.Next() {
+		ref := it.postings.At()
+		it.chks = it.chks[:0]
+		if err := it.reader.Series(ref, &it.builder, &it.chks); err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				continue
+			}
+			it.err = err
+			return false
+		}
+		it.current = it.builder.Labels()
+		it.chunkCount = len(it.chks)
+		return true
+	}
+	it.err = it.postings.Err()
+	return false
+}
+
+func (it *fullChunkSeriesIterator) Labels() labels.Labels { return it.current }
+func (it *fullChunkSeriesIterator) ChunkCount() int       { return it.chunkCount }
+func (it *fullChunkSeriesIterator) Err() error            { return it.err }
+
+// errChunkSeriesIterator is a ChunkSeriesIterator that immediately returns an error.
+type errChunkSeriesIterator struct{ err error }
+
+func (it *errChunkSeriesIterator) Next() bool            { return false }
+func (it *errChunkSeriesIterator) Labels() labels.Labels { return labels.EmptyLabels() }
+func (it *errChunkSeriesIterator) ChunkCount() int       { return 0 }
+func (it *errChunkSeriesIterator) Err() error            { return it.err }

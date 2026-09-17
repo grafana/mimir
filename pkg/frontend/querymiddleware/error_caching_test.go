@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -31,10 +32,10 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		newQueryRequest func(Options) MetricsQueryRequest
+		newQueryRequest func(requestoptions.Options) MetricsQueryRequest
 	}{
 		"range query": {
-			newQueryRequest: func(o Options) MetricsQueryRequest {
+			newQueryRequest: func(o requestoptions.Options) MetricsQueryRequest {
 				return &PrometheusRangeQueryRequest{
 					queryExpr: parseQuery(t, "up"),
 					start:     100,
@@ -45,7 +46,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			},
 		},
 		"instant query": {
-			newQueryRequest: func(o Options) MetricsQueryRequest {
+			newQueryRequest: func(o requestoptions.Options) MetricsQueryRequest {
 				return &PrometheusInstantQueryRequest{
 					queryExpr: parseQuery(t, "up"),
 					time:      100,
@@ -65,7 +66,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 				ctx := context.Background()
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				res, err := runHandler(ctx, inner, c, req)
 
 				require.NoError(t, err)
@@ -82,7 +83,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{
+				req := tc.newQueryRequest(requestoptions.Options{
 					CacheDisabled: true,
 				})
 				res, err := runHandler(ctx, inner, c, req)
@@ -99,7 +100,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner := &mockHandler{}
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				key := keyGen.QueryRequestError(ctx, "1234", req)
 				bytes, err := proto.Marshal(&CachedError{
 					Key:          key,
@@ -126,7 +127,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 
 				key := keyGen.QueryRequestError(ctx, "1234", req)
 				bytes, err := proto.Marshal(&CachedError{
@@ -154,7 +155,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 
 				key := keyGen.QueryRequestError(ctx, "1234", req)
 				bytes := []byte{0x0, 0x0, 0x0, 0x0}
@@ -176,7 +177,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				res, err := runHandler(ctx, inner, c, req)
 
 				require.NoError(t, err)
@@ -193,7 +194,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				res, err := runHandler(ctx, inner, c, req)
 
 				require.Error(t, err)
@@ -210,7 +211,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				res, err := runHandler(ctx, inner, c, req)
 
 				require.Error(t, err)
@@ -227,7 +228,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
 
 				ctx := user.InjectOrgID(context.Background(), "1234")
-				req := tc.newQueryRequest(Options{})
+				req := tc.newQueryRequest(requestoptions.Options{})
 				res, err := runHandler(ctx, inner, c, req)
 
 				require.Error(t, err)

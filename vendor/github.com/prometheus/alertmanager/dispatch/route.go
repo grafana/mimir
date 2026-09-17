@@ -16,6 +16,7 @@ package dispatch
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ var DefaultRouteOpts = RouteOpts{
 	GroupBy:           map[model.LabelName]struct{}{},
 	GroupByAll:        false,
 	MuteTimeIntervals: []string{},
+	Labels:            model.LabelSet{},
 }
 
 // A Route is a node that contains definitions of how to handle alerts.
@@ -54,14 +56,31 @@ type Route struct {
 
 	// Children routes of this route.
 	Routes []*Route
+
+	// Idx contains the index of this route in the config
+	Idx int
 }
 
 // NewRoute returns a new route.
 func NewRoute(cr *config.Route, parent *Route) *Route {
+	counter := 0
+	return newRoute(cr, parent, &counter)
+}
+
+func newRoute(cr *config.Route, parent *Route, counter *int) *Route {
 	// Create default and overwrite with configured settings.
 	opts := DefaultRouteOpts
 	if parent != nil {
 		opts = parent.RouteOpts
+	}
+
+	// Merge parent route labels and cr.Labels into opts.Labels. Always merge
+	// into a fresh LabelSet so we never mutate the parent's map.
+	if len(cr.Labels) != 0 {
+		merged := model.LabelSet{}
+		maps.Copy(merged, opts.Labels)
+		maps.Copy(merged, cr.Labels)
+		opts.Labels = merged
 	}
 
 	if cr.Receiver != "" {
@@ -128,16 +147,21 @@ func NewRoute(cr *config.Route, parent *Route) *Route {
 		Continue:  cr.Continue,
 	}
 
-	route.Routes = NewRoutes(cr.Routes, route)
+	// Create child routes first (they get lower indices)
+	route.Routes = newRoutes(cr.Routes, route, counter)
+
+	// Assign index to this route after all children have been indexed
+	route.Idx = *counter
+	*counter++
 
 	return route
 }
 
-// NewRoutes returns a slice of routes.
-func NewRoutes(croutes []*config.Route, parent *Route) []*Route {
-	res := make([]*Route, 0, len(croutes))
+// newRoutes returns a slice of routes.
+func newRoutes(croutes []*config.Route, parent *Route, counter *int) []*Route {
+	res := []*Route{}
 	for _, cr := range croutes {
-		res = append(res, NewRoute(cr, parent))
+		res = append(res, newRoute(cr, parent, counter))
 	}
 	return res
 }
@@ -236,6 +260,9 @@ type RouteOpts struct {
 
 	// A list of time intervals for which the route is active.
 	ActiveTimeIntervals []string
+
+	// Merged labels from this route and all of its parent routes.
+	Labels model.LabelSet
 }
 
 func (ro *RouteOpts) String() string {

@@ -1135,7 +1135,7 @@ func TestDistributor_RW2_RC3_CreatedTimestamp(t *testing.T) {
 			{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
 		},
 	}}
-	got, err := client.QueryRange("foobarC_CT_total", queryStart, queryEnd, queryStep)
+	got, _, _, err := client.QueryRange("foobarC_CT_total", queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 	require.Equal(t, want.String(), got.String())
 }
@@ -1254,8 +1254,10 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				if !tc.shouldReject {
 					requestCount += len(tc.rw1request)
 				}
-				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")))
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"},
+					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")),
+					// The version label is only added on the first successfully-decoded request, so if every request so far has been rejected the label may not exist yet.
+					skipMissingMetricsIfZero(float64(requestCount)))
 				require.NoError(t, err)
 
 			case "rw2":
@@ -1275,8 +1277,10 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				if !tc.shouldReject {
 					requestCount += len(tc.rw2request)
 				}
-				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")))
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"},
+					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")),
+					// The version label is only added on the first successfully-decoded request, so if every request so far has been rejected the label may not exist yet.
+					skipMissingMetricsIfZero(float64(requestCount)))
 				require.NoError(t, err)
 
 			default:
@@ -1284,7 +1288,7 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 			}
 
 			for q, res := range tc.queries {
-				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				result, _, _, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
 
 				require.Equal(t, res.String(), result.String())
@@ -1595,7 +1599,7 @@ func testDistributorNameValidation(
 				return
 			}
 			for q, want := range tc.queries {
-				got, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				got, _, _, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
 				require.Equal(t, want.String(), got.String())
 			}

@@ -24,7 +24,7 @@ type ScalarScalarBinaryOperation struct {
 	opFunc             binaryOperationFunc
 	emitAnnotation     types.EmitAnnotationFunc
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
+	annotations        annotations.Annotations
 }
 
 var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
@@ -33,7 +33,6 @@ func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
 	s := &ScalarScalarBinaryOperation{
@@ -41,7 +40,6 @@ func NewScalarScalarBinaryOperation(
 		Right:                    right,
 		Op:                       op,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
 
@@ -90,12 +88,15 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 			return types.ScalarData{}, err
 		}
 
-		if !ok {
-			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) did not produce a result, this should never happen", s.Op.String(), left.F, right.F))
+		if !valid {
+			// Some operators (e.g. the native histogram trim operators "</" and ">/") are not defined
+			// between two scalars. The parser allows such expressions, so we report them as a query error
+			// here rather than panicking, matching Prometheus' behaviour.
+			return types.ScalarData{}, fmt.Errorf("operator %q not allowed between two scalars", s.Op.String())
 		}
 
-		if !valid {
-			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) is not considered a valid operation, this should never happen", s.Op.String(), left.F, right.F))
+		if !ok {
+			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) did not produce a result, this should never happen", s.Op.String(), left.F, right.F))
 		}
 
 		if h != nil {
@@ -130,16 +131,23 @@ func (s *ScalarScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return s.Right.AfterPrepare(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
-	if err := s.Left.Finalize(ctx); err != nil {
+func (s *ScalarScalarBinaryOperation) FinishedReading(ctx context.Context) error {
+	if err := s.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return s.Right.Finalize(ctx)
+	return s.Right.FinishedReading(ctx)
 }
 
-func (s *ScalarScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, s.Left, s.Right)
+func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, s.Left, s.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.annotations.Merge(childAnnos)
+
+	return stats, s.annotations, nil
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

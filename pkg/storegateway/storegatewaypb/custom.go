@@ -45,6 +45,24 @@ func (c *customStoreGatewayClient) LabelValues(ctx context.Context, in *storepb.
 	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 }
 
+// SearchLabelNames implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelNamesClient, error) {
+	client, err := c.wrapped.SearchLabelNames(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return newCustomSearchLabelNamesClient(client), nil
+}
+
+// SearchLabelValues implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error) {
+	client, err := c.wrapped.SearchLabelValues(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return newCustomSearchLabelValuesClient(client), nil
+}
+
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
 	*customClientStream
@@ -60,6 +78,48 @@ func newCustomSeriesClient(client StoreGateway_SeriesClient) *customSeriesClient
 }
 
 func (c *customSeriesClient) Recv() (*storepb.SeriesResponse, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
+}
+
+// customSearchLabelNamesClient wraps StoreGateway_SearchLabelNamesClient so
+// Recv translates raw gRPC status errors into context.Canceled / DeadlineExceeded
+// when the caller's context is gone. Without this, shouldRetry misclassifies
+// canceled searches as retriable.
+type customSearchLabelNamesClient struct {
+	*customClientStream
+
+	wrapped StoreGateway_SearchLabelNamesClient
+}
+
+func newCustomSearchLabelNamesClient(client StoreGateway_SearchLabelNamesClient) *customSearchLabelNamesClient {
+	return &customSearchLabelNamesClient{
+		customClientStream: &customClientStream{client},
+		wrapped:            client,
+	}
+}
+
+func (c *customSearchLabelNamesClient) Recv() (*storepb.SearchResultBatch, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
+}
+
+// customSearchLabelValuesClient mirrors customSearchLabelNamesClient for
+// SearchLabelValues.
+type customSearchLabelValuesClient struct {
+	*customClientStream
+
+	wrapped StoreGateway_SearchLabelValuesClient
+}
+
+func newCustomSearchLabelValuesClient(client StoreGateway_SearchLabelValuesClient) *customSearchLabelValuesClient {
+	return &customSearchLabelValuesClient{
+		customClientStream: &customClientStream{client},
+		wrapped:            client,
+	}
+}
+
+func (c *customSearchLabelValuesClient) Recv() (*storepb.SearchResultBatch, error) {
 	res, err := c.wrapped.Recv()
 	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
 }

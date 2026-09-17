@@ -64,15 +64,19 @@ type RemoteExecutionResponse interface {
 	// Calling another method before calling Start may lead to unpredictable behaviour.
 	Start(ctx context.Context) error
 
-	// Finalize finishes evaluation of the request.
+	// FinishedReading finishes evaluation of the request.
 	//
 	// If there is any unread data for this request, it is discarded.
 	//
-	// If this is the last request in a group, it returns the annotations and statistics from the remote evaluation, or otherwise returns an empty set of annotations
-	// and statistics.
+	// If this is the last request in a group, it returns the group statistics from the remote evaluation, or otherwise returns an empty set of statistics.
 	//
-	// Finalize can only be called before Close is called.
-	Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
+	// FinishedReading can only be called before Close is called.
+	FinishedReading(ctx context.Context) (stats.Stats, error)
+
+	// Finalize returns the evaluation stats and annotations for this request.
+	//
+	// Finalize must only be called once per request. It may only be called after FinishedReading has been called for all requests in the group and before Close.
+	Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
 
 	// Close cleans up any resources associated with this request.
 	//

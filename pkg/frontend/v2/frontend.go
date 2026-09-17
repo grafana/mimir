@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -74,12 +75,14 @@ type Config struct {
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
 
-	RemoteExecutionBatchSize uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+	RemoteExecutionBatchSize               uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
 	// These configuration options are injected internally.
-	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
-	LookBackDelta           time.Duration             `yaml:"-"`
-	QueryStoreAfter         time.Duration             `yaml:"-"`
+	QuerySchedulerDiscovery   schedulerdiscovery.Config `yaml:"-"`
+	LookBackDelta             time.Duration             `yaml:"-"`
+	MaxInflightMetricsEnabled bool                      `yaml:"-"`
+	QueryStoreAfter           time.Duration             `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -94,6 +97,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
+	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -106,6 +110,10 @@ func (cfg *Config) Validate() error {
 
 	if cfg.RemoteExecutionBatchSize <= 0 {
 		return fmt.Errorf("remote execution batch size must be greater than 0")
+	}
+
+	if cfg.RemoteExecutionSeriesMetadataBatchSize <= 0 {
+		return fmt.Errorf("remote execution series metadata batch size must be greater than 0")
 	}
 
 	return cfg.GRPCClientConfig.Validate()
@@ -139,6 +147,9 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+
+	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -159,6 +170,15 @@ type frontendRequest struct {
 	spanLogger *spanlogger.SpanLogger
 
 	enqueue chan enqueueResult
+
+	// maxInflightID identifies this request to Frontend.maxInflight. It is zero when the
+	// max in-flight metrics are disabled, which Remove treats as a no-op.
+	maxInflightID inflight.InflightRequest
+
+	// enqueuedAt is set once the scheduler has accepted this request into its queue.
+	// Used to approximate queue time if the request is cancelled before a querier
+	// processes it and reports the real queue time.
+	enqueuedAt time.Time
 
 	// If this is a httpgrpc request, then these fields will be populated:
 	httpRequest  *httpgrpc.HTTPRequest
@@ -227,6 +247,13 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
+
+	if cfg.MaxInflightMetricsEnabled {
+		f.maxInflight = inflight.NewMaxInflightCollector("dispatched")
+		if reg != nil {
+			reg.MustRegister(f.maxInflight)
+		}
+	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_frontend_connected_schedulers",
@@ -308,13 +335,19 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
-	cleanup := func() {
+	// This runs when the caller closes the response body, which reaches the query-frontend
+	// middleware chain as an http.Response.Body. Closing one of those more than once is
+	// routine in Go, so the cleanup has to be idempotent: a second Dec() would take the
+	// in-flight gauge below the real value and it would never recover.
+	cleanup := sync.OnceFunc(func() {
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
 		f.inflightRequestCount.Dec()
-	}
+		f.untrackInflight(freq)
+	})
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -326,6 +359,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	if err != nil {
 		return nil, nil, err
 	}
+	freq.enqueuedAt = time.Now()
 
 	freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -339,6 +373,22 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		default:
 			// failed to cancel, ignore.
 			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+		}
+
+		select {
+		case resp := <-freq.httpResponse:
+			// The response arrived at (almost) the same time as the cancellation. Prefer its real
+			// queue time over our wall-clock approximation, since select would otherwise pick
+			// between this case and <-ctx.Done() at random and could discard it.
+			if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
+				stats.FromContext(ctx).Merge(resp.queryResult.Stats) // Safe if stats is nil.
+			}
+			// We're discarding this response (the caller only gets the cancellation error). If the
+			// querier sent it via QueryResultStream, receiveResultForHTTPRequest closes its body
+			// pipe once the deferred cleanup cancels the request context, so the handler blocked
+			// writing to the pipe isn't leaked.
+		default:
+			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
 		}
 
 		return nil, nil, context.Cause(ctx)
@@ -401,6 +451,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 
 	go func() {
 		defer func() {
@@ -408,6 +459,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			cancelStream(errExecutingQueryRoundTripFinished)
 			logger.Finish()
 			f.inflightRequestCount.Dec()
+			f.untrackInflight(freq)
 		}()
 
 		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(streamContext)
@@ -422,6 +474,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			freq.protobufResponseStream.writeEnqueueError(err)
 			return
 		}
+		freq.enqueuedAt = time.Now()
 
 		freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -461,6 +514,13 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 			default:
 				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
+
+				// Cancelled while still queued: no querier will report a real queue time, so record a
+				// wall-clock approximation. This write runs in this background goroutine and is not
+				// synchronized with Next(), so it's best-effort: a consumer reading stats the instant
+				// Next() returns may still see 0. The query-frontend logs queue time only after the
+				// request has fully unwound, well after this runs.
+				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
 
 				select {
 				case cancelCh <- freq.queryID:
@@ -864,6 +924,18 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 		}
 	}(writer)
 
+	// Normally the client reads the body stream completely, hits EOF, and closes the body via
+	// cleanupReadCloser.Close. This function returns once the querier's stream ends, before that
+	// close happens. On this successful path the caller closes the reader, so defer stop() disarms
+	// the callback below.
+	// In the unsuccessful case the client never reads the body (timeout or cancellation). req.ctx is
+	// cancelled, the callback closes the reader, and writer.Write unblocks so this goroutine finishes
+	// instead of leaking. Close the read side so writer.Write returns the cancel cause, not io.ErrClosedPipe.
+	stop := context.AfterFunc(req.ctx, func() {
+		_ = reader.CloseWithError(context.Cause(req.ctx))
+	})
+	defer stop()
+
 	res := queryResultWithBody{
 		queryResult: &frontendv2pb.QueryResultRequest{
 			QueryID: firstMessage.QueryID,
@@ -1023,6 +1095,24 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 	msg := fmt.Sprintf("not ready: number of schedulers this worker is connected to is %d", workers)
 	level.Info(f.log).Log("msg", msg)
 	return errors.New(msg)
+}
+
+// trackInflight starts counting freq towards the tenant's peak in-flight queries and query
+// age. It pairs with untrackInflight, and does nothing when the metrics are disabled.
+func (f *Frontend) trackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	freq.maxInflightID = f.maxInflight.Add(freq.userID)
+}
+
+// untrackInflight stops counting freq. It is safe to call more than once for the same
+// request, which matters because the caller's cleanup can run more than once.
+func (f *Frontend) untrackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	f.maxInflight.Remove(freq.maxInflightID)
 }
 
 type requestsInProgress struct {

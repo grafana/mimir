@@ -38,7 +38,7 @@ func Usage(printAll bool, configs ...interface{}) error {
 		if fl.Value.String() == "deprecated" {
 			return
 		}
-		if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Pointer {
 			ptr := v.Pointer()
 			field, hasField = fields[ptr]
 			if hasField && isFieldHidden(field, fl.Name) {
@@ -90,7 +90,7 @@ func Usage(printAll bool, configs ...interface{}) error {
 
 		if defValue := getFlagDefault(fl, field); !isZeroValue(fl, defValue) {
 			v := reflect.ValueOf(fl.Value)
-			if v.Kind() == reflect.Ptr {
+			if v.Kind() == reflect.Pointer {
 				v = v.Elem()
 			}
 			if v.Kind() == reflect.String {
@@ -118,7 +118,7 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 	// This works unless the Value type is itself an interface type.
 	typ := reflect.TypeOf(fl.Value)
 	var z reflect.Value
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		z = reflect.New(typ.Elem())
 	} else {
 		z = reflect.Zero(typ)
@@ -129,9 +129,9 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 // parseStructure parses a struct and populates fields.
 func parseStructure(structure interface{}, fields map[uintptr]reflect.StructField) error {
 	// structure is expected to be a pointer to a struct
-	if reflect.TypeOf(structure).Kind() != reflect.Ptr {
+	if reflect.TypeOf(structure).Kind() != reflect.Pointer {
 		t := reflect.TypeOf(structure)
-		return fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Ptr)
+		return fmt.Errorf("%s is a %s while a %s is expected", t, t.Kind(), reflect.Pointer)
 	}
 	v := reflect.ValueOf(structure).Elem()
 	if v.Kind() != reflect.Struct {
@@ -150,6 +150,12 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 
 		// Take address of field value and map it to field
 		fields[fieldValue.Addr().Pointer()] = field
+
+		// For pointer fields (e.g. *bool), the flag is registered with the
+		// pointed-to address, not the address of the pointer field itself.
+		if fieldValue.Kind() == reflect.Pointer && !fieldValue.IsNil() {
+			fields[fieldValue.Pointer()] = field
+		}
 
 		// Recurse if a struct
 		if field.Type.Kind() != reflect.Struct || isFieldHidden(field, "") || ignoreStructType(field.Type) || !field.IsExported() {

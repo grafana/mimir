@@ -38,13 +38,17 @@ type AlertStatus struct {
 	// Required: true
 	InhibitedBy []string `json:"inhibitedBy"`
 
+	// muted by
+	// Required: true
+	MutedBy []string `json:"mutedBy"`
+
 	// silenced by
 	// Required: true
 	SilencedBy []string `json:"silencedBy"`
 
 	// state
 	// Required: true
-	// Enum: [unprocessed active suppressed]
+	// Enum: ["unprocessed","active","suppressed"]
 	State *string `json:"state"`
 }
 
@@ -53,6 +57,10 @@ func (m *AlertStatus) Validate(formats strfmt.Registry) error {
 	var res []error
 
 	if err := m.validateInhibitedBy(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateMutedBy(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -79,6 +87,15 @@ func (m *AlertStatus) validateInhibitedBy(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *AlertStatus) validateMutedBy(formats strfmt.Registry) error {
+
+	if err := validate.Required("mutedBy", "body", m.MutedBy); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (m *AlertStatus) validateSilencedBy(formats strfmt.Registry) error {
 
 	if err := validate.Required("silencedBy", "body", m.SilencedBy); err != nil {
@@ -88,7 +105,7 @@ func (m *AlertStatus) validateSilencedBy(formats strfmt.Registry) error {
 	return nil
 }
 
-var alertStatusTypeStatePropEnum []interface{}
+var alertStatusTypeStatePropEnum []any
 
 func init() {
 	var res []string

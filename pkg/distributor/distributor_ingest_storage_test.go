@@ -66,6 +66,13 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil, nil),
 			},
 			Metadata: []*mimirpb.MetricMetadata{
+				// Ingest-storage shards metadata separately from series.
+				// There is no guarantee that the metadata will be sharded to the same partition as the series.
+				// The below cases are careful to exercise two paths:
+				// 1. series_one metadata and series_one series shard to different partitions
+				// 2. series_two metadata and series_two series shard to the same partition
+				// The result is that after splitting the request among partitions, we may see an extra "carrier" series for series_one metadata
+				// but since both series_two objects land on the same shard, they are opportunistically combined.
 				{MetricFamilyName: "series_one", Type: mimirpb.COUNTER, Help: "Series one description"},
 				{MetricFamilyName: "series_two", Type: mimirpb.COUNTER, Help: "Series two description"},
 			},
@@ -87,14 +94,16 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			expectedSeriesByPartition: map[int32][]string{
 				0: {"series_four", "series_one", "series_three"},
 				1: {"series_two"},
-				2: {"series_five"},
+				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
+				2: {"series_five", "series_one"},
 			},
 		},
 		"should shard series across the number of configured partitions when shuffle sharding is enabled": {
 			shardSize: 2,
 			expectedSeriesByPartition: map[int32][]string{
 				1: {"series_one", "series_three", "series_two"},
-				2: {"series_five", "series_four"},
+				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
+				2: {"series_five", "series_four", "series_one"},
 			},
 		},
 		"should shard writes to fewer partitions when write shard size is smaller than read shard size": {
@@ -111,11 +120,12 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
+			expectedErr: errors.New(failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
-				2: {"series_five"},
+				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
+				2: {"series_five", "series_one"},
 			},
 		},
 
@@ -132,7 +142,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
-				2: {"series_five"},
+				// Series one metadata is sharded to partition 2. Metadata is sharded separately from series.
+				2: {"series_five", "series_one"},
 			},
 		},
 	}
@@ -146,19 +157,21 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			limits.IngestionPartitionsTenantWriteShardSize = testData.writeShardSize
 			limits.MaxGlobalExemplarsPerUser = 1000
 
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
-				configure: func(cfg *Config) {
-					// Run a number of clients equal to the number of partitions, so that each partition
-					// has its own client, as requested by some test cases.
-					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-				},
 			}
 
-			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, _, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
 
@@ -187,7 +200,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Send write request.
 			res, err := distributors[0].Push(ctx, createRequest())
-
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				assert.Nil(t, res)
@@ -419,6 +431,12 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 			limits.IngestionPartitionsTenantShardSize = testData.shardSize
 			limits.IngestionTenantShardSize = testData.shardSize
 
+			const numPartitions = 3
+
+			// Create a cluster with a number of brokers equal to the number of partitions,
+			// so that each partition is on a different broker.
+			kafkaCluster, _ := testkafka.CreateCluster(t, numPartitions, kafkaTopic, testkafka.WithNumBrokers(numPartitions))
+
 			testConfig := prepConfig{
 				numDistributors:         1,
 				numIngesters:            3,
@@ -426,14 +444,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				replicationFactor:       1,
 				ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka. Partitions are asserted directly checking Kafka.
 				ingestStorageEnabled:    true,
-				ingestStoragePartitions: 3,
+				ingestStoragePartitions: numPartitions,
+				ingestStorageKafka:      kafkaCluster,
 				limits:                  limits,
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
 				},
 			}
 
-			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, regs, _ := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 3)
 			require.Len(t, regs, 1)
@@ -1621,6 +1640,49 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 	}
 }
 
+func TestDistributor_ActiveSeries_TerminalErrorsWithIngestStorage(t *testing.T) {
+	reqMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}
+
+	ingesterStateByZone := map[string]ingesterZoneState{
+		"zone-a": {numIngesters: 1, happyIngesters: 1},
+		"zone-b": {numIngesters: 1, happyIngesters: 1},
+	}
+	ingesterDataByZone := map[string][]*mimirpb.WriteRequest{
+		"zone-a": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+		"zone-b": {
+			makeWriteRequest(0, 1, 0, false, false, "series_1", "series_2", "series_3"),
+		},
+	}
+
+	limits := prepareDefaultLimits()
+	limits.ActiveSeriesResultsMaxSizeBytes = 1
+
+	distributors, ingesters, _, _ := prepare(t, prepConfig{
+		ingesterStateByZone:  ingesterStateByZone,
+		ingesterDataByZone:   ingesterDataByZone,
+		numDistributors:      1,
+		ingestStorageEnabled: true,
+		limits:               limits,
+		configure: func(config *Config) {
+			config.MinimizeIngesterRequests = true
+			config.PreferAvailabilityZones = []string{"zone-a"}
+		},
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	_, err := distributors[0].ActiveSeries(ctx, reqMatchers)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+
+	// With MinimizeRequests enabled and RF=2 (2 zones, MaxUnavailableZones=1),
+	// only 1 zone is queried initially. When that zone returns
+	// ErrResponseTooLarge and the error is treated as terminal, the operation
+	// should abort immediately without starting a request to the 2nd zone.
+	assert.Equal(t, 1, countMockIngestersCalled(ingesters, "ActiveSeries"))
+}
+
 func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartitions int32, timeout time.Duration) []*kgo.Record {
 	// Read all partitions from the beginning.
 	offsets := make(map[int32]kgo.Offset, numPartitions)
@@ -1675,10 +1737,12 @@ func readAllRequestsByPartitionFromKafka(t testing.TB, kafkaAddresses []string, 
 	records := readAllRecordsFromKafka(t, kafkaAddresses, numPartitions, timeout)
 
 	for _, record := range records {
-		req := &mimirpb.WriteRequest{}
-		require.NoError(t, req.Unmarshal(record.Value))
+		version := ingest.ParseRecordVersion(record)
+		var prealloc mimirpb.PreallocWriteRequest
+		require.NoError(t, ingest.DeserializeRecordContent(record.Value, &prealloc, version))
+		prealloc.ClearTimeseriesUnmarshalData()
 
-		requestsByPartition[record.Partition] = append(requestsByPartition[record.Partition], req)
+		requestsByPartition[record.Partition] = append(requestsByPartition[record.Partition], &prealloc.WriteRequest)
 	}
 
 	return requestsByPartition

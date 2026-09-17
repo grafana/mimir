@@ -38,8 +38,19 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "d4ac71b2a366485c4eb71aa71ed1ee0654fb1b2b",
-      "sum": "kKpa0EBKVifhdtdMWSigDaRFi/fNdsI7Umk7ZpZvzX8="
+      "version": "946f08640da17abe1f9db6d7c9fb5f1a4e1cb9e1",
+      "sum": "BdvCpdTSo+q9BkGoix4+3vyqsnGzp846ORU07U8Ds1c="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/keda-libsonnet.git",
+          "subdir": "2.17"
+        }
+      },
+      "version": "dc2d8bbd2472d81138c76b71f34d59fc4cc21df7",
+      "sum": "A7/X7ztdcHFQ0oLL/2yv+BBD4OYWBPUBwy+IrPAY3Uo=",
+      "name": "keda-libsonnet"
     },
     {
       "source": {

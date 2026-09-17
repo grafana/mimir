@@ -1,4 +1,4 @@
-{
+(import '../utils.libsonnet') {
   // The alert name is prefixed with the product name (eg. AlertName -> MimirAlertName).
   alertName(name)::
     $._config.alert_product + name,
@@ -9,10 +9,18 @@
   jobNotMatcher(job)::
     '%s!~"%s%s"' % [$._config.per_job_label, $._config.alert_job_prefix, formatJobForQuery(job)],
 
+  // Some job matchers have Grafana variables that only makes sense in
+  // dashboards, not alerts.
+  local stripDashboardVars(job) = std.strReplace(job, '$read_compartment', ''),
+
   local formatJobForQuery(job) =
-    if std.isArray(job) then '(%s)' % std.join('|', job)
-    else if std.isString(job) then job
+    if std.isArray(job) then '(%s)' % std.join('|', std.map(stripDashboardVars, job))
+    else if std.isString(job) then stripDashboardVars(job)
     else error 'expected job "%s" to be a string or an array, but it is type "%s"' % [job, std.type(job)],
+
+  // Adds a "read_compartment" label with the ID parsed out of the "-rc-<id>" suffix of sourceLabel, if present.
+  withReadCompartmentLabel(query, sourceLabel=$._config.per_job_label)::
+    'label_replace(%s, "read_compartment", "$1", "%s", ".*-rc-([0-9]+)")' % [query, sourceLabel],
 
   withRunbookURL(url_format, groups)::
     local update_rule(rule) =
@@ -50,9 +58,6 @@
       }
       for group in groups
     ],
-
-  alertRangeInterval(multiple)::
-    ($._config.base_alerts_range_interval_minutes * multiple) + 'm',
 
   histogramLabels(labels, histogram_type, nhcb=false)::
     assert histogram_type == 'native' || histogram_type == 'classic';

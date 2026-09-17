@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -489,6 +490,65 @@ func Test_mapper_users(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, result)
 	})
+}
+
+func Test_mapper_ExprWithLeadingNewlines(t *testing.T) {
+	m := &mapper{
+		Path:   "/rules",
+		FS:     afero.NewMemMapFs(),
+		logger: log.NewNopLogger(),
+	}
+
+	ruleConfigs := map[string][]rulefmt.RuleGroup{
+		"rules.yaml": {
+			{
+				Name: "test_group",
+				Rules: []rulefmt.Rule{
+					{
+						Record: "test_rule",
+						Expr:   "\n\n# comment\nup > 0\n",
+					},
+				},
+			},
+		},
+	}
+
+	updated, files, err := m.MapRules("user1", ruleConfigs)
+	require.NoError(t, err)
+	require.True(t, updated)
+	require.Len(t, files, 1)
+
+	// Verify the written file can be parsed back by the rulefmt parser.
+	content, err := afero.ReadFile(m.FS, files[0])
+	require.NoError(t, err)
+
+	var rgs rulefmt.RuleGroups
+	err = yaml.Unmarshal(content, &rgs)
+	require.NoError(t, err)
+	require.Len(t, rgs.Groups, 1)
+	require.Len(t, rgs.Groups[0].Rules, 1)
+	// Leading/trailing whitespace should be trimmed.
+	require.Equal(t, "# comment\nup > 0", rgs.Groups[0].Rules[0].Expr)
+}
+
+func Test_cleanRuleGroupExprs(t *testing.T) {
+	groups := []rulefmt.RuleGroup{
+		{
+			Name: "group1",
+			Rules: []rulefmt.Rule{
+				{Record: "r1", Expr: "\n\n  up > 0\n"},
+				{Record: "r2", Expr: "rate(foo[5m])"},
+			},
+		},
+	}
+
+	cleaned := cleanRuleGroupExprs(groups)
+
+	// Cleaned expressions should have whitespace trimmed.
+	require.Equal(t, "up > 0", cleaned[0].Rules[0].Expr)
+	require.Equal(t, "rate(foo[5m])", cleaned[0].Rules[1].Expr)
+	// Original should be unmodified.
+	require.Equal(t, "\n\n  up > 0\n", groups[0].Rules[0].Expr)
 }
 
 func Test_FSLoader_LoadRules(t *testing.T) {

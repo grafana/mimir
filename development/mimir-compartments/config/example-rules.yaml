@@ -1,0 +1,19 @@
+# Example rules file to load to Mimir via the ruler API.
+groups:
+  - name: alerts
+    # Frequently evaluate rules.
+    interval: 10s
+    rules:
+      # The following recording rule is independent.
+      - record: cortex_build_info:sum
+        expr: sum(cortex_build_info)
+      # The following recording rule is used by the AlwaysFiring alert.
+      - record: up:count
+        expr: count(up)
+      - alert: AlwaysFiring
+        expr: up:count >= 0
+        for: 10s
+        labels:
+          severity: page
+        annotations:
+          summary: This is an always-firing test alert.

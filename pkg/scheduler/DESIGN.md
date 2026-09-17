@@ -1,8 +1,14 @@
 # Query Request Queue Design: Queue Splitting and Prioritization
 
-The `RequestQueue` subservice embedded into the scheduler process is responsible for
-all decisions regarding enqueuing and dequeuing of query requests.
-While the `RequestQueue`'s responsibilities are relatively broad, including management of
+The scheduler's query request queue is provided by the generic `Queue` (in `pkg/queue`),
+wrapped by a thin scheduler-specific `schedulerQueue`.
+The wrapper applies the scheduler's queue logic:
+it derives the first queue dimension (the query component) from the annotation that the query-frontend attaches to the request,
+looks up the per-tenant max-queriers limit from the configured limits,
+and owns the `QueryComponentUtilization` tracker.
+The `Queue` underneath is responsible for all decisions regarding enqueuing and dequeuing of query requests.
+
+While the `Queue`'s responsibilities are relatively broad, including management of
 querier-worker connection lifecycles and graceful startup/shutdown,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
@@ -255,7 +261,7 @@ graph TB
 
 ### Original State: Queue Splitting by Tenant
 
-The `RequestQueue` originally utilized only a single dimension of queue splitting, by tenant.
+The `Queue` originally utilized only a single dimension of queue splitting, by tenant.
 This approach served two purposes:
 
 1. tenant fairness via a simple round-robin between all tenants with non-empty query request queues

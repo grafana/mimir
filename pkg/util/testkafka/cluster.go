@@ -3,6 +3,7 @@
 package testkafka
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,6 +47,38 @@ func WithSASLScramSHA512(username, password string) Opt {
 	}
 }
 
+// WithNumBrokers overrides the default number of brokers (1) in the fake cluster.
+func WithNumBrokers(n int) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.NumBrokers(n)}
+	}
+}
+
+// WithListener makes the (single-broker) fake cluster accept connections on the given already-bound
+// listener instead of binding a new random port. The cluster takes ownership of the listener and closes
+// it on shutdown. This lets the caller control the cluster's address (e.g. to use predictable ports).
+func WithListener(ln net.Listener) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.ListenFn(func(string, string) (net.Listener, error) { return ln, nil })}
+	}
+}
+
+// WithVirtualNetwork configures the cluster to use the given kfake.VirtualNetwork for in-memory networking.
+func WithVirtualNetwork(vnet *kfake.VirtualNetwork) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.ListenFn(vnet.Listen)}
+	}
+}
+
+// WithPort makes the (single-broker) fake cluster listen on the given port instead of a random
+// one, so the caller can predict the cluster's address. Combine with WithVirtualNetwork to host
+// multiple clusters at deterministic ports on one in-memory network.
+func WithPort(port int) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.Ports(port)}
+	}
+}
+
 // CreateCluster returns a fake Kafka cluster for unit testing.
 func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
 	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName, opts...)
@@ -54,10 +87,21 @@ func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...
 	return cluster, addr
 }
 
+// CreateClusterWithoutCustomConsumerGroupsSupport creates a fake Kafka cluster for unit testing.
+//
+// When multiple brokers are configured (via WithNumBrokers), partition leaders are assigned
+// in a round-robin fashion: partition 0 → broker 0, partition 1 → broker 1, etc.
+// This means that if the number of brokers is >= the number of partitions, each partition
+// is guaranteed to be on a different broker.
 func CreateClusterWithoutCustomConsumerGroupsSupport(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
 	cfg := []kfake.Opt{
 		kfake.NumBrokers(1),
 		kfake.SeedTopics(numPartitions, topicName),
+		// kfake defaults the max message size to ~1MB, but Mimir's producer batches records up to
+		// producerBatchMaxBytes (16MB) and production Kafka is configured to accept them. Match that
+		// here so the fake doesn't reject realistically-sized records with MESSAGE_TOO_LARGE.
+		// The broker-level config key is message.max.bytes (the topic-level key is max.message.bytes).
+		kfake.BrokerConfigs(map[string]string{"message.max.bytes": "16000000"}),
 	}
 
 	// Apply options.
@@ -70,7 +114,15 @@ func CreateClusterWithoutCustomConsumerGroupsSupport(t testing.TB, numPartitions
 	t.Cleanup(cluster.Close)
 
 	addrs := cluster.ListenAddrs()
-	require.Len(t, addrs, 1)
+	require.NotEmpty(t, addrs)
+
+	// Assign partition leaders in a round-robin fashion across brokers.
+	// kfake assigns leaders randomly by default, so we override it here.
+	if numBrokers := int32(len(addrs)); numBrokers > 1 {
+		for i := int32(0); i < numPartitions; i++ {
+			require.NoError(t, cluster.MoveTopicPartition(topicName, i, i%numBrokers))
+		}
+	}
 
 	return cluster, addrs[0]
 }
@@ -89,6 +141,22 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		// Initialise the partition offsets with the special value -1 which means "no offset committed".
 		for i := 0; i < len(committedOffsets[consumerGroup]); i++ {
 			committedOffsets[consumerGroup][i] = -1
+		}
+	}
+
+	// From OffsetCommit/OffsetFetch v10 (KIP-848) onwards, clients identify the topic by ID
+	// instead of name, leaving the name empty on the wire and matching responses by ID. We
+	// resolve the ID kfake assigned to our topic and echo it back in responses. Responses set
+	// both name and ID, and the kmsg encoder writes whichever the negotiated request version uses.
+	var topicID [16]byte
+	if info := cluster.TopicInfo(topicName); info != nil {
+		topicID = info.TopicID
+	}
+	assertRequestTopic := func(name string, id [16]byte) {
+		if name != "" {
+			assert.Equal(t, topicName, name)
+		} else {
+			assert.NotEqual(t, [16]byte{}, id, "offset request must identify the topic by name (v<10) or ID (v10+)")
 		}
 	}
 
@@ -125,7 +193,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		ensureConsumerGroupExists(consumerGroup)
 		assert.Len(t, commitR.Topics, 1, "test only has support for one topic per request")
 		topic := commitR.Topics[0]
-		assert.Equal(t, topicName, topic.Topic)
+		assertRequestTopic(topic.Topic, topic.TopicID)
 		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
 
 		partitionID := topic.Partitions[0].Partition
@@ -136,6 +204,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		resp.Topics = []kmsg.OffsetCommitResponseTopic{
 			{
 				Topic:      topicName,
+				TopicID:    topicID,
 				Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}},
 			},
 		}
@@ -157,9 +226,11 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 			// An empty request means fetch all topic-partitions for this group.
 			partitionID = allPartitions
 		} else {
-			partitionID = req.Groups[0].Topics[0].Partitions[0]
-			assert.Len(t, req.Groups[0], 1, "test only has support for one partition per request")
-			assert.Len(t, req.Groups[0].Topics[0].Partitions, 1, "test only has support for one partition per request")
+			reqTopic := req.Groups[0].Topics[0]
+			assertRequestTopic(reqTopic.Topic, reqTopic.TopicID)
+			partitionID = reqTopic.Partitions[0]
+			assert.Len(t, req.Groups[0].Topics, 1, "test only has support for one topic per request")
+			assert.Len(t, reqTopic.Partitions, 1, "test only has support for one partition per request")
 		}
 
 		// Prepare the list of partitions for which the offset has been committed.
@@ -190,6 +261,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 			topicsResp = []kmsg.OffsetFetchResponseGroupTopic{
 				{
 					Topic:      topicName,
+					TopicID:    topicID,
 					Partitions: partitionsResp,
 				},
 			}

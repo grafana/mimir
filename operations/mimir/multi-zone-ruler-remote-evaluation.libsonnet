@@ -38,9 +38,9 @@
     'querier.ring.prefix': 'ruler-querier-zone-%s/' % zone,
   },
 
-  ruler_querier_zone_a_args:: $.ruler_querier_args + $.blocks_metadata_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + rulerQuerierZoneArgs('a') + $.rangeVectorSplittingZoneCachingConfig('a'),
-  ruler_querier_zone_b_args:: $.ruler_querier_args + $.blocks_metadata_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + rulerQuerierZoneArgs('b') + $.rangeVectorSplittingZoneCachingConfig('b'),
-  ruler_querier_zone_c_args:: $.ruler_querier_args + $.blocks_metadata_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + rulerQuerierZoneArgs('c') + $.rangeVectorSplittingZoneCachingConfig('c'),
+  ruler_querier_zone_a_args:: $.ruler_querier_args + $.blocks_metadata_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + rulerQuerierZoneArgs('a') + $.rulerRangeVectorSplittingZoneCachingConfig('a'),
+  ruler_querier_zone_b_args:: $.ruler_querier_args + $.blocks_metadata_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + rulerQuerierZoneArgs('b') + $.rulerRangeVectorSplittingZoneCachingConfig('b'),
+  ruler_querier_zone_c_args:: $.ruler_querier_args + $.blocks_metadata_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + rulerQuerierZoneArgs('c') + $.rulerRangeVectorSplittingZoneCachingConfig('c'),
 
   ruler_querier_zone_a_env_map:: {},
   ruler_querier_zone_b_env_map:: {},
@@ -138,9 +138,9 @@
   local isRulerQueryFrontendAutoscalingZoneBEnabled = isZoneBEnabled && $._config.autoscaling_ruler_query_frontend_enabled,
   local isRulerQueryFrontendAutoscalingZoneCEnabled = isZoneCEnabled && $._config.autoscaling_ruler_query_frontend_enabled,
 
-  ruler_query_frontend_zone_a_args:: $.ruler_query_frontend_args + $.query_frontend_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + $.rangeVectorSplittingZoneCachingConfig('a'),
-  ruler_query_frontend_zone_b_args:: $.ruler_query_frontend_args + $.query_frontend_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + $.rangeVectorSplittingZoneCachingConfig('b'),
-  ruler_query_frontend_zone_c_args:: $.ruler_query_frontend_args + $.query_frontend_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + $.rangeVectorSplittingZoneCachingConfig('c'),
+  ruler_query_frontend_zone_a_args:: $.ruler_query_frontend_args + $.query_frontend_zone_a_caching_config + $.rulerQuerySchedulerClientZoneArgs('a') + $.rulerQuerierClientZoneArgs('a') + $.rulerRangeVectorSplittingZoneCachingConfig('a'),
+  ruler_query_frontend_zone_b_args:: $.ruler_query_frontend_args + $.query_frontend_zone_b_caching_config + $.rulerQuerySchedulerClientZoneArgs('b') + $.rulerQuerierClientZoneArgs('b') + $.rulerRangeVectorSplittingZoneCachingConfig('b'),
+  ruler_query_frontend_zone_c_args:: $.ruler_query_frontend_args + $.query_frontend_zone_c_caching_config + $.rulerQuerySchedulerClientZoneArgs('c') + $.rulerQuerierClientZoneArgs('c') + $.rulerRangeVectorSplittingZoneCachingConfig('c'),
 
   ruler_query_frontend_zone_a_env_map:: {},
   ruler_query_frontend_zone_b_env_map:: {},
@@ -180,6 +180,15 @@
   ruler_query_frontend_zone_c_service: if !isZoneCEnabled then null else
     $.newRulerQueryFrontendZoneService($.ruler_query_frontend_zone_c_deployment),
 
+  ruler_query_frontend_zone_a_headless_service: if !isZoneAEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('a', $.ruler_query_frontend_zone_a_deployment),
+
+  ruler_query_frontend_zone_b_headless_service: if !isZoneBEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('b', $.ruler_query_frontend_zone_b_deployment),
+
+  ruler_query_frontend_zone_c_headless_service: if !isZoneCEnabled then null else
+    $.newRulerQueryFrontendZoneHeadlessService('c', $.ruler_query_frontend_zone_c_deployment),
+
   ruler_query_frontend_zone_a_pdb: if !isZoneAEnabled then null else
     $.newMimirPdb('ruler-query-frontend-zone-a'),
 
@@ -201,8 +210,11 @@
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   newRulerQueryFrontendZoneService(deployment)::
+    $.util.serviceFor(deployment, $._config.service_ignored_labels),
+
+  newRulerQueryFrontendZoneHeadlessService(zone, deployment)::
     $.util.serviceFor(deployment, $._config.service_ignored_labels) +
-    // Note: We use a headless service because the ruler uses gRPC load balancing.
+    service.mixin.metadata.withName('ruler-query-frontend-zone-%s-headless' % zone) +
     service.mixin.spec.withClusterIp('None'),
 
   // Ensure all configured addresses are zonal ones.
@@ -216,6 +228,7 @@
   // Remove single-zone deployment when it's disabled.
   ruler_query_frontend_deployment: if !isSingleZoneEnabled then null else super.ruler_query_frontend_deployment,
   ruler_query_frontend_service: if !isSingleZoneEnabled then null else super.ruler_query_frontend_service,
+  ruler_query_frontend_headless_service: if !isSingleZoneEnabled then null else super.ruler_query_frontend_headless_service,
   ruler_query_frontend_pdb: if !isSingleZoneEnabled then null else super.ruler_query_frontend_pdb,
 
   // Autoscaling.

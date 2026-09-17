@@ -47,6 +47,7 @@ type clientMetrics struct {
 	duration        *prometheus.HistogramVec
 	dataSize        *prometheus.HistogramVec
 	skippedDataSize *prometheus.HistogramVec
+	serversTouched  *prometheus.HistogramVec
 }
 
 // newClientMetrics creates a new bundle of metrics about an instance of a cache client. Note
@@ -150,6 +151,18 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.skippedDataSize.WithLabelValues(opAdd)
 	cm.skippedDataSize.WithLabelValues(opSet)
 	cm.skippedDataSize.WithLabelValues(opCompareAndSwap)
+
+	cm.serversTouched = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name: "operation_servers_touched",
+		Help: "The number of servers requests were made to during a batched operation.",
+		Buckets: []float64{
+			1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024,
+		},
+		NativeHistogramBucketFactor: 1.1,
+	},
+		[]string{"operation"},
+	)
+	cm.serversTouched.WithLabelValues(opGetMulti)
 
 	return cm
 }

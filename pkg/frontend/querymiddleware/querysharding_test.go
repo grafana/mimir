@@ -40,7 +40,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -471,7 +473,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			ShardingDisabled: true,
 		},
 	}
@@ -526,7 +528,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "sum by (foo) (rate(bar{}[1m]))"), // shardable query.
-		options: Options{
+		options: requestoptions.Options{
 			TotalShards: 128,
 		},
 	}
@@ -589,14 +591,14 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			hints:                         &Hints{TotalQueries: 10},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			expectedShardsPerPartialQuery: 6,
+			expectedShardsPerPartialQuery: 8, // max sharded queries caps it to 6, rounded up to the next power of two.
 		},
 		"multiple splitted queries, query has 2 shardable legs": {
 			query:                         "sum(metric) / count(metric)",
 			hints:                         &Hints{TotalQueries: 10},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			expectedShardsPerPartialQuery: 3,
+			expectedShardsPerPartialQuery: 4, // max sharded queries caps it to 3, rounded up to the next power of two.
 		},
 		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
 			query:                         "sum(metric) / count(metric)",
@@ -604,47 +606,15 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			totalShards:                   16,
 			maxShardedQueries:             64,
 			compactorShards:               0,
-			expectedShardsPerPartialQuery: 10,
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
-		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+		"multiple splitted queries, query has 2 shardable legs, compactor shards do not affect the result": {
 			query:                         "sum(metric) / count(metric)",
 			hints:                         &Hints{TotalQueries: 3},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			compactorShards:               3,
-			expectedShardsPerPartialQuery: 9,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               4,
-			expectedShardsPerPartialQuery: 8,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               10,
-			expectedShardsPerPartialQuery: 10,
-		},
-		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               11,
-			expectedShardsPerPartialQuery: 10, // cannot be adjusted to make 11 multiple or divisible, keep original.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               14,
-			expectedShardsPerPartialQuery: 7, // 7 divides 14
+			compactorShards:               10, // The compactor shard count no longer adjusts the query shard count.
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"query sharding is disabled": {
 			query:                         "sum(metric)",
@@ -660,7 +630,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries:             64,
 			nativeHistograms:              true,
 			compactorShards:               10,
-			expectedShardsPerPartialQuery: 10,
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"hints are missing, query has 1 shardable leg": {
 			query:                         "count(metric)",
@@ -959,6 +929,13 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 						queryExpr: parseQuery(t, "sum(bar1)"),
 					}
 
+					// Need to ensure that both engines have the same InflightMemoryConsumptionTracker otherwise we get an error
+					// with a managed MemoryConsumptionTracker being deregistered against the wrong factory.
+					// In a production environment we only have 1 instance of InflightMemoryConsumptionTracker
+					memoryConsumptionFactory := limiter.NewUnlimintedInflightMemoryConsumptionTracker(nil)
+					tc.engineShardingOpts = append(tc.engineShardingOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+					tc.engineDownstreamOpts = append(tc.engineDownstreamOpts, withMemoryConsumptionTrackerFactory(memoryConsumptionFactory))
+
 					_, engineSharding := newEngineForTesting(t, engineType, tc.engineShardingOpts...)
 					_, engineDownstream := newEngineForTesting(t, engineType, tc.engineDownstreamOpts...)
 
@@ -1072,14 +1049,16 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 		expectedCalls int
 	}{
 		{
+			// Estimate yields min(16, 55000/10000+1)=6 shards, rounded up to the next power of two: 8.
 			"range query",
 			mustSucceed(mustSucceed(req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end))).WithEstimatedSeriesCountHint(55_000)),
-			6,
+			8,
 		},
 		{
+			// Estimate yields min(16, 29000/10000+1)=3 shards, rounded up to the next power of two: 4.
 			"instant query",
 			mustSucceed(req.WithEstimatedSeriesCountHint(29_000)),
-			3,
+			4,
 		},
 		{
 			"no hints",
@@ -1177,11 +1156,13 @@ func TestQuerySharding_Annotations(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
 				shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: numShards}, 0, reg)
+				splitLimits := mockLimits{}
 				splitware := newSplitAndCacheMiddleware(
 					true,
 					false, // Cache disabled.
 					splitInterval,
-					mockLimits{},
+					splitLimits,
+					newMockQueryLimitsProvider(&splitLimits),
 					newTestCodec(),
 					nil,
 					nil,
@@ -1189,6 +1170,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 					nil,
 					log.NewNopLogger(),
 					reg,
+					limiter.NewInflightMemoryConsumptionTracker(reg, nil),
 				)
 				downstream := &downstreamHandler{
 					engine:                                  eng,
@@ -1551,7 +1533,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 							Value: "hi",
 						},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							TimestampMs: 1,
 						},
@@ -1565,7 +1547,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			err:   false,
 			expected: []SampleStream{
 				{
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1597,7 +1579,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1609,7 +1591,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       2,
 							TimestampMs: 2,
@@ -1645,7 +1627,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -1661,7 +1643,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{
 							Value:       8,
 							TimestampMs: 1,
@@ -1998,4 +1980,67 @@ func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 		require.ErrorContains(t, err, errRequestNoQuery.Error())
 		require.Nil(t, resp)
 	})
+}
+
+// TestExecuteQueryOnQueryable_ClosesQueryOnError verifies that
+// ExecuteQueryOnQueryable calls Close on the underlying promql.Query for every
+// error path between query creation and the response finalizer hand-off. We
+// assert this directly by wrapping the engine and counting Close() calls on
+// every Query it produces.
+func TestExecuteQueryOnQueryable_ClosesQueryOnError(t *testing.T) {
+	failingQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+		return nil, apierror.New(apierror.TypeInternal, "boom")
+	})
+
+	successfulQueryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+	})
+
+	for _, tc := range []struct {
+		name          string
+		queryable     storage.Queryable
+		expectSuccess bool
+	}{
+		{
+			name:      "execution error closes the query",
+			queryable: failingQueryable,
+		},
+		{
+			name:          "successful query is closed via finalizer",
+			queryable:     successfulQueryable,
+			expectSuccess: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, innerEngine := newEngineForTesting(t, querier.MimirEngine)
+			engine := newCloseCountingEngine(innerEngine)
+
+			req := &PrometheusRangeQueryRequest{
+				path:      "/query_range",
+				start:     util.TimeToMillis(start),
+				end:       util.TimeToMillis(end),
+				step:      step.Milliseconds(),
+				queryExpr: parseQuery(t, "sum(bar1)"),
+			}
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			resp, err := ExecuteQueryOnQueryable(ctx, req, engine, tc.queryable, NewAnnotationAccumulator())
+
+			require.Equal(t, 1, engine.queriesCreated(), "expected exactly one promql.Query to be created")
+
+			if tc.expectSuccess {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				// Ownership is transferred to the response finalizer; Close
+				// must not have been called yet.
+				require.Zero(t, engine.totalCloseCalls(), "expected Close to not have been called before the response finalizer fires")
+				resp.(*PrometheusResponseWithFinalizer).Close()
+			} else {
+				require.Error(t, err)
+				require.Nil(t, resp)
+			}
+
+			require.GreaterOrEqual(t, engine.totalCloseCalls(), 1, "expected Close to be called at least once on the underlying query")
+		})
+	}
 }

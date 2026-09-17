@@ -75,8 +75,20 @@ local filename = 'mimir-block-builder.json';
           'Number of records in the backlog of a partition.',
         ) +
         $.queryPanel(
-          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder
+              (cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, job!~".*-rc-.*"} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, job!~".*-rc-.*"}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder
+              label_replace((cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, job=~".*-rc-.*"} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, job=~".*-rc-.*"}) > 0, "read_compartment", "$1", "job", ".*-rc-(.*)")
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / wc {{write_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
@@ -91,8 +103,20 @@ local filename = 'mimir-block-builder.json';
           |||,
         ) +
         $.queryPanel(
-          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder
+              sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s, job!~".*-rc-.*"}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder
+              sum by (read_compartment, partition) (label_replace(cortex_blockbuilder_scheduler_pending_jobs{%(job)s, job=~".*-rc-.*"}, "read_compartment", "$1", "job", ".*-rc-(.*)")) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
@@ -193,6 +217,18 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('Block builder resources')
       .addPanel(
+        $.containerCPUUsagePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder'),
+      )
+      .addPanel(
         $.timeseriesPanel('In-memory series') +
         $.panelDescription(
           'In-memory series',
@@ -204,11 +240,18 @@ local filename = 'mimir-block-builder.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 'short' }, custom+: { fillOpacity: 0 } } },
       )
+      .splitIntoLines([4, 1])  // Puts "in-memory series" panel below the rest of the resources
+    )
+    .addRow(
+      $.row('')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('block_builder'),
+        $.containerDiskWritesPanelByComponent('block_builder')
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+        $.containerDiskReadsPanelByComponent('block_builder')
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilizationPanelByComponent('block_builder'),
       )
     )
     .addRowIf(
@@ -225,12 +268,18 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Scheduler resources')
+      $.row('Block-builder-scheduler resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerEphemeralStoragePanelByComponent('block_builder_scheduler'),
       )
     ),
 }

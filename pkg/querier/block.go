@@ -8,11 +8,13 @@ package querier
 import (
 	"fmt"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -41,29 +43,25 @@ func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMa
 }
 
 func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk) chunkenc.Iterator {
-	genericChunks := make([]batch.GenericChunk, 0, len(chunks))
+	adapted := make([]chunk.Chunk, 0, len(chunks))
 
 	for _, c := range chunks {
-		genericChunk := batch.NewGenericChunk(c.MinTime, c.MaxTime, func(reuse chunk.Iterator) chunk.Iterator {
-			encoding, ok := c.GetChunkEncoding()
-			if !ok {
-				return chunk.ErrorIterator(fmt.Sprintf("cannot create new chunk for series %s: unknown encoded raw data type %v", lbls, c.Raw.Type))
-			}
+		encoding, ok := c.GetChunkEncoding()
+		if !ok {
+			return series.NewErrIterator(fmt.Errorf("cannot create new chunk for series %s: unknown encoded raw data type %v", lbls, c.Raw.Type))
+		}
 
-			ch, err := chunk.NewForEncoding(encoding)
-			if err != nil {
-				return chunk.ErrorIterator(fmt.Sprintf("cannot create new chunk for series %s: %s", lbls.String(), err.Error()))
-			}
+		encoded, err := chunk.NewForEncoding(encoding)
+		if err != nil {
+			return series.NewErrIterator(fmt.Errorf("cannot create new chunk for series %s: %s", lbls.String(), err.Error()))
+		}
 
-			if err := ch.UnmarshalFromBuf(c.Raw.Data); err != nil {
-				return chunk.ErrorIterator(fmt.Sprintf("cannot unmarshal chunk for series %s: %s", lbls.String(), err.Error()))
-			}
+		if err := encoded.UnmarshalFromBuf(c.Raw.Data); err != nil {
+			return series.NewErrIterator(fmt.Errorf("cannot unmarshal chunk for series %s: %s", lbls.String(), err.Error()))
+		}
 
-			return ch.NewIterator(reuse)
-		})
-
-		genericChunks = append(genericChunks, genericChunk)
+		adapted = append(adapted, chunk.NewChunk(lbls, encoded, model.Time(c.MinTime), model.Time(c.MaxTime)))
 	}
 
-	return batch.NewGenericChunkMergeIterator(reuse, lbls, genericChunks)
+	return batch.NewChunkMergeIterator(reuse, lbls, adapted)
 }

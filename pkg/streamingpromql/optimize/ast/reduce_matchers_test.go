@@ -89,6 +89,21 @@ func TestReduceMatchers_Apply_Vectors(t *testing.T) {
 			inputQuery:    `test_series{foo!="bar",foo="baz"}`,
 			expectedQuery: `test_series{foo="baz"}`,
 		},
+		{
+			name:          "not equals empty string matcher should be removed if a positive regex matcher already excludes its value",
+			inputQuery:    `test_series{foo!="",foo=~".+baz.+"}`,
+			expectedQuery: `test_series{foo=~".+baz.+"}`,
+		},
+		{
+			name:          "not equals matcher should be removed if a positive regex matcher already excludes its value",
+			inputQuery:    `test_series{foo!="host99", foo=~"(?i:(host1|host2|host3|host4|host5))"}`,
+			expectedQuery: `test_series{foo=~"(?i:(host1|host2|host3|host4|host5))"}`,
+		},
+		{
+			name:          "not equals matcher should not be removed if a positive regex matcher doesn't exclude its value",
+			inputQuery:    `test_series{foo!="bad",foo=~"b.+"}`,
+			expectedQuery: `test_series{foo!="bad",foo=~"b.+"}`,
+		},
 	}
 
 	for _, tt := range tests {

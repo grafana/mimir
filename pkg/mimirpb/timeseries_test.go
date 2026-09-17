@@ -380,7 +380,7 @@ func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
 			// Recursively check all elements, letting the type-specific cases handle each appropriately.
 			assertNoZeroFieldsDeep(t, elem, elemPath)
 		}
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if !val.IsNil() {
 			assertNoZeroFieldsDeep(t, val.Elem(), path)
 		}

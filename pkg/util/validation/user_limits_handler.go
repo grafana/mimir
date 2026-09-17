@@ -30,6 +30,12 @@ type UserLimitsResponse struct {
 	// Ruler limits
 	RulerMaxRulesPerRuleGroup   int `json:"ruler_max_rules_per_rule_group"`
 	RulerMaxRuleGroupsPerTenant int `json:"ruler_max_rule_groups_per_tenant"`
+
+	// Alertmanager limits
+	NotificationRateLimit                      float64 `json:"alertmanager_notification_rate_limit"`
+	AlertmanagerMaxDispatcherAggregationGroups int     `json:"alertmanager_max_dispatcher_aggregation_groups"`
+	AlertmanagerMaxTemplatesCount              int     `json:"alertmanager_max_templates_count"`
+	AlertmanagerMaxAlertsCount                 int     `json:"alertmanager_max_alerts_count"`
 }
 
 // UserLimitsHandler handles user limits.
@@ -65,6 +71,12 @@ func UserLimitsHandler(defaultLimits Limits, tenantLimits TenantLimits) http.Han
 			// Ruler limits
 			RulerMaxRulesPerRuleGroup:   userLimits.RulerMaxRulesPerRuleGroup,
 			RulerMaxRuleGroupsPerTenant: userLimits.RulerMaxRuleGroupsPerTenant,
+
+			// Alertmanager limits
+			NotificationRateLimit:                      userLimits.NotificationRateLimit,
+			AlertmanagerMaxDispatcherAggregationGroups: userLimits.AlertmanagerMaxDispatcherAggregationGroups,
+			AlertmanagerMaxTemplatesCount:              userLimits.AlertmanagerMaxTemplatesCount,
+			AlertmanagerMaxAlertsCount:                 userLimits.AlertmanagerMaxAlertsCount,
 		}
 
 		util.WriteJSONResponse(w, limits)

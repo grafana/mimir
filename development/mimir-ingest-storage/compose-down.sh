@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # newer compose is a subcommand of `docker`, not a hyphenated standalone command
@@ -12,4 +12,4 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml down --remove-orphans

@@ -38,12 +38,23 @@ import (
 	golangproto "google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/costattribution"
-	"github.com/grafana/mimir/pkg/costattribution/testutils"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// costAttributionOverridesForTest canonicalizes and hashes the given per-tenant cost-attribution
+// limits and wraps them in Overrides with the provided defaults.
+func costAttributionOverridesForTest(defaults validation.Limits, tenantLimits map[string]*validation.Limits) *validation.Overrides {
+	for _, l := range tenantLimits {
+		l.CostAttributionBaseTrackers.Canonicalize()
+		l.AdditionalCostAttributionTrackers.Canonicalize()
+		l.ComputeCostAttributionConfigHash()
+	}
+	return validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
+}
 
 func TestValidateLabels(t *testing.T) {
 	t.Parallel()
@@ -75,11 +86,15 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
 	perTenant[droppingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 
+	// defaultUserID and utf8UserID attribute cost by the "team" label.
+	for _, userID := range []string{defaultUserID, utf8UserID} {
+		perTenant[userID].MaxCostAttributionCardinality = 10
+		perTenant[userID].CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+		}
+	}
 	overrides := func(limits *validation.Limits) *validation.Overrides {
-		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
-			[]string{defaultUserID, "team"},
-			[]string{utf8UserID, "team"},
-		)
+		return costAttributionOverridesForTest(*limits, perTenant)
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1063,7 +1078,14 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 		nameValidationScheme: model.UTF8Validation,
 	}
 	const userID = "testUser"
-	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	limits := costAttributionOverridesForTest(validation.Limits{}, map[string]*validation.Limits{
+		userID: {
+			MaxCostAttributionCardinality: 10,
+			CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+				costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team"}}},
+			},
+		},
+	})
 	reg := prometheus.NewPedanticRegistry()
 	s := newSampleValidationMetrics(reg)
 	careg := prometheus.NewRegistry()
@@ -1475,6 +1497,7 @@ func TestNewValidationConfigFieldCompleteness(t *testing.T) {
 
 	// 2. Set fields that default to zero to non-zero values
 	limits.PastGracePeriod = model.Duration(5 * time.Minute)
+	limits.EnforceOOOWindowOnDistributor = true
 	limits.MaxNativeHistogramBuckets = 100
 	limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
 	require.NoError(t, limits.LabelValueLengthOverLimitStrategy.Set("truncate"))
@@ -1483,7 +1506,7 @@ func TestNewValidationConfigFieldCompleteness(t *testing.T) {
 	overrides := validation.NewOverrides(*limits, nil)
 
 	// 4. Call newValidationConfig
-	cfg := newValidationConfig("test-user", overrides)
+	cfg := newValidationConfig("test-user", "test-user", overrides)
 
 	// 5. Use reflection to verify all fields are non-zero
 	assertNoZeroFields(t, reflect.ValueOf(cfg), "validationConfig")
@@ -1502,5 +1525,72 @@ func assertNoZeroFields(t *testing.T, v reflect.Value, path string) {
 		}
 	default:
 		require.False(t, v.IsZero(), "field %s is zero", path)
+	}
+}
+
+func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
+	t.Parallel()
+
+	now := model.Now()
+	const ooo = time.Hour
+
+	ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "m"}, {Name: "a", Value: "a"}}
+
+	cases := map[string]struct {
+		cfg       sampleValidationConfig
+		tsOffset  time.Duration
+		wantErr   bool
+		wantErrID globalerror.ID
+	}{
+		"flag off, old sample, accepted": {
+			cfg:      sampleValidationConfig{outOfOrderTimeWindow: ooo},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, ooo=0, accepted (no-op)": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: 0},
+			tsOffset: -2 * ooo,
+			wantErr:  false,
+		},
+		"flag on, within ooo window, accepted": {
+			cfg:      sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset: -ooo / 2,
+			wantErr:  false,
+		},
+		"flag on, older than ooo window, rejected as sample_too_old": {
+			cfg:       sampleValidationConfig{enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * ooo,
+			wantErr:   true,
+			wantErrID: globalerror.SampleTimestampTooOld,
+		},
+		"past_grace_period > 0 takes precedence over flag": {
+			cfg:       sampleValidationConfig{pastGracePeriod: 10 * time.Minute, enforceOOOWindowOnDistributor: true, outOfOrderTimeWindow: ooo},
+			tsOffset:  -2 * (ooo + 10*time.Minute),
+			wantErr:   true,
+			wantErrID: globalerror.SampleTooFarInPast,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			metrics := newSampleValidationMetrics(reg)
+			ts := now.Add(tc.tsOffset)
+
+			err := validateSample(metrics, now, tc.cfg, "u", "g", ls, mimirpb.Sample{TimestampMs: int64(ts)}, nil)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), string(tc.wantErrID))
+
+			// Also verify histogram variant behaves the same.
+			hreg := prometheus.NewRegistry()
+			hmetrics := newSampleValidationMetrics(hreg)
+			_, herr := validateSampleHistogram(hmetrics, now, tc.cfg, "u", "g", ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0}, nil)
+			require.Error(t, herr)
+			require.Contains(t, herr.Error(), string(tc.wantErrID))
+		})
 	}
 }

@@ -146,6 +146,7 @@ type Config struct {
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
 	QueryFrontend QueryFrontendConfig `yaml:"query_frontend"`
+	Distributor   DistributorConfig   `yaml:"distributor" category:"experimental"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 
@@ -180,6 +181,12 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
 	}
 
+	if cfg.RuleEvaluationWriteEnabled {
+		if err := cfg.Distributor.Validate(); err != nil {
+			return errors.Wrap(err, "invalid ruler distributor config")
+		}
+	}
+
 	if cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage < 0 {
 		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
@@ -195,6 +202,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DeprecatedNotifier = notifier.DefaultNotifierConfig
 	cfg.TenantFederation.RegisterFlags(f)
 	cfg.QueryFrontend.RegisterFlags(f)
+	cfg.Distributor.RegisterFlags(f)
 
 	cfg.ExternalURL.URL, _ = url.Parse("") // Must be non-nil
 	f.Var(&cfg.ExternalURL, "ruler.external.url", "URL of alerts return path.")

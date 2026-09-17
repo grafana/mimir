@@ -44,3 +44,4 @@ spec:
           readOnlyRootFilesystem: true
         args:
           - --kubelet-service=default/kubelet
+

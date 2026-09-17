@@ -25,6 +25,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
+const queryEngineFlag = "query-frontend.query-engine"
+
 // CombinedFrontendConfig combines several configuration options together to preserve backwards compatibility.
 type CombinedFrontendConfig struct {
 	Handler    transport.HandlerConfig `yaml:",inline"`
@@ -34,8 +36,10 @@ type CombinedFrontendConfig struct {
 
 	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 
-	QueryEngine               string `yaml:"query_engine" category:"experimental"`
-	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
+	QueryEngine                 string `yaml:"query_engine" category:"experimental"`
+	EnableQueryEngineFallback   bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
+	WaitForQuerierRingOnStartup bool   `yaml:"wait_for_querier_ring_on_startup" category:"experimental"`
+	MaxInflightMetricsEnabled   bool   `yaml:"max_inflight_metrics_enabled" category:"experimental"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -44,11 +48,16 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.QueryMiddleware.RegisterFlags(f)
 	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 
-	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
+	f.StringVar(&cfg.QueryEngine, queryEngineFlag, querier.MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+	f.BoolVar(&cfg.WaitForQuerierRingOnStartup, "query-frontend.wait-for-querier-ring-on-startup", true, fmt.Sprintf("If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or %s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries.", querier.RingStartupWaitTimeout))
+	f.BoolVar(&cfg.MaxInflightMetricsEnabled, "query-frontend.max-inflight-metrics-enabled", false, "Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.")
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
+	if err := cfg.Handler.Validate(); err != nil {
+		return err
+	}
 	if err := cfg.FrontendV2.Validate(); err != nil {
 		return err
 	}
@@ -57,19 +66,28 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 	}
 
 	if cfg.QueryMiddleware.EnableRemoteExecution && cfg.QueryEngine != querier.MimirEngine {
-		return errors.New("remote execution is only supported when the Mimir query engine is in use")
+		return fmt.Errorf("remote execution is only supported when the Mimir query engine is in use (-%v=%v)", queryEngineFlag, querier.MimirEngine)
 	}
 
 	if cfg.QueryMiddleware.ShardedQueries && cfg.QueryMiddleware.UseMQEForSharding {
 		// We don't need to explicitly check that MQE is enabled here: remote execution is only supported when MQE is enabled, and we
 		// enforce that above.
 		if !cfg.QueryMiddleware.EnableRemoteExecution {
-			return errors.New("using MQE for sharding is only supported when the Mimir query engine is in use and remote execution is enabled")
+			return fmt.Errorf("using MQE for sharding is only supported when the Mimir query engine is in use (-%v=%v) and remote execution is enabled (-%v=true)", queryEngineFlag, querier.MimirEngine, querymiddleware.EnableRemoteExecutionFlag)
 		}
 	}
 
-	if cfg.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests && !cfg.QueryMiddleware.EnableRemoteExecution {
-		return errors.New("multiple node remote execution requests are only supported when remote execution is enabled")
+	if cfg.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+		// We don't need to explicitly check that MQE is enabled here: remote execution is only supported when MQE is enabled, and we
+		// enforce that above.
+
+		if !cfg.QueryMiddleware.EnableRemoteExecution {
+			return fmt.Errorf("using MQE for splitting and caching results is only supported when remote execution is enabled (-%v=true)", querymiddleware.EnableRemoteExecutionFlag)
+		}
+
+		if cfg.QueryMiddleware.ShardedQueries && !cfg.QueryMiddleware.UseMQEForSharding {
+			return fmt.Errorf("using MQE for splitting and caching results with sharding enabled (-%v=true) is only supported if running sharding inside MQE is enabled (-%v=true)", querymiddleware.ShardedQueriesFlag, querymiddleware.UseMQEForShardingFlag)
+		}
 	}
 
 	return nil

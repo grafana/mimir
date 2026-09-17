@@ -6,7 +6,6 @@
 package chunk
 
 import (
-	"fmt"
 	"io"
 	"unsafe"
 
@@ -15,8 +14,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/zeropool"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -173,40 +170,4 @@ func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Ch
 		Metric:  metric,
 		Data:    c,
 	}
-}
-
-// Samples returns all SamplePairs and Histograms for the chunk.
-func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
-	it := c.Data.NewIterator(nil)
-	return rangeValues(it, from, through)
-}
-
-// rangeValues is a utility function that retrieves all values within the given
-// range from an Iterator.
-func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, []mimirpb.Histogram, error) {
-	resultFloat := []model.SamplePair{}
-	resultHist := []mimirpb.Histogram{}
-	currValType := it.FindAtOrAfter(oldestInclusive)
-	if currValType == chunkenc.ValNone {
-		return resultFloat, resultHist, it.Err()
-	}
-	for !model.Time(it.Timestamp()).After(newestInclusive) {
-		switch currValType {
-		case chunkenc.ValFloat:
-			resultFloat = append(resultFloat, it.Value())
-		case chunkenc.ValHistogram:
-			t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
-		case chunkenc.ValFloatHistogram:
-			t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
-		default:
-			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
-		}
-		currValType = it.Scan()
-		if currValType == chunkenc.ValNone {
-			break
-		}
-	}
-	return resultFloat, resultHist, it.Err()
 }

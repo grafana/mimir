@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -25,7 +26,10 @@ type retryOperation[T any] func() (T, error)
 
 func doWithRetries[T any](ctx context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
 	tries := 0
-	defer func() { metrics.Observe(float64(tries)) }()
+	defer func() {
+		metrics.Observe(float64(tries))
+		stats.FromContext(ctx).AddRetries(uint32(tries))
+	}()
 
 	var lastErr error
 	var zero T
