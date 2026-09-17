@@ -173,6 +173,15 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
 
+		// filePoolDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
+		// we close it and open a new one.
+		if err = filePoolDecbufFactory.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close index-header file pool after rebuilding index-header: %w", err)
+		}
+		filePoolDecbufFactory = streamencoding.NewFilePoolDecbufFactory(
+			localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
+		)
+
 		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	}
 	if err != nil {
