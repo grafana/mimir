@@ -103,7 +103,7 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'query-frontend|overrides-exporter'
+      name: 'query-frontend|overrides-exporter|query-scheduler'
     patch: |-
       - op: remove
         path: /config/memberlist

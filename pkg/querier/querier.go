@@ -75,9 +75,6 @@ type Config struct {
 	// Mirrors Prometheus PR #18573's experimental.search-api feature flag.
 	ExperimentalSearchAPIEnabled bool `yaml:"experimental_search_api_enabled" category:"experimental"`
 
-	// Deprecated in Mimir 3.1, remove in Mimir 3.3.
-	DeprecatedFilterQueryablesEnabled bool `yaml:"filter_queryables_enabled" category:"deprecated"`
-
 	// MaxConcurrentRemoteReadQueries limits the number of remote read queries that execute concurrently.
 	// 0 or negative values mean unlimited concurrency.
 	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
@@ -117,8 +114,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.StringVar(&cfg.QueryEngine, "querier.query-engine", MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", PrometheusEngine, MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
-
-	f.BoolVar(&cfg.DeprecatedFilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.")
 
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 

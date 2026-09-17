@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -1299,4 +1300,381 @@ func TestHandlerConfig_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatQueryString_KeepsQueriesWithLineBreaksParseable(t *testing.T) {
+	// Dropping the line breaks would fuse the tokens either side of them into "orsum",
+	// leaving a logged query that no longer parses.
+	for name, query := range map[string]string{
+		"LF":   "sum(up)\nor\nsum(down)",
+		"CRLF": "sum(up)\r\nor\r\nsum(down)",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fields := formatQueryString(nil, url.Values{"query": []string{query}})
+
+			require.Len(t, fields, 2)
+			require.Equal(t, "param_query", fields[0])
+
+			logged := fmt.Sprint(fields[1])
+			_, err := promqlext.NewPromQLParser().ParseExpr(logged)
+			require.NoError(t, err, "logged query should still parse: %q", logged)
+			require.Equal(t, []string{"sum(up)", "or", "sum(down)"}, strings.Fields(logged))
+		})
+	}
+}
+
+// errorReader fails every read with the given error.
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func TestRemoteRead_StreamingIncomplete(t *testing.T) {
+	// Create a buffer large enough such that the http.ResponseWriter will flush
+	// the data before hitting the `ErrUnexpectedEOF`
+	responseData := [8192]byte{}
+
+	downstream := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(responseData[:])),
+		}, nil
+	})
+
+	testCases := map[string]struct {
+		limit       int
+		readerErr   error
+		expectedErr error
+	}{
+		"no limit should succeed": {
+			limit: -1,
+		},
+		"early out should fail with ErrUnexpectedEOF": {
+			limit:       len(responseData) - 10,
+			readerErr:   io.ErrUnexpectedEOF,
+			expectedErr: io.ErrUnexpectedEOF,
+		},
+		"all err should be 'ErrUnexpectedEOF' with a server": {
+			limit:       len(responseData) - 10,
+			readerErr:   io.ErrClosedPipe,
+			expectedErr: io.ErrUnexpectedEOF,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				resp, err := downstream(r)
+				if err != nil {
+					return nil, err
+				}
+
+				if 0 < tc.limit {
+					reader := io.MultiReader(
+						io.LimitReader(resp.Body, int64(tc.limit)),
+						&errorReader{err: tc.readerErr},
+					)
+					resp.Body = io.NopCloser(reader)
+				}
+
+				return resp, nil
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			cfg := HandlerConfig{QueryStatsEnabled: true}
+			frontendHandler := NewHandler(cfg, roundTripper, logger, reg)
+
+			server := httptest.NewServer(frontendHandler)
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/api/v1/query", nil)
+			require.NoError(t, err)
+
+			resp, err := server.Client().Do(req)
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+			require.Equal(t, 200, resp.StatusCode)
+
+			_, err = io.ReadAll(resp.Body)
+			require.ErrorIs(t, err, tc.expectedErr)
+		})
+	}
+
+}
+
+const (
+	maxInflightRequestsMetric   = "cortex_query_frontend_max_inflight_requests"
+	maxInflightRequestAgeMetric = "cortex_query_frontend_max_inflight_request_age_seconds"
+)
+
+func maxInflightRequestsExpected(series string) string {
+	return `
+		# HELP cortex_query_frontend_max_inflight_requests Peak number of concurrent in-flight requests for a tenant since the last metric collection (reset on each scrape). The type label is "http" for requests entering the query-frontend, or "dispatched" for the sub-requests sent on to query-schedulers.
+		# TYPE cortex_query_frontend_max_inflight_requests gauge
+	` + series
+}
+
+// blockingRoundTripper holds every request until release is closed, so a test can hold a
+// known number of requests in flight at once.
+type blockingRoundTripper struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (rt *blockingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	rt.started <- struct{}{}
+	<-rt.release
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+}
+
+// startConcurrentQueries sends concurrency requests for tenantID through handler and waits
+// until all of them are in flight. The returned function waits for them to finish, which
+// only happens once the caller closes rt.release.
+func startConcurrentQueries(t *testing.T, handler http.Handler, rt *blockingRoundTripper, tenantID string, concurrency int) func() {
+	t.Helper()
+
+	var wg sync.WaitGroup
+	for range concurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+			req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+		}()
+	}
+
+	for range concurrency {
+		<-rt.started
+	}
+
+	return wg.Wait
+}
+
+func TestHandlerMaxInflightMetricsDisabledByDefault(t *testing.T) {
+	cfg := HandlerConfig{MaxBodySize: 1024}
+	flagext.DefaultValues(&cfg)
+	require.False(t, cfg.MaxInflightMetricsEnabled)
+
+	reg := prometheus.NewPedanticRegistry()
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+	handler := NewHandler(cfg, roundTripper, log.NewNopLogger(), reg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+	req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+func TestHandlerMaxInflightMetrics(t *testing.T) {
+	for _, queryStatsEnabled := range []bool{true, false} {
+		// The metrics must not depend on query stats: they are gated by their own flag, and
+		// query stats own the only other per-tenant metrics in this handler.
+		t.Run(fmt.Sprintf("query stats enabled: %v", queryStatsEnabled), func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			rt := &blockingRoundTripper{started: make(chan struct{}, 3), release: make(chan struct{})}
+			handler := NewHandler(HandlerConfig{
+				MaxBodySize:               1024,
+				QueryStatsEnabled:         queryStatsEnabled,
+				MaxInflightMetricsEnabled: true,
+			}, rt, log.NewNopLogger(), reg)
+
+			wait := startConcurrentQueries(t, handler, rt, "12345", 3)
+
+			// All three are in flight, so the peak is three.
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+				maxInflightRequestsMetric+`{type="http",user="12345"} 3`+"\n",
+			)), maxInflightRequestsMetric))
+
+			// The age is reported for the same tenant. Its value depends on wall clock time,
+			// so the exact figure is asserted in the collector's own tests.
+			count, err := promtest.GatherAndCount(reg, maxInflightRequestAgeMetric)
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+
+			close(rt.release)
+			wait()
+
+			// The requests have finished, but the window they spanned still reports the peak.
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+				maxInflightRequestsMetric+`{type="http",user="12345"} 3`+"\n",
+			)), maxInflightRequestsMetric))
+
+			// With nothing in flight the tenant is dropped.
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
+				maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+		})
+	}
+}
+
+func TestHandlerMaxInflightMetricsSkipRequestsWithoutTenant(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+	handler := NewHandler(HandlerConfig{
+		MaxBodySize:               1024,
+		MaxInflightMetricsEnabled: true,
+	}, roundTripper, log.NewNopLogger(), reg)
+
+	// No org ID in the context. Such requests are rejected further down the chain, and must
+	// not be attributed to an empty tenant.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+func TestHandlerMaxInflightMetricsPerTenant(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	rt := &blockingRoundTripper{started: make(chan struct{}, 3), release: make(chan struct{})}
+	handler := NewHandler(HandlerConfig{
+		MaxBodySize:               1024,
+		MaxInflightMetricsEnabled: true,
+	}, rt, log.NewNopLogger(), reg)
+
+	waitA := startConcurrentQueries(t, handler, rt, "tenant-a", 2)
+	waitB := startConcurrentQueries(t, handler, rt, "tenant-b", 1)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="http",user="tenant-a"} 2`+"\n"+
+			maxInflightRequestsMetric+`{type="http",user="tenant-b"} 1`+"\n",
+	)), maxInflightRequestsMetric))
+
+	close(rt.release)
+	waitA()
+	waitB()
+}
+
+// A query that fails must not leak its in-flight entry. The second gather is the real
+// assertion: a tenant is only dropped once its in-flight count is back to zero, which in
+// turn only happens if every tracked request was untracked.
+func TestHandlerMaxInflightMetricsNoLeakWhenQueryFails(t *testing.T) {
+	tests := map[string]struct {
+		roundTripper  roundTripperFunc
+		expectedPanic bool
+	}{
+		"downstream returns an error": {
+			roundTripper: func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("downstream failed")
+			},
+		},
+		"downstream returns a server error": {
+			roundTripper: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("nope"))}, nil
+			},
+		},
+		"downstream panics": {
+			roundTripper: func(*http.Request) (*http.Response, error) {
+				panic("downstream panicked")
+			},
+			expectedPanic: true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			handler := NewHandler(HandlerConfig{
+				MaxBodySize:               1024,
+				MaxInflightMetricsEnabled: true,
+			}, tt.roundTripper, log.NewNopLogger(), reg)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+
+			serve := func() {
+				defer func() {
+					r := recover()
+					if tt.expectedPanic {
+						require.NotNil(t, r, "expected the downstream panic to propagate")
+					} else {
+						require.Nil(t, r)
+					}
+				}()
+				handler.ServeHTTP(httptest.NewRecorder(), req)
+			}
+			serve()
+
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+				maxInflightRequestsMetric+`{type="http",user="12345"} 1`+"\n",
+			)), maxInflightRequestsMetric))
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
+				maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+		})
+	}
+}
+
+func TestHandlerMaxInflightMetricsNoLeakWhenClientCancels(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+
+	cancelled := make(chan struct{})
+	roundTripper := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		close(cancelled)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})
+	handler := NewHandler(HandlerConfig{
+		MaxBodySize:               1024,
+		MaxInflightMetricsEnabled: true,
+	}, roundTripper, log.NewNopLogger(), reg)
+
+	ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "12345"))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil).WithContext(ctx)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}()
+
+	<-cancelled
+	cancel()
+	<-done
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(maxInflightRequestsExpected(
+		maxInflightRequestsMetric+`{type="http",user="12345"} 1`+"\n",
+	)), maxInflightRequestsMetric))
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
+		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+
+// Stop() waits for in-flight requests to drain while holding Handler.mtx, and the collector
+// takes its own lock. A scrape concurrent with that drain must not deadlock.
+func TestHandlerMaxInflightMetricsScrapeDuringStop(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	rt := &blockingRoundTripper{started: make(chan struct{}, 1), release: make(chan struct{})}
+	handler := NewHandler(HandlerConfig{
+		MaxBodySize:               1024,
+		MaxInflightMetricsEnabled: true,
+	}, rt, log.NewNopLogger(), reg)
+
+	wait := startConcurrentQueries(t, handler, rt, "12345", 1)
+
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		handler.Stop()
+	}()
+
+	// Stop() is now blocked on the drain. Scraping must still work.
+	require.Eventually(t, func() bool {
+		count, err := promtest.GatherAndCount(reg, maxInflightRequestsMetric)
+		return err == nil && count == 1
+	}, time.Second, 10*time.Millisecond)
+
+	close(rt.release)
+	wait()
+	<-stopped
 }

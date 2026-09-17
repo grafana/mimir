@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Here we use kubectl's server-side dry run feature to apply all k8s default values

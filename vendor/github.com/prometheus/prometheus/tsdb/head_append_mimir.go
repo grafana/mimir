@@ -62,7 +62,12 @@ type DiscardedSeriesSamples struct {
 }
 
 // CommitStatsReporter is implemented by appenders that report what their most
-// recent Commit did. Wrappers must forward the method.
+// recent successful Commit did. Wrappers must forward the method.
+//
+// CommitStats may be read synchronously after a successful Commit, as an exception
+// to AppenderTransaction's restriction on using a committed appender. It returns
+// zero stats before Commit and after Rollback; stats are undefined after a failed
+// Commit. Callers must copy the series labels before retaining them.
 type CommitStatsReporter interface {
 	CommitStats() CommitStats
 }

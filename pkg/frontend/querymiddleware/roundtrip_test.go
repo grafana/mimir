@@ -171,7 +171,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-						Samples: []mimirpb.Sample{
+						Samples: []mimirpb.FloatSample{
 							{TimestampMs: int64(reqTime * 1000), Value: 1},
 						},
 					},
@@ -188,7 +188,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		api := v1.NewAPI(queryClient)
 
 		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
 		require.NoError(t, err)
 		require.Equal(t, model.Vector{
 			{Metric: model.Metric{"foo": "bar"}, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Value: totalShards},
@@ -200,7 +200,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -223,7 +223,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
+		res, _, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
@@ -603,13 +603,11 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.ShardedQueries = true
 	cfg.UseMQEForSharding = false
 	cfg.RewriteQueriesHistogram = true
-	cfg.RewriteQueriesPropagateMatchers = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
 	require.NotZero(t, cfg.RewriteQueriesHistogram)
-	require.NotZero(t, cfg.RewriteQueriesPropagateMatchers)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 

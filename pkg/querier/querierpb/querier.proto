@@ -69,7 +69,7 @@ message EvaluateQueryResponseStringValue {
 
 message EvaluateQueryResponseScalarValue {
   int64 nodeIndex = 1;
-  repeated cortexpb.Sample values = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatSample values = 2 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponseInstantVectorSeriesData {
@@ -78,7 +78,7 @@ message EvaluateQueryResponseInstantVectorSeriesData {
 }
 
 message InstantVectorSeriesData {
-  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatSample floats = 1 [(gogoproto.nullable) = false];
   repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
 }
 
@@ -91,7 +91,7 @@ message EvaluateQueryResponseRangeVectorStepData {
   int64 range_start = 4;
   int64 range_end = 5;
 
-  repeated cortexpb.Sample floats = 6 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatSample floats = 6 [(gogoproto.nullable) = false];
   repeated cortexpb.FloatHistogramPair histograms = 7 [(gogoproto.nullable) = false];
 }
 

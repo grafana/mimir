@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/templates/metamonitoring/grafana-agent-role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshift-values-mimir-grafana-agent
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: openshift-values
+    app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns-monitoring"
+rules:
+- apiGroups:
+    - security.openshift.io
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+  resourceNames:
+    - openshift-values-mimir
+

@@ -77,7 +77,6 @@ type Config struct {
 	EnableRemoteExecution               bool               `yaml:"enable_remote_execution" category:"experimental"`
 	UseMQEForSharding                   bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
 	RewriteQueriesHistogram             bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
-	RewriteQueriesPropagateMatchers     bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard                uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ActiveSeriesMaxShardConcurrency     int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
 	ActiveSeriesFramedResponses         bool               `yaml:"active_series_framed_responses" category:"experimental"`
@@ -101,9 +100,6 @@ type Config struct {
 	ExtraPropagateHeaders flagext.StringSliceCSV `yaml:"extra_propagated_headers" category:"advanced"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
-
-	// Deprecated in Mimir 3.1, remove in Mimir 3.3.
-	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats" category:"deprecated"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -120,7 +116,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, true, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, true, fmt.Sprintf("Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -%s=true", ShardedQueriesFlag))
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
-	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.IntVar(&cfg.ActiveSeriesMaxShardConcurrency, "query-frontend.active-series-max-shard-concurrency", 0, "Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.")
 	f.BoolVar(&cfg.ActiveSeriesFramedResponses, "query-frontend.active-series-framed-responses", false, "Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.")
@@ -128,7 +123,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SubquerySpinOff.SpinOffWithExcessDownstreamQueries, "query-frontend.subquery-spin-off-with-excess-downstream-queries", false, fmt.Sprintf("Set to true to spin off subqueries even when the query contains more downstream queries than spun-off subqueries. Has no effect unless subquery spin-off is enabled with -%s=true.", validation.SubquerySpinOffEnabledFlag))
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
-	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
 	cfg.ResultsCache.RegisterFlags(f)
 
 	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
@@ -160,7 +154,7 @@ func (cfg *Config) CardinalityBasedShardingEnabled() bool {
 }
 
 func (cfg *Config) isPruningQueriesEnabled() bool {
-	return cfg.RewriteQueriesHistogram || cfg.RewriteQueriesPropagateMatchers
+	return cfg.RewriteQueriesHistogram
 }
 
 // HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.

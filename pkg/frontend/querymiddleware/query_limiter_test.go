@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -98,6 +99,101 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 					}
 
 				})
+			}
+		})
+	}
+}
+
+// TestQueryLimiterMiddleware_LogsRuleIDAndExpiry verifies the "query limited" log line reports the
+// matched rule's id and whether it is expired, without that expiry affecting enforcement.
+func TestQueryLimiterMiddleware_LogsRuleIDAndExpiry(t *testing.T) {
+	query := "rate(metric_counter[5m])"
+
+	tests := []struct {
+		name            string
+		expiresAt       time.Time
+		expectedExpired string
+	}{
+		{name: "no expiry set", expiresAt: time.Time{}, expectedExpired: "expired=false"},
+		{name: "expiry in the future", expiresAt: time.Now().Add(time.Hour), expectedExpired: "expired=false"},
+		{name: "expiry in the past", expiresAt: time.Now().Add(-time.Hour), expectedExpired: "expired=true"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := mockLimits{limitedQueries: []validation.LimitedQuery{
+				{Query: query, AllowedFrequency: time.Minute, ID: "limit-rule-id", ExpiresAt: tc.expiresAt},
+			}}
+			c := cache.NewInstrumentedMockCache()
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
+			reg := prometheus.NewPedanticRegistry()
+			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+				Name: "cortex_query_frontend_rejected_queries_total",
+				Help: "Number of queries that were rejected by the cluster administrator.",
+			}, []string{"user", "reason"})
+
+			var logCapture bytes.Buffer
+			mw := newQueryLimiterMiddleware(c, keyGen, limits, log.NewLogfmtLogger(&logCapture), blockedQueriesCounter)
+			req := &PrometheusInstantQueryRequest{queryExpr: parseQuery(t, query)}
+
+			// First request seeds the cache and is allowed through.
+			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: true}).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+
+			// Second request, within the allowed frequency, is rejected.
+			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: false}).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.Error(t, err)
+
+			require.Contains(t, logCapture.String(), "id=limit-rule-id")
+			require.Contains(t, logCapture.String(), tc.expectedExpired)
+		})
+	}
+}
+
+// TestQueryLimiterMiddleware_ReasonInResponseAndLog verifies that, like blocked queries, a rate-limited
+// rule's reason (if set) is included in both the client-facing error and the "query limited" log line.
+func TestQueryLimiterMiddleware_ReasonInResponseAndLog(t *testing.T) {
+	query := "rate(metric_counter[5m])"
+
+	tests := []struct {
+		name           string
+		reason         string
+		expectInErrMsg string
+	}{
+		{name: "no reason set", reason: "", expectInErrMsg: "against tenant test (err-mimir-query-limited)"},
+		{name: "reason set", reason: "the query is expensive and should not run more than once a minute", expectInErrMsg: "against tenant test the query is expensive and should not run more than once a minute (err-mimir-query-limited)"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := mockLimits{limitedQueries: []validation.LimitedQuery{
+				{Query: query, AllowedFrequency: time.Minute, Reason: tc.reason},
+			}}
+			c := cache.NewInstrumentedMockCache()
+			keyGen := NewDefaultCacheKeyGenerator(newTestCodec(), time.Second)
+			reg := prometheus.NewPedanticRegistry()
+			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+				Name: "cortex_query_frontend_rejected_queries_total",
+				Help: "Number of queries that were rejected by the cluster administrator.",
+			}, []string{"user", "reason"})
+
+			var logCapture bytes.Buffer
+			mw := newQueryLimiterMiddleware(c, keyGen, limits, log.NewLogfmtLogger(&logCapture), blockedQueriesCounter)
+			req := &PrometheusInstantQueryRequest{queryExpr: parseQuery(t, query)}
+
+			// First request seeds the cache and is allowed through.
+			_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: true}).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+
+			// Second request, within the allowed frequency, is rejected.
+			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: false}).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expectInErrMsg)
+
+			if tc.reason != "" {
+				require.Contains(t, logCapture.String(), `reason="`+tc.reason+`"`)
+			} else {
+				require.Contains(t, logCapture.String(), "reason= ")
 			}
 		})
 	}

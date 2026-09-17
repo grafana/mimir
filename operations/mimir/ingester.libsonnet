@@ -90,22 +90,23 @@
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
-  local ingester_data_pvc =
+  local newIngesterDataPvc(diskClass) =
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.ingester_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName(diskClass) +
     pvc.mixin.metadata.withName('ingester-data'),
 
   // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
   // For this reason, we grant an high termination period (80 minutes).
   ingester_termination_grace_period_seconds:: 1200,
 
-  newIngesterStatefulSet(name, container, withAntiAffinity=true, nodeAffinityMatchers=[])::
+  newIngesterStatefulSet(name, container, dataDiskClass, withAntiAffinity=true, nodeAffinityMatchers=[])::
     local ingesterContainer = container + $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('ingester-data', '/data'),
     ]);
 
+    local ingester_data_pvc = newIngesterDataPvc(dataDiskClass);
     $.newMimirStatefulSet(name, 3, ingesterContainer, ingester_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ingester_termination_grace_period_seconds) +
@@ -117,6 +118,7 @@
     self.newIngesterStatefulSet(
       'ingester',
       $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap(std.prune($.ingester_env_map)) else {}),
+      $._config.ingester_data_disk_class,
       !$._config.ingester_allow_multiple_replicas_on_same_node,
       $.ingester_node_affinity_matchers,
     ),

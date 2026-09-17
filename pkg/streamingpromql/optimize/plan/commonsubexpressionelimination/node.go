@@ -101,6 +101,14 @@ func (d *Duplicate) GetRangeParams() planning.RangeParams {
 	return splitNode.GetRangeParams()
 }
 
+func (d *Duplicate) QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams planning.RangeParams, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return planning.NoDataQueried(), fmt.Errorf("inner node of Duplicate does not implement SplitNode: %T", d.Inner)
+	}
+	return splitNode.QueriedTimeRangeWithSubRange(queryTimeRange, overrideRangeParams, lookbackDelta)
+}
+
 var _ planning.SplitNode = &Duplicate{}
 
 func MaterializeDuplicate(ctx context.Context, d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
@@ -206,6 +214,10 @@ func (f *DuplicateFilter) IsSplittable() bool {
 
 func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
 	return f.Inner.GetRangeParams()
+}
+
+func (f *DuplicateFilter) QueriedTimeRangeWithSubRange(queryTimeRange types.QueryTimeRange, overrideRangeParams planning.RangeParams, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return f.Inner.QueriedTimeRangeWithSubRange(queryTimeRange, overrideRangeParams, lookbackDelta)
 }
 
 var _ planning.SplitNode = &DuplicateFilter{}

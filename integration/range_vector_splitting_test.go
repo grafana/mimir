@@ -22,7 +22,7 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	querier, now := setupRangeVectorSplittingTest(t, tenantID, nil)
 	queryClient := createQueryClient(t, querier, tenantID)
 
-	result, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
+	result, _, _, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 
@@ -36,7 +36,7 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
 
 	// Run the same query again to verify cached intermediate results are read back correctly.
-	result2, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
+	result2, _, _, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result2.Type())
 
@@ -56,7 +56,7 @@ func TestQuerySplittingWithRangeVectorFunctionAndLBAC(t *testing.T) {
 	queryClientWithoutLBAC := createQueryClient(t, querier, tenantID)
 
 	// Run the query without any LBAC policy to populate the cache.
-	result, err := queryClientWithoutLBAC.Query("sum_over_time(test_metric[15m])", now)
+	result, _, _, err := queryClientWithoutLBAC.Query("sum_over_time(test_metric[15m])", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 
@@ -70,7 +70,7 @@ func TestQuerySplittingWithRangeVectorFunctionAndLBAC(t *testing.T) {
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
 
 	// Run the same query again to verify cached intermediate results are read back correctly.
-	result2, err := queryClientWithoutLBAC.Query("sum_over_time(test_metric[15m])", now)
+	result2, _, _, err := queryClientWithoutLBAC.Query("sum_over_time(test_metric[15m])", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result2.Type())
 
@@ -84,7 +84,7 @@ func TestQuerySplittingWithRangeVectorFunctionAndLBAC(t *testing.T) {
 	policy := tenantID + ":%7B__name__!=%22test_metric%22%7D"
 	queryClientWithLBAC := createQueryClient(t, querier, tenantID, e2emimir.WithAddHeader("X-Prom-Label-Policy", policy))
 
-	resultWithLBACPolicy, err := queryClientWithLBAC.Query("sum_over_time(test_metric[15m])", now)
+	resultWithLBACPolicy, _, _, err := queryClientWithLBAC.Query("sum_over_time(test_metric[15m])", now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, resultWithLBACPolicy.Type())
 

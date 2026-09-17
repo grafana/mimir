@@ -118,9 +118,8 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			warnings.Add(errors.New(res.GetWarning()))
 		}
 
-		if rawHints := res.GetResponseHints(); rawHints != nil {
-			// We expect only 1 hints entry so we just keep 1.
-			hints = *rawHints
+		if recvHints := res.GetResponseHints(); recvHints != nil {
+			hints = *recvHints
 		}
 
 		if recvSeries := res.GetStreamingSeries(); recvSeries != nil {
@@ -233,7 +232,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		res, err = stream.Recv()
 
 		for err == nil {
-			if res.GetHints() == nil && res.GetStats() == nil {
+			if res.GetResponseHints() == nil && res.GetStats() == nil {
 				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}

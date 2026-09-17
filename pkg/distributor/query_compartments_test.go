@@ -209,6 +209,23 @@ func TestDistributor_getIngesterReplicationSetsForQuery_Compartments(t *testing.
 		cortex_querier_compartments_hit_per_query_count{storage="ingester"} 3
 	`
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_compartments_hit_per_query"))
+
+	for unhealthy := 0; unhealthy < numCompartments; unhealthy++ {
+		t.Run(fmt.Sprintf("a ring error names the read compartment it came from: compartment %d", unhealthy), func(t *testing.T) {
+			ringStates := make([]ring.InstanceState, numCompartments)
+			for c := range ringStates {
+				ringStates[c] = ring.ACTIVE
+			}
+			// LEAVING is not part of readNoExtend, so the only owner of this compartment's partition is unhealthy.
+			ringStates[unhealthy] = ring.LEAVING
+
+			d, _, _ := prepareCompartmentsQueryTestDistributorWithRingStates(t, tenantID, numCompartments, ringStates)
+
+			_, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+			require.ErrorIs(t, err, ring.ErrTooManyUnhealthyInstances)
+			require.ErrorContains(t, err, fmt.Sprintf("read compartment %d", unhealthy))
+		})
+	}
 }
 
 // TestDistributor_QueryExemplars_Compartments verifies that the exemplars API, which accepts multiple
@@ -374,6 +391,14 @@ func assertCompartmentsHitObservation(t *testing.T, reg *prometheus.Registry, nu
 func prepareCompartmentsQueryTestDistributor(t *testing.T, tenantID string, numCompartments int) (*Distributor, *prometheus.Registry, []string) {
 	t.Helper()
 
+	return prepareCompartmentsQueryTestDistributorWithRingStates(t, tenantID, numCompartments, nil)
+}
+
+// prepareCompartmentsQueryTestDistributorWithRingStates is prepareCompartmentsQueryTestDistributor with
+// explicit ingester ring states, indexed like the ingesters. A nil ringStates leaves every ingester ACTIVE.
+func prepareCompartmentsQueryTestDistributorWithRingStates(t *testing.T, tenantID string, numCompartments int, ringStates []ring.InstanceState) (*Distributor, *prometheus.Registry, []string) {
+	t.Helper()
+
 	activePartitions := make(map[int][]int32, numCompartments)
 	for c := 0; c < numCompartments; c++ {
 		activePartitions[c] = []int32{int32(c)}
@@ -384,7 +409,7 @@ func prepareCompartmentsQueryTestDistributor(t *testing.T, tenantID string, numC
 		ingestStorageEnabled:    true,
 		ingestStoragePartitions: int32(numCompartments),
 		ingesterStateByZone: map[string]ingesterZoneState{
-			"zone-a": {numIngesters: numCompartments, happyIngesters: numCompartments},
+			"zone-a": {numIngesters: numCompartments, happyIngesters: numCompartments, ringStates: ringStates},
 		},
 		ingesterDataTenantID:        tenantID,
 		replicationFactor:           1,

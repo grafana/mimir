@@ -277,6 +277,8 @@ When you enable compactor shuffle sharding by setting `-compactor.compactor-tena
 
 You can override the compactor shard size on a per-tenant basis setting by `compactor_tenant_shard_size` in the overrides section of the runtime configuration.
 
+When compactors run in the experimental [scheduler mode](../../references/architecture/components/compactor-scheduler/), compactor shuffle sharding only affects blocks cleanup, which is still sharded through the compactor hash ring. Any compactor can execute compaction jobs for any tenant.
+
 ### Alertmanager shuffle sharding
 
 Alertmanager only performs distribution across replicas per tenant. The state and workload is not divided any further. The replication factor setting `-alertmanager.sharding-ring.replication-factor` determines how many replicas are used for a tenant.

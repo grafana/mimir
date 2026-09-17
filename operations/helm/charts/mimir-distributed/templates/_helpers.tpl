@@ -108,6 +108,21 @@ Create the name of the alertmanager service account
 {{- end -}}
 
 {{/*
+Create the name of the Grafana Agent service account
+*/}}
+{{- define "mimir.metaMonitoring.grafanaAgent.serviceAccountName" -}}
+{{- $sa := (((.Values.metaMonitoring).grafanaAgent).serviceAccount) | default dict -}}
+{{- if and $sa.create (eq ($sa.name | default "") "") -}}
+{{- $base := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-grafana-agent" $base }}
+{{- else if $sa.create -}}
+{{- $sa.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Create the app name for clients. Defaults to the same logic as "mimir.fullname", and default client expects "prometheus".
 */}}
 {{- define "client.name" -}}
@@ -264,7 +279,6 @@ Params:
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
-helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
@@ -290,6 +304,18 @@ zone: {{ .rolloutZoneName }}
 {{- end -}}
 
 {{/*
+Calculate the hash of a rendered ConfigMap or Secret from its data section only.
+Hashing the whole manifest would include the helm.sh/chart label, which changes on every chart
+version bump and would restart the pods even when the configuration is unchanged.
+Params:
+  ctx = . context
+  name = template file name of the ConfigMap or Secret
+*/}}
+{{- define "mimir.configMapOrSecretContentHash" -}}
+{{ get (include (print .ctx.Template.BasePath .name) .ctx | fromYaml) "data" | toYaml | sha256sum }}
+{{- end -}}
+
+{{/*
 POD annotations
 Params:
   ctx = . context
@@ -299,7 +325,7 @@ Params:
 {{- if .ctx.Values.useExternalConfig }}
 checksum/config: {{ .ctx.Values.externalConfigVersion | quote }}
 {{- else -}}
-checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+checksum/config: {{ include "mimir.configMapOrSecretContentHash" (dict "ctx" .ctx "name" "/mimir-config.yaml") }}
 {{- end }}
 {{- with .ctx.Values.global.podAnnotations }}
 {{ toYaml . }}
@@ -498,6 +524,28 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 */}}
 {{- define "mimir.rbac.useSecurityContextConstraints" -}}
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
+{{- end -}}
+
+{{/*
+Rules granting use of the PodSecurityPolicy or SecurityContextConstraints created by the chart.
+*/}}
+{{- define "mimir.rbac.podSecurityRules" -}}
+{{- if eq (include "mimir.rbac.usePodSecurityPolicy" .) "true" }}
+- apiGroups:      ['extensions']
+  resources:      ['podsecuritypolicies']
+  verbs:          ['use']
+  resourceNames:  [{{ include "mimir.resourceName" (dict "ctx" .) }}]
+{{- end }}
+{{- if eq (include "mimir.rbac.useSecurityContextConstraints" .) "true" }}
+- apiGroups:
+    - security.openshift.io
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+  resourceNames:
+    - {{ include "mimir.resourceName" (dict "ctx" .) }}
+{{- end }}
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}

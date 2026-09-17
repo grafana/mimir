@@ -1,0 +1,28 @@
+---
+# Source: mimir-distributed/templates/metamonitoring/metrics-instance.yaml
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: MetricsInstance
+metadata:
+  name: openshift-values-mimir-meta-monitoring
+  namespace: "citestns-monitoring"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: openshift-values
+    app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/managed-by: Helm
+spec:
+  remoteWrite:
+      - url: http://openshift-values-mimir-gateway.citestns.svc:80/api/v1/push
+        headers:
+          X-Scope-OrgID: metamonitoring
+
+  # Supply an empty namespace selector to look in all namespaces. Remove
+  # this to only look in the same namespace as the MetricsInstance CR
+  serviceMonitorNamespaceSelector: {}
+
+  serviceMonitorSelector:
+    # Scrape ServiceMonitors from all components
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: openshift-values
+

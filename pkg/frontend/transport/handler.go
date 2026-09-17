@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -67,6 +68,9 @@ var (
 	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 
+	// lineBreaksToSpaces replaces line breaks with spaces.
+	lineBreaksToSpaces = strings.NewReplacer("\n", " ", "\r", " ")
+
 	// sensitiveHeaderNames is the deny list of HTTP header names whose values
 	// carry credentials or session material and must never appear in logs.
 	sensitiveHeaderNames = []string{
@@ -97,6 +101,9 @@ type HandlerConfig struct {
 	MaxBodySize              int64                  `yaml:"max_body_size" category:"advanced"`
 	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
 	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
+
+	// MaxInflightMetricsEnabled is injected internally from the query-frontend config.
+	MaxInflightMetricsEnabled bool `yaml:"-"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
@@ -140,6 +147,9 @@ type Handler struct {
 	queryEquivalentSamplesRead *prometheus.CounterVec
 	activeUsers                *util.ActiveUsersCleanupService
 
+	// maxInflight is nil when -query-frontend.max-inflight-http-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
+
 	mtx              sync.Mutex
 	inflightRequests int
 	stopped          bool
@@ -155,6 +165,13 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
+
+	if cfg.MaxInflightMetricsEnabled {
+		h.maxInflight = inflight.NewMaxInflightCollector("http")
+		if reg != nil {
+			reg.MustRegister(h.maxInflight)
+		}
+	}
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -238,12 +255,30 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.inflightRequests++
 	f.mtx.Unlock()
 
+	// Arm the cleanup before tracking below, not after. Anything that panics between the
+	// increment above and this defer leaks inflightRequests, which would make Stop() wait
+	// forever. inflightID is captured by reference, so the assignment below is visible here,
+	// and Remove ignores the zero value it holds until then.
+	var inflightID inflight.InflightRequest
 	defer func() {
+		if f.maxInflight != nil {
+			f.maxInflight.Remove(inflightID)
+		}
+
 		f.mtx.Lock()
 		f.inflightRequests--
 		f.cond.Broadcast()
 		f.mtx.Unlock()
 	}()
+
+	// The auth middleware wraps this handler, so the tenant is already in the request
+	// context. Requests without a resolvable tenant are rejected further down the chain;
+	// leave them untracked rather than attributing them to an empty tenant.
+	if f.maxInflight != nil {
+		if tenantIDs, err := tenant.TenantIDs(r.Context()); err == nil {
+			inflightID = f.maxInflight.Add(tenant.JoinTenantIDs(tenantIDs))
+		}
+	}
 
 	var queryDetails *querydetails.QueryDetails
 
@@ -322,14 +357,20 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	// we don't check for copy error as there is no much we can do at this point
-	queryResponseSize, _ := io.Copy(w, resp.Body)
+	queryResponseSize, err := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, err)
+	}
+
+	if err != nil {
+		level.Error(util_log.WithContext(r.Context(), f.log)).Log(
+			"msg", "failed to write query response; aborting connection to signal truncation",
+			"bytes_written", queryResponseSize, "err", err)
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -495,7 +536,7 @@ func formatQueryString(details *querydetails.QueryDetails, queryString url.Value
 		if formattedValue == "" {
 			formattedValue = strings.Join(v, ",")
 		}
-		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(formattedValue))
+		fields = append(fields, fmt.Sprintf("param_%s", dskitlog.DropUnsafeChars(k)), dskitlog.DropUnsafeChars(lineBreaksToSpaces.Replace(formattedValue)))
 	}
 	return fields
 }

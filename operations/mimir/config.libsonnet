@@ -114,6 +114,13 @@
     // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
     store_gateway_lazy_loading_enabled: true,
 
+    // When store_gateway_force_attempt_http2 is enabled, the store-gateway object storage client attempts to use HTTP/2
+    // via the Go HTTP transport's ForceAttemptHTTP2 option.
+    // With HTTP/1.1, one connection is used per request and object storage systems may drop or close the connections.
+    // Reconnections result in head-of-line blocking cause high object storage tail latency.
+    // The option applies to the store-gateway blocks-storage client only.
+    store_gateway_force_attempt_http2: false,
+
     // Control the maximum size of a response from the store-gateway. Used by store-gateways and queriers to set send and receive limits, respectively.
     store_gateway_grpc_max_query_response_size_bytes: 200 * 1024 * 1024,
 

@@ -139,7 +139,12 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	// Now we can transition to normal operation.
 
-	s.completeObservationMode(ctx)
+	if err := s.completeObservationMode(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 	go s.enqueuePendingJobsWorker(ctx)
 
 	level.Info(s.logger).Log("msg", "entering normal operation")
@@ -158,7 +163,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
 				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
-				s.metrics.flushFailed.Inc()
 			}
 
 			s.updateSchedule(ctx)
@@ -196,12 +200,12 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
-func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
+func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.observationComplete {
-		return
+		return nil
 	}
 
 	var policy jobCreationPolicy[schedulerpb.JobSpec]
@@ -218,7 +222,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	offsetsByPartition, err := s.initConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
-		return
+		return fmt.Errorf("init consumption offsets: %w", err)
 	}
 
 	stores := make([]offsetStore, len(s.adminClients))
@@ -230,6 +234,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.populateInitialJobs(ctx, offsetsByPartition, scanner)
 	s.observations = nil
 	s.observationComplete = true
+	return nil
 }
 
 // updateSchedule examines the state of the Kafka topic and updates the
@@ -260,6 +265,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 				return
 			}
 			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "failed to list end offsets", "err", err)
+			s.metrics.perClusterMetrics[clusterID].endOffsetProbeFailed.Inc()
 			failedClusters = append(failedClusters, clusterID)
 			continue
 		}
@@ -627,6 +633,7 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 
 		if err := client.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed); err != nil {
 			errs = append(errs, s.compartmentError(clusterID, fmt.Errorf("commit offsets: %w", err)))
+			s.metrics.perClusterMetrics[clusterID].flushFailed.Inc()
 			continue
 		}
 
@@ -837,6 +844,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	}
 
 	maxEpoch := int64(0)
+	skippedJobs := 0
 
 	for partition, observations := range partitionObservations {
 		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
@@ -859,6 +867,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		if err != nil {
 			level.Error(s.logger).Log("msg", "startup: skipping partition recovery",
 				"partition", partition, "observations", len(observations), "err", err)
+			skippedJobs += len(observations)
 			continue
 		}
 
@@ -871,6 +880,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				level.Warn(s.logger).Log("msg", "startup: skipping job import due to offset gap",
 					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
 					"job", obs.spec.RangesString())
+				skippedJobs++
 				continue
 			}
 
@@ -895,6 +905,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				level.Warn(s.logger).Log("msg", "startup: skipping job partially behind planned offsets, truncating recovery",
 					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
 					"job", obs.spec.RangesString(), "offsets", ps.offsetsSummary(false, true))
+				skippedJobs++
 				continue
 			case beyondNone:
 				// Fully ahead of the planned frontier; validate contiguity below.
@@ -906,6 +917,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				level.Warn(s.logger).Log("msg", "startup: skipping job due to detected offset gap",
 					"partition", partition, "job_id", obs.key.id, "job", obs.spec.RangesString(),
 					"offsets", ps.offsetsSummary(false, true))
+				skippedJobs++
 				continue
 			}
 
@@ -921,6 +933,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", obs.key.id,
 						"epoch", obs.key.epoch, "worker", obs.workerID, "err", err)
 					contiguous = false
+					skippedJobs++
 					continue
 				}
 				ps.addPlannedJob(obs.key.id, obs.spec)
@@ -928,6 +941,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		}
 	}
 
+	s.metrics.startupJobsSkipped.Add(float64(skippedJobs))
 	s.jobs.setEpoch(maxEpoch + 1)
 }
 

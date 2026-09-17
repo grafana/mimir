@@ -227,12 +227,12 @@ overrides:
 		queryClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", mainTenantID)
 		require.NoError(t, err)
 
-		result, err := queryClient.Query("known_test_metric_0", time.Now())
+		result, _, _, err := queryClient.Query("known_test_metric_0", time.Now())
 		require.NoError(t, err)
 		require.Equal(t, model.ValVector, result.Type())
 		require.NotEmpty(t, result.(model.Vector), "expected results for known_test_metric_0")
 
-		result, err = queryClient.Query("known_test_metric_0_bytes", time.Now())
+		result, _, _, err = queryClient.Query("known_test_metric_0_bytes", time.Now())
 		require.NoError(t, err)
 		require.Equal(t, model.ValVector, result.Type())
 		require.Empty(t, result.(model.Vector), "expected no results for known_test_metric_0_bytes (suffixes should be disabled)")

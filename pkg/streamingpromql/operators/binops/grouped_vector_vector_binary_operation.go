@@ -156,7 +156,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition, timeRange, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	}
 
 	if len(g.oneSideMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
+		// No series on the "one" side. With fill, the "many" side could still produce output,
+		// but grouped fill is not yet implemented — the planner rejects it before reaching here.
 		return false, nil
 	}
 
@@ -495,14 +496,22 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 		}
 	}
 
-	labelsToRemove := g.VectorMatching.Include
+	labelsToRemove := make([]string, 0, len(g.VectorMatching.Include)+1)
+	for _, l := range g.VectorMatching.Include {
+		// Remove the include labels from the key of the many side when the grouping is `on(label)`.
+		// When it's `ignore(label)` we need to keep the include labels that aren't part of the matching
+		// set otherwise the series is non-unique. __name__ is never part of the key when used as an
+		// include label.
+		if l == model.MetricNameLabel || g.VectorMatching.On || slices.Contains(g.VectorMatching.MatchingLabels, l) {
+			labelsToRemove = append(labelsToRemove, l)
+		}
+	}
 
 	if g.shouldRemoveMetricNameFromManySide() {
-		labelsToRemove = make([]string, 0, len(g.VectorMatching.Include)+1)
 		labelsToRemove = append(labelsToRemove, model.MetricNameLabel)
-		labelsToRemove = append(labelsToRemove, g.VectorMatching.Include...)
-		slices.Sort(labelsToRemove)
 	}
+
+	slices.Sort(labelsToRemove)
 
 	return func(manySideLabels labels.Labels) []byte {
 		buf = manySideLabels.BytesWithoutLabels(buf, labelsToRemove...)
@@ -628,9 +637,10 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 
 	switch g.VectorMatching.Card {
 	case parser.CardOneToMany:
-		result, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide)
+		// The grouped operator never splits fill-left points, so the second return value is always empty.
+		result, _, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide, fillLeftOptions{})
 	case parser.CardManyToOne:
-		result, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide)
+		result, _, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide, fillLeftOptions{})
 	default:
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}
@@ -749,7 +759,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context
 		return nil
 	}
 
-	// First time we've used this "one" side, populate it.
+	// First time we've used this "many" side, populate it.
 	data, err := g.manySideBuffer.GetSeries(ctx, side.seriesIndices)
 	if err != nil {
 		return err

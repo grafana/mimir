@@ -25,7 +25,7 @@ The primary use of hash rings in Mimir is to consistently shard data, such as ti
 Each of the following Mimir components joins its own dedicated hash ring for sharding:
 
 - [Ingesters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/): Shard and replicate series.
-- [Compactors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/): Shard compaction jobs.
+- [Compactors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/): Shard compaction jobs and blocks cleanup. When the experimental [compactor-scheduler](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor-scheduler/) is in use, the ring only shards blocks cleanup.
 - [Store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/): Shard blocks to query from long-term storage.
 - [(Optional) Rulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ruler/): Shard rule groups to evaluate.
 - [(Optional) Alertmanagers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/): Shard tenants.

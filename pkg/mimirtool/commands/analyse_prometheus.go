@@ -132,7 +132,7 @@ func queryMetricNames(api v1.API, readTimeout time.Duration, logger log.Logger) 
 	var metricNames model.LabelValues
 	err := withBackoff(ctx, func() error {
 		var err error
-		metricNames, _, err = api.LabelValues(ctx, model.MetricNameLabel, nil, time.Now().Add(-10*time.Minute), time.Now())
+		metricNames, _, _, err = api.LabelValues(ctx, model.MetricNameLabel, nil, time.Now().Add(-10*time.Minute), time.Now())
 		return err
 	})
 	if err != nil {
@@ -168,7 +168,7 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 		query := fmt.Sprintf(`count by (job) (%s{__ignore_usage__=""})`, metric)
 		err := withBackoff(ctx, func() error {
 			var err error
-			result, _, err = api.Query(ctx, query, time.Now())
+			result, _, _, err = api.Query(ctx, query, time.Now())
 			return err
 		})
 		if err != nil {

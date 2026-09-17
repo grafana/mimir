@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -25,41 +27,41 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-// This test verifies that jsoninter uses our custom method for marshalling.
+// This test verifies that jsoniter uses our custom method for marshalling.
 // We do that by using "test sample" recognized by marshal function when in testing mode.
-func TestJsoniterMarshalForSample(t *testing.T) {
+func TestJsoniterMarshalForFloatSample(t *testing.T) {
 	testMarshalling(t, jsoniter.Marshal, "test sample")
 }
 
-func TestStdlibJsonMarshalForSample(t *testing.T) {
-	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type mimirpb.Sample: test sample")
+func TestStdlibJsonMarshalForFloatSample(t *testing.T) {
+	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type mimirpb.FloatSample: test sample")
 }
 
 func testMarshalling(t *testing.T, marshalFn func(v interface{}) ([]byte, error), expectedError string) {
 	isTesting = true
 	defer func() { isTesting = false }()
 
-	out, err := marshalFn(Sample{Value: 12345, TimestampMs: 98765})
+	out, err := marshalFn(FloatSample{Value: 12345, TimestampMs: 98765})
 	require.NoError(t, err)
 	require.Equal(t, `[98.765,"12345"]`, string(out))
 
-	_, err = marshalFn(Sample{Value: math.NaN(), TimestampMs: 0})
+	_, err = marshalFn(FloatSample{Value: math.NaN(), TimestampMs: 0})
 	require.EqualError(t, err, expectedError)
 
 	// If not testing, we get normal output.
 	isTesting = false
-	out, err = marshalFn(Sample{Value: math.NaN(), TimestampMs: 0})
+	out, err = marshalFn(FloatSample{Value: math.NaN(), TimestampMs: 0})
 	require.NoError(t, err)
 	require.Equal(t, `[0,"NaN"]`, string(out))
 }
 
-// This test verifies that jsoninter uses our custom method for unmarshalling Sample.
+// This test verifies that jsoninter uses our custom method for unmarshalling FloatSample.
 // As with Marshal, we rely on testing mode and special value that reports error.
-func TestJsoniterUnmarshalForSample(t *testing.T) {
+func TestJsoniterUnmarshalForFloatSample(t *testing.T) {
 	testUnmarshalling(t, jsoniter.Unmarshal, "test sample")
 }
 
-func TestStdlibJsonUnmarshalForSample(t *testing.T) {
+func TestStdlibJsonUnmarshalForFloatSample(t *testing.T) {
 	testUnmarshalling(t, stdlibjson.Unmarshal, "test sample")
 }
 
@@ -67,11 +69,11 @@ func testUnmarshalling(t *testing.T, unmarshalFn func(data []byte, v interface{}
 	isTesting = true
 	defer func() { isTesting = false }()
 
-	sample := Sample{}
+	sample := FloatSample{}
 
 	err := unmarshalFn([]byte(`[98.765,"12345"]`), &sample)
 	require.NoError(t, err)
-	require.Equal(t, Sample{Value: 12345, TimestampMs: 98765}, sample)
+	require.Equal(t, FloatSample{Value: 12345, TimestampMs: 98765}, sample)
 
 	err = unmarshalFn([]byte(`[0.0,"NaN"]`), &sample)
 	require.EqualError(t, err, expectedError)
@@ -246,27 +248,27 @@ func BenchmarkFromLabelAdaptersToLabels(b *testing.B) {
 	}
 }
 
-func TestFromFPointsToSamples(t *testing.T) {
+func TestFromFPointsToFloatSamples(t *testing.T) {
 	input := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
-	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+	expected := []FloatSample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 
-	assert.Equal(t, expected, FromFPointsToSamples(input))
+	assert.Equal(t, expected, FromFPointsToFloatSamples(input))
 }
 
-func TestFromSamplesToFPoints(t *testing.T) {
-	input := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+func TestFromFloatSamplesToFPoints(t *testing.T) {
+	input := []FloatSample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 	expected := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
 
-	assert.Equal(t, expected, FromSamplesToFPoints(input))
+	assert.Equal(t, expected, FromFloatSamplesToFPoints(input))
 }
 
-// Check that Prometheus FPoint and Mimir Sample types converted
+// Check that Prometheus FPoint and Mimir FloatSample types converted
 // into each other with unsafe.Pointer are compatible
-func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
-	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true, false)
+func TestPrometheusFPointInSyncWithMimirPbFloatSample(t *testing.T) {
+	test.RequireSameShape(t, promql.FPoint{}, FloatSample{}, true, false)
 }
 
-func BenchmarkFromFPointsToSamples(b *testing.B) {
+func BenchmarkFromFPointsToFloatSamples(b *testing.B) {
 	n := 100
 	input := make([]promql.FPoint, n)
 	for i := 0; i < n; i++ {
@@ -274,7 +276,7 @@ func BenchmarkFromFPointsToSamples(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		FromFPointsToSamples(input)
+		FromFPointsToFloatSamples(input)
 	}
 }
 
@@ -841,4 +843,101 @@ func makeSeries(n int) [][]LabelAdapter {
 	}
 
 	return series
+}
+
+func TestNonStableHash(t *testing.T) {
+	// serializedHash replicates the name\xffvalue\xff serialization NonStableHash
+	// hashes over, so we can assert both the fast path and the >1KB streaming
+	// fallback produce xxhash.Sum64 of exactly those bytes.
+	serializedHash := func(ls []LabelAdapter) uint64 {
+		var b []byte
+		for _, l := range ls {
+			b = append(b, l.Name...)
+			b = append(b, '\xff')
+			b = append(b, l.Value...)
+			b = append(b, '\xff')
+		}
+		return xxhash.Sum64(b)
+	}
+
+	small := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "value"}}
+
+	// big is sized relative to the fast-path cap so its serialization always
+	// overflows into the streaming fallback branch — even if the cap changes —
+	// rather than pinning a duplicated magic number.
+	big := make([]LabelAdapter, 0)
+	bigLen := 0
+	for bigLen <= nonStableHashFastPathCap*2 {
+		l := LabelAdapter{Name: fmt.Sprintf("label_%03d", len(big)), Value: strings.Repeat("v", 40)}
+		big = append(big, l)
+		bigLen += len(l.Name) + len(l.Value) + 2
+	}
+	require.Greater(t, bigLen, nonStableHashFastPathCap, "big must exceed the fast-path cap to cover the streaming fallback branch")
+
+	t.Run("is deterministic", func(t *testing.T) {
+		assert.Equal(t, NonStableHash(small), NonStableHash(small))
+		assert.Equal(t, NonStableHash(big), NonStableHash(big))
+	})
+
+	t.Run("fast path equals xxhash of serialized labels", func(t *testing.T) {
+		assert.Equal(t, serializedHash(small), NonStableHash(small))
+	})
+
+	t.Run("streaming fallback (>1KB) equals xxhash of serialized labels", func(t *testing.T) {
+		// This pins that the two branches implement the identical hashing scheme.
+		assert.Equal(t, serializedHash(big), NonStableHash(big))
+	})
+
+	t.Run("nil and empty hash equally", func(t *testing.T) {
+		assert.Equal(t, NonStableHash(nil), NonStableHash([]LabelAdapter{}))
+	})
+
+	t.Run("distinct label sets hash differently", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "a"}}
+		b := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "b"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+
+	t.Run("is order sensitive", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}}
+		b := []LabelAdapter{{Name: "b", Value: "2"}, {Name: "a", Value: "1"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+
+	t.Run("separator prevents name/value boundary collisions", func(t *testing.T) {
+		a := []LabelAdapter{{Name: "ab", Value: "c"}}
+		b := []LabelAdapter{{Name: "a", Value: "bc"}}
+		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
+	})
+}
+
+// benchHashSink prevents the compiler from eliminating the hashed value.
+var benchHashSink uint64
+
+// BenchmarkNonStableHash compares hashing LabelAdapters directly against the
+// previous FromLabelAdaptersToLabels(...).Hash(), which allocates a labels.Labels
+// on every call in the default (stringlabels) build.
+func BenchmarkNonStableHash(b *testing.B) {
+	ls := []LabelAdapter{
+		{Name: "__name__", Value: "http_requests_total"},
+		{Name: "handler", Value: "/api/v1/query_range"},
+		{Name: "instance", Value: "10.0.0.1:9090"},
+		{Name: "job", Value: "api-server"},
+		{Name: "method", Value: "GET"},
+		{Name: "status", Value: "200"},
+	}
+
+	b.Run("NonStableHash", func(b *testing.B) {
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			benchHashSink = NonStableHash(ls)
+		}
+	})
+
+	b.Run("FromLabelAdaptersToLabels.Hash", func(b *testing.B) {
+		b.ReportAllocs()
+		for n := 0; n < b.N; n++ {
+			benchHashSink = FromLabelAdaptersToLabels(ls).Hash()
+		}
+	})
 }

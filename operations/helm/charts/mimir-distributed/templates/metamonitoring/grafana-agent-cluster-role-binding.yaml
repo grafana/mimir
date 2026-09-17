@@ -12,7 +12,7 @@ roleRef:
   name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "mimir.serviceAccountName" $ }}
+    name: {{ include "mimir.metaMonitoring.grafanaAgent.serviceAccountName" $ }}
     namespace: {{ .namespace | default $.Release.Namespace }}
 {{- end }}
 {{- end }}

@@ -60,8 +60,9 @@ MIXIN_PATH := operations/mimir-mixin
 MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
 MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
-# path to the mimir jsonnet manifests
-JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
+# jsonnet files formatted by format-jsonnet-manifests. The mixin is excluded because
+# it is formatted by format-mixin and checked by check-mixin.
+JSONNET_FILES := $(shell git ls-files '*.jsonnet' '*.libsonnet' | grep -v '^operations/mimir-mixin/')
 
 # path to the mimir doc sources
 DOC_SOURCES_PATH := docs/sources/mimir
@@ -241,7 +242,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16223-c185d2afd8@sha256:eefaa60cb1a4952ddd860395b86179ece99622ad2379859c1050792fa4fca13c
+LATEST_BUILD_IMAGE_TAG ?= pr16611-e49803eacd@sha256:8ca07825acba29afe5ead9ab8e67adba1fcdf8289242413f0d1199526940bd94
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -826,10 +827,10 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 check-jsonnet-manifests: ## Check the jsonnet manifests.
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
-	@./tools/find-diff-or-untracked.sh $(JSONNET_MANIFESTS_PATHS) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
+	@./tools/find-diff-or-untracked.sh $(JSONNET_FILES) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
 format-jsonnet-manifests: ## Format the jsonnet manifests.
-	@find $(JSONNET_MANIFESTS_PATHS) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+	@echo $(JSONNET_FILES) | xargs $(JSONNET_FMT) -i
 
 check-jsonnet-getting-started: ## Check the jsonnet getting started examples.
 	# Start from a clean setup.

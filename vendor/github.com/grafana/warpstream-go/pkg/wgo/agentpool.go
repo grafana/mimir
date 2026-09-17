@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -70,10 +71,10 @@ func NewAgentPool(client *kgo.Client) *AgentPool {
 // (stats, etc.) for those IDs. Not safe for concurrent calls.
 func (p *AgentPool) Refresh(ctx context.Context) (removed []int32, err error) {
 	// Topics=nil requests metadata for every topic in the cluster.
-	// RequestCachedMetadata reuses the kgo.Client's cached Metadata when fresh
-	// and issues a real MetadataRequest when stale.
+	// A tiny positive cache age keeps production refreshes fresh while using
+	// kgo's bounded internal Metadata retry policy.
 	req := kmsg.NewPtrMetadataRequest()
-	meta, err := p.client.RequestCachedMetadata(ctx, req, 0)
+	meta, err := p.client.RequestCachedMetadata(ctx, req, time.Nanosecond)
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
 	}

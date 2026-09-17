@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -122,6 +123,49 @@ func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 		buf = append(buf, ls[i].Value...)
 	}
 	return string(buf)
+}
+
+// nonStableHashFastPathCap is the capacity of NonStableHash's stack-allocated
+// scratch buffer. Label sets whose serialization reaches this size stream the
+// hash instead, so the buffer is never grown to hold a very large entry.
+const nonStableHashFastPathCap = 1024
+
+// NonStableHash returns a hash of the label set. Like labels.Labels.Hash, the
+// returned value is NOT stable: it may differ across Mimir versions, builds
+// (e.g. -tags stringlabels) and architectures, so it must only be used to group
+// label sets within a single process — for example, to deduplicate timeseries
+// within one write request. Use labels.StableHash when a persistent or
+// cross-process hash is required.
+//
+// It hashes the LabelAdapters directly, without first converting them to a
+// labels.Labels, avoiding an allocation on hot write-path callers. The hashing
+// scheme mirrors labels.Labels.Hash (xxhash over name/value pairs separated by
+// 0xff).
+func NonStableHash(ls []LabelAdapter) uint64 {
+	// Use xxhash.Sum64(b) for the fast path as it's faster.
+	b := make([]byte, 0, nonStableHashFastPathCap)
+	for i, v := range ls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// Once the serialized label set would reach the buffer's capacity,
+			// stop accumulating and stream the remaining entries into the hash
+			// so the buffer is never grown.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range ls[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.WriteString("\xff")
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.WriteString("\xff")
+			}
+			return h.Sum64()
+		}
+
+		b = append(b, v.Name...)
+		b = append(b, '\xff')
+		b = append(b, v.Value...)
+		b = append(b, '\xff')
+	}
+	return xxhash.Sum64(b)
 }
 
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving
@@ -355,13 +399,13 @@ func fromSpansToSpansProto(s []histogram.Span) []BucketSpan {
 	return *(*[]BucketSpan)(unsafe.Pointer(&s))
 }
 
-// FromFPointsToSamples casts []promql.FPoint to []Sample. It uses unsafe.
-func FromFPointsToSamples(points []promql.FPoint) []Sample {
-	return *(*[]Sample)(unsafe.Pointer(&points))
+// FromFPointsToFloatSamples casts []promql.FPoint to []FloatSample. It uses unsafe.
+func FromFPointsToFloatSamples(points []promql.FPoint) []FloatSample {
+	return *(*[]FloatSample)(unsafe.Pointer(&points))
 }
 
-// FromSamplesToFPoints casts []Sample to []promql.FPoint. It uses unsafe.
-func FromSamplesToFPoints(samples []Sample) []promql.FPoint {
+// FromFloatSamplesToFPoints casts []FloatSample to []promql.FPoint. It uses unsafe.
+func FromFloatSamplesToFPoints(samples []FloatSample) []promql.FPoint {
 	return *(*[]promql.FPoint)(unsafe.Pointer(&samples))
 }
 
@@ -436,12 +480,12 @@ func MetricMetadataMetricTypeToMetricType(mt MetricMetadata_MetricType) model.Me
 	}
 }
 
-// isTesting is only set from tests to get special behaviour to verify that custom sample encode and decode is used,
-// both when using jsonitor or standard json package.
+// isTesting is only set from tests to get special behavior to verify that custom sample encode and decode is used,
+// both when using jsoniter or standard json package.
 var isTesting = false
 
 // MarshalJSON implements json.Marshaler.
-func (s Sample) MarshalJSON() ([]byte, error) {
+func (s FloatSample) MarshalJSON() ([]byte, error) {
 	if isTesting && math.IsNaN(s.Value) {
 		return nil, fmt.Errorf("test sample")
 	}
@@ -458,7 +502,7 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (s *Sample) UnmarshalJSON(b []byte) error {
+func (s *FloatSample) UnmarshalJSON(b []byte) error {
 	var t model.Time
 	var v model.SampleValue
 	vs := [...]stdjson.Unmarshaler{&t, &v}
@@ -474,17 +518,17 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func unsafeSampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	sample := (*Sample)(ptr)
+func unsafeFloatSampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	sample := (*FloatSample)(ptr)
 
 	if isTesting && math.IsNaN(sample.Value) {
 		stream.Error = fmt.Errorf("test sample")
 		return
 	}
-	SampleJsoniterEncode(*sample, stream)
+	FloatSampleJsoniterEncode(*sample, stream)
 }
 
-func SampleJsoniterEncode(sample Sample, stream *jsoniter.Stream) {
+func FloatSampleJsoniterEncode(sample FloatSample, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
@@ -492,16 +536,16 @@ func SampleJsoniterEncode(sample Sample, stream *jsoniter.Stream) {
 	stream.WriteArrayEnd()
 }
 
-func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+func FloatSampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	if !iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected [")
+		iter.ReportError("mimirpb.FloatSample", "expected [")
 		return
 	}
 
 	t := model.Time(iter.ReadFloat64() * float64(time.Second/time.Millisecond))
 
 	if !iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected ,")
+		iter.ReportError("mimirpb.FloatSample", "expected ,")
 		return
 	}
 
@@ -509,7 +553,7 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	ss := *(*string)(unsafe.Pointer(&bs))
 	v, err := strconv.ParseFloat(ss, 64)
 	if err != nil {
-		iter.ReportError("mimirpb.Sample", err.Error())
+		iter.ReportError("mimirpb.FloatSample", err.Error())
 		return
 	}
 
@@ -519,10 +563,10 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 
 	if iter.ReadArray() {
-		iter.ReportError("mimirpb.Sample", "expected ]")
+		iter.ReportError("mimirpb.FloatSample", "expected ]")
 	}
 
-	*(*Sample)(ptr) = Sample{
+	*(*FloatSample)(ptr) = FloatSample{
 		TimestampMs: int64(t),
 		Value:       v,
 	}
@@ -640,8 +684,8 @@ func decodeLabelAdapters(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 }
 
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", unsafeSampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
-	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.FloatSample", unsafeFloatSampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("mimirpb.FloatSample", FloatSampleJsoniterDecode)
 	jsoniter.RegisterTypeEncoderFunc("mimirpb.FloatHistogramPair", unsafeHistogramJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeEncoderFunc("[]mimirpb.LabelAdapter", unsafeMarshalLabelAdapters, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("[]mimirpb.LabelAdapter", decodeLabelAdapters)

@@ -61,10 +61,10 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 		// Mock the downstream responses.
 		firstDayDownstreamResponse = jsonEncodePrometheusResponse(t,
-			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10}))
+			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.FloatSample{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10}))
 
 		secondDayDownstreamResponse = jsonEncodePrometheusResponse(t,
-			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.Sample{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20}))
+			mockPrometheusResponseSingleSeries(seriesLabels, mimirpb.FloatSample{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20}))
 
 		thirdDayHistogram = mimirpb.FloatHistogram{
 			CounterResetHint: histogram.GaugeType,
@@ -122,7 +122,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 		// Build the expected response (which is the merge of the two downstream responses).
 		expectedResponse = jsonEncodePrometheusResponse(t, mockPrometheusResponseWithSamplesAndHistograms(seriesLabels,
-			[]mimirpb.Sample{
+			[]mimirpb.FloatSample{
 				{TimestampMs: dayOneStartTime.Unix() * 1000, Value: 10},
 				{TimestampMs: dayTwoEndTime.Unix() * 1000, Value: 20},
 			},
@@ -289,7 +289,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
@@ -577,7 +577,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
@@ -711,7 +711,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
@@ -832,7 +832,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
-					Samples: []mimirpb.Sample{
+					Samples: []mimirpb.FloatSample{
 						{Value: 137, TimestampMs: 1634292000000},
 						{Value: 137, TimestampMs: 1634292120000},
 					},
@@ -928,8 +928,8 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			queryEndTime:   now,
 			downstreamResponse: mockPrometheusResponseSingleSeries(
 				[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
-				mimirpb.Sample{TimestampMs: fiveMinutesAgo.Unix() * 1000, Value: 10},
-				mimirpb.Sample{TimestampMs: now.Unix() * 1000, Value: 20}),
+				mimirpb.FloatSample{TimestampMs: fiveMinutesAgo.Unix() * 1000, Value: 10},
+				mimirpb.FloatSample{TimestampMs: now.Unix() * 1000, Value: 20}),
 			expectedDownstreamStartTime: fiveMinutesAgo,
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
@@ -958,15 +958,15 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			queryEndTime:   now,
 			downstreamResponse: mockPrometheusResponseSingleSeries(
 				[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
-				mimirpb.Sample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10},
-				mimirpb.Sample{TimestampMs: now.Unix() * 1000, Value: 20}),
+				mimirpb.FloatSample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10},
+				mimirpb.FloatSample{TimestampMs: now.Unix() * 1000, Value: 20}),
 			expectedDownstreamStartTime: twentyMinutesAgo,
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses: []Response{
 				mockPrometheusResponseSingleSeries(
 					[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
 					// Any sample more recent than max cache freshness shouldn't be cached.
-					mimirpb.Sample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10}),
+					mimirpb.FloatSample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10}),
 			},
 		},
 	}
@@ -1891,7 +1891,7 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 	return generated.String()
 }
 
-func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
+func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.FloatSample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
 	return &mimirpb.QueryResponse{
 		Status: mimirpb.QUERY_STATUS_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{
@@ -2336,7 +2336,7 @@ func TestSplitAndCacheMiddleware_UnlimitedMemoryConsumptionTrackerFactory(t *tes
 			Result: []SampleStream{
 				{
 					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
-					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
+					Samples: []mimirpb.FloatSample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
 				},
 			},
 		},
@@ -2453,7 +2453,7 @@ func TestSplitAndCacheMiddleware_MemoryConsumptionTrackerFactory_SharedAcrossSpl
 			Result: []SampleStream{
 				{
 					Labels:  seriesLabels,
-					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: dayOneStart.Unix() * 1000}},
+					Samples: []mimirpb.FloatSample{{Value: 1, TimestampMs: dayOneStart.Unix() * 1000}},
 				},
 			},
 		},
@@ -2638,7 +2638,7 @@ func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPartialFailure(t *testing.T
 				ResultType: matrix,
 				Result: []SampleStream{{
 					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
-					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
+					Samples: []mimirpb.FloatSample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
 				}},
 			},
 		}
@@ -2741,7 +2741,7 @@ func TestSplitAndCacheMiddleware_ClosesSubResponsesOnPostDoRequestsFailure(t *te
 				ResultType: matrix,
 				Result: []SampleStream{{
 					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
-					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
+					Samples: []mimirpb.FloatSample{{Value: 1, TimestampMs: startTime.Unix() * 1000}},
 				}},
 			},
 		}

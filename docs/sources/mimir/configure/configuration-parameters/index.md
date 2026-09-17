@@ -425,7 +425,13 @@ runtime_config:
 
   # Comma separated list of yaml files or URLs with the configuration that can
   # be updated at runtime. Runtime config files will be merged from left to
-  # right.
+  # right. An entry can end with semicolon-separated parameters that say what
+  # happens when it cannot be read: ";optional-on-startup" lets the process
+  # start without it, but a later failure still fails the reload;
+  # ";optional-keep-last-value-on-failure" also lets the process start without
+  # it, and a later failure keeps the value the source supplied last. Without a
+  # parameter, a source that cannot be read fails the load. Quote the value in a
+  # shell, because ";" starts a new command.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
 
@@ -445,6 +451,12 @@ runtime_config:
   # balancer, such as a Kubernetes Service.
   # CLI flag: -runtime-config.http-client-disable-keep-alives
   [http_client_disable_keep_alives: <boolean> | default = true]
+
+  # (experimental) Method used to decode the runtime configuration files.
+  # Supported values are: "map" (decode directly using mapstructure) and "yaml"
+  # (decode by round-tripping through YAML).
+  # CLI flag: -runtime-config.loader
+  [loader: <string> | default = "yaml"]
 
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
@@ -969,6 +981,13 @@ cluster_validation:
 # using Open-Telemetry tracing.
 # CLI flag: -server.create-new-traces
 [create_new_traces: <boolean> | default = false]
+
+# Specifies if this handler should emit start timestamps for counters,
+# histograms and summaries over OpenMetrics 1.0, which are defined as extra
+# series with the same name and "_created" suffix. Only applies if
+# -server.register-instrumentation is set to true.
+# CLI flag: -server.enable-open-metrics-text-created-samples
+[enable_open_metrics_text_created_samples: <boolean> | default = false]
 ```
 
 ### distributor
@@ -2060,12 +2079,6 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
-# (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
-# filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation. Deprecated: has no effect.
-# CLI flag: -querier.filter-queryables-enabled
-[filter_queryables_enabled: <boolean> | default = false]
-
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -2139,6 +2152,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
+  # (experimental) Enable propagating label matchers across binary expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = false]
+
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
@@ -2179,6 +2196,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+    # (experimental) Enable splitting subqueries, in addition to range vector
+    # selectors. Requires
+    # -querier.mimir-query-engine.range-vector-splitting.enabled and
+    # -querier.mimir-query-engine.enable-common-subexpression-elimination to
+    # also be enabled.
+    # CLI flag: -querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting
+    [enable_subquery_splitting: <boolean> | default = false]
 
   time_splitting_and_caching:
     # (experimental) Enable caching of query results that were not fully
@@ -2451,11 +2476,6 @@ results_cache:
 # CLI flag: -query-frontend.rewrite-histogram-queries
 [rewrite_histogram_queries: <boolean> | default = false]
 
-# (experimental) Set to true to enable rewriting queries to propagate label
-# matchers across binary expressions.
-# CLI flag: -query-frontend.rewrite-propagate-matchers
-[rewrite_propagate_matchers: <boolean> | default = false]
-
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -2502,11 +2522,6 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# (deprecated) Cache statistics of processed samples on results cache.
-# Deprecated: has no effect.
-# CLI flag: -query-frontend.cache-samples-processed-stats
-[cache_samples_processed_stats: <boolean> | default = false]
-
 client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
@@ -2528,6 +2543,14 @@ client_cluster_validation:
 # empty, so starting to serve before then means failing queries.
 # CLI flag: -query-frontend.wait-for-querier-ring-on-startup
 [wait_for_querier_ring_on_startup: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_frontend_max_inflight_requests and
+# cortex_query_frontend_max_inflight_request_age_seconds metrics, which report
+# the per-tenant peak number of concurrent in-flight requests and the greatest
+# age an in-flight request reached since the last scrape. Disabling it skips
+# per-tenant in-flight tracking on every request.
+# CLI flag: -query-frontend.max-inflight-metrics-enabled
+[max_inflight_metrics_enabled: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -4308,6 +4331,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.watch-prefix-buffer-size
 [watch_prefix_buffer_size: <int> | default = 128]
 
+# (experimental) Minimum delay between CAS retries after a version mismatch. 0
+# disables the delay.
+# CLI flag: -memberlist.cas-retry-min-backoff
+[cas_retry_min_backoff: <duration> | default = 0s]
+
+# (experimental) Maximum delay between CAS retries after a version mismatch.
+# Only takes effect if cas-retry-min-backoff is also set.
+# CLI flag: -memberlist.cas-retry-max-backoff
+[cas_retry_max_backoff: <duration> | default = 10s]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
@@ -4473,6 +4506,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # federation or metrics proxies.
 # CLI flag: -distributor.ha-tracker.per-sample-dedupe
 [ha_tracker_per_sample_dedupe: <boolean> | default = false]
+
+# (experimental) Merge timeseries that share the same label set and created
+# timestamp within a single write request, so that duplicate samples within that
+# same request are deduplicated and counted in cortex_discarded_samples_total
+# instead of being silently dropped by ingesters.
+# CLI flag: -distributor.merge-duplicate-timeseries
+[merge_duplicate_timeseries: <boolean> | default = false]
 
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster
@@ -4648,9 +4688,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
-# (experimental) Encoding used for float chunks in the ingester and block
-# builder for this tenant. Valid values are 'xor' and 'xor2'.
-# CLI flag: -ingester.float-chunk-encoding
+# (experimental) Encoding used for float chunks written for this tenant by the
+# ingester and block-builder, and by the compactor when it re-encodes
+# overlapping chunks. Supported values are: xor, xor2.
+# CLI flag: -blocks-storage.tsdb.float-chunk-encoding
 [float_chunk_encoding: <string> | default = "xor"]
 
 # (advanced) Custom trackers for active metrics. If there are active series
@@ -4910,6 +4951,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 #         regex: true
 #         reason: expensive queries over 7 days are blocked
 #         time_range_longer_than: 1w
+#         id: block-expensive-queries
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 #       - pattern: .*
 #         regex: true
 #         reason: queries longer than 21 days are blocked
@@ -4941,6 +4985,25 @@ blocked_queries:
     # queries and queries with no step are not blocked. Set to 0 to disable.
     [step_size_shorter_than: <duration> | default = ]
 
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
+
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
 #   The following configuration limits the query "rate(metric_counter[5m])" to
@@ -4948,6 +5011,10 @@ blocked_queries:
 #   limited_queries:
 #       - query: rate(metric_counter[5m])
 #         allowed_frequency: 1m0s
+#         reason: the query is expensive and should not run more than once a minute
+#         id: limit-metric-counter-rate
+#         note: added per incident INC-1234, see https://example.com/incident/1234
+#         expires_at: 2026-12-31T00:00:00Z
 limited_queries:
   - # Literal PromQL expression to match.
     [query: <string> | default = ""]
@@ -4955,6 +5022,28 @@ limited_queries:
     # Minimum duration between matching queries. If a matching query arrives
     # more often than this, it is rejected.
     [allowed_frequency: <duration> | default = ]
+
+    # Reason returned to clients when rejecting matching queries.
+    [reason: <string> | default = ""]
+
+    # Stable identifier for this rule. Optional; used by tooling to correlate
+    # edits and as a metric label for expiry export.
+    [id: <string> | default = ""]
+
+    # Freeform operator note describing why this rule exists (e.g. an incident
+    # reference or chat link).
+    [note: <string> | default = ""]
+
+    # Identity of whoever created this rule, if known.
+    [created_by: <string> | default = ""]
+
+    # When this rule was created, if known.
+    created_at:
+
+    # Optional expiry timestamp. Purely informational: exported as a metric for
+    # alerting on stale rules. Never enforced — an expired rule keeps
+    # blocking/limiting queries until explicitly removed.
+    expires_at:
 
 # (experimental) List of HTTP requests to block.
 # Example:
@@ -5003,6 +5092,13 @@ blocked_requests:
 # 'all' to enable all experimental modifiers.
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
+
+# Enable certain experimental PromQL binary operation fill modifiers (fill,
+# fill_left, fill_right), which are subject to being changed or removed at any
+# time, on a per-tenant basis. Defaults to empty which means all fill modifiers
+# are disabled. Set to 'all' to enable all fill modifiers.
+# CLI flag: -query-frontend.enabled-promql-binop-fill-modifiers
+[enabled_promql_binop_fill_modifiers: <string> | default = ""]
 
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
@@ -5600,14 +5696,6 @@ kafka:
   # latency.
   # CLI flag: -ingest-storage.kafka.write-timeout-overhead
   [write_timeout_overhead: <duration> | default = 2s]
-
-  # (deprecated) The number of Kafka clients used by producers. When the
-  # configured number of clients is greater than 1, partitions are sharded among
-  # Kafka clients. A higher number of clients may provide higher write
-  # throughput at the cost of additional Metadata requests pressure to Kafka.
-  # Deprecated: has no effect (Mimir always uses a single Kafka write client).
-  # CLI flag: -ingest-storage.kafka.write-clients
-  [write_clients: <int> | default = 1]
 
   # (experimental) Mark an agent as slow when its window-average latency exceeds
   # this multiple of the cluster baseline. Only applies when
@@ -6531,11 +6619,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in the Head and OOOHead when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
-  [head_postings_for_matchers_cache_size: <int> | default = 100]
-
   # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
   # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
@@ -6551,11 +6634,6 @@ tsdb:
   # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
-
-  # (deprecated) Maximum number of entries in the cache for postings for
-  # matchers in each compacted block when TTL is greater than 0.
-  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
-  [block_postings_for_matchers_cache_size: <int> | default = 100]
 
   # (advanced) Maximum size in bytes of the cache for postings for matchers in
   # each compacted block when TTL is greater than 0.
@@ -6700,18 +6778,17 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# (experimental) How long the compactor waits before compacting first-level
-# blocks containing out-of-order samples. When set to 0 (default), out-of-order
-# blocks do not delay compaction.
+# How long the compactor waits before compacting first-level blocks containing
+# out-of-order samples. When set to 0, out-of-order blocks do not delay
+# compaction.
 # CLI flag: -compactor.first-level-compaction-ooo-wait-period
-[first_level_compaction_ooo_wait_period: <duration> | default = 0s]
+[first_level_compaction_ooo_wait_period: <duration> | default = 5m]
 
-# (experimental) When enabled, the compactor skips first-level compaction jobs
-# if any source block has a MaxTime more recent than the wait period threshold.
-# This prevents premature compaction of blocks that may still receive
-# late-arriving data.
+# When enabled, the compactor skips first-level compaction jobs if any source
+# block has a MaxTime more recent than the wait period threshold. This prevents
+# premature compaction of blocks that may still receive late-arriving data.
 # CLI flag: -compactor.first-level-compaction-skip-future-max-time
-[first_level_compaction_skip_future_max_time: <boolean> | default = false]
+[first_level_compaction_skip_future_max_time: <boolean> | default = true]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -6768,6 +6845,12 @@ The `compactor` block configures the compactor component.
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
+
+# (experimental) Maximum symbol table size in bytes for a compacted block. When
+# the symbol table of a just-compacted block exceeds this threshold, the block
+# is proactively marked as no-compact. 0 = disabled.
+# CLI flag: -compactor.block-symbol-table-size-threshold
+[block_symbol_table_size_threshold: <int> | default = 0]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise
@@ -6881,6 +6964,13 @@ scheduler_client:
   # request work.
   # CLI flag: -compactor.scheduler-client.enabled
   [enabled: <boolean> | default = false]
+
+  # (experimental) Run the ring-based blocks cleaner and join the compactor
+  # ring, which is otherwise unused. Can only be disabled when
+  # -compactor.scheduler-client.enabled is true. WARNING: disabling this on
+  # every compactor stops cleanup and breaks reads cluster-wide.
+  # CLI flag: -compactor.scheduler-client.enable-ring-based-cleanup
+  [enable_ring_based_cleanup: <boolean> | default = true]
 
   # (experimental) Compactor scheduler endpoint.
   # CLI flag: -compactor.scheduler-client.scheduler-endpoint
@@ -7417,6 +7507,12 @@ http:
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.s3.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7524,6 +7620,12 @@ http:
   # CLI flag: -<prefix>.gcs.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.gcs.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
+
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are
   # used.
@@ -7629,6 +7731,12 @@ http:
   # (advanced) Maximum number of connections per host. Set to 0 for no limit.
   # CLI flag: -<prefix>.azure.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
+
+  # (experimental) If enabled, the HTTP client attempts HTTP/2 for HTTPS
+  # connections. Without this option, a client with a custom TLS configuration
+  # uses HTTP/1.1.
+  # CLI flag: -<prefix>.azure.http.force-attempt-http2
+  [force_attempt_http2: <boolean> | default = false]
 
   # (advanced) Path to the Certificate Authority (CA) certificates to validate
   # the server certificate. If not set, the host's root CA certificates are

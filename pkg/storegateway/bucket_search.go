@@ -63,10 +63,7 @@ func (s *BucketStore) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv
 	limit := int(req.Limit)
 
 	stats := newSafeQueryStats()
-	// TODO(streaming-search): metrics recorded here are not labelled by RPC,
-	// so search load currently blends into label-{names,values} histograms.
-	// Add an `rpc` label when this RPC becomes user-facing.
-	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -150,10 +147,7 @@ func (s *BucketStore) SearchLabelValues(req *storepb.SearchLabelValuesRequest, s
 	limit := int(req.Limit)
 
 	stats := newSafeQueryStats()
-	// TODO(streaming-search): metrics recorded here are not labelled by RPC,
-	// so search load currently blends into label-{names,values} histograms.
-	// Add an `rpc` label when this RPC becomes user-facing.
-	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	g, gctx := errgroup.WithContext(ctx)

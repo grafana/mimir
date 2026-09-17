@@ -757,6 +757,10 @@ func (m multiTenantMockLimits) EnabledPromQLExtendedRangeSelectors(userID string
 	return m.byTenant[userID].enabledPromQLExtendedRangeSelectors
 }
 
+func (m multiTenantMockLimits) EnabledPromQLBinopFillModifiers(userID string) []string {
+	return m.byTenant[userID].enabledPromQLBinopFillModifiers
+}
+
 func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
 	return m.byTenant[userID].prom2RangeCompat
 }
@@ -826,6 +830,7 @@ type mockLimits struct {
 	resultsCacheForUnalignedQueryEnabled  bool
 	enabledPromQLExperimentalFunctions    []string
 	enabledPromQLExtendedRangeSelectors   []string
+	enabledPromQLBinopFillModifiers       []string
 	prom2RangeCompat                      bool
 	blockedQueries                        []validation.BlockedQuery
 	limitedQueries                        []validation.LimitedQuery
@@ -933,6 +938,10 @@ func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 
 func (m mockLimits) EnabledPromQLExtendedRangeSelectors(string) []string {
 	return m.enabledPromQLExtendedRangeSelectors
+}
+
+func (m mockLimits) EnabledPromQLBinopFillModifiers(string) []string {
+	return m.enabledPromQLBinopFillModifiers
 }
 
 func (m mockLimits) Prom2RangeCompat(string) bool {
@@ -1351,7 +1360,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "foo", Value: "bar"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 1000, Value: 5},
 								{TimestampMs: 3000, Value: 15},
 								{TimestampMs: 5000, Value: 25},
@@ -1379,7 +1388,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "foo", Value: "bar"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 15},
 							},
 						},
@@ -1398,7 +1407,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					ResultType: model.ValScalar.String(),
 					Result: []SampleStream{
 						{
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 3},
 							},
 						},
@@ -1423,7 +1432,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 							Labels: []mimirpb.LabelAdapter{
 								{Name: "value", Value: "foo"},
 							},
-							Samples: []mimirpb.Sample{
+							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 0},
 							},
 						},
