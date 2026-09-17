@@ -120,3 +120,8 @@ func (p *Params) validate() error {
 	}
 	return nil
 }
+
+// HasSearchTerms returns true if either Terms or an Expression has been set
+func (p *Params) HasSearchTerms() bool {
+	return len(p.Terms) > 0 || p.Expression != ""
+}

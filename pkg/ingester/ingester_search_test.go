@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -317,6 +318,82 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 		EndTimestampMs:   200_000,
 		Name:             "status",
 		Filter:           &client.SearchFilter{Terms: []string{"x"}, FuzzThreshold: 200},
+	}
+	s := &mockSearchLabelValuesStream{ctx: ctx}
+	err := i.SearchLabelValues(req, s)
+	require.Error(t, err)
+	st, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
+}
+
+func TestProtoToParams(t *testing.T) {
+	t.Run("nil filter returns nil params", func(t *testing.T) {
+		params, err := protoToParams(nil)
+		require.NoError(t, err)
+		assert.Nil(t, params)
+	})
+
+	t.Run("terms only builds Params via NewParams", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, []string{"foo"}, params.Terms)
+		assert.Empty(t, params.Expression)
+	})
+
+	t.Run("expression only builds Params via NewExpressionParams", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Expression: "foo AND NOT bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "foo AND NOT bar", params.Expression)
+		assert.Empty(t, params.Terms)
+	})
+
+	t.Run("expression takes precedence when both are set on the wire", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.Expression)
+	})
+
+	t.Run("invalid expression returns an error", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Expression: "foo AND"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "search expression:")
+	})
+
+	t.Run("respects fuzz alg and threshold for expression params", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{
+			Expression:      "foo",
+			CaseInsensitive: true,
+			FuzzAlg:         client.FUZZ_ALG_JARO_WINKLER,
+			FuzzThreshold:   50,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.False(t, params.CaseSensitive)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgJaroWinkler, params.FuzzAlg)
+		assert.Equal(t, 50, params.FuzzThreshold)
+	})
+}
+
+// TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument
+// mirrors TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument
+// for the search_expr wire path.
+func TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchLabelValuesRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   200_000,
+		Name:             "status",
+		Filter:           &client.SearchFilter{Expression: "foo AND"},
 	}
 	s := &mockSearchLabelValuesStream{ctx: ctx}
 	err := i.SearchLabelValues(req, s)

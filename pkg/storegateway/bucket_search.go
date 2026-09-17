@@ -262,7 +262,10 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 }
 
 // storepbToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// streaminglabelvalues.Params via NewParams or NewExpressionParams. A nil
+// input returns (nil, nil). If both Terms and Expression are set on the
+// wire, Expression takes precedence; the HTTP handler is the authoritative
+// enforcer of their mutual exclusivity, this is defense in depth only.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -270,6 +273,9 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	alg := streaminglabelvalues.FuzzAlgSubsequence
 	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	}
+	if wf.Expression != "" {
+		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 	}
 	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }

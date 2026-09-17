@@ -1003,6 +1003,16 @@ func TestParamsToSGProto(t *testing.T) {
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgJaroWinkler, FuzzThreshold: 70},
 			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
 		},
+		{
+			name: "expression-only params are not dropped",
+			in:   &streaminglabelvalues.Params{Expression: "foo AND NOT bar", CaseSensitive: true},
+			want: &storepb.SearchFilter{Expression: "foo AND NOT bar", CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "terms and expression are both forwarded (validity enforced upstream)",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, Expression: "bar", CaseSensitive: true},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar", CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
