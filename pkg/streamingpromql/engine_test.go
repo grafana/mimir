@@ -52,7 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/parentqueryid"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -6086,10 +6086,8 @@ func TestNarrowSelectorsOnEmptyGroupLeftBoundary(t *testing.T) {
 	}
 }
 
-func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
-	// A parent query ID above math.MaxInt64: the query-frontend seeds them from rand.Uint64(), so
-	// roughly half are in that range.
-	const parentQueryID = "9c5b94b1-35ad-49bb-b118-8e8fc24abf80"
+func TestEvaluationStatsReportsRootQueryID(t *testing.T) {
+	const rootQueryID = "9c5b94b1-35ad-49bb-b118-8e8fc24abf80"
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -6097,9 +6095,9 @@ func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	for name, withParentQueryID := range map[string]bool{
-		"parent query ID in context":    true,
-		"no parent query ID in context": false,
+	for name, withRootQueryID := range map[string]bool{
+		"root query ID in context":    true,
+		"no root query ID in context": false,
 	} {
 		t.Run(name, func(t *testing.T) {
 			logs := &concurrency.SyncBuffer{}
@@ -6112,8 +6110,8 @@ func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx := context.Background()
-			if withParentQueryID {
-				ctx = parentqueryid.ContextWithID(ctx, parentQueryID)
+			if withRootQueryID {
+				ctx = rootqueryid.ContextWithID(ctx, rootQueryID)
 			}
 
 			q, err := engine.NewInstantQuery(ctx, storage, nil, "some_metric", timestamp.Time(0))
@@ -6125,11 +6123,11 @@ func TestEvaluationStatsReportsParentQueryID(t *testing.T) {
 
 			require.Contains(t, logs.String(), `msg="evaluation stats"`)
 
-			if withParentQueryID {
-				require.Contains(t, logs.String(), "parent_query_id="+parentQueryID)
+			if withRootQueryID {
+				require.Contains(t, logs.String(), "root_query_id="+rootQueryID)
 			} else {
 				// Absent rather than reported as an empty value.
-				require.NotContains(t, logs.String(), "parent_query_id")
+				require.NotContains(t, logs.String(), "root_query_id")
 			}
 		})
 	}

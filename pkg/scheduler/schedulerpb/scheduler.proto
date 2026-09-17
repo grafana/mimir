@@ -60,7 +60,7 @@ message SchedulerToQuerier {
 
   // Identifies the user query this request is a sub-request of, as reported by the frontend.
   // An empty value means unknown.
-  string parentQueryID = 8;
+  string rootQueryID = 8;
 }
 
 message ProtobufRequest {
@@ -116,7 +116,7 @@ message FrontendToScheduler {
   // Identifies the user query this request is a sub-request of. The frontend allocates it as a
   // random UUID, so it is globally unique. An empty value means unknown, which is the case for
   // queries that did not come through the frontend's HTTP transport handler.
-  string parentQueryID = 9;
+  string rootQueryID = 9;
 }
 
 enum SchedulerToFrontendStatus {

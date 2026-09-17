@@ -45,8 +45,8 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/parentqueryid"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -343,8 +343,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read")
-				// parent_query_id belongs to the opt-in response stats set only.
-				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "parent_query_id")
+				// root_query_id belongs to the opt-in response stats set only.
+				assert.NotContains(t, headers.Get(ServiceTimingHeaderName), "root_query_id")
 			},
 		},
 		{
@@ -387,7 +387,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "equivalent_samples_read;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "physical_samples_read;val=0")
-				assert.Regexp(t, `parent_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
+				assert.Regexp(t, `root_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 		{
@@ -424,7 +424,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
-				assert.Regexp(t, `parent_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
+				assert.Regexp(t, `root_query_id;val=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, headers.Get(ServiceTimingHeaderName))
 			},
 		},
 	} {
@@ -511,7 +511,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
-				require.NotZero(t, msg["parent_query_id"])
+				require.NotZero(t, msg["root_query_id"])
 				require.EqualValues(t, 0, msg["retries"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
@@ -1116,7 +1116,7 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 	}
 }
 
-func TestHandler_ParentQueryID(t *testing.T) {
+func TestHandler_RootQueryID(t *testing.T) {
 	const queries = 3
 
 	for name, testCase := range map[string]struct {
@@ -1144,9 +1144,9 @@ func TestHandler_ParentQueryID(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// The ID must reach the request context, so that the query-frontend can pass it on to
 			// the query-scheduler and the queriers.
-			var contextParentQueryIDs []string
+			var contextRootQueryIDs []string
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				contextParentQueryIDs = append(contextParentQueryIDs, parentqueryid.IDFromContext(req.Context()))
+				contextRootQueryIDs = append(contextRootQueryIDs, rootqueryid.IDFromContext(req.Context()))
 
 				if testCase.downstreamErr != nil {
 					return nil, testCase.downstreamErr
@@ -1165,13 +1165,13 @@ func TestHandler_ParentQueryID(t *testing.T) {
 				handler.ServeHTTP(httptest.NewRecorder(), req)
 			}
 
-			require.Len(t, contextParentQueryIDs, queries)
-			distinctParentQueryIDs := make(map[string]struct{}, queries)
-			for _, parentQueryID := range contextParentQueryIDs {
-				require.NotEmpty(t, parentQueryID)
-				distinctParentQueryIDs[parentQueryID] = struct{}{}
+			require.Len(t, contextRootQueryIDs, queries)
+			distinctRootQueryIDs := make(map[string]struct{}, queries)
+			for _, rootQueryID := range contextRootQueryIDs {
+				require.NotEmpty(t, rootQueryID)
+				distinctRootQueryIDs[rootQueryID] = struct{}{}
 			}
-			require.Len(t, distinctParentQueryIDs, queries, "each query should get a distinct parent query ID")
+			require.Len(t, distinctRootQueryIDs, queries, "each query should get a distinct parent query ID")
 
 			if !testCase.expectStatsLogLine {
 				require.Empty(t, logger.logMessages)
@@ -1182,14 +1182,14 @@ func TestHandler_ParentQueryID(t *testing.T) {
 			for i, msg := range logger.logMessages {
 				require.Equal(t, "query stats", msg["msg"])
 
-				loggedParentQueryID, ok := msg["parent_query_id"].(string)
-				require.True(t, ok, "parent_query_id should be logged as a string")
-				require.Equal(t, contextParentQueryIDs[i], loggedParentQueryID)
+				loggedRootQueryID, ok := msg["root_query_id"].(string)
+				require.True(t, ok, "root_query_id should be logged as a string")
+				require.Equal(t, contextRootQueryIDs[i], loggedRootQueryID)
 			}
 		})
 	}
 }
-func TestHandler_SlowQueryLogReportsParentQueryID(t *testing.T) {
+func TestHandler_SlowQueryLogReportsRootQueryID(t *testing.T) {
 	// The slow query line is gated on its own threshold rather than on query stats, so it needs the
 	// ID independently.
 	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
@@ -1208,7 +1208,7 @@ func TestHandler_SlowQueryLogReportsParentQueryID(t *testing.T) {
 
 	require.Len(t, logger.logMessages, 1)
 	require.Equal(t, "slow query detected", logger.logMessages[0]["msg"])
-	require.NotZero(t, logger.logMessages[0]["parent_query_id"])
+	require.NotZero(t, logger.logMessages[0]["root_query_id"])
 }
 
 func TestHandler_QueryStringLoggedLast(t *testing.T) {

@@ -46,7 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
-	"github.com/grafana/mimir/pkg/util/parentqueryid"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
@@ -305,12 +305,12 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
 				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
 			default:
-				level.Debug(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.ParentQueryID)...)).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete", "addr", frontendAddress)
+				level.Debug(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete", "addr", frontendAddress)
 			}
 
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
-			if msg.ParentQueryID != "" {
-				enqueueSpan.SetAttributes(attribute.String(parentqueryid.FieldName, msg.ParentQueryID))
+			if msg.RootQueryID != "" {
+				enqueueSpan.SetAttributes(attribute.String(rootqueryid.FieldName, msg.RootQueryID))
 			}
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
@@ -319,7 +319,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
 				enqueueSpan.RecordError(err)
-				level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.ParentQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
+				level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			case errors.Is(err, queue.ErrStopped):
 				enqueueSpan.RecordError(err)
@@ -407,7 +407,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
-		ParentQueryID:             msg.ParentQueryID,
+		RootQueryID:               msg.RootQueryID,
 		StatsEnabled:              msg.StatsEnabled,
 		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
@@ -424,7 +424,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	now := time.Now()
 
 	req.ParentSpanContext = trace.SpanContextFromContext(requestContext)
-	// The parent query ID is not set on this span: it is already on the "enqueue" span this one
+	// The root query ID is not set on this span: it is already on the "enqueue" span this one
 	// descends from
 	req.Ctx, req.QueueSpan = tracer.Start(ctx, "queued")
 	req.EnqueueTime = now
@@ -571,7 +571,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		msg := &schedulerpb.SchedulerToQuerier{
 			UserID:          req.UserID,
 			QueryID:         req.QueryID,
-			ParentQueryID:   req.ParentQueryID,
+			RootQueryID:     req.RootQueryID,
 			FrontendAddress: req.FrontendAddr,
 			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),

@@ -15,7 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util/parentqueryid"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 type RequestKey struct {
@@ -34,9 +34,9 @@ type SchedulerRequest struct {
 	FrontendAddr string
 	UserID       string
 	QueryID      uint64
-	// ParentQueryID identifies the user query this request is a sub-request of, as reported by the
+	// RootQueryID identifies the user query this request is a sub-request of, as reported by the
 	// frontend. It is unique within a single frontend only. Zero means unknown.
-	ParentQueryID             string
+	RootQueryID               string
 	HttpRequest               *httpgrpc.HTTPRequest
 	ProtobufRequest           *schedulerpb.ProtobufRequest
 	StatsEnabled              bool
@@ -63,14 +63,14 @@ func (sr *SchedulerRequest) Key() RequestKey {
 // LogFields returns the fields that identify this request, for inclusion in request-scoped log
 // lines.
 func (sr *SchedulerRequest) LogFields() []any {
-	return requestLogFields(sr.UserID, sr.QueryID, sr.ParentQueryID)
+	return requestLogFields(sr.UserID, sr.QueryID, sr.RootQueryID)
 }
 
 // requestLogFields returns the fields that identify a request, for inclusion in request-scoped log
-// lines. parentQueryID is omitted when it is zero, so that an unknown parent is not reported as
+// lines. rootQueryID is omitted when it is zero, so that an unknown parent is not reported as
 // query 0.
-func requestLogFields(userID string, queryID uint64, parentQueryID string) []any {
-	return parentqueryid.AppendLogFields([]any{"user", userID, "query_id", queryID}, parentQueryID)
+func requestLogFields(userID string, queryID uint64, rootQueryID string) []any {
+	return rootqueryid.AppendLogFields([]any{"user", userID, "query_id", queryID}, rootQueryID)
 }
 
 // ExpectedQueryComponentName parses the expected query component from annotations by the frontend.

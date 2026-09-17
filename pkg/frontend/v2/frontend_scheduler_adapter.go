@@ -20,7 +20,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 	msg := &schedulerpb.FrontendToScheduler{
 		Type:                      schedulerpb.ENQUEUE,
 		QueryID:                   req.queryID,
-		ParentQueryID:             req.parentQueryID,
+		RootQueryID:               req.rootQueryID,
 		UserID:                    req.userID,
 		FrontendAddress:           frontendAddr,
 		StatsEnabled:              req.statsEnabled,

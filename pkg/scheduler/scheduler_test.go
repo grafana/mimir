@@ -252,23 +252,23 @@ func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
-func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
-	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+func TestSchedulerRootQueryIDPropagatedToQuerier(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	testCases := map[string]struct {
-		parentQueryID         string
-		expectedParentQueryID string
-		expectedLogFields     []any
+		rootQueryID         string
+		expectedRootQueryID string
+		expectedLogFields   []any
 	}{
-		"frontend reports a parent query ID": {
-			parentQueryID:         parentQueryID,
-			expectedParentQueryID: parentQueryID,
-			expectedLogFields:     []any{"user", "test", "query_id", uint64(1), "parent_query_id", parentQueryID},
+		"frontend reports a root query ID": {
+			rootQueryID:         rootQueryID,
+			expectedRootQueryID: rootQueryID,
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1), "root_query_id", rootQueryID},
 		},
-		"frontend reports no parent query ID": {
-			parentQueryID:         "",
-			expectedParentQueryID: "",
-			expectedLogFields:     []any{"user", "test", "query_id", uint64(1)},
+		"frontend reports no root query ID": {
+			rootQueryID:         "",
+			expectedRootQueryID: "",
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1)},
 		},
 	}
 
@@ -278,11 +278,11 @@ func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
 
 			frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 			frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-				Type:          schedulerpb.ENQUEUE,
-				QueryID:       1,
-				ParentQueryID: testCase.parentQueryID,
-				UserID:        "test",
-				Payload:       &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     1,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 			})
 
 			querierLoop, err := querierClient.QuerierLoop(t.Context())
@@ -292,11 +292,11 @@ func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
 			msg, err := querierLoop.Recv()
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), msg.QueryID)
-			require.Equal(t, testCase.expectedParentQueryID, msg.ParentQueryID)
+			require.Equal(t, testCase.expectedRootQueryID, msg.RootQueryID)
 
-			// A zero parent query ID means unknown, so it must be left out of the log fields
-			// rather than reported as parent query 0.
-			schedulerReq := &SchedulerRequest{UserID: "test", QueryID: 1, ParentQueryID: testCase.parentQueryID}
+			// An empty root query ID means unknown, so it must be left out of the log fields
+			// rather than reported as a real query.
+			schedulerReq := &SchedulerRequest{UserID: "test", QueryID: 1, RootQueryID: testCase.rootQueryID}
 			require.Equal(t, testCase.expectedLogFields, schedulerReq.LogFields())
 
 			require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
@@ -307,17 +307,17 @@ func TestSchedulerParentQueryIDPropagatedToQuerier(t *testing.T) {
 	}
 }
 
-func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
-	const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+func TestSchedulerLogsRejectedSubRequestWithRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 	testCases := map[string]struct {
-		parentQueryID string
-		// expectParentQueryIDLogged is false when the frontend reported no parent query, in which
+		rootQueryID string
+		// expectRootQueryIDLogged is false when the frontend reported no parent query, in which
 		// case the field must be absent rather than reported as an empty value.
-		expectParentQueryIDLogged bool
+		expectRootQueryIDLogged bool
 	}{
-		"frontend reports a parent query ID":  {parentQueryID: parentQueryID, expectParentQueryIDLogged: true},
-		"frontend reports no parent query ID": {parentQueryID: "", expectParentQueryIDLogged: false},
+		"frontend reports a root query ID":  {rootQueryID: rootQueryID, expectRootQueryIDLogged: true},
+		"frontend reports no root query ID": {rootQueryID: "", expectRootQueryIDLogged: false},
 	}
 
 	for name, testCase := range testCases {
@@ -334,11 +334,11 @@ func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
 			for i := 0; i < testMaxOutstandingPerTenant; i++ {
 				fl := initFrontendLoop(t, frontendClient, fmt.Sprintf("frontend-%d", i))
 				require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
-					Type:          schedulerpb.ENQUEUE,
-					QueryID:       uint64(i),
-					ParentQueryID: testCase.parentQueryID,
-					UserID:        "test",
-					Payload:       &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
+					Type:        schedulerpb.ENQUEUE,
+					QueryID:     uint64(i),
+					RootQueryID: testCase.rootQueryID,
+					UserID:      "test",
+					Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
 				}))
 
 				msg, err := fl.Recv()
@@ -351,11 +351,11 @@ func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
 			// One more for the same tenant is rejected, and that rejection must be logged.
 			fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 			require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
-				Type:          schedulerpb.ENQUEUE,
-				QueryID:       9999,
-				ParentQueryID: testCase.parentQueryID,
-				UserID:        "test",
-				Payload:       &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     9999,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 			}))
 
 			msg, err := fl.Recv()
@@ -370,10 +370,10 @@ func TestSchedulerLogsRejectedSubRequestWithParentQueryID(t *testing.T) {
 			require.Contains(t, rejection, "query_id=9999")
 			require.Contains(t, rejection, "user=test")
 
-			if testCase.expectParentQueryIDLogged {
-				require.Contains(t, rejection, "parent_query_id="+parentQueryID)
+			if testCase.expectRootQueryIDLogged {
+				require.Contains(t, rejection, "root_query_id="+rootQueryID)
 			} else {
-				require.NotContains(t, rejection, "parent_query_id")
+				require.NotContains(t, rejection, "root_query_id")
 			}
 		})
 	}
@@ -725,14 +725,14 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 
-	const rejectedParentQueryID = "b81d4fae-7dec-41d1-b2fb-00a0c91e6bf6"
+	const rejectedRootQueryID = "b81d4fae-7dec-41d1-b2fb-00a0c91e6bf6"
 
 	req := schedulerpb.FrontendToScheduler{
-		Type:          schedulerpb.ENQUEUE,
-		QueryID:       0,
-		ParentQueryID: rejectedParentQueryID,
-		UserID:        "test",
-		Payload:       &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Type:        schedulerpb.ENQUEUE,
+		QueryID:     0,
+		RootQueryID: rejectedRootQueryID,
+		UserID:      "test",
+		Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
@@ -751,20 +751,20 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 
 	// The "queued" span is never ended for a rejected request, so it is never exported. The
-	// "enqueue" span is, which is why the parent query ID has to be on that one.
-	var enqueueSpanParentQueryIDs []string
+	// "enqueue" span is, which is why the root query ID has to be on that one.
+	var enqueueSpanRootQueryIDs []string
 	for _, span := range spans {
 		if span.Name != "enqueue" {
 			continue
 		}
 		for _, attr := range span.Attributes {
-			if attr.Key == "parent_query_id" {
-				enqueueSpanParentQueryIDs = append(enqueueSpanParentQueryIDs, attr.Value.AsString())
+			if attr.Key == "root_query_id" {
+				enqueueSpanRootQueryIDs = append(enqueueSpanRootQueryIDs, attr.Value.AsString())
 			}
 		}
 	}
-	require.Equal(t, []string{rejectedParentQueryID}, enqueueSpanParentQueryIDs,
-		"the rejected request's enqueue span must carry the parent query ID")
+	require.Equal(t, []string{rejectedRootQueryID}, enqueueSpanRootQueryIDs,
+		"the rejected request's enqueue span must carry the root query ID")
 }
 
 func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {

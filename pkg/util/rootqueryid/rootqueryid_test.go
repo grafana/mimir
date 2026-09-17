@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package parentqueryid
+package rootqueryid
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const parentQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
 
 func TestNew(t *testing.T) {
 	first := New()
@@ -26,10 +26,10 @@ func TestNew(t *testing.T) {
 
 func TestIDFromContext(t *testing.T) {
 	t.Run("round trips a parent query ID", func(t *testing.T) {
-		ctx := ContextWithID(t.Context(), parentQueryID)
-		require.Equal(t, parentQueryID, IDFromContext(ctx))
+		ctx := ContextWithID(t.Context(), rootQueryID)
+		require.Equal(t, rootQueryID, IDFromContext(ctx))
 		require.Equal(t,
-			[]any{"existing", 1, FieldName, parentQueryID},
+			[]any{"existing", 1, FieldName, rootQueryID},
 			AppendLogFields([]any{"existing", 1}, IDFromContext(ctx)))
 	})
 
@@ -48,7 +48,7 @@ func TestIDFromContext(t *testing.T) {
 	})
 
 	t.Run("the innermost value wins", func(t *testing.T) {
-		ctx := ContextWithID(ContextWithID(t.Context(), "outer"), parentQueryID)
-		require.Equal(t, parentQueryID, IDFromContext(ctx))
+		ctx := ContextWithID(ContextWithID(t.Context(), "outer"), rootQueryID)
+		require.Equal(t, rootQueryID, IDFromContext(ctx))
 	})
 }
