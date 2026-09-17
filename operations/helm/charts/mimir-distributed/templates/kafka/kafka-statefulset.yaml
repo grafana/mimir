@@ -72,14 +72,12 @@ spec:
           {{- range $i := until (int $replicas) -}}
             {{- $quorumVoters = append $quorumVoters (printf "%d@%s-%d.%s-headless.%s.svc.%s:9093" $i $kafkaName $i $kafkaName $namespace (trimSuffix "." $clusterDomain)) -}}
           {{- end -}}
-          {{/* Kafka wants the wildcard host bracketed in a listener URI, so this is "[::]" and not the bare "::" used for the dskit addresses. */}}
-          {{- $listenHost := ternary "[::]" "0.0.0.0" (eq (include "mimir.ipv6Enabled" $) "true") -}}
           {{- $defaultEnv := list
               (dict "name" "_POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")))
               (dict "name" "KAFKA_CLUSTER_ID" "value" (.clusterId | default ""))
               (dict "name" "KAFKA_NODE_ID" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.labels['apps.kubernetes.io/pod-index']")))
               (dict "name" "KAFKA_PROCESS_ROLES" "value" "broker,controller")
-              (dict "name" "KAFKA_LISTENERS" "value" (printf "PLAINTEXT://%s:9092,CONTROLLER://%s:9093" $listenHost $listenHost))
+              (dict "name" "KAFKA_LISTENERS" "value" "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
               (dict "name" "KAFKA_ADVERTISED_LISTENERS" "value" (printf "PLAINTEXT://$(_POD_NAME).%s-headless.%s.svc.%s:9092" $kafkaName $namespace $clusterDomain))
               (dict "name" "KAFKA_CONTROLLER_QUORUM_VOTERS" "value" (join "," $quorumVoters))
               (dict "name" "KAFKA_CONTROLLER_LISTENER_NAMES" "value" "CONTROLLER")

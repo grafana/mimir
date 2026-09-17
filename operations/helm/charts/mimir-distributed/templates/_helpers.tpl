@@ -144,68 +144,7 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructured text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ tpl (mergeOverwrite (include "mimir.unstructuredConfig" . | fromYaml) (include "mimir.ipFamilyConfig" . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
-{{- end -}}
-
-{{/*
-Whether the chart renders IPv6 configuration for the Mimir components.
-*/}}
-{{- define "mimir.ipv6Enabled" -}}
-{{- eq (.Values.global.ipFamily | default "IPv4") "IPv6" -}}
-{{- end -}}
-
-{{/*
-Mimir configuration derived from global.ipFamily.
-
-Every dskit ring, the memberlist transport and the dskit server have their own
-address setting, so a single chart value has to fan out to all of them. The
-result is merged on top of 'mimir.config' and below 'mimir.structuredConfig',
-so what the user sets explicitly still wins.
-
-The addresses are written as "::" and not "[::]" because dskit passes them
-through net.JoinHostPort and net.ParseIP, both of which want the unbracketed
-form.
-*/}}
-{{- define "mimir.ipFamilyConfig" -}}
-{{- if eq (include "mimir.ipv6Enabled" .) "true" -}}
-alertmanager:
-  sharding_ring:
-    instance_enable_ipv6: true
-compactor:
-  sharding_ring:
-    instance_enable_ipv6: true
-distributor:
-  ring:
-    instance_enable_ipv6: true
-frontend:
-  instance_enable_ipv6: true
-ingester:
-  ring:
-    instance_enable_ipv6: true
-memberlist:
-  bind_addr:
-    - "::"
-overrides_exporter:
-  ring:
-    instance_enable_ipv6: true
-querier:
-  ring:
-    instance_enable_ipv6: true
-query_scheduler:
-  ring:
-    instance_enable_ipv6: true
-ruler:
-  ring:
-    instance_enable_ipv6: true
-server:
-  grpc_listen_address: "::"
-  http_listen_address: "::"
-store_gateway:
-  sharding_ring:
-    instance_enable_ipv6: true
-{{- else -}}
-{}
-{{- end -}}
+{{ tpl (mergeOverwrite (include "mimir.unstructuredConfig" . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
 {{- end -}}
 
 {{/*

@@ -29,14 +29,6 @@
 {{- fail "The setting 'configStorageType' should be one of 'Secret' or 'ConfigMap'." }}
 {{- end }}
 
-{{- if not (has (.Values.global.ipFamily | default "IPv4") (list "IPv4" "IPv6")) }}
-{{- fail "The setting 'global.ipFamily' should be one of 'IPv4' or 'IPv6'." }}
-{{- end }}
-
-{{- if and (eq (include "mimir.ipv6Enabled" .) "true") (eq (include "mimir.gateway.isEnabled" .) "true") (not .Values.gateway.nginx.config.enableIPv6) }}
-{{- fail "The setting 'gateway.nginx.config.enableIPv6' is false while 'global.ipFamily' is 'IPv6', which leaves the gateway without a listener." }}
-{{- end }}
-
 {{- with .Values.metaMonitoring.grafanaAgent }}
 {{/*
   !servmon.Enabled
