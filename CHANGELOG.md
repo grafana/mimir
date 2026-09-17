@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
+* [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544
 * [CHANGE] MQE: validate that delayed name removal is only set using `-querier.enable-delayed-name-removal` or the per-tenant setting when MQE is in use. #16207
 * [CHANGE] Query-frontend, MQE: Matcher propagation for binary operations now works as one of the optimization passes in MQE rather than as part of the rewrite middleware, configured with `querier.mimir-query-engine.enable-propagate-matchers` instead of `query-frontend.rewrite-propagate-matchers`. #15092
