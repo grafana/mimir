@@ -476,8 +476,13 @@ func newMultitenantCompactor(
 		}),
 	}
 
+	var maxBlockRange time.Duration
+	if len(compactorCfg.BlockRanges) > 0 {
+		maxBlockRange = compactorCfg.BlockRanges[len(compactorCfg.BlockRanges)-1]
+	}
+
 	c.blockUpload = blockupload.New(blockupload.Config{
-		MaxBlockRange: compactorCfg.BlockRanges[len(compactorCfg.BlockRanges)-1],
+		MaxBlockRange: maxBlockRange,
 
 		ValidationDir:            blockUploadValidationDir(compactorCfg.DataDir),
 		MaxValidationConcurrency: compactorCfg.MaxBlockUploadValidationConcurrency,

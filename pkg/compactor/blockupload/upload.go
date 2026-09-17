@@ -525,7 +525,7 @@ func (c *BlockUploader) uploadMeta(ctx context.Context, logger log.Logger, meta 
 
 func (c *BlockUploader) createTemporaryBlockDirectory(logger log.Logger) (dir string, err error) {
 	if err := os.MkdirAll(c.cfg.ValidationDir, 0o750); err != nil {
-		level.Error(logger).Log("msg", "failed to create block validation directory", "err", err)
+		level.Error(logger).Log("msg", "failed to create block validation directory", "dir", c.cfg.ValidationDir, "err", err)
 		return "", errors.New("failed to create temporary block directory")
 	}
 
