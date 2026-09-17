@@ -115,6 +115,8 @@ func (a *API) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// TODO: authorize the request, confirm the job exists and is owned by the tenant.
+//
 // acceptBlockRequest names the job a block belongs to: it logs under the job and keeps the job's
 // blocks together under their own prefix.
 func (a *API) acceptBlockRequest(w http.ResponseWriter, r *http.Request) (objstore.Bucket, log.Logger, bool) {
