@@ -259,8 +259,9 @@
 + {
   _config+:: {
     // When true and ingest storage is enabled, automatically set -ingest-storage.kafka.client-rack
-    // on each ingester zone to its zone name. This enables Kafka rack-aware consumption so that
-    // ingesters prefer reading from Kafka replicas in the same availability zone, reducing cross-AZ traffic.
+    // on each ingester zone to its zone name. The rack is ignored while
+    // -ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching
+    // always reads from the partition leader.
     ingest_storage_set_client_rack: true,
   },
 
