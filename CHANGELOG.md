@@ -80,6 +80,7 @@
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
 * [BUGFIX] Ruler: Return HTTP 499 from the ruler API when the client cancels the request. Previously, client cancellations were reported as 500 by the Prometheus rules and alerts endpoints and the rule group write and delete endpoints, and as 400 by the rule group read endpoints. #16726
 * [BUGFIX] Mimirtool: Accept block directories with a trailing slash in `mimirtool backfill`. #16747
+* [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16783
 
 ### Mixin
 
