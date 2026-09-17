@@ -71,7 +71,9 @@ type PoolDecompressBytes interface {
 type PoolKRecords interface {
 	// GetKRecords returns a slice with capacity n.
 	GetKRecords(n int) []kmsg.Record
-	// PutKRecords puts a slice back into the pool.
+	// PutKRecords puts a slice back into the pool. Every record is
+	// zeroed, save for its Headers slice: the decoder reuses that
+	// slice's capacity on the next get.
 	PutKRecords([]kmsg.Record)
 }
 

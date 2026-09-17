@@ -9364,6 +9364,17 @@
           "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_inflight_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-metrics-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -13586,6 +13597,17 @@
           "fieldFlag": "compactor.update-blocks-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "block_symbol_table_size_threshold",
+          "required": false,
+          "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-symbol-table-size-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -21275,7 +21297,7 @@
           "kind": "field",
           "name": "file",
           "required": false,
-          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
+          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-keep-last-value-on-failure\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "runtime-config.file",

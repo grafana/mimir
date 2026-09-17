@@ -953,6 +953,7 @@
   "compactor.symbols-flushers-concurrency": 1,
   "compactor.max-block-upload-validation-concurrency": 1,
   "compactor.update-blocks-concurrency": 1,
+  "compactor.block-symbol-table-size-threshold": 0,
   "compactor.enabled-tenants": "",
   "compactor.disabled-tenants": "",
   "compactor.ring.store": "memberlist",

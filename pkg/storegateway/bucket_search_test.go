@@ -52,14 +52,14 @@ func (m *mockSearchLabelValuesServer) Context() context.Context { return m.ctx }
 // bucket using the default test series: {a,b,c} + external label ext1=value1.
 // External labels are not stored in block indexes, so label names visible at
 // the BucketStore are {a, b, c} only.
-func prepareSearchTestStore(t *testing.T) *BucketStore {
+func prepareSearchTestStore(t *testing.T, opts ...prepareStoreConfigOption) *BucketStore {
 	t.Helper()
 	tmpDir := t.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = bkt.Close() })
 
-	cfg := defaultPrepareStoreConfig(t)
+	cfg := defaultPrepareStoreConfig(t).apply(opts...)
 	cfg.tempDir = tmpDir
 	s := prepareStoreWithTestBlocks(t, bkt, cfg)
 	return s.store
@@ -78,7 +78,17 @@ func collectSearchNames(sent []*storepb.SearchResultBatch) []string {
 
 func TestBucketStoreSearchLabelNames(t *testing.T) {
 	bs := prepareSearchTestStore(t)
+	testBucketStoreSearchLabelNames(t, bs)
+}
 
+// TestBucketStoreSearchLabelNames_IndexHeaderBucketReader repeats TestBucketStoreSearchLabelNames
+// with the experimental index-header bucket reader path.
+func TestBucketStoreSearchLabelNames_IndexHeaderBucketReader(t *testing.T) {
+	bs := prepareSearchTestStore(t, withIndexHeaderBucketReaderEnabled())
+	testBucketStoreSearchLabelNames(t, bs)
+}
+
+func testBucketStoreSearchLabelNames(t *testing.T, bs *BucketStore) {
 	tests := []struct {
 		name        string
 		filterTerms []string
@@ -141,7 +151,17 @@ func TestBucketStoreSearchLabelNames(t *testing.T) {
 
 func TestBucketStoreSearchLabelValues(t *testing.T) {
 	bs := prepareSearchTestStore(t)
+	testBucketStoreSearchLabelValues(t, bs)
+}
 
+// TestBucketStoreSearchLabelValues_IndexHeaderBucketReader repeats TestBucketStoreSearchLabelValues
+// with the experimental index-header bucket reader path.
+func TestBucketStoreSearchLabelValues_IndexHeaderBucketReader(t *testing.T) {
+	bs := prepareSearchTestStore(t, withIndexHeaderBucketReaderEnabled())
+	testBucketStoreSearchLabelValues(t, bs)
+}
+
+func testBucketStoreSearchLabelValues(t *testing.T, bs *BucketStore) {
 	tests := []struct {
 		name        string
 		labelName   string

@@ -425,7 +425,13 @@ runtime_config:
 
   # Comma separated list of yaml files or URLs with the configuration that can
   # be updated at runtime. Runtime config files will be merged from left to
-  # right.
+  # right. An entry can end with semicolon-separated parameters that say what
+  # happens when it cannot be read: ";optional-on-startup" lets the process
+  # start without it, but a later failure still fails the reload;
+  # ";optional-keep-last-value-on-failure" also lets the process start without
+  # it, and a later failure keeps the value the source supplied last. Without a
+  # parameter, a source that cannot be read fails the load. Quote the value in a
+  # shell, because ";" starts a new command.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
 
@@ -2530,6 +2536,14 @@ client_cluster_validation:
 # empty, so starting to serve before then means failing queries.
 # CLI flag: -query-frontend.wait-for-querier-ring-on-startup
 [wait_for_querier_ring_on_startup: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_frontend_max_inflight_requests and
+# cortex_query_frontend_max_inflight_request_age_seconds metrics, which report
+# the per-tenant peak number of concurrent in-flight requests and the greatest
+# age an in-flight request reached since the last scrape. Disabling it skips
+# per-tenant in-flight tracking on every request.
+# CLI flag: -query-frontend.max-inflight-metrics-enabled
+[max_inflight_metrics_enabled: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -6824,6 +6838,12 @@ The `compactor` block configures the compactor component.
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
+
+# (experimental) Maximum symbol table size in bytes for a compacted block. When
+# the symbol table of a just-compacted block exceeds this threshold, the block
+# is proactively marked as no-compact. 0 = disabled.
+# CLI flag: -compactor.block-symbol-table-size-threshold
+[block_symbol_table_size_threshold: <int> | default = 0]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise

@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260907124832-8ab1178cb9d8
+	github.com/grafana/dskit v0.0.0-20260915094715-f22bb93a96ae
 	github.com/grafana/e2e v0.1.2-0.20260914044258-ebe09ad459cf
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.9.1
@@ -58,7 +58,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/grafana/warpstream-go v0.0.0-20260806151020-d20757c9d02f
+	github.com/grafana/warpstream-go v0.1.1
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -73,9 +73,9 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
-	github.com/twmb/franz-go v1.21.5
+	github.com/twmb/franz-go v1.21.6
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260729023516-cc159eb5ddb9
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kprom v1.5.0
