@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
@@ -160,4 +161,31 @@ func TestBucketStore_ComputeWorkerPool_MatchesInlineResults(t *testing.T) {
 	pool := startComputePool(t, 4)
 	require.Equal(t, namesFor(nil), namesFor(pool))
 	require.Equal(t, valuesFor(nil), valuesFor(pool))
+}
+
+// TestIntersectLabelValuePostings_CancellationDoesNotWaitForDrain asserts a cancelled request
+// stops waiting rather than blocking until every queued chunk has drained through a busy pool.
+// This matters because the caller holds a process-wide block-gate slot for the duration: if a
+// dead client could pin that slot, the gate meant to protect tenants from each other would
+// itself block them.
+func TestIntersectLabelValuePostings_CancellationDoesNotWaitForDrain(t *testing.T) {
+	pool := startComputePool(t, 1)
+
+	// Occupy the pool's only worker so submitted chunks have to queue behind it. Released in
+	// cleanup, which runs before startComputePool's own stop cleanup (LIFO).
+	blocked := make(chan struct{})
+	t.Cleanup(func() { close(blocked) })
+	require.NoError(t, pool.Submit("test-hog", "other-tenant", func() { <-blocked }))
+
+	allValues, fetched, _ := buildIntersectionInputs(8 * labelValuesPostingsChunkSize)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	began := time.Now()
+	_, err := intersectLabelValuePostings(ctx, readerWithPool(pool), selectedSeries, fetched, allValues)
+	took := time.Since(began)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Less(t, took, 5*time.Second, "should return when cancelled, not wait for the pool to drain")
 }

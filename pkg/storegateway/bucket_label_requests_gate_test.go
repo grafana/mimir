@@ -86,3 +86,47 @@ func TestBucketStore_LabelRequests_QueryGate(t *testing.T) {
 		})
 	}
 }
+
+// TestBucketStore_LabelRequests_QueryGate_InvalidRequestNotQueued asserts request validation
+// happens before the gate is acquired. Otherwise a malformed request would queue behind the gate
+// and, under pressure, come back as a retryable Unavailable — turning bad client input into retry
+// traffic exactly when the store-gateway is already overloaded.
+func TestBucketStore_LabelRequests_QueryGate_InvalidRequestNotQueued(t *testing.T) {
+	ctx := context.Background()
+
+	// An uncompilable regex in the request hints: rejected during parsing, never reaches a block.
+	badMatchers := []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: "a", Value: "["}}
+
+	endpoints := map[string]func(bs *BucketStore) error{
+		"LabelNames": func(bs *BucketStore) error {
+			_, err := bs.LabelNames(ctx, &storepb.LabelNamesRequest{
+				End:          math.MaxInt64,
+				RequestHints: &storepb.LabelNamesRequestHints{BlockMatchers: badMatchers},
+			})
+			return err
+		},
+		"LabelValues": func(bs *BucketStore) error {
+			_, err := bs.LabelValues(ctx, &storepb.LabelValuesRequest{
+				Label:        "a",
+				End:          math.MaxInt64,
+				RequestHints: &storepb.LabelValuesRequestHints{BlockMatchers: badMatchers},
+			})
+			return err
+		},
+	}
+
+	for name, call := range endpoints {
+		t.Run(name, func(t *testing.T) {
+			bs := prepareSearchTestStore(t)
+			bs.gateLabelRequests = true
+			bs.queryGate = exhaustedQueryGate(t)
+
+			err := call(bs)
+			require.Error(t, err)
+
+			s, ok := grpcutil.ErrorToStatus(err)
+			require.True(t, ok, err)
+			require.Equal(t, codes.InvalidArgument, s.Code(), "must reject before queueing on the gate, got: %v", err)
+		})
+	}
+}

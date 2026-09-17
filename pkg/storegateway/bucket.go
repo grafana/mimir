@@ -133,11 +133,21 @@ type BucketStore struct {
 	// in-flight requests. It is acquired per block inside a request, so it bounds the fan-out a
 	// single request can cause, which queryGate (a limit on whole requests) does not.
 	//
-	// Its coverage is not uniform across endpoints. For LabelNames, LabelValues and their search
-	// variants the per-block goroutine iterates the series set synchronously, so the gate holds
-	// for the whole per-block critical section. Series instead returns a lazy iterator, and its
-	// chunk reads run later under detached preload goroutines, after the gate has been released;
-	// there the gate bounds opening the block and expanding postings, not the chunk reads.
+	// Its coverage is not uniform across endpoints, and anyone tuning the limit off this gate's
+	// own metrics needs to know where it does not reach.
+	//
+	// For LabelNames, LabelValues and their search variants the per-block goroutine iterates the
+	// series set synchronously, so the gate holds for the whole per-block critical section.
+	//
+	// For Series it covers considerably less. Two phases sit outside it:
+	//   - Index headers are loaded by openBlocksForReading, which Series calls before it takes
+	//     either this gate or queryGate, so a surge of Series requests for unloaded blocks still
+	//     piles up in index-header loading ungated. lazyLoadingGate is the only bound there.
+	//   - Chunk reads happen after the per-block goroutine returns its lazy iterator, driven by
+	//     detached preload goroutines, by which point this gate has been released.
+	// What is left for Series is expanding postings. Bounding the other two phases would change
+	// Series' gating scope beyond what this gate was added for, so it is deliberately not done
+	// here.
 	//
 	// blockGate is held while ensureIndexHeaderLoaded may block on lazyLoadingGate, so the two
 	// nest. That is only safe because nothing under indexheader ever acquires blockGate; if that
@@ -1377,12 +1387,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	defer s.recordLabelNamesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	done, err := s.limitConcurrentLabelRequests(ctx, stats)
-	if err != nil {
-		return nil, mapSeriesError(err)
-	}
-	defer done()
-
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
@@ -1402,6 +1406,12 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return nil, mapSeriesError(err)
+	}
+	defer done()
 
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
@@ -1577,12 +1587,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	defer s.recordLabelValuesCallResult(grpcRoute(ctx), stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	done, err := s.limitConcurrentLabelRequests(ctx, stats)
-	if err != nil {
-		return nil, mapSeriesError(err)
-	}
-	defer done()
-
 	resHints := &storepb.LabelValuesResponseHints{}
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1605,6 +1609,12 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	done, err := s.limitConcurrentLabelRequests(ctx, stats)
+	if err != nil {
+		return nil, mapSeriesError(err)
+	}
+	defer done()
 
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
@@ -1841,6 +1851,13 @@ func labelValuesFromPostings(
 // ingester's equivalent uses the same default.
 const labelValuesPostingsChunkSize = 32
 
+// maxOutstandingLabelValueChunks bounds how many chunks a single request may have queued on the
+// shared pool at once. The pool's per-tenant queue is effectively unbounded, so without this a
+// label with millions of values would enqueue hundreds of thousands of closures before waiting —
+// memory the inline path never allocated. The value is arbitrary: large enough that ordinary
+// label cardinalities submit in one wave, small enough to bound the queue.
+const maxOutstandingLabelValueChunks = 256
+
 // dimensionLabelValuesPostings groups label-values intersection tasks on the compute worker
 // pool, so they cannot starve other kinds of work submitted to the same pool.
 const dimensionLabelValuesPostings = "label-values-postings"
@@ -1884,36 +1901,70 @@ func intersectLabelValuePostings(
 		return isMatch, processChunk(0, len(allValues))
 	}
 
-	// Buffered to the number of chunks, so a task's error send can never block.
-	numChunks := (len(allValues) + labelValuesPostingsChunkSize - 1) / labelValuesPostingsChunkSize
-	errCh := make(chan error, numChunks)
-
-	var wg sync.WaitGroup
-	for start := 0; start < len(allValues); start += labelValuesPostingsChunkSize {
-		end := min(start+labelValuesPostingsChunkSize, len(allValues))
-
-		wg.Add(1)
-		if err := pool.Submit(dimensionLabelValuesPostings, indexr.block.userID, func() {
-			defer wg.Done()
-			if err := processChunk(start, end); err != nil {
-				errCh <- err
-			}
-		}); err != nil {
-			// Undo the Add for the task that was never submitted, then let the already-submitted
-			// ones finish before returning, so nothing is still writing to isMatch.
-			wg.Done()
-			wg.Wait()
+	// Submit in waves rather than all at once, so one request cannot queue an unbounded number
+	// of closures on the shared pool.
+	waveSize := maxOutstandingLabelValueChunks * labelValuesPostingsChunkSize
+	for waveStart := 0; waveStart < len(allValues); waveStart += waveSize {
+		waveEnd := min(waveStart+waveSize, len(allValues))
+		if err := runLabelValueChunks(ctx, pool, indexr.block.userID, waveStart, waveEnd, processChunk); err != nil {
 			return nil, err
 		}
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	if err := <-errCh; err != nil {
-		return nil, err
-	}
 	return isMatch, nil
+}
+
+// runLabelValueChunks submits [start, end) to the pool in chunks and waits for them.
+//
+// The wait honours ctx. That matters because the caller holds a process-wide block-gate slot
+// for the duration: a cancelled request must not keep that slot while work nobody will read
+// drains through the pool, or one dead client would throttle every other tenant. Tasks
+// abandoned that way go on writing into isMatch, which is safe — once this returns an error,
+// nothing reads it.
+func runLabelValueChunks(
+	ctx context.Context,
+	pool *workerpool.Pool,
+	tenantID string,
+	start, end int,
+	processChunk func(start, end int) error,
+) error {
+	// Buffered to the number of chunks, so a task's error send can never block.
+	numChunks := (end - start + labelValuesPostingsChunkSize - 1) / labelValuesPostingsChunkSize
+	errCh := make(chan error, numChunks)
+
+	var wg sync.WaitGroup
+	for chunkStart := start; chunkStart < end; chunkStart += labelValuesPostingsChunkSize {
+		chunkEnd := min(chunkStart+labelValuesPostingsChunkSize, end)
+
+		wg.Add(1)
+		if err := pool.Submit(dimensionLabelValuesPostings, tenantID, func() {
+			defer wg.Done()
+			if err := processChunk(chunkStart, chunkEnd); err != nil {
+				errCh <- err
+			}
+		}); err != nil {
+			// Undo the Add for the task that was never submitted. Already-submitted tasks are
+			// left to finish on their own, as in the cancellation case above.
+			wg.Done()
+			return err
+		}
+	}
+
+	waited := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(waited)
+	}()
+
+	select {
+	case <-waited:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Only safe to close once every task has finished, which <-waited guarantees.
+	close(errCh)
+	return <-errCh
 }
 
 type labelValuesCacheEntry struct {

@@ -472,6 +472,11 @@ func (r *bucketIndexReader) expandPostings(ctx context.Context, groupAdds, group
 		return run()
 	}
 
+	// Don't occupy a worker on behalf of a request that has already gone away.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	type result struct {
 		refs []storage.SeriesRef
 		err  error
@@ -490,8 +495,16 @@ func (r *bucketIndexReader) expandPostings(ctx context.Context, groupAdds, group
 	case res := <-resCh:
 		return res.refs, res.err
 	case <-ctx.Done():
-		// Abandon the task rather than wait for it. resCh is buffered, so the worker is still
-		// able to finish and move on to other work.
+		// Stop waiting, but be clear about what this does and does not achieve: the task itself
+		// is not cancellable. index.Merge discards the context it is given, and
+		// index.ExpandPostings takes none, so once a worker picks this up it runs to completion
+		// however long the caller has been gone. Abandoning it frees the caller (and the
+		// block-gate slot it holds) rather than the worker. resCh is buffered so the worker
+		// still completes its send and moves on.
+		//
+		// The consequence worth knowing: under repeated client timeouts, orphaned expansions
+		// can occupy the shared pool while live requests queue behind them. Bounding that needs
+		// cancellation support upstream in Prometheus, not here.
 		return nil, ctx.Err()
 	}
 }
