@@ -330,6 +330,43 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
 }
 
+func TestStorepbToParams(t *testing.T) {
+	t.Run("nil filter returns nil params", func(t *testing.T) {
+		params, err := storepbToParams(nil)
+		require.NoError(t, err)
+		assert.Nil(t, params)
+	})
+
+	t.Run("terms only builds Params via NewParams", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, []string{"foo"}, params.Terms)
+		assert.Empty(t, params.Expression)
+	})
+
+	t.Run("expression only builds Params via NewExpressionParams", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Expression: "foo AND NOT bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "foo AND NOT bar", params.Expression)
+		assert.Empty(t, params.Terms)
+	})
+
+	t.Run("expression takes precedence when both are set on the wire", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.Expression)
+	})
+
+	t.Run("invalid expression returns an error", func(t *testing.T) {
+		_, err := storepbToParams(&storepb.SearchFilter{Expression: "foo AND"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "search expression:")
+	})
+}
+
 // prepareBenchmarkSearchStore builds a BucketStore backed by the same series
 // fixture used by BenchmarkBucketStoreLabelValues so the search benchmarks
 // here and the legacy LabelValues benchmark there can be compared

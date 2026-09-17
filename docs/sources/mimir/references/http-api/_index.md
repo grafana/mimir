@@ -755,14 +755,15 @@ Returns the values of a single label, named by the mandatory `label` parameter, 
 All three endpoints accept the following parameters, supplied either as URL query parameters (`GET`) or as a URL-encoded form body (`POST`).
 
 - **label** - _mandatory for `search/label_values` only; not used by the other endpoints_ - the name of the label whose values are returned.
-- **search[]** - _optional_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. When no term is supplied, all candidates that match the other parameters are returned.
+- **search[]** - _optional_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. When no term is supplied, all candidates that match the other parameters are returned. Mutually exclusive with `search_expr`; supplying both returns an HTTP 400.
+- **search_expr** - _optional_ - a boolean search expression over search terms, supporting `AND`, `OR`, `NOT`, quoted terms, and parentheses, as an alternative to `search[]`. Mutually exclusive with `search[]`; supplying both returns an HTTP 400.
 - **match[]** - _optional_ - a PromQL series selector that restricts the candidates to those present in matching series. Repeat the parameter to supply multiple selectors, which are combined with `OR` semantics.
 - **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
 - **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
 - **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
 - **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
 - **fuzz_threshold** - _optional_ - the minimum match score a candidate must reach to be returned, as an integer between `0` and `100`. Defaults to `0`. A higher score indicates a better relevance match. `100` is an exact match.
-- **sort_by** - _optional_ - the result ordering. Either `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term.
+- **sort_by** - _optional_ - the result ordering. Either `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term or a `search_expr`.
 - **sort_dir** - _optional_ - the sort direction when `sort_by=alpha`. Either `asc` (the default) or `dsc`. Cannot be combined with `sort_by=score`.
 - **limit** - _optional_ - the maximum number of results to return. Defaults to `100`. A value of `0` means no limit. The effective limit can be further reduced by the `-querier.max-label-names-limit` and `-querier.max-label-values-limit` per-tenant limits; when this happens, a warning is included in the response trailer.
 - **batch_size** - _optional_ - the maximum number of results carried in each streamed NDJSON batch. Defaults to `100`, and must not exceed `10000`. This parameter controls only the response framing, not the total number of results.

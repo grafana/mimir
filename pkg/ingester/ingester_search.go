@@ -137,7 +137,10 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 }
 
 // protoToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// streaminglabelvalues.Params via NewParams or NewExpressionParams. A nil
+// input returns (nil, nil). If both Terms and Expression are set on the
+// wire, Expression takes precedence; the HTTP handler is the authoritative
+// enforcer of their mutual exclusivity, this is defense in depth only.
 func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -145,6 +148,9 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 	alg := streaminglabelvalues.FuzzAlgSubsequence
 	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	}
+	if wf.Expression != "" {
+		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 	}
 	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }
