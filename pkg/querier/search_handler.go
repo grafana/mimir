@@ -211,6 +211,13 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, fmt.Errorf("too many search[] terms: got %d, maximum is %d", len(terms), maxSearchTermsPerRequest)
 	}
 
+	// search_expr is a boolean expression alternative to search[] (AND/OR/NOT,
+	// quoted terms, parentheses); the two are mutually exclusive.
+	expr := q.Get("search_expr")
+	if expr != "" && len(terms) > 0 {
+		return nil, errors.New("search[] and search_expr are mutually exclusive")
+	}
+
 	// Case sensitivity defaults to true per Prometheus URL polarity.
 	caseSensitive, err := parseBoolParam(q, "case_sensitive", true)
 	if err != nil {
@@ -247,10 +254,10 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		sortBy = "alpha"
 	}
 	// sort_by=score sorts by relevance score, which is only meaningful when
-	// at least one search[] term has been supplied to produce the scores.
-	// Matches Prometheus PR #18573.
-	if sortBy == "score" && len(terms) == 0 {
-		return nil, errors.New("sort_by=score requires search[] to be set")
+	// at least one search[] term or a search_expr has been supplied to
+	// produce the scores. Matches Prometheus PR #18573.
+	if sortBy == "score" && len(terms) == 0 && expr == "" {
+		return nil, errors.New("sort_by=score requires search[] or search_expr to be set")
 	}
 	sortDir := q.Get("sort_dir")
 	if sortDir == "" {
@@ -322,9 +329,17 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	params, err := streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
-	if err != nil {
-		return nil, fmt.Errorf("invalid search params: %w", err)
+	var params *streaminglabelvalues.Params
+	if expr != "" {
+		params, err = streaminglabelvalues.NewExpressionParams(expr, caseSensitive, alg, threshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid search_expr: %w", err)
+		}
+	} else {
+		params, err = streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid search params: %w", err)
+		}
 	}
 
 	// URL param is "label"; required by the label-values endpoint.

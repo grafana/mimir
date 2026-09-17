@@ -437,6 +437,16 @@ func TestParamsToProto(t *testing.T) {
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzThreshold: 50},
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, FuzzThreshold: 50},
 		},
+		{
+			name: "expression-only params are not dropped",
+			in:   &streaminglabelvalues.Params{Expression: "foo AND NOT bar", CaseSensitive: true},
+			want: &client.SearchFilter{Expression: "foo AND NOT bar", CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
+		},
+		{
+			name: "terms and expression are both forwarded (validity enforced upstream)",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, Expression: "bar", CaseSensitive: true},
+			want: &client.SearchFilter{Terms: []string{"foo"}, Expression: "bar", CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -256,6 +256,11 @@ message SearchFilter {
   // matching Prometheus PR #18573's fuzz_threshold URL param. The server
   // divides by 100 to compare against the matcher's [0,1] score.
   int32 fuzz_threshold = 4;
+  // Expression is an optional boolean search expression (AND/OR/NOT, quoting,
+  // parentheses) as an alternative to terms. Mutually exclusive with terms;
+  // validated by the HTTP handler with searchexpr.Parse before being sent
+  // over the wire, so servers only need to compile it.
+  string expression = 5;
 }
 
 message SearchLabelNamesRequest {

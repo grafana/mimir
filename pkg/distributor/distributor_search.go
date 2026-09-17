@@ -313,11 +313,12 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 // paramsToProto returns nil for nil/empty Params — the ingester treats a
 // nil filter as accept-all.
 func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil || !p.HasSearchTerms() {
 		return nil
 	}
 	wf := &ingester_client.SearchFilter{
 		Terms:           p.Terms,
+		Expression:      p.Expression,
 		CaseInsensitive: !p.CaseSensitive,
 		FuzzThreshold:   int32(p.FuzzThreshold),
 	}
