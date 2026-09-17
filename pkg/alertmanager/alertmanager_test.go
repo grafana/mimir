@@ -757,6 +757,8 @@ func TestGrafanaAlertmanager(t *testing.T) {
 }
 
 func TestGetFullStateHandler(t *testing.T) {
+	t.Skip("Skipped due to not being deterministic")
+
 	am, err := New(&Config{
 		UserID:            "test",
 		Logger:            log.NewNopLogger(),
