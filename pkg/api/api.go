@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	bbschedulerpb "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -469,6 +470,17 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.RegisterRoute("/compactor/delete_tenant_status", http.HandlerFunc(c.DeleteTenantStatus), true, true, "GET")
 	a.RegisterRoute("/compactor/tenants", http.HandlerFunc(c.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/compactor/tenant/{tenant}/planned_jobs", http.HandlerFunc(c.PlannedJobsHandler), false, true, "GET")
+}
+
+// RegisterBackfill registers routes associated with the backfill API.
+func (a *API) RegisterBackfill(b *backfill.API) {
+	a.RegisterRoute("/api/v1/backfill/start", http.HandlerFunc(b.Start), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/block/{block}/start", http.HandlerFunc(b.StartBlockUpload), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/block/{block}/files", a.DisableServerHTTPTimeouts(http.HandlerFunc(b.UploadBlockFile)), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/block/{block}/finish", http.HandlerFunc(b.FinishBlockUpload), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/finish", http.HandlerFunc(b.Finish), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/cancel", http.HandlerFunc(b.Cancel), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/status", http.HandlerFunc(b.Status), true, false, http.MethodGet)
 }
 
 func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {

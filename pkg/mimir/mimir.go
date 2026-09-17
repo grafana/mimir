@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/compactor/backfill"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
@@ -132,6 +133,7 @@ type Config struct {
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Backfill                       backfill.Config                 `yaml:"backfill" doc:"hidden"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
 	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
@@ -209,6 +211,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
+	c.Backfill.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.CompactorScheduler.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -238,6 +241,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":                   &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage":            &c.AlertmanagerStorage.StorageBackendConfig,
 			"usage_tracker_snapshots_storage": &c.UsageTracker.SnapshotsStorage.StorageBackendConfig,
+			"backfill_storage":                &c.Backfill.Storage.StorageBackendConfig,
 		},
 		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
@@ -343,6 +347,9 @@ func (c *Config) Validate(log log.Logger) error {
 				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must end with the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
+	}
+	if err := c.Backfill.Validate(); err != nil {
+		return errors.Wrap(err, "invalid backfill config")
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
@@ -491,6 +498,10 @@ func (c *Config) isStoreGatewayEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway)
 }
 
+func (c *Config) isBackfillEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(Backfill)
+}
+
 func (c *Config) isCompactorEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Compactor)
 }
@@ -531,6 +542,11 @@ func (c *Config) validateBucketConfigs() error {
 	// Validate usage tracker snapshots bucket config.
 	if c.isUsageTrackerEnabled() && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
 		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
+	}
+
+	// Validate backfill bucket config.
+	if c.isBackfillEnabled() && c.Backfill.Storage.Backend != bucket.Filesystem {
+		errs.Add(errors.Wrap(validateBucketConfig(c.Backfill.Storage, c.BlocksStorage.Bucket), "backfill storage"))
 	}
 
 	return errs.Err()
@@ -591,6 +607,15 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 			name:       "blocks storage filesystem directory",
 			cfgValue:   c.BlocksStorage.Bucket.Filesystem.Directory,
 			checkValue: filepath.Join(c.BlocksStorage.Bucket.Filesystem.Directory, c.BlocksStorage.Bucket.StoragePrefix),
+		})
+	}
+
+	// Backfill storage.
+	if c.isBackfillEnabled() && c.Backfill.Storage.Backend == bucket.Filesystem {
+		paths = append(paths, pathConfig{
+			name:       "backfill storage filesystem directory",
+			cfgValue:   c.Backfill.Storage.Filesystem.Directory,
+			checkValue: filepath.Join(c.Backfill.Storage.Filesystem.Directory, c.Backfill.Storage.StoragePrefix),
 		})
 	}
 

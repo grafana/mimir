@@ -165,6 +165,16 @@ func (c *BlockUploader) StartBlockUpload(w http.ResponseWriter, r *http.Request,
 // Finishing block upload performs block validation, and if all checks pass, marks block as finished
 // by uploading meta.json file.
 func (c *BlockUploader) FinishBlockUpload(w http.ResponseWriter, r *http.Request, userBkt objstore.Bucket, logger log.Logger) {
+	c.finishBlockUpload(w, r, userBkt, logger, true)
+}
+
+// FinishBlockUploadWithoutValidation marks the upload complete and never validates, for callers
+// that validate the block themselves later on.
+func (c *BlockUploader) FinishBlockUploadWithoutValidation(w http.ResponseWriter, r *http.Request, userBkt objstore.Bucket, logger log.Logger) {
+	c.finishBlockUpload(w, r, userBkt, logger, false)
+}
+
+func (c *BlockUploader) finishBlockUpload(w http.ResponseWriter, r *http.Request, userBkt objstore.Bucket, logger log.Logger, validate bool) {
 	blockID, tenantID, err := parseBlockUploadParameters(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -194,7 +204,7 @@ func (c *BlockUploader) FinishBlockUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
+	if validate && c.cfgProvider.CompactorBlockUploadValidationEnabled(tenantID) {
 		maxConcurrency := int64(c.cfg.MaxValidationConcurrency)
 		currentValidations := c.blockUploadValidations.Inc()
 		decreaseActiveValidationsInDefer := true
