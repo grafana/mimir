@@ -3733,6 +3733,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Primary cluster validation label.
   -server.create-new-traces
     	Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.
+  -server.enable-open-metrics-text-created-samples
+    	Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and "_created" suffix. Only applies if -server.register-instrumentation is set to true.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-collect-max-streams-by-conn
