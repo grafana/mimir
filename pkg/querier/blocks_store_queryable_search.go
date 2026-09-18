@@ -565,7 +565,7 @@ func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 	}
 	wf := &storepb.SearchFilter{
 		Terms:           p.Terms,
-		Expression:      p.Expression,
+		Expression:      p.Expression(),
 		CaseInsensitive: !p.CaseSensitive,
 		FuzzThreshold:   int32(p.FuzzThreshold),
 	}

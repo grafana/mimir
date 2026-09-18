@@ -410,6 +410,9 @@ func TestDistributor_SearchLabelValues_PassesLabelName(t *testing.T) {
 }
 
 func TestParamsToProto(t *testing.T) {
+	expressionParams, err := streaminglabelvalues.NewExpressionParams("foo AND NOT bar", true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
 	cases := []struct {
 		name string
 		in   *streaminglabelvalues.Params
@@ -439,13 +442,8 @@ func TestParamsToProto(t *testing.T) {
 		},
 		{
 			name: "expression-only params are not dropped",
-			in:   &streaminglabelvalues.Params{Expression: "foo AND NOT bar", CaseSensitive: true},
+			in:   expressionParams,
 			want: &client.SearchFilter{Expression: "foo AND NOT bar", CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
-		},
-		{
-			name: "terms and expression are both forwarded (validity enforced upstream)",
-			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, Expression: "bar", CaseSensitive: true},
-			want: &client.SearchFilter{Terms: []string{"foo"}, Expression: "bar", CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE},
 		},
 	}
 	for _, tc := range cases {

@@ -318,7 +318,7 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 	}
 	wf := &ingester_client.SearchFilter{
 		Terms:           p.Terms,
-		Expression:      p.Expression,
+		Expression:      p.Expression(),
 		CaseInsensitive: !p.CaseSensitive,
 		FuzzThreshold:   int32(p.FuzzThreshold),
 	}

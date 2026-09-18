@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
 
@@ -182,36 +181,6 @@ func (o *filterOr) Accept(value string) (bool, float64) {
 	return any, best
 }
 
-// filterAnd is the AND-min combinator across child filters. It accepts a value
-// only when every child accepts it, and uses the lowest accepted score so an
-// incomplete match cannot rank above its weakest term. An empty AND rejects
-// defensively: a valid expression compiler must never emit one, and accepting
-// it would turn a malformed expression into an unbounded search.
-type filterAnd struct {
-	filters []storage.Filter
-}
-
-func newFilterAnd(filters ...storage.Filter) *filterAnd {
-	return &filterAnd{filters: filters}
-}
-
-func (a *filterAnd) Accept(value string) (bool, float64) {
-	if len(a.filters) == 0 {
-		assert.Unreachable("empty AND filter", map[string]any{"num_filters": len(a.filters)})
-		return false, 0
-	}
-
-	lowest := 1.0
-	for _, f := range a.filters {
-		accepted, score := f.Accept(value)
-		if !accepted {
-			return false, 0
-		}
-		lowest = min(lowest, score)
-	}
-	return true, lowest
-}
-
 // filterFallback is the substring-then-fuzzy combinator per term. Tries
 // substring first (cheap); if substring rejects, falls through to fuzzy.
 // Equivalent of Prometheus PR #18573's private orFilter.
@@ -241,11 +210,11 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 }
 
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
-// when Params is nil or has neither Terms nor Expression — a nil
+// when Params is nil or has neither Terms nor a parsed expression — a nil
 // storage.Filter accepts every value with score 1.0 by Prometheus convention.
 //
-// BuildFilter trusts that p has already been validated (via NewParams or
-// an equivalent caller-side check). Per-leaf constructors still reject
+// BuildFilter trusts that p has already been validated via NewParams or
+// NewExpressionParams. Per-leaf constructors still reject
 // obviously bad inputs (empty term, threshold out of [0,1]), so a malformed
 // Params will surface an error rather than silently producing a wrong
 // filter, but validation is not BuildFilter's responsibility.
@@ -256,26 +225,33 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 //   - FuzzAlgJaroWinkler: FilterContains OR FilterJaro via filterFallback;
 //     the FilterJaro is omitted when threshold is 0 (substring only).
 //
-// Across legacy terms, combines with filterOr (OR-max). When Expression is
-// present, parses and compiles its boolean AST; positive term leaves reuse the
-// same matchers, while NOT affects acceptance without contributing a score.
+// Across legacy terms, combines with filterOr (OR-max). When an expression is
+// present, compiles the AST parsed and validated by NewExpressionParams;
+// positive term leaves reuse the same matchers, while negated leaves use
+// literal substring matching so fuzzy recall cannot over-exclude candidates.
+// NOT does not contribute a score.
 // FuzzThreshold (int 0-100) is divided by 100 internally.
 //
 // Case folding for !CaseSensitive is applied once per value at the filter root
 // via caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
+// The returned filter is not safe for concurrent use when its positive leaves
+// use a matcher that caches state; build one filter per request goroutine.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	if p == nil || len(p.Terms) == 0 && p.Expression == "" {
+	if p == nil || len(p.Terms) == 0 && p.expressionExpr == nil {
 		return nil, nil
 	}
-	if len(p.Terms) > 0 && p.Expression != "" {
-		return nil, fmt.Errorf("search terms and search expression are mutually exclusive")
+	if len(p.Terms) > 0 && p.expressionExpr != nil {
+		return nil, fmt.Errorf("invalid search parameters: %w", ErrTermsAndExpression)
 	}
 
 	threshold := float64(p.FuzzThreshold) / 100.0
-	newTermFilter := func(term string) (storage.Filter, error) {
+	newTermFilter := func(term string, negated bool) (storage.Filter, error) {
 		if !p.CaseSensitive {
 			term = strings.ToLower(term)
+		}
+		if negated {
+			return NewFilterContains(term, true)
 		}
 		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
@@ -290,25 +266,17 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 	return &caseFoldingFilter{inner: inner}, nil
 }
 
-type termFilterFactory func(term string) (storage.Filter, error)
-
-func buildRootFilter(p *Params, newTermFilter termFilterFactory) (storage.Filter, error) {
-	if p.Expression != "" {
-		expr, err := searchexpr.Parse(p.Expression)
-		if err != nil {
-			return nil, err
-		}
-		return searchexpr.Compile(expr, func(term string) (searchexpr.Filter, error) {
-			return newTermFilter(term)
-		})
+func buildRootFilter(p *Params, newTermFilter searchexpr.TermFilterFactory) (storage.Filter, error) {
+	if p.expressionExpr != nil {
+		return searchexpr.CompileValidated(p.expressionExpr, newTermFilter)
 	}
 	return buildLegacyTermsFilter(p.Terms, newTermFilter)
 }
 
-func buildLegacyTermsFilter(terms []string, newTermFilter termFilterFactory) (storage.Filter, error) {
+func buildLegacyTermsFilter(terms []string, newTermFilter searchexpr.TermFilterFactory) (storage.Filter, error) {
 	perTerm := make([]storage.Filter, 0, len(terms))
 	for _, term := range terms {
-		filter, err := newTermFilter(term)
+		filter, err := newTermFilter(term, false)
 		if err != nil {
 			return nil, err
 		}
