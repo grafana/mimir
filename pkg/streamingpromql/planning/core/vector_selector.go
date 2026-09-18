@@ -95,7 +95,13 @@ func MaterializeVectorSelector(_ context.Context, v *VectorSelector, _ *planning
 		Subsets:                  subsets,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(
+		selector,
+		params.MemoryConsumptionTracker,
+		v.ReturnSampleTimestamps,
+		v.ReturnSampleTimestampsPreserveHistograms,
+		v.GetPlanningId(),
+	)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
