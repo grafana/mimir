@@ -199,6 +199,7 @@ func TestRangeVectorOperator_Buffering_NoFiltering_OverlappingRanges(t *testing.
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
 				memoryConsumptionTracker,
+				0,
 			)
 
 			buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker, inner.Selector.TimeRange, log.NewNopLogger())
@@ -1256,6 +1257,7 @@ func TestRangeVectorOperator_Finalize(t *testing.T) {
 			Subsets:                  []selectors.Subset{{Filter: subset}},
 		},
 		memoryConsumptionTracker,
+		0,
 	)
 
 	buffer := NewRangeVectorDuplicationBuffer(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())
@@ -1335,6 +1337,7 @@ func TestRangeVectorOperator_RangeQuery(t *testing.T) {
 			MemoryConsumptionTracker: memoryConsumptionTracker,
 		},
 		memoryConsumptionTracker,
+		0,
 	)
 	inner := &rangeVectorOperatorStateTracker{RangeVectorOperator: selector}
 	buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker, timeRange, log.NewNopLogger())
