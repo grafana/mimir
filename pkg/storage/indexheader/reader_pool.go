@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 )
 
@@ -24,6 +26,12 @@ import (
 type ReaderPoolMetrics struct {
 	lazyReader   *LazyBinaryReaderMetrics
 	streamReader *StreamBinaryReaderMetrics
+
+	// onDiskVersion tracks, by on-disk format version, how many index-header files this
+	// store-gateway currently has on local disk - independent of whether each one is presently
+	// loaded into memory. It is maintained by ReaderPool because that's the only place with a
+	// view of a block's reader lifetime that spans lazy loading's idle-unload/reload cycles.
+	onDiskVersion *prometheus.GaugeVec
 }
 
 // NewReaderPoolMetrics makes new ReaderPoolMetrics.
@@ -31,6 +39,10 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 	return &ReaderPoolMetrics{
 		lazyReader:   NewLazyBinaryReaderMetrics(reg),
 		streamReader: NewStreamBinaryReaderMetrics(reg),
+		onDiskVersion: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "indexheader_on_disk",
+			Help: "Number of index-header files present on local disk, by on-disk format version.",
+		}, []string{"version"}),
 	}
 }
 
@@ -97,14 +109,28 @@ func (p *ReaderPool) NewBinaryReader(
 		return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
 	}
 
+	// cfg determines what version we keep on disk;
+	// if Reader implementations find a different version that the one required, they build the correct version.
+	onDiskVersion := p.metrics.onDiskVersion.WithLabelValues(strconv.Itoa(requiredIndexHeaderVersion(cfg)))
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		onClosed := func(r *LazyBinaryReader) {
+			p.onLazyReaderClosed(r)
+			onDiskVersion.Dec()
+		}
+		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, onClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}
 
 	if err != nil {
 		return nil, err
+	}
+
+	onDiskVersion.Inc()
+	if sr, ok := reader.(*StreamBinaryReader); ok {
+		// Non-lazy: reader IS the StreamBinaryReader constructed above, and its Close is only
+		// ever called once (block removal) - reuse it directly rather than wrapping.
+		sr.onClose = onDiskVersion.Dec
 	}
 
 	// Keep track of lazy readers only if required.
