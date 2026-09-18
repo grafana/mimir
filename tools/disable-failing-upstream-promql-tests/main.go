@@ -1,22 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Command disable-failing-upstream-promql-tests comments out every enabled upstream PromQL test case
-// that Mimir's engine does not run successfully - unsupported feature or divergent result - so that
-// TestUpstreamTestCases stays green after a mimir-prometheus bump. It is the second half of the
-// automated vendoring sync (run after sync-upstream-promql-tests).
+// Mimir's engine fails (unsupported feature or divergent result), keeping TestUpstreamTestCases green
+// after a mimir-prometheus bump. Run it after sync-upstream-promql-tests, via `go run .` or
+// `make disable-failing-upstream-promql-tests`.
 //
-// It runs the existing TestUpstreamTestCases once with `go test -json`, reads the failing per-case
-// subtests (named ".../<file>/line_<N>/<expr>") to learn exactly which eval commands failed, and
-// comments those blocks out. A single run reports every failing case, so there is no per-case
-// isolation or iteration.
-//
-// Because it disables on any failure - including a wrong result that could be a real regression -
-// disabled cases are split by cause (unsupported vs divergent) and, when MIMIR_SYNC_BASELINE_DIR
-// points at the pre-sync copies, by origin (new upstream case vs previously-passing case). The list
-// is written to MIMIR_SYNC_REPORT (for the PR description) and MIMIR_SYNC_DISABLED (for the owner
-// notification), and the vendoring PR stays behind human approval.
-//
-// Run it with `go run .` in this directory, or via `make disable-failing-upstream-promql-tests`.
+// It runs TestUpstreamTestCases once with `go test -json` and comments out the eval commands whose
+// per-case subtests ("line_<N>") failed - one run finds them all. Disabled cases are split by cause
+// (unsupported vs divergent) and, if MIMIR_SYNC_BASELINE_DIR is set, by origin (new vs pre-existing),
+// then written to MIMIR_SYNC_REPORT and MIMIR_SYNC_DISABLED for the PR description and owner ping.
 package main
 
 import (
@@ -198,10 +190,9 @@ func newEngine() (*streamingpromql.Engine, error) {
 	return engine, nil
 }
 
-// loadBaselineEnabledEvals returns the set of enabled eval command lines in the pre-sync copy of the
-// named file, used to tell whether a failing case existed before this bump. It returns nil when no
-// baseline is available (origin can't be determined), and an empty set when the file is new upstream
-// (so every case in it counts as newly synced).
+// loadBaselineEnabledEvals returns the enabled eval command lines in the pre-sync copy of the file,
+// to tell whether a failing case pre-existed. It returns nil when no baseline is available (origin
+// unknown) and an empty set when the file is new upstream (all its cases count as new).
 func loadBaselineEnabledEvals(baselineDir, name string) map[string]bool {
 	if baselineDir == "" {
 		return nil

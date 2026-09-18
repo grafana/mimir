@@ -4,10 +4,9 @@
 // Provenance-includes-copyright: The Prometheus Authors
 
 // Package upstreamtestdata holds helpers shared by the tooling that keeps
-// pkg/streamingpromql/testdata/upstream in sync with the upstream PromQL test cases: the in-sync
-// test, the re-sync tool, the disabling tool, and the disabled-but-supported checker. Keeping these
-// in one place ensures, in particular, that the disabling tool comments cases out in exactly the form
-// the in-sync test expects to reverse.
+// pkg/streamingpromql/testdata/upstream in sync with the upstream PromQL test cases (the in-sync test,
+// the re-sync tool, the disabling tool, and the disabled-but-supported checker), so cases are
+// commented out in exactly the form the in-sync test reverses.
 package upstreamtestdata
 
 import (
@@ -142,11 +141,10 @@ func ClassifyEval(ctx context.Context, engine promql.QueryEngine, evalLine strin
 	}
 }
 
-// CommentOutEvals rewrites content, commenting out the eval command blocks that begin at the given
-// 1-based line numbers (as reported by promqltest, e.g. the "line N" in a failing subtest name). An
-// eval block runs from its command line to the next blank or comment line. The commented-out form is
-// exactly what RestoreUnsupportedTestCases reverses, so the file stays in sync with upstream. It
-// returns the rewritten content and any requested lines that did not start an eval block.
+// CommentOutEvals comments out the eval blocks beginning at the given 1-based line numbers (as
+// reported by promqltest's "line N" subtests), in the form RestoreUnsupportedTestCases reverses. An
+// eval block runs to the next blank or comment line. It returns the rewritten content and any
+// requested lines that did not start an eval block.
 func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
 	lines := strings.Split(content, "\n")
 	blocks := parseCommandBlocks(lines)
@@ -214,9 +212,8 @@ type commandBlock struct {
 	start, end int // line indices, [start, end)
 }
 
-// parseCommandBlocks splits the file into command blocks the way promqltest does: a block starts at a
-// non-blank, non-comment line and runs until the next blank or comment line. Comment lines (including
-// already-disabled cases) and blank lines are separators and are not part of any block.
+// parseCommandBlocks splits the file into command blocks like promqltest does: each starts at a
+// non-blank, non-comment line and runs to the next blank or comment line (which act as separators).
 func parseCommandBlocks(lines []string) []commandBlock {
 	var blocks []commandBlock
 	for i := 0; i < len(lines); {

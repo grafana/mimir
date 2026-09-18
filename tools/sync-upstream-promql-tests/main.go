@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Command sync-upstream-promql-tests re-syncs pkg/streamingpromql/testdata/upstream with the
-// upstream PromQL test cases vendored under
-// vendor/github.com/prometheus/prometheus/promql/promqltest/testdata.
-//
-// It is the "straightforward" half of keeping TestOurUpstreamTestCasesAreInSyncWithUpstream green
-// after a mimir-prometheus bump: it applies upstream's changes to our copies while preserving the
-// eval commands we have disabled ("# Unsupported by streaming engine.") via a 3-way merge. It does
-// NOT decide which new cases to disable - that is done afterwards by
-// the disable-failing-upstream-promql-tests tool, which actually runs the cases against Mimir's engine.
-//
-// Run it with `go run .` in this directory, or via `make sync-upstream-promql-tests`.
-//
-// See ../../pkg/streamingpromql/testdata/upstream/README.md for background.
+// Command sync-upstream-promql-tests re-syncs pkg/streamingpromql/testdata/upstream with the vendored
+// upstream PromQL test cases, keeping TestOurUpstreamTestCasesAreInSyncWithUpstream green after a
+// mimir-prometheus bump: it 3-way merges upstream's changes into our copies while preserving the cases
+// we have disabled. Deciding which new cases to disable is left to the
+// disable-failing-upstream-promql-tests tool. Run via `go run .` or `make sync-upstream-promql-tests`.
 package main
 
 import (
@@ -66,8 +58,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		// Normalize trailing whitespace, matching the in-sync test (which strips it before comparing)
-		// and the style of our committed copies, so re-syncing an unchanged file is a no-op.
+		// Normalize trailing whitespace (the in-sync test ignores it) so re-syncing is a no-op.
 		upstream := upstreamtestdata.StripLineTrailingWhitespace(string(upstreamBytes))
 		header := upstreamtestdata.LicenseHeader(name)
 
@@ -96,8 +87,8 @@ func run() error {
 				return err
 			}
 			ours := upstreamtestdata.StripLineTrailingWhitespace(strings.TrimPrefix(string(ourBytes), header))
-			// The in-sync test guarantees restore(ours) == the previously-vendored upstream, so we
-			// can reconstruct the merge base from our own copy without needing the old vendor.
+			// restore(ours) equals the previously-vendored upstream (the in-sync test guarantees it),
+			// so it serves as the merge base - no need for the old vendor.
 			base := upstreamtestdata.RestoreUnsupportedTestCases(ours)
 
 			merged, conflicts, err := threeWayMerge(base, ours, upstream)
@@ -105,9 +96,8 @@ func run() error {
 				return err
 			}
 			if conflicts {
-				// Upstream changed one or more cases we had disabled; those blocks were taken from
-				// upstream (see threeWayMerge). The disable-failing-upstream-promql-tests tool
-				// re-derives whether they should be disabled.
+				// Upstream changed cases we had disabled; those blocks were taken from upstream and the
+				// disable tool re-derives their status.
 				rep.conflicts = append(rep.conflicts, name)
 			}
 			if err := os.WriteFile(ourEnabled, []byte(header+merged), 0o644); err != nil {
@@ -132,12 +122,10 @@ func run() error {
 	return rep.write(os.Getenv("MIMIR_SYNC_REPORT"))
 }
 
-// threeWayMerge merges upstream's changes (base -> theirs) into our disabled-annotated copy (ours)
-// using git merge-file, and reports whether any conflicts occurred. Non-conflicting upstream changes
-// are applied while our disabling is preserved. A conflict happens only where upstream changed a case
-// we had disabled (both sides touched the same lines); each such block is resolved in favour of
-// upstream (the `--theirs` re-run), so it comes back uncommented while unrelated disabled blocks in
-// the file are left alone. The disable step then re-derives whether those blocks should be disabled.
+// threeWayMerge applies upstream's changes to our disabled-annotated copy via git merge-file,
+// preserving our disabling. It conflicts only where upstream changed a case we had disabled; those
+// blocks are resolved in favour of upstream (the --theirs re-run) and come back uncommented, leaving
+// other disabled blocks untouched. It reports whether any conflict occurred.
 func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 	dir, err := os.MkdirTemp("", "promql-sync")
 	if err != nil {
@@ -162,8 +150,7 @@ func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 		return merged, false, nil
 	}
 
-	// Re-run, resolving each conflicting hunk in favour of upstream, so only the blocks upstream
-	// changed under our disabling are taken from upstream - the rest of our disabling is preserved.
+	// Re-run resolving conflicts in favour of upstream, so only the changed blocks are taken from it.
 	resolved, _, err := runMergeFile(oursPath, basePath, theirsPath, true)
 	if err != nil {
 		return "", false, err
@@ -171,9 +158,8 @@ func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 	return resolved, true, nil
 }
 
-// runMergeFile runs `git merge-file -p [--theirs] <ours> <base> <theirs>`, writing the merge of the
-// upstream changes into our copy to stdout. Its exit code is the number of conflicts (0 if clean, and
-// always 0 with --theirs since conflicts are auto-resolved), or negative on error.
+// runMergeFile runs `git merge-file -p [--theirs] <ours> <base> <theirs>`, returning the merged
+// output and whether any hunks conflicted (--theirs auto-resolves conflicts, so it reports none).
 func runMergeFile(oursPath, basePath, theirsPath string, favourTheirs bool) (string, bool, error) {
 	args := []string{"merge-file", "-p"}
 	if favourTheirs {
