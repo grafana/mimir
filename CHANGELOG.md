@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: `cortex_ingester_ingested_samples_total` no longer counts samples that the TSDB silently dropped at commit time because the series already had a sample at the same timestamp. Samples rejected at commit time for other reasons, such as out-of-order samples, are still counted. The dropped duplicates still count toward the `-ingester.instance-limits.max-ingestion-rate` limit and user stats, since they cost the full write path. #16347
+* [ENHANCEMENT] Ingester: Duplicate samples silently dropped by the TSDB at commit time are now counted in `cortex_discarded_samples_total`: exact duplicates (same timestamp and value, e.g. client retries) under the new reason `same-value-for-timestamp`, and same-timestamp conflicts only detectable at commit time under the existing reason `new-value-for-timestamp`. The drops are also attributed per series in cost attribution. #16347
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
 * [CHANGE] Query-frontend: PromQL duration expressions are now stable and remain always enabled. #16618
 * [CHANGE] Rename the experimental `-ingester.float-chunk-encoding` flag to `-blocks-storage.tsdb.float-chunk-encoding` because it applies to the ingester, block-builder, and compactor. The per-tenant `float_chunk_encoding` setting is unchanged. #16544

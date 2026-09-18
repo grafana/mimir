@@ -11200,6 +11200,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="user-1"} 3
 				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
 				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
 			`,
@@ -11234,6 +11235,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="user-1"} 3
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
@@ -11262,6 +11264,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="user-1"} 3
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
@@ -11290,6 +11293,11 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="user-1"} 3
+			`,
 		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
@@ -11677,6 +11685,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 		# TYPE cortex_discarded_samples_total counter
 		cortex_discarded_samples_total{group="",reason="per_user_series_limit",user="1"} 10
+		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="1"} 9
 	`
 	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
 	assert.NoError(t, err)
@@ -11775,6 +11784,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 		# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 		# TYPE cortex_discarded_samples_total counter
 		cortex_discarded_samples_total{group="",reason="per_metric_series_limit",user="1"} 10
+		cortex_discarded_samples_total{group="",reason="same-value-for-timestamp",user="1"} 9
 	`
 	err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
 	assert.NoError(t, err)

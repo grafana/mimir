@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -34,6 +35,9 @@ import (
 type extendedAppender interface {
 	storage.Appender
 	storage.GetRef
+	// Part of extendedAppender so a wrapper that fails to forward it breaks loudly
+	// at appender creation instead of silently zeroing the duplicate accounting.
+	tsdb.CommitStatsReporter
 }
 
 type pushStats struct {
@@ -46,6 +50,7 @@ type pushStats struct {
 	sampleTooOldCount           int
 	sampleTooFarInFutureCount   int
 	newValueForTimestampCount   int
+	sameValueForTimestampCount  int
 	perUserSeriesLimitCount     int
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
@@ -439,6 +444,26 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
+	// Same-timestamp duplicates pass Append but are silently dropped at commit:
+	// count them as discarded. They stay in succeededSamplesCount so that the
+	// ingestion rate limit and user stats keep accounting for their write-path
+	// cost; only ingestedSamples reports the stored count. Stats are only valid
+	// after a successful Commit.
+	dropped := app.CommitStats().DiscardedSamples
+	droppedNewValue := dropped.TotalDifferentValue()
+	droppedSameValue := dropped.TotalSameValue()
+	stats.newValueForTimestampCount += droppedNewValue
+	stats.sameValueForTimestampCount += droppedSameValue
+
+	if cast != nil && droppedNewValue+droppedSameValue > 0 {
+		for _, d := range dropped.SameTimestampDifferentValue {
+			cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), float64(d.Count), reasonNewValueForTimestamp, startAppend)
+		}
+		for _, d := range dropped.SameTimestampSameValue {
+			cast.IncrementDiscardedSamples(mimirpb.FromLabelsToLabelAdapters(d.Labels), float64(d.Count), reasonSameValueForTimestamp, startAppend)
+		}
+	}
+
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
@@ -447,7 +472,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount - droppedNewValue - droppedSameValue))
 	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
@@ -484,6 +509,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if stats.newValueForTimestampCount > 0 {
 		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+	}
+	if stats.sameValueForTimestampCount > 0 {
+		discarded.sameValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.sameValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
 		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
