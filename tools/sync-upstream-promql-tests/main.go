@@ -105,9 +105,9 @@ func run() error {
 				return err
 			}
 			if conflicts {
-				// Upstream changed a region we had disabled. Take upstream as-is so the files stay
-				// in sync; the disable-failing-upstream-promql-tests tool re-derives the disabling from scratch.
-				merged = upstream
+				// Upstream changed one or more cases we had disabled; those blocks were taken from
+				// upstream (see threeWayMerge). The disable-failing-upstream-promql-tests tool
+				// re-derives whether they should be disabled.
 				rep.conflicts = append(rep.conflicts, name)
 			}
 			if err := os.WriteFile(ourEnabled, []byte(header+merged), 0o644); err != nil {
@@ -133,8 +133,11 @@ func run() error {
 }
 
 // threeWayMerge merges upstream's changes (base -> theirs) into our disabled-annotated copy (ours)
-// using git merge-file. It returns the merged content, or conflicts=true when the merge could not be
-// completed cleanly (in which case the returned content is empty).
+// using git merge-file, and reports whether any conflicts occurred. Non-conflicting upstream changes
+// are applied while our disabling is preserved. A conflict happens only where upstream changed a case
+// we had disabled (both sides touched the same lines); each such block is resolved in favour of
+// upstream (the `--theirs` re-run), so it comes back uncommented while unrelated disabled blocks in
+// the file are left alone. The disable step then re-derives whether those blocks should be disabled.
 func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 	dir, err := os.MkdirTemp("", "promql-sync")
 	if err != nil {
@@ -151,18 +154,43 @@ func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 		}
 	}
 
-	// `git merge-file -p <current> <base> <other>` writes the merge of `other` into `current` to
-	// stdout. Its exit code is the number of conflicts, or negative on error.
-	cmd := exec.Command("git", "merge-file", "-p", oursPath, basePath, theirsPath)
+	merged, conflicts, err := runMergeFile(oursPath, basePath, theirsPath, false)
+	if err != nil {
+		return "", false, err
+	}
+	if !conflicts {
+		return merged, false, nil
+	}
+
+	// Re-run, resolving each conflicting hunk in favour of upstream, so only the blocks upstream
+	// changed under our disabling are taken from upstream - the rest of our disabling is preserved.
+	resolved, _, err := runMergeFile(oursPath, basePath, theirsPath, true)
+	if err != nil {
+		return "", false, err
+	}
+	return resolved, true, nil
+}
+
+// runMergeFile runs `git merge-file -p [--theirs] <ours> <base> <theirs>`, writing the merge of the
+// upstream changes into our copy to stdout. Its exit code is the number of conflicts (0 if clean, and
+// always 0 with --theirs since conflicts are auto-resolved), or negative on error.
+func runMergeFile(oursPath, basePath, theirsPath string, favourTheirs bool) (string, bool, error) {
+	args := []string{"merge-file", "-p"}
+	if favourTheirs {
+		args = append(args, "--theirs")
+	}
+	args = append(args, oursPath, basePath, theirsPath)
+
+	cmd := exec.Command("git", args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	err = cmd.Run()
+	err := cmd.Run()
 	if err == nil {
 		return out.String(), false, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
-		return "", true, nil
+		return out.String(), true, nil
 	}
 	return "", false, fmt.Errorf("git merge-file: %w", err)
 }
@@ -193,7 +221,7 @@ func (r report) write(path string) error {
 	}
 	section("New upstream test files added", r.newFiles)
 	section("Test files removed (no longer present upstream)", r.removed)
-	section("Files re-synced from upstream, dropping local disabling (merge conflict - please review)", r.conflicts)
+	section("Files where upstream changed a locally-disabled case (that block was taken from upstream; the disable step re-derives its status)", r.conflicts)
 
 	// Always echo to stdout for local runs.
 	fmt.Print(b.String())
