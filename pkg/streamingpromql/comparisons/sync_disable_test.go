@@ -50,12 +50,24 @@ func TestDisableFailingUpstreamCases(t *testing.T) {
 	for _, testFile := range testFiles {
 		contentBytes, err := os.ReadFile(testFile)
 		require.NoError(t, err)
-		lines := strings.Split(string(contentBytes), "\n")
-		blocks := parseCommandBlocks(lines)
-		baselineEvals := loadBaselineEnabledEvals(t, baselineDir, filepath.Base(testFile))
+		content := string(contentBytes)
+		base := filepath.Base(testFile)
 
-		// preamble holds the source text of every load/clear command seen so far, so each eval can be
-		// run in isolation against the same storage state it would have in the full file.
+		// Phase 1: run the whole file in a single pass. promqltest runs each eval command as its own
+		// subtest, so this loads the file's data just once - as cheap as TestUpstreamTestCases. If the
+		// whole file passes, there is nothing to disable and we skip the expensive per-eval phase.
+		if t.Run(base, func(t *testing.T) { promqltest.RunTest(t, content, engine) }) {
+			continue
+		}
+
+		// Phase 2: the file has at least one failing case. Re-run each eval in isolation to find
+		// exactly which ones to comment out. Only failing files pay this cost. preamble holds the
+		// source of every preceding load/clear command, so each eval sees the storage state it would
+		// have in the full file.
+		lines := strings.Split(content, "\n")
+		blocks := parseCommandBlocks(lines)
+		baselineEvals := loadBaselineEnabledEvals(t, baselineDir, base)
+
 		var preamble []string
 		disabled := make(map[int]bool)
 
@@ -69,8 +81,7 @@ func TestDisableFailingUpstreamCases(t *testing.T) {
 
 			script := strings.Join(preamble, "\n\n") + "\n\n" + strings.Join(lines[b.start:b.end], "\n")
 			evalLine := strings.TrimSpace(lines[b.start])
-			name := fmt.Sprintf("%s:%d", filepath.Base(testFile), b.start+1)
-			ok := t.Run(name, func(t *testing.T) {
+			ok := t.Run(fmt.Sprintf("%s:%d", base, b.start+1), func(t *testing.T) {
 				promqltest.RunTest(t, script, engine)
 			})
 			if ok {
@@ -78,7 +89,7 @@ func TestDisableFailingUpstreamCases(t *testing.T) {
 			}
 
 			disabled[idx] = true
-			entry := fmt.Sprintf("- `%s` line %d: `%s`", filepath.Base(testFile), b.start+1, evalLine)
+			entry := fmt.Sprintf("- `%s` line %d: `%s`", base, b.start+1, evalLine)
 			result, _ := upstreamtestdata.ClassifyEval(ctx, engine, evalLine)
 			switch {
 			case result == upstreamtestdata.BuildUnsupported:
