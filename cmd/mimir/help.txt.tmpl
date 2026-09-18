@@ -42,7 +42,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.sts-endpoint string
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. It may only contain slash-separated path segments made of digits, English alphabet letters, hyphens, and underscores.
   -alertmanager-storage.swift.application-credential-id string
     	OpenStack Swift application credential id
   -alertmanager-storage.swift.application-credential-name string
@@ -198,7 +198,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.sts-endpoint string
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. It may only contain slash-separated path segments made of digits, English alphabet letters, hyphens, and underscores.
   -blocks-storage.swift.application-credential-id string
     	OpenStack Swift application credential id
   -blocks-storage.swift.application-credential-name string
@@ -770,7 +770,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.sts-endpoint string
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. It may only contain slash-separated path segments made of digits, English alphabet letters, hyphens, and underscores.
   -ruler-storage.swift.application-credential-id string
     	OpenStack Swift application credential id
   -ruler-storage.swift.application-credential-name string
