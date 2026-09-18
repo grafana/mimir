@@ -212,6 +212,24 @@ For dynamic configuration (file or HTTP callback), set a JSON object with the fo
 }
 ```
 
+#### MSK_IAM with the AWS SDK default credential chain (IRSA)
+
+On EKS, you can delegate credential resolution to the AWS SDK instead of supplying credentials explicitly. The SDK transparently picks up credentials from sources such as IAM Roles for Service Accounts (IRSA), EC2 instance metadata, or environment variables, eliminating the need to manage long-lived secrets in Mimir's configuration.
+
+To enable this mode, leave all of the following empty:
+
+- `-ingest-storage.kafka.sasl-msk-iam-access-key`
+- `-ingest-storage.kafka.sasl-msk-iam-secret-key`
+- `-ingest-storage.kafka.sasl-msk-iam-file-path`
+- `-ingest-storage.kafka.sasl-msk-iam-http-socket-path`
+
+And set:
+
+- `-ingest-storage.kafka.sasl-msk-iam-region`<br />
+  The AWS region of the MSK cluster. If left empty, the SDK falls back to the `AWS_REGION` or `AWS_DEFAULT_REGION` environment variables.
+
+To use this mode with IRSA on EKS, configure your Mimir pod's `ServiceAccount` with the `eks.amazonaws.com/role-arn` annotation pointing to an IAM role that has the required MSK permissions (for example, `kafka-cluster:Connect`, `kafka-cluster:WriteData`, `kafka-cluster:ReadData`). The EKS Pod Identity Webhook injects the necessary environment variables and projected service-account token into the pod, and the AWS SDK resolves temporary credentials automatically. Credentials are refreshed by the SDK before they expire, so no out-of-band rotation is required.
+
 ### TLS / mTLS
 
 Set the following configuration parameter to enable connecting to the Kafka cluster over TLS:
