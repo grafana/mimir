@@ -6,7 +6,9 @@
 package streaminglabelvalues
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/prometheus/storage"
@@ -186,6 +188,48 @@ func TestFilterOrShortCircuitsAtPerfectMatch(t *testing.T) {
 	assert.Equal(t, 1, called, "second filter must not be invoked once a child returns 1.0")
 }
 
+func TestBuildFilterExpressionSupportsNestedGroupsWithGCXCorpusCandidates(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		expression string
+		values     map[string]bool
+	}{
+		{
+			name:       "cortex AND grouped alternatives",
+			expression: "cortex AND (rule_evaluation_failures OR cache_shard)",
+			values: map[string]bool{
+				"cortex_prometheus_rule_evaluation_failures_total":  true,
+				"cortex_cache_shard_00000_operations_total":         true,
+				"loki_prometheus_rule_evaluation_failures_total":    false,
+				"envoy_cache_shard_00004_evaluation_failures_total": false,
+			},
+		},
+		{
+			name:       "grouped alternatives AND rule evaluation failures",
+			expression: "(cortex OR loki) AND rule_evaluation_failures",
+			values: map[string]bool{
+				"cortex_prometheus_rule_evaluation_failures_total":  true,
+				"loki_prometheus_rule_evaluation_failures_total":    true,
+				"cortex_cache_shard_00000_operations_total":         false,
+				"envoy_cache_shard_00004_evaluation_failures_total": false,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params, err := NewExpressionParams(test.expression, true, FuzzAlgSubsequence, 0)
+			require.NoError(t, err)
+			filter, err := BuildFilter(params)
+			require.NoError(t, err)
+			for value, want := range test.values {
+				t.Run(value, func(t *testing.T) {
+					accepted, _ := filter.Accept(value)
+					assert.Equal(t, want, accepted)
+				})
+			}
+		})
+	}
+}
+
 type countingFilter struct {
 	counter  *int
 	accepted bool
@@ -276,6 +320,102 @@ func TestBuildFilterMultipleTermsORed(t *testing.T) {
 	assert.False(t, accepted)
 }
 
+func TestBuildFilterExpressionExecutesNot(t *testing.T) {
+	params, err := NewExpressionParams("foo AND NOT old", true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	filter, err := BuildFilter(params)
+	require.NoError(t, err)
+	require.NotNil(t, filter)
+
+	accepted, score := filter.Accept("foo_new")
+	assert.True(t, accepted)
+	assert.InDelta(t, 1, score, 1e-9)
+
+	accepted, score = filter.Accept("foo_old")
+	assert.False(t, accepted)
+	assert.Zero(t, score)
+}
+
+func TestBuildFilterSharedExpressionParams(t *testing.T) {
+	params, err := NewExpressionParams("cortex AND NOT old", true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	const workers = 32
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				if err := validateAndBuildSharedExpressionParams(params); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+}
+
+func validateAndBuildSharedExpressionParams(params *Params) error {
+	if err := params.validate(); err != nil {
+		return err
+	}
+	filter, err := BuildFilter(params)
+	if err != nil {
+		return err
+	}
+	accepted, _ := filter.Accept("cortex_new")
+	if !accepted {
+		return fmt.Errorf("cortex_new was rejected")
+	}
+	accepted, _ = filter.Accept("cortex_old")
+	if accepted {
+		return fmt.Errorf("cortex_old was accepted")
+	}
+	return nil
+}
+
+func TestBuildFilterExpressionNotUsesLiteralSubstringMatching(t *testing.T) {
+	params, err := NewExpressionParams("cortex AND NOT test", true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	filter, err := BuildFilter(params)
+	require.NoError(t, err)
+
+	for _, value := range []string{
+		"cortex_request_duration_seconds",
+		"cortex_ruler_rule_evaluation_failures_total",
+		"cortex_distributor_received_samples_total",
+		"cortex_compactor_runs_started_total",
+		"cortex_bucket_store_series_hit_count",
+	} {
+		t.Run(value, func(t *testing.T) {
+			accepted, _ := filter.Accept(value)
+			assert.True(t, accepted, "NOT must exclude literal substring matches, not fuzzy subsequence matches")
+		})
+	}
+
+	accepted, score := filter.Accept("cortex_test_requests_total")
+	assert.False(t, accepted)
+	assert.Zero(t, score)
+}
+
+func TestBuildFilterRejectsTermsWithExpression(t *testing.T) {
+	params, err := NewExpressionParams("old", true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.Terms = []string{"foo"}
+
+	filter, err := BuildFilter(params)
+	require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+	require.ErrorIs(t, err, ErrTermsAndExpression)
+	assert.Nil(t, filter)
+}
+
 func TestBuildFilterDividesThresholdBy100(t *testing.T) {
 	// FuzzThreshold=80 should map to internal 0.8.
 	// Pick a value that scores > 0.8 against "metric" with Jaro-Winkler.
@@ -293,23 +433,53 @@ func TestBuildFilterDividesThresholdBy100(t *testing.T) {
 }
 
 func TestBuildFilterCaseInsensitiveWrapsAtORRoot(t *testing.T) {
-	// CaseSensitive=false must wrap the root in caseFoldingFilter so each value
-	// is lowercased exactly once for the whole OR chain, not per-term per-Accept.
-	f, err := BuildFilter(&Params{
-		Terms:         []string{"FOO", "Bar"},
-		CaseSensitive: false,
-		FuzzAlg:       FuzzAlgSubsequence,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, f)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive BuildFilter must return *caseFoldingFilter root")
+	for _, test := range []struct {
+		name       string
+		terms      []string
+		expression string
+		accepted   string
+		rejected   string
+	}{
+		{
+			name:     "legacy terms",
+			terms:    []string{"FOO", "Bar"},
+			accepted: "FOOBAR",
+		},
+		{
+			name:       "expression with NOT",
+			expression: "FOO AND NOT OLD",
+			accepted:   "Foo_New",
+			rejected:   "FOO_OLD",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var (
+				params *Params
+				err    error
+			)
+			if test.expression != "" {
+				params, err = NewExpressionParams(test.expression, false, FuzzAlgSubsequence, 0)
+			} else {
+				params, err = NewParams(test.terms, false, FuzzAlgSubsequence, 0)
+			}
+			require.NoError(t, err)
+			// CaseSensitive=false must wrap the root once so every leaf sees the
+			// same pre-lowered candidate, including leaves below NOT.
+			filter, err := BuildFilter(params)
+			require.NoError(t, err)
+			require.NotNil(t, filter)
+			_, ok := filter.(*caseFoldingFilter)
+			require.True(t, ok)
 
-	// Functional check: the wrapper folds the value before delegating, and the
-	// inner per-term filters were built against pre-lowered terms, so an
-	// uppercase value still matches.
-	accepted, _ := f.Accept("FOOBAR")
-	assert.True(t, accepted, "case-insensitive filter should match uppercase value")
+			accepted, _ := filter.Accept(test.accepted)
+			assert.True(t, accepted)
+			if test.rejected != "" {
+				accepted, score := filter.Accept(test.rejected)
+				assert.False(t, accepted)
+				assert.Zero(t, score)
+			}
+		})
+	}
 }
 
 func TestBuildFilterCaseSensitiveReturnsLeafDirectly(t *testing.T) {
@@ -353,38 +523,87 @@ func TestCaseFoldingFilterFoldsOncePerAcceptAndPassesLoweredValue(t *testing.T) 
 		"caseFoldingFilter must hand each value, lowered, to the inner filter exactly once")
 }
 
-func TestCaseFoldingFilterFeedsORChildrenLoweredValue(t *testing.T) {
-	// caseFoldingFilter wrapping a filterOr root must fold the value once
-	// and forward the lowered value to every child leaf — never the original
-	// case. Use score 0.5 so filterOr does not short-circuit on the first
-	// leaf (it short-circuits at exactly 1.0).
+func TestCaseFoldingFilterFeedsCompositeChildrenLoweredValue(t *testing.T) {
+	// Use score 0.5 so OR does not short-circuit before both children receive
+	// the candidate.
 	rec1 := &recordingFilter{score: 0.5}
 	rec2 := &recordingFilter{score: 0.5}
 	root := &caseFoldingFilter{inner: newFilterOr(rec1, rec2)}
 
-	_, _ = root.Accept("MIXEDCase_Value")
-
-	assert.Equal(t, []string{"mixedcase_value"}, rec1.seen,
-		"first leaf must see only the lowered value")
+	accepted, _ := root.Accept("MIXEDCase_Value")
+	assert.True(t, accepted)
+	assert.Equal(t, []string{"mixedcase_value"}, rec1.seen)
 	assert.Equal(t, []string{"mixedcase_value"}, rec2.seen,
-		"second leaf must see only the lowered value (folded once at the root, not per-leaf)")
+		"each child must see the value lowered once at the root")
 }
 
-// BenchmarkBuildFilterCaseInsensitiveAccept measures allocs/op for repeated
-// Accept calls against a case-insensitive 4-term Jaro-Winkler filter; this is
-// the load shape at a multi-term streaming search.
-func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
-	f, err := BuildFilter(&Params{
-		Terms:         []string{"metric", "Status", "ENV", "version"},
-		CaseSensitive: false,
-		FuzzAlg:       FuzzAlgJaroWinkler,
-		FuzzThreshold: 80,
-	})
+var benchmarkFilterResult struct {
+	accepted bool
+	score    float64
+}
+
+// BenchmarkBuildFilterAccept covers the composition shapes and worst-case
+// matcher path used while scanning label values. Non-matching candidates are
+// deliberate: most values in a block reach every OR leaf, and Jaro-Winkler's
+// fallback cost is hidden when FilterContains accepts first.
+func BenchmarkBuildFilterAccept(b *testing.B) {
+	terms := make([]string, 32)
+	for i := range terms {
+		terms[i] = fmt.Sprintf("needle_%02d", i)
+	}
+
+	notExpression := "anchor"
+	for i := 0; i < 16; i++ {
+		notExpression += fmt.Sprintf(" AND NOT obsolete_%02d", i)
+	}
+
+	shortNonMatch := strings.Repeat("z", 80)
+	longNonMatch := strings.Repeat("z", 2040)
+	for _, test := range []struct {
+		name          string
+		terms         []string
+		expression    string
+		alg           FuzzAlg
+		threshold     int
+		caseSensitive bool
+		candidate     string
+	}{
+		{name: "legacy/subsequence/32-term-OR/non-match", terms: terms, alg: FuzzAlgSubsequence, caseSensitive: true, candidate: shortNonMatch},
+		{name: "expression/subsequence/32-term-OR/non-match", expression: strings.Join(terms, " OR "), alg: FuzzAlgSubsequence, caseSensitive: true, candidate: shortNonMatch},
+		{name: "expression/subsequence/32-term-AND/first-term-rejects", expression: strings.Join(terms, " AND "), alg: FuzzAlgSubsequence, caseSensitive: true, candidate: shortNonMatch},
+		{name: "expression/subsequence/NOT/literal-misses", expression: notExpression, alg: FuzzAlgSubsequence, caseSensitive: true, candidate: "anchor_current_metric"},
+		{name: "legacy/jaro-winkler/32-term-OR/2KB-non-match", terms: terms, alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: true, candidate: longNonMatch},
+		{name: "expression/jaro-winkler/32-term-OR/2KB-non-match", expression: strings.Join(terms, " OR "), alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: true, candidate: longNonMatch},
+		{name: "legacy/subsequence/32-term-OR/case-insensitive-lowercase", terms: terms, alg: FuzzAlgSubsequence, candidate: shortNonMatch},
+		{name: "legacy/subsequence/32-term-OR/case-insensitive-mixed-case", terms: terms, alg: FuzzAlgSubsequence, candidate: strings.Repeat("zZ", 40)},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			var (
+				params *Params
+				err    error
+			)
+			if test.expression != "" {
+				params, err = NewExpressionParams(test.expression, test.caseSensitive, test.alg, test.threshold)
+			} else {
+				params, err = NewParams(test.terms, test.caseSensitive, test.alg, test.threshold)
+			}
+			require.NoError(b, err)
+			benchmarkBuildFilterAccept(b, params, test.candidate)
+		})
+	}
+}
+
+func benchmarkBuildFilterAccept(b *testing.B, params *Params, candidate string) {
+	filter, err := BuildFilter(params)
 	require.NoError(b, err)
-	values := []string{"Metric_count", "STATUS_OK", "Env_prod", "Version_1_2_3", "totally_unrelated"}
+
+	// Warm matchers that initialise term state lazily so benchmark allocations
+	// reflect the steady-state per-candidate scan cost.
+	_, _ = filter.Accept(candidate)
+	b.SetBytes(int64(len(candidate)))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = f.Accept(values[i%len(values)])
+		benchmarkFilterResult.accepted, benchmarkFilterResult.score = filter.Accept(candidate)
 	}
 }

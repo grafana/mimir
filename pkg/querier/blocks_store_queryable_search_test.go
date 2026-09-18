@@ -981,6 +981,9 @@ func TestBlocksStoreQuerier_SearchLabelValues_PassesLabelName(t *testing.T) {
 }
 
 func TestParamsToSGProto(t *testing.T) {
+	expressionParams, err := streaminglabelvalues.NewExpressionParams("foo AND NOT bar", true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
 	cases := []struct {
 		name string
 		in   *streaminglabelvalues.Params
@@ -1002,6 +1005,11 @@ func TestParamsToSGProto(t *testing.T) {
 			name: "JaroWinkler",
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgJaroWinkler, FuzzThreshold: 70},
 			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
+		},
+		{
+			name: "expression-only params are not dropped",
+			in:   expressionParams,
+			want: &storepb.SearchFilter{Expression: "foo AND NOT bar", CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE},
 		},
 	}
 	for _, tc := range cases {

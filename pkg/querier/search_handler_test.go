@@ -806,6 +806,8 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 		{name: "invalid case_sensitive", query: "case_sensitive=maybe"},
 		{name: "unparseable start", query: "start=not-a-time"},
 		{name: "invalid match selector", query: "match[]=foo%7Bbar"},
+		{name: "search[] and search_expr together", query: "search[]=foo&search_expr=bar"},
+		{name: "invalid search_expr syntax", query: "search_expr=foo+AND"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -940,6 +942,39 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	assert.Equal(t, "prom", req.matchers[0][0].Value)
 }
 
+func TestParseSearchRequest_SearchExprRoundTrip(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND+NOT+bar")
+	req, err := parseSearchRequest(r, false)
+	require.NoError(t, err)
+	assert.Equal(t, "foo AND NOT bar", req.params.Expression())
+	assert.Empty(t, req.params.Terms)
+}
+
+func TestParseSearchRequest_RejectsSearchAndSearchExprTogether(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search_expr=bar")
+	_, err := parseSearchRequest(r, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "search[] and search_expr are mutually exclusive")
+}
+
+func TestParseSearchRequest_RejectsInvalidSearchExpr(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND")
+	_, err := parseSearchRequest(r, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid search_expr:")
+	assert.Contains(t, err.Error(), "search expression:")
+}
+
+// TestParseSearchRequest_SortByScoreAcceptsSearchExpr pins that expression
+// filters produce meaningful relevance scores too, so sort_by=score must not
+// require search[] specifically.
+func TestParseSearchRequest_SortByScoreAcceptsSearchExpr(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo&sort_by=score")
+	req, err := parseSearchRequest(r, false)
+	require.NoError(t, err)
+	assert.Equal(t, storage.OrderByScoreDesc, req.hints.OrderBy)
+}
+
 // TestParseSearchRequest_BatchSizeZeroKeepsDefault pins the post-rename
 // contract: batch_size=0 means "server-determined" and falls back to
 // searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
@@ -971,6 +1006,25 @@ func TestSearchLabelNamesHandler_AcceptsPOSTForm(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, mq.lastParams)
 	assert.Equal(t, []string{"foo"}, mq.lastParams.Terms, "POST form body must reach the parser")
+}
+
+// TestSearchLabelNamesHandler_SearchExprEndToEnd pins that search_expr
+// reaches the querier layer intact, mirroring
+// TestSearchLabelNamesHandler_AcceptsPOSTForm's assertion on Terms.
+func TestSearchLabelNamesHandler_SearchExprEndToEnd(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0)}, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND+NOT+bar"))
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, mq.lastParams)
+	assert.Equal(t, "foo AND NOT bar", mq.lastParams.Expression(), "search_expr must reach the querier layer")
+	assert.Empty(t, mq.lastParams.Terms)
 }
 
 func TestSearchLabelNamesHandler_MissingTenantReturns400(t *testing.T) {
