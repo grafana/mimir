@@ -8428,11 +8428,12 @@
           "kind": "field",
           "name": "log_queries_longer_than",
           "required": false,
-          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
+          "desc": "(use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.log-queries-longer-than",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
