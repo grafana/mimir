@@ -195,6 +195,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	identifyingLabelValues := make(map[string]map[string]struct{})
+	identifyingLabelPresent := make(map[string]int)
 	for _, labelName := range identifyingLabels {
 		identifyingLabelValues[labelName] = make(map[string]struct{})
 	}
@@ -203,6 +204,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		for _, labelName := range identifyingLabels {
 			if value := metadata.Labels.Get(labelName); value != "" {
 				identifyingLabelValues[labelName][value] = struct{}{}
+				identifyingLabelPresent[labelName]++
 			}
 		}
 	}
@@ -211,13 +213,19 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 
 	for _, labelName := range identifyingLabels {
 		values := identifyingLabelValues[labelName]
-		switch len(values) {
-		case 0:
+		if len(values) == 0 {
 			// No inner series have this identifying label; skip generating a matcher
 			// for it but continue processing other labels. Only skip querying info
 			// entirely if no identifying labels have any values at all.
 			continue
-		case 1:
+		}
+
+		// When a label is present on only some inner series, info series that lack it (matching an
+		// inner series on the other identifying label) must still be fetched, so the matcher also
+		// accepts the empty value. Extra cross-pairs are removed by the signature join below.
+		mixed := identifyingLabelPresent[labelName] < len(innerMetadata)
+
+		if len(values) == 1 && !mixed {
 			for value := range values {
 				matchers = append(matchers, types.Matcher{
 					Type:  labels.MatchEqual,
@@ -226,18 +234,23 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 				})
 				break
 			}
-		default:
-			valueSlice := make([]string, 0, len(values))
-			for value := range values {
-				valueSlice = append(valueSlice, regexp.QuoteMeta(value))
-			}
-			regexPattern := "(" + strings.Join(valueSlice, "|") + ")"
-			matchers = append(matchers, types.Matcher{
-				Type:  labels.MatchRegexp,
-				Name:  labelName,
-				Value: regexPattern,
-			})
+			continue
 		}
+
+		valueSlice := make([]string, 0, len(values)+1)
+		for value := range values {
+			valueSlice = append(valueSlice, regexp.QuoteMeta(value))
+		}
+		if mixed {
+			// Empty alternative: also select info series without this label.
+			valueSlice = append(valueSlice, "")
+		}
+		regexPattern := "(" + strings.Join(valueSlice, "|") + ")"
+		matchers = append(matchers, types.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  labelName,
+			Value: regexPattern,
+		})
 	}
 
 	if len(matchers) == 0 {
