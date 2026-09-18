@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package verify
+
+import (
+	"context"
+	"testing"
+
+	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestWellFormedVerifier_ValidBlock(t *testing.T) {
+	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
+		sampleAt(1_000, 1.0),
+		sampleAt(2_000, 2.0),
+		sampleAt(3_000, 3.0),
+	})
+
+	ctx := context.Background()
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
+
+	require.NoError(t, true.Verify(ctx, dir, *meta))
+	require.NoError(t, false.Verify(ctx, dir, *meta))
+}
+
+func TestWellFormedVerifier_TruncatedChunk(t *testing.T) {
+	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
+		sampleAt(1_000, 1.0),
+		sampleAt(2_000, 2.0),
+		sampleAt(3_000, 3.0),
+	})
+	corruptChunkSegment(t, dir)
+
+	ctx := context.Background()
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	err := true.Verify(ctx, dir, *meta)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "well-formed check failed")
+}
+
+func TestWellFormedVerifier_MangledIndex(t *testing.T) {
+	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
+		sampleAt(1_000, 1.0),
+		sampleAt(2_000, 2.0),
+		sampleAt(3_000, 3.0),
+	})
+	mangleIndex(t, dir)
+
+	ctx := context.Background()
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
+
+	require.Error(t, true.Verify(ctx, dir, *meta))
+	require.Error(t, false.Verify(ctx, dir, *meta))
+}
+
+func TestWellFormedVerifier_ChecksumMismatch_trueFailsfalsePasses(t *testing.T) {
+	// Flip a byte inside the first chunk's data region, with the intent to break
+	// full-depth checks while allowing header-level checks to pass.
+	dir, meta := generateValidBlock(t, t.TempDir(), []chunks.Sample{
+		sampleAt(1_000, 1.0),
+		sampleAt(2_000, 2.0),
+		sampleAt(3_000, 3.0),
+		sampleAt(4_000, 4.0),
+		sampleAt(5_000, 5.0),
+	})
+	flipChunkByte(t, dir, 10)
+
+	ctx := context.Background()
+	true := NewWellFormedVerifier(log.NewNopLogger(), true)
+	false := NewWellFormedVerifier(log.NewNopLogger(), false)
+
+	require.Error(t, true.Verify(ctx, dir, *meta),
+		"true mode must catch chunk checksum mismatch")
+	require.NoError(t, false.Verify(ctx, dir, *meta),
+		"false mode must NOT catch silent checksum mismatch (by design)")
+}
