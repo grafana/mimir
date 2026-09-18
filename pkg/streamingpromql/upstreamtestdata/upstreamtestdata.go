@@ -5,8 +5,8 @@
 
 // Package upstreamtestdata holds helpers shared by the tooling that keeps
 // pkg/streamingpromql/testdata/upstream in sync with the upstream PromQL test cases: the in-sync
-// test, the re-sync tool, the disabling sync test, and the disabled-but-supported checker. Keeping
-// these in one place ensures, in particular, that the re-sync tool disables cases in exactly the form
+// test, the re-sync tool, the disabling tool, and the disabled-but-supported checker. Keeping these
+// in one place ensures, in particular, that the disabling tool comments cases out in exactly the form
 // the in-sync test expects to reverse.
 package upstreamtestdata
 
@@ -139,5 +139,120 @@ func ClassifyEval(ctx context.Context, engine promql.QueryEngine, evalLine strin
 		return BuildUnsupported, err
 	default:
 		return BuildError, err
+	}
+}
+
+// CommentOutEvals rewrites content, commenting out the eval command blocks that begin at the given
+// 1-based line numbers (as reported by promqltest, e.g. the "line N" in a failing subtest name). An
+// eval block runs from its command line to the next blank or comment line. The commented-out form is
+// exactly what RestoreUnsupportedTestCases reverses, so the file stays in sync with upstream. It
+// returns the rewritten content and any requested lines that did not start an eval block.
+func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
+	lines := strings.Split(content, "\n")
+	blocks := parseCommandBlocks(lines)
+
+	disabled := make(map[int]bool) // block index -> disable
+	matched := make(map[int]bool)  // 1-based line -> matched an eval block
+	for i, b := range blocks {
+		if b.kind == cmdEval && evalLines[b.start+1] {
+			disabled[i] = true
+			matched[b.start+1] = true
+		}
+	}
+
+	var unmatched []int
+	for line := range evalLines {
+		if !matched[line] {
+			unmatched = append(unmatched, line)
+		}
+	}
+	slices.Sort(unmatched)
+
+	var out []string
+	nextBlock := 0
+	for i := 0; i < len(lines); {
+		if nextBlock < len(blocks) && blocks[nextBlock].start == i {
+			b := blocks[nextBlock]
+			if disabled[nextBlock] {
+				out = append(out, UnsupportedMarker)
+				for _, l := range lines[b.start:b.end] {
+					out = append(out, commentLine(l))
+				}
+			} else {
+				out = append(out, lines[b.start:b.end]...)
+			}
+			i = b.end
+			nextBlock++
+			continue
+		}
+		out = append(out, lines[i])
+		i++
+	}
+	return strings.Join(out, "\n"), unmatched
+}
+
+// commentLine is the exact inverse of the un-commenting in RestoreUnsupportedTestCases: a tab-indented
+// line is prefixed with just "#" (so it round-trips via the "#\t" case), any other line with "# ".
+func commentLine(l string) string {
+	if strings.HasPrefix(l, "\t") {
+		return "#" + l
+	}
+	return "# " + l
+}
+
+type commandKind int
+
+const (
+	cmdOther commandKind = iota
+	cmdLoad
+	cmdClear
+	cmdEval
+)
+
+type commandBlock struct {
+	kind       commandKind
+	start, end int // line indices, [start, end)
+}
+
+// parseCommandBlocks splits the file into command blocks the way promqltest does: a block starts at a
+// non-blank, non-comment line and runs until the next blank or comment line. Comment lines (including
+// already-disabled cases) and blank lines are separators and are not part of any block.
+func parseCommandBlocks(lines []string) []commandBlock {
+	var blocks []commandBlock
+	for i := 0; i < len(lines); {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			i++
+			continue
+		}
+		start := i
+		i++
+		for i < len(lines) {
+			t := strings.TrimSpace(lines[i])
+			if t == "" || strings.HasPrefix(t, "#") {
+				break
+			}
+			i++
+		}
+		blocks = append(blocks, commandBlock{kind: classifyCommand(trimmed), start: start, end: i})
+	}
+	return blocks
+}
+
+func classifyCommand(line string) commandKind {
+	word := line
+	if idx := strings.IndexAny(line, " \t"); idx >= 0 {
+		word = line[:idx]
+	}
+	word = strings.ToLower(word)
+	switch {
+	case word == "clear":
+		return cmdClear
+	case strings.HasPrefix(word, "load"):
+		return cmdLoad
+	case strings.HasPrefix(word, "eval"):
+		return cmdEval
+	default:
+		return cmdOther
 	}
 }

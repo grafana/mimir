@@ -22,8 +22,10 @@ const (
 	mimirEngineName      = "Mimir's engine"
 )
 
-// newUpstreamTestEngine builds Mimir's engine configured the way the upstream test cases are run.
-func newUpstreamTestEngine(t testing.TB) *streamingpromql.Engine {
+// This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
+// Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
+// Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
+func TestUpstreamTestCases(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
 	limits.EnableDelayedNameRemoval = true
@@ -32,14 +34,6 @@ func newUpstreamTestEngine(t testing.TB) *streamingpromql.Engine {
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
-	return engine
-}
-
-// This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
-// Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
-// Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
-func TestUpstreamTestCases(t *testing.T) {
-	engine := newUpstreamTestEngine(t)
 
 	testdataFS := os.DirFS("../testdata")
 	testFiles, err := fs.Glob(testdataFS, "upstream/*.test")

@@ -583,10 +583,10 @@ sync-upstream-promql-tests:
 	cd tools/sync-upstream-promql-tests && go run .
 
 # disable-failing-upstream-promql-tests comments out any upstream case Mimir's engine cannot run.
-# Run after sync-upstream-promql-tests. Exit code is ignored: failing cases are the expected signal.
+# Run after sync-upstream-promql-tests.
 .PHONY: disable-failing-upstream-promql-tests
 disable-failing-upstream-promql-tests:
-	MIMIR_SYNC_UPSTREAM=1 go test ./pkg/streamingpromql/comparisons/ -run TestDisableFailingUpstreamCases -count=1 || true
+	cd tools/disable-failing-upstream-promql-tests && go run .
 
 .PHONY: format-protobuf
 format-protobuf:

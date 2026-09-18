@@ -8,7 +8,7 @@
 // after a mimir-prometheus bump: it applies upstream's changes to our copies while preserving the
 // eval commands we have disabled ("# Unsupported by streaming engine.") via a 3-way merge. It does
 // NOT decide which new cases to disable - that is done afterwards by
-// TestDisableFailingUpstreamCases, which actually runs the cases against Mimir's engine.
+// the disable-failing-upstream-promql-tests tool, which actually runs the cases against Mimir's engine.
 //
 // Run it with `go run .` in this directory, or via `make sync-upstream-promql-tests`.
 //
@@ -84,7 +84,7 @@ func run() error {
 
 		case !fileExists(ourEnabled):
 			// Upstream added a new test file. Create it fully enabled and in sync; any cases Mimir
-			// cannot run are disabled afterwards by TestDisableFailingUpstreamCases.
+			// cannot run are disabled afterwards by the disable-failing-upstream-promql-tests tool.
 			if err := os.WriteFile(ourEnabled, []byte(header+upstream), 0o644); err != nil {
 				return err
 			}
@@ -106,7 +106,7 @@ func run() error {
 			}
 			if conflicts {
 				// Upstream changed a region we had disabled. Take upstream as-is so the files stay
-				// in sync; TestDisableFailingUpstreamCases re-derives the disabling from scratch.
+				// in sync; the disable-failing-upstream-promql-tests tool re-derives the disabling from scratch.
 				merged = upstream
 				rep.conflicts = append(rep.conflicts, name)
 			}
