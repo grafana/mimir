@@ -9,6 +9,16 @@ import (
 	"strings"
 )
 
+const (
+	maxExpressionBytes        = 4096
+	maxExpressionTerms        = 32
+	maxExpressionNestingDepth = 16
+	// Binary chains are parsed iteratively, so the deepest legal AST combines
+	// maxExpressionTerms left-associated leaves with maxExpressionNestingDepth
+	// nested NOT/group nodes.
+	maxCompiledExpressionDepth = maxExpressionTerms + maxExpressionNestingDepth
+)
+
 // Expr is a search expression AST node.
 //
 // The interface is sealed so that every expression used by a future compiler
@@ -49,8 +59,14 @@ func (Not) expr() {}
 
 // Parse parses terms combined with NOT, AND, OR, and parentheses. NOT binds
 // more tightly than AND, which binds more tightly than OR. Operators are
-// case-insensitive; quote a term to search for literal operator text.
+// case-insensitive; quote a term to search for literal operator text. Parse
+// enforces syntax and resource limits only; call Validate before evaluation
+// to enforce the positive-anchor rule. The returned AST owns its term strings
+// and does not alias input.
 func Parse(input string) (Expr, error) {
+	if len(input) > maxExpressionBytes {
+		return nil, fmt.Errorf("search expression: length %d exceeds maximum of %d bytes", len(input), maxExpressionBytes)
+	}
 	tokens, err := tokenize(input)
 	if err != nil {
 		return nil, err
@@ -107,7 +123,9 @@ func (t token) describe() string {
 }
 
 func tokenize(input string) ([]token, error) {
-	tokens := make([]token, 0, strings.Count(input, " ")+1)
+	capacity := min(strings.Count(input, " ")+1, 2*maxExpressionTerms+2)
+	tokens := make([]token, 0, capacity)
+	termCount := 0
 	for pos := 0; pos < len(input); {
 		if input[pos] == ' ' || input[pos] == '\t' || input[pos] == '\n' || input[pos] == '\r' {
 			pos++
@@ -129,19 +147,46 @@ func tokenize(input string) ([]token, error) {
 			if value == "" {
 				return nil, fmt.Errorf("search expression: empty quoted term at position %d", pos)
 			}
-			tokens = append(tokens, token{kind: tokenTerm, value: value, pos: pos})
+			tokens, err = appendToken(tokens, token{kind: tokenTerm, value: value, pos: pos}, &termCount)
+			if err != nil {
+				return nil, err
+			}
 			pos = next
 		default:
-			start := pos
-			for pos < len(input) && input[pos] != ' ' && input[pos] != '\t' && input[pos] != '\n' && input[pos] != '\r' && input[pos] != '(' && input[pos] != ')' {
-				pos++
+			next, end, err := bareToken(input, pos)
+			if err != nil {
+				return nil, err
 			}
-			value := input[start:pos]
-			tokens = append(tokens, keywordToken(value, start))
+			tokens, err = appendToken(tokens, next, &termCount)
+			if err != nil {
+				return nil, err
+			}
+			pos = end
 		}
 	}
 
 	return append(tokens, token{kind: tokenEOF, pos: len(input)}), nil
+}
+
+func bareToken(input string, start int) (token, int, error) {
+	pos := start
+	for pos < len(input) && input[pos] != ' ' && input[pos] != '\t' && input[pos] != '\n' && input[pos] != '\r' && input[pos] != '(' && input[pos] != ')' {
+		if input[pos] == '"' {
+			return token{}, 0, fmt.Errorf("search expression: unexpected quote at position %d", pos)
+		}
+		pos++
+	}
+	return keywordToken(input[start:pos], start), pos, nil
+}
+
+func appendToken(tokens []token, next token, termCount *int) ([]token, error) {
+	if next.kind == tokenTerm {
+		(*termCount)++
+		if *termCount > maxExpressionTerms {
+			return nil, fmt.Errorf("search expression: term count exceeds maximum of %d", maxExpressionTerms)
+		}
+	}
+	return append(tokens, next), nil
 }
 
 func quotedTerm(input string, start int) (string, int, error) {
@@ -152,7 +197,7 @@ func quotedTerm(input string, start int) (string, int, error) {
 			return value.String(), pos + 1, nil
 		case '\\':
 			if pos+1 == len(input) {
-				break
+				return "", 0, fmt.Errorf("search expression: unterminated quoted term at position %d", start)
 			}
 			pos++
 			value.WriteByte(input[pos])
@@ -172,13 +217,14 @@ func keywordToken(value string, pos int) token {
 	case "OR":
 		return token{kind: tokenOr, pos: pos}
 	default:
-		return token{kind: tokenTerm, value: value, pos: pos}
+		return token{kind: tokenTerm, value: strings.Clone(value), pos: pos}
 	}
 }
 
 type parser struct {
 	tokens []token
 	index  int
+	depth  int
 }
 
 func (p *parser) parseOr() (Expr, error) {
@@ -213,8 +259,8 @@ func (p *parser) parseUnary() (Expr, error) {
 	if p.peek().kind != tokenNot {
 		return p.parsePrimary()
 	}
-	p.next()
-	expr, err := p.parseUnary()
+	token := p.next()
+	expr, err := p.parseNested(token.pos, p.parseUnary)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +273,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 	case tokenTerm:
 		return Term{Value: token.value}, nil
 	case tokenLeftParen:
-		expr, err := p.parseOr()
+		expr, err := p.parseNested(token.pos, p.parseOr)
 		if err != nil {
 			return nil, err
 		}
@@ -237,8 +283,17 @@ func (p *parser) parsePrimary() (Expr, error) {
 		p.next()
 		return expr, nil
 	default:
-		return nil, p.errorf("expected term or (, got %s", token.describe())
+		return nil, p.errorAt(token.pos, "expected term or (, got %s", token.describe())
 	}
+}
+
+func (p *parser) parseNested(pos int, parse func() (Expr, error)) (Expr, error) {
+	if p.depth >= maxExpressionNestingDepth {
+		return nil, fmt.Errorf("search expression: nesting depth exceeds maximum of %d at position %d", maxExpressionNestingDepth, pos)
+	}
+	p.depth++
+	defer func() { p.depth-- }()
+	return parse()
 }
 
 func (p *parser) peek() token {
@@ -254,5 +309,9 @@ func (p *parser) next() token {
 }
 
 func (p *parser) errorf(format string, args ...any) error {
-	return fmt.Errorf("search expression: "+format+" at position %d", append(args, p.peek().pos)...)
+	return p.errorAt(p.peek().pos, format, args...)
+}
+
+func (*parser) errorAt(pos int, format string, args ...any) error {
+	return fmt.Errorf("search expression: "+format+" at position %d", append(args, pos)...)
 }
