@@ -260,6 +260,11 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	return matchers, false
 }
 
+// hasAnyIdentifyingLabel reports whether lset carries at least one identifying label.
+func hasAnyIdentifyingLabel(lset labels.Labels) bool {
+	return slices.ContainsFunc(identifyingLabels, lset.Has)
+}
+
 // signature generates signature from labels without metric name
 // Ensure this is only called after initializing f.sigBuf and f.sigLb
 func (f *InfoFunction) signature(lset labels.Labels) []byte {
@@ -291,6 +296,15 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
 			return err
+		}
+
+		// Skip info series with no identifying labels: they could only enrich an inner series that
+		// also has none, which Prometheus never enriches (it builds no matcher set for the empty
+		// presence pattern). The wider "mixed" fetch matcher can select them, so drop them to match.
+		// Samples were read above to keep the info series stream aligned with infoMetadata.
+		if !hasAnyIdentifyingLabel(metadata.Labels) {
+			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
+			continue
 		}
 
 		// Error out if we get histograms for an info metric.
