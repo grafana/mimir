@@ -24,9 +24,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-)
 
-const unsupportedMarker = "# Unsupported by streaming engine."
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -68,8 +68,8 @@ func run() error {
 		}
 		// Normalize trailing whitespace, matching the in-sync test (which strips it before comparing)
 		// and the style of our committed copies, so re-syncing an unchanged file is a no-op.
-		upstream := stripLineTrailingWhitespace(string(upstreamBytes))
-		header := licenseHeader(name)
+		upstream := upstreamtestdata.StripLineTrailingWhitespace(string(upstreamBytes))
+		header := upstreamtestdata.LicenseHeader(name)
 
 		ourEnabled := filepath.Join(ourDir, name)
 		ourDisabled := ourEnabled + ".disabled"
@@ -95,10 +95,10 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			ours := stripLineTrailingWhitespace(strings.TrimPrefix(string(ourBytes), header))
+			ours := upstreamtestdata.StripLineTrailingWhitespace(strings.TrimPrefix(string(ourBytes), header))
 			// The in-sync test guarantees restore(ours) == the previously-vendored upstream, so we
 			// can reconstruct the merge base from our own copy without needing the old vendor.
-			base := restoreUnsupportedTestCases(ours)
+			base := upstreamtestdata.RestoreUnsupportedTestCases(ours)
 
 			merged, conflicts, err := threeWayMerge(base, ours, upstream)
 			if err != nil {
@@ -165,52 +165,6 @@ func threeWayMerge(base, ours, theirs string) (string, bool, error) {
 		return "", true, nil
 	}
 	return "", false, fmt.Errorf("git merge-file: %w", err)
-}
-
-// restoreUnsupportedTestCases re-enables cases we disabled, so the result should equal the upstream
-// file. It is kept identical to the copy in pkg/streamingpromql/testdata_in_sync_test.go.
-func restoreUnsupportedTestCases(s string) string {
-	lines := strings.Split(s, "\n")
-	inUnsupportedTestCase := false
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		if line == unsupportedMarker {
-			lines = slices.Delete(lines, i, i+1)
-			inUnsupportedTestCase = true
-			i--
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "# ") {
-			lines[i] = strings.TrimPrefix(line, "# ")
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "#\t") {
-			lines[i] = strings.TrimPrefix(line, "#")
-		} else {
-			inUnsupportedTestCase = false
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-// stripLineTrailingWhitespace removes trailing spaces and tabs from each line. It is kept identical
-// to the copy in pkg/streamingpromql/testdata_in_sync_test.go.
-func stripLineTrailingWhitespace(s string) string {
-	lines := strings.Split(s, "\n")
-	for i := range lines {
-		lines[i] = strings.TrimRight(lines[i], " \t")
-	}
-	return strings.Join(lines, "\n")
-}
-
-func licenseHeader(name string) string {
-	return strings.Join([]string{
-		"# SPDX-License-Identifier: AGPL-3.0-only",
-		"# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/" + name,
-		"# Provenance-includes-license: Apache-2.0",
-		"# Provenance-includes-copyright: The Prometheus Authors",
-		"",
-		"",
-	}, "\n")
 }
 
 func fileExists(path string) bool {

@@ -3,33 +3,17 @@
 package comparisons
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/grafana/regexp"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-)
-
-const unsupportedMarker = "# Unsupported by streaming engine."
-
-// These are the same expressions promqltest uses to parse eval commands. We use them only to pull
-// the query out of a failing eval command, to classify why it failed.
-var (
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
 )
 
 // TestDisableFailingUpstreamCases is a code generator, not an assertion; it is a test only because it
@@ -47,14 +31,7 @@ func TestDisableFailingUpstreamCases(t *testing.T) {
 		t.Skip("set MIMIR_SYNC_UPSTREAM=1 to run the upstream test-case disabling sync")
 	}
 
-	opts := streamingpromql.NewTestEngineOpts()
-	limits := streamingpromql.NewStaticQueryLimitsProvider()
-	limits.EnableDelayedNameRemoval = true
-	opts.Limits = limits
-	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
+	engine := newUpstreamTestEngine(t)
 
 	testFiles, err := filepath.Glob(filepath.Join("..", "testdata", "upstream", "*.test"))
 	require.NoError(t, err)
@@ -102,8 +79,9 @@ func TestDisableFailingUpstreamCases(t *testing.T) {
 
 			disabled[idx] = true
 			entry := fmt.Sprintf("- `%s` line %d: `%s`", filepath.Base(testFile), b.start+1, evalLine)
+			result, _ := upstreamtestdata.ClassifyEval(ctx, engine, evalLine)
 			switch {
-			case isUnsupported(ctx, engine, evalLine):
+			case result == upstreamtestdata.BuildUnsupported:
 				unsupported = append(unsupported, entry)
 			case baselineEvals == nil:
 				divergentUnknown = append(divergentUnknown, entry)
@@ -146,38 +124,11 @@ func loadBaselineEnabledEvals(t *testing.T, baselineDir, name string) map[string
 	set := make(map[string]bool)
 	for line := range strings.SplitSeq(string(b), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if patEvalInstant.MatchString(trimmed) || patEvalRange.MatchString(trimmed) {
+		if upstreamtestdata.IsEval(trimmed) {
 			set[trimmed] = true
 		}
 	}
 	return set
-}
-
-// isUnsupported reports whether evalLine's query fails to even build against Mimir's engine because
-// the feature is not implemented (compat.NotSupportedError). A query that builds but produces a wrong
-// result, or fails for any other reason, is treated as a divergence that a human should review - the
-// same convention used by tools/check-for-disabled-but-supported-mqe-test-cases.
-func isUnsupported(ctx context.Context, engine promql.QueryEngine, evalLine string) bool {
-	var (
-		q   promql.Query
-		err error
-	)
-	switch {
-	case patEvalInstant.MatchString(evalLine):
-		expr := patEvalInstant.FindStringSubmatch(evalLine)[3]
-		q, err = engine.NewInstantQuery(ctx, nil, nil, expr, timestamp.Time(0))
-	case patEvalRange.MatchString(evalLine):
-		expr := patEvalRange.FindStringSubmatch(evalLine)[5]
-		q, err = engine.NewRangeQuery(ctx, nil, nil, expr, timestamp.Time(0), timestamp.Time(1000), time.Millisecond)
-	default:
-		return false
-	}
-
-	if err == nil {
-		q.Close()
-		return false
-	}
-	return errors.Is(err, compat.NotSupportedError{})
 }
 
 func renderDisabledCases(unsupported, divergentExisting, divergentNew, divergentUnknown []string) string {
@@ -267,8 +218,8 @@ func classifyCommand(line string) commandKind {
 }
 
 // commentOutBlocks rebuilds the file, replacing each disabled block with its commented-out form. The
-// format is exactly what restoreUnsupportedTestCases (in the in-sync test) reverses, so the file stays
-// in sync with upstream.
+// format is exactly what upstreamtestdata.RestoreUnsupportedTestCases reverses, so the file stays in
+// sync with upstream.
 func commentOutBlocks(lines []string, blocks []commandBlock, disabled map[int]bool) string {
 	var out []string
 	nextBlock := 0
@@ -276,7 +227,7 @@ func commentOutBlocks(lines []string, blocks []commandBlock, disabled map[int]bo
 		if nextBlock < len(blocks) && blocks[nextBlock].start == i {
 			b := blocks[nextBlock]
 			if disabled[nextBlock] {
-				out = append(out, unsupportedMarker)
+				out = append(out, upstreamtestdata.UnsupportedMarker)
 				for _, l := range lines[b.start:b.end] {
 					out = append(out, "# "+l)
 				}
