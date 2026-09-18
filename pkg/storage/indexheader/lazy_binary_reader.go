@@ -195,30 +195,43 @@ func ensureIndexHeaderOnDisk(
 	indexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
 
 	requiredVersion := requiredIndexHeaderVersion(cfg)
-	writeV2IndexHeader := requiredVersion == BinaryFormatV2
 
-	version, err := indexHeaderVersionOnDisk(indexHeaderPath)
-	switch {
-	case err == nil && version == requiredVersion:
-		// The header is already on disk, at the version this config requires.
-		return nil
-	case err == nil:
-		level.Debug(logger).Log(
-			"msg", "index-header on disk does not match required version for config; will rebuild from bucket block index",
-			"path", indexHeaderPath, "onDiskVersion", version, "requiredVersion", requiredVersion,
-		)
-	case os.IsNotExist(err):
+	// When the bucket reader is enabled, we specifically require a v2 index-header on lazy load.
+	// This requires opening the index-header file to check its version, which incurs some latency at startup.
+	// To avoid incurring this latency everywhere, if the bucket reader isn't enabled yet,
+	// we only check for any index-header on disk and let the underlying reader handle checking versioning, etc. at read.
+	if cfg.BucketReader.Enabled {
+		version, err := indexHeaderVersionOnDisk(indexHeaderPath)
+		switch {
+		case err == nil && version == requiredVersion:
+			// The header is already on disk, at the version this config requires.
+			return nil
+		case err == nil:
+			level.Debug(logger).Log(
+				"msg", "index-header on disk does not match required version for config; will rebuild from bucket block index",
+				"path", indexHeaderPath, "onDiskVersion", version, "requiredVersion", requiredVersion,
+			)
+		case os.IsNotExist(err):
+			level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
+		default:
+			// The file exists but we can't determine its version (e.g. it's corrupted or truncated).
+			// Leave it in place; the eventual reader load will detect the problem via its own CRC
+			// check and rebuild it then.
+			level.Warn(logger).Log("msg", "failed to read version of existing index-header on disk", "path", indexHeaderPath, "err", err)
+			return nil
+		}
+	} else {
+		if _, err := os.Stat(indexHeaderPath); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			level.Error(logger).Log("msg", "failed to stat existing index-header on disk", "err", err)
+			return err
+		}
 		level.Debug(logger).Log("msg", "index-header does not exist on disk; will build from bucket", "path", indexHeaderPath)
-	default:
-		// The file exists but we can't determine its version (e.g. it's corrupted or truncated).
-		// Leave it in place; the eventual reader load will detect the problem via its own CRC
-		// check and rebuild it then.
-		level.Warn(logger).Log("msg", "failed to read version of existing index-header on disk", "path", indexHeaderPath, "err", err)
-		return nil
 	}
 
 	start := time.Now()
-	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath, writeV2IndexHeader); err != nil {
+	if err := WriteBinary(ctx, bkt, blockID, indexHeaderPath, requiredVersion == BinaryFormatV2); err != nil {
 		level.Error(logger).Log("msg", "failed to create index-header", "err", err)
 		return err
 	}
