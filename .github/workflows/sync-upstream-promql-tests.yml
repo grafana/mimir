@@ -16,8 +16,9 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
+  pull-requests: write
 
 jobs:
   sync-upstream-promql-tests:
@@ -125,6 +126,27 @@ jobs:
           file_pattern: pkg/streamingpromql/testdata/upstream/*
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # Surface the report on the PR (as github-actions[bot], via the default token) so the maintainer
+      # who ran this sees what was disabled without opening the run logs.
+      - name: Comment sync report on the PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+          REPORT: ${{ runner.temp }}/sync-report.md
+        run: |
+          set -euo pipefail
+          if [ ! -s "$REPORT" ]; then
+            echo "No sync report; not commenting."
+            exit 0
+          fi
+          {
+            echo "## Upstream PromQL test-case sync"
+            echo
+            cat "$REPORT"
+          } > comment.md
+          gh pr comment "$BRANCH" --body-file comment.md
 
       - name: Summarize what was synced
         if: always()
