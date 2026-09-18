@@ -753,8 +753,7 @@ type SearchFilter struct {
 	FuzzThreshold int32 `protobuf:"varint,4,opt,name=fuzz_threshold,json=fuzzThreshold,proto3" json:"fuzz_threshold,omitempty"`
 	// Expression is an optional boolean search expression (AND/OR/NOT, quoting,
 	// parentheses) as an alternative to terms. Mutually exclusive with terms;
-	// validated by the HTTP handler with searchexpr.Parse before being sent
-	// over the wire, so servers only need to compile it.
+	// validated at every HTTP and gRPC boundary before use.
 	Expression string `protobuf:"bytes,5,opt,name=expression,proto3" json:"expression,omitempty"`
 }
 

@@ -946,7 +946,7 @@ func TestParseSearchRequest_SearchExprRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND+NOT+bar")
 	req, err := parseSearchRequest(r, false)
 	require.NoError(t, err)
-	assert.Equal(t, "foo AND NOT bar", req.params.Expression)
+	assert.Equal(t, "foo AND NOT bar", req.params.Expression())
 	assert.Empty(t, req.params.Terms)
 }
 
@@ -1023,7 +1023,7 @@ func TestSearchLabelNamesHandler_SearchExprEndToEnd(t *testing.T) {
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search_expr=foo+AND+NOT+bar"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, mq.lastParams)
-	assert.Equal(t, "foo AND NOT bar", mq.lastParams.Expression, "search_expr must reach the querier layer")
+	assert.Equal(t, "foo AND NOT bar", mq.lastParams.Expression(), "search_expr must reach the querier layer")
 	assert.Empty(t, mq.lastParams.Terms)
 }
 
