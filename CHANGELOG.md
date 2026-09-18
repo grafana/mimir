@@ -65,6 +65,7 @@
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
+* [BUGFIX] Continuous-test: Compare queried values against the expected ones using a relative tolerance. Previously the tolerance was mistakenly applied as an absolute one squared, so the comparison got stricter as the number of written series grew, and could report a failure caused by float64 rounding. Native histogram mismatches now also log which field (count, sum, or a specific bucket) didn't match, instead of always logging the sum. #16651
 
 ### Mixin
 

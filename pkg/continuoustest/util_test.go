@@ -202,7 +202,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
 			expectedLastMatchingIdx: -1,
-			expectedErr:             "histogram at timestamp .* has sum .* while was expecting .*",
+			expectedErr:             "histogram at timestamp .* doesn't match the expectation: count is .* while was expecting .*, sum is .* while was expecting .*, bucket 0 .* has count .* while was expecting .*",
 		},
 		"should return error if there's a missing histogram": {
 			histograms: []model.SampleHistogramPair{
@@ -276,17 +276,59 @@ func TestCompareSampleValues(t *testing.T) {
 		tolerance float64
 		result    bool
 	}{
-		"histogram_float_counter shouldn't work with float tolerance": {
-			actual:    336157191.999972,
-			expected:  336157192.000000,
-			tolerance: maxComparisonDeltaFloat,
-			result:    false,
-		},
-		"histogram_float_counter should work with histogram tolerance": {
+		"should tolerate the float64 imprecision accumulated while summing many histogram values": {
 			actual:    336157191.999972,
 			expected:  336157192.000000,
 			tolerance: maxComparisonDeltaHistogram,
 			result:    true,
+		},
+		"should tolerate the float64 imprecision accumulated while summing many float values": {
+			actual:    336157191.999972,
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaFloat,
+			result:    true,
+		},
+		"should apply the tolerance relatively to the expected value magnitude": {
+			actual:    336157192.000000 * (1 + 1e-5),
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaHistogram,
+			result:    false,
+		},
+		"should match small magnitude values differing by less than the tolerance": {
+			actual:    2.0000000001,
+			expected:  2.0,
+			tolerance: maxComparisonDeltaFloat,
+			result:    true,
+		},
+		"should not match small magnitude values differing by more than the tolerance": {
+			actual:    2.001,
+			expected:  2.0,
+			tolerance: maxComparisonDeltaFloat,
+			result:    false,
+		},
+		"should apply the tolerance as absolute tolerance for values close to zero": {
+			actual:    1e-12,
+			expected:  0,
+			tolerance: maxComparisonDeltaFloat,
+			result:    true,
+		},
+		"should not match values close to zero differing by more than the tolerance": {
+			actual:    0.1,
+			expected:  0,
+			tolerance: maxComparisonDeltaFloat,
+			result:    false,
+		},
+		"should detect a single series missing from the sum of 5000 float series": {
+			actual:    4999 * 2.1,
+			expected:  5000 * 2.1,
+			tolerance: maxComparisonDeltaFloat,
+			result:    false,
+		},
+		"should detect a single series missing from the sum of 5000 histogram series": {
+			actual:    4999 * 336157.192,
+			expected:  5000 * 336157.192,
+			tolerance: maxComparisonDeltaHistogram,
+			result:    false,
 		},
 	}
 
@@ -294,6 +336,88 @@ func TestCompareSampleValues(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			res := compareFloatValues(testData.actual, testData.expected, testData.tolerance)
 			assert.Equal(t, testData.result, res)
+		})
+	}
+}
+
+func TestVerifySamplesSum_ShouldDetectASingleMissingSeriesInALargeSum(t *testing.T) {
+	const numSeries = 5000
+
+	// Round to millis since that's the precision of Prometheus timestamps.
+	now := time.Now().Round(time.Millisecond).UTC()
+
+	matrix := model.Matrix{{Values: []model.SamplePair{
+		newSamplePair(now, (numSeries-1)*generateSineWaveValue(now)),
+	}}}
+
+	lastMatchingIdx, err := verifySamplesSum(matrix, numSeries, 10*time.Second, generateSineWaveValue, nil, nil)
+	require.Error(t, err)
+	assert.Regexp(t, "sample at timestamp .* has value .* while was expecting .*", err.Error())
+	assert.Equal(t, -1, lastMatchingIdx)
+}
+
+func TestCompareHistogramValues(t *testing.T) {
+	newHistogram := func() *model.SampleHistogram {
+		return &model.SampleHistogram{
+			Count: 40,
+			Sum:   100,
+			Buckets: model.HistogramBuckets{
+				{Boundaries: 0, Lower: 1, Upper: 2, Count: 20},
+				{Boundaries: 0, Lower: 2, Upper: 4, Count: 20},
+			},
+		}
+	}
+
+	tests := map[string]struct {
+		mutate             func(actual *model.SampleHistogram)
+		expectedMismatches []string
+	}{
+		"should return no mismatch if the two histograms are equal": {
+			mutate:             func(*model.SampleHistogram) {},
+			expectedMismatches: nil,
+		},
+		"should return no mismatch if values differ by less than the tolerance": {
+			mutate: func(actual *model.SampleHistogram) {
+				actual.Sum = 100 * (1 + maxComparisonDeltaHistogram/10)
+			},
+			expectedMismatches: nil,
+		},
+		"should report the count when only the count differs": {
+			mutate: func(actual *model.SampleHistogram) {
+				actual.Count = 39
+			},
+			expectedMismatches: []string{"count is 39 while was expecting 40"},
+		},
+		"should report the sum when only the sum differs": {
+			mutate: func(actual *model.SampleHistogram) {
+				actual.Sum = 99
+			},
+			expectedMismatches: []string{"sum is 99 while was expecting 100"},
+		},
+		"should report the bucket index and boundaries when only a bucket count differs": {
+			mutate: func(actual *model.SampleHistogram) {
+				actual.Buckets[1].Count = 19
+			},
+			expectedMismatches: []string{"bucket 1 (lower 2, upper 4) has count 19 while was expecting 20"},
+		},
+		"should report the number of buckets when it differs": {
+			mutate: func(actual *model.SampleHistogram) {
+				actual.Buckets = actual.Buckets[:1]
+			},
+			expectedMismatches: []string{"has 1 buckets while was expecting 2"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actual := newHistogram()
+			testData.mutate(actual)
+
+			mismatches := compareHistogramValues(actual, newHistogram(), maxComparisonDeltaHistogram)
+			require.Len(t, mismatches, len(testData.expectedMismatches))
+			for i, expected := range testData.expectedMismatches {
+				assert.Contains(t, mismatches[i], expected)
+			}
 		})
 	}
 }

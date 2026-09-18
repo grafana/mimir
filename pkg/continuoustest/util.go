@@ -18,8 +18,16 @@ import (
 )
 
 const (
-	maxComparisonDeltaFloat     = 0.001
-	maxComparisonDeltaHistogram = 0.01
+	// maxComparisonDeltaFloat is the relative tolerance used when comparing float sample values.
+	// Summing the values of many series accumulates float64 rounding errors, so an exact comparison
+	// isn't possible, but the tolerance must stay well below the relative difference caused by a
+	// single missing series (1 / number of series written by continuous-test), so that data loss is
+	// still detected.
+	maxComparisonDeltaFloat = 1e-9
+	// maxComparisonDeltaHistogram is the relative tolerance used when comparing native histograms
+	// counts, sums and bucket counts. It's looser than maxComparisonDeltaFloat because native
+	// histograms values are computed from bigger numbers, and so they accumulate a bigger error.
+	maxComparisonDeltaHistogram = 1e-8
 
 	floatMetricName = "mimir_continuous_test_sine_wave_v2"
 	floatTypeLabel  = "float"
@@ -408,8 +416,8 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
-			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
+			if mismatches := compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram); len(mismatches) > 0 {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) doesn't match the expectation: %s", histogram.Timestamp, ts.String(), strings.Join(mismatches, ", "))
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
@@ -459,32 +467,66 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	return lastMatchingIdx, nil
 }
 
-// accounts for float imprecision
+// compareFloatValues returns whether actual matches expected within the given tolerance, which is
+// interpreted as a relative tolerance because expected values scale with the number of series
+// written by continuous-test (and so does the float64 error accumulated while summing them).
+// For values whose magnitude is below 1 the tolerance is applied as an absolute tolerance, so that
+// values close to zero don't require an exact match either.
 func compareFloatValues(actual, expected, tolerance float64) bool {
-	delta := math.Abs((actual - expected) / tolerance)
-	return delta < tolerance
+	if actual == expected {
+		return true
+	}
+	return math.Abs(actual-expected) <= tolerance*math.Max(1, math.Abs(expected))
 }
 
-func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) bool {
-	return compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
-}
+// compareHistogramValues returns the list of the mismatching fields between actual and expected,
+// comparing values within the given tolerance. The returned slice is empty if the two histograms match.
+func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) []string {
+	var mismatches []string
 
-func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) bool {
-	if len(actual) != len(expected) {
-		return false
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		mismatches = append(mismatches, fmt.Sprintf("count is %s while was expecting %s", actual.Count, expected.Count))
+	}
+	if !compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) {
+		mismatches = append(mismatches, fmt.Sprintf("sum is %s while was expecting %s", actual.Sum, expected.Sum))
 	}
 
+	return append(mismatches, compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)...)
+}
+
+// compareHistogramBuckets returns the list of the mismatching buckets between actual and expected,
+// comparing values within the given tolerance. The returned slice is empty if all buckets match.
+func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) []string {
+	if len(actual) != len(expected) {
+		return []string{fmt.Sprintf("has %d buckets while was expecting %d", len(actual), len(expected))}
+	}
+
+	var mismatches []string
 	for i, bucket := range actual {
-		if !compareHistogramBucketValues(bucket, expected[i], tolerance) {
-			return false
+		if mismatch := compareHistogramBucketValues(bucket, expected[i], tolerance); mismatch != "" {
+			mismatches = append(mismatches, fmt.Sprintf("bucket %d %s", i, mismatch))
 		}
 	}
-	return true
+	return mismatches
 }
 
-func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) bool {
-	// the precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count
-	return actual.Boundaries == expected.Boundaries && compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
+// compareHistogramBucketValues returns a description of the mismatch between actual and expected,
+// or an empty string if the two buckets match within the given tolerance.
+func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) string {
+	if actual.Boundaries != expected.Boundaries {
+		return fmt.Sprintf("has boundaries %d while was expecting %d", actual.Boundaries, expected.Boundaries)
+	}
+	// The precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count.
+	if !compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) {
+		return fmt.Sprintf("has lower bound %s while was expecting %s", actual.Lower, expected.Lower)
+	}
+	if !compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) {
+		return fmt.Sprintf("has upper bound %s while was expecting %s", actual.Upper, expected.Upper)
+	}
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		return fmt.Sprintf("(lower %s, upper %s) has count %s while was expecting %s", actual.Lower, actual.Upper, actual.Count, expected.Count)
+	}
+	return ""
 }
 
 func minTime(first, second time.Time) time.Time {
