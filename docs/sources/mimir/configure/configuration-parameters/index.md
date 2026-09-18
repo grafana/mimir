@@ -2326,8 +2326,9 @@ ring:
 The `frontend` block configures the query-frontend.
 
 ```yaml
-# Log queries that are slower than the specified duration. Set to 0 to disable.
-# Set to < 0 to enable on all queries.
+# (deprecated) (use query-frontend.query-stats-enabled instead) Log queries that
+# are slower than the specified duration. Set to 0 to disable. Set to < 0 to
+# enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
 
