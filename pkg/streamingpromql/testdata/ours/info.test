@@ -270,3 +270,18 @@ load 1m
 eval range from 0m to 2m step 1m info(metric)
   metric 1 2 3
   metric{job="1", data="one"} 4 5 6
+
+clear
+
+# The target_info pair's signature {instance="a", job="1"} matches neither inner series (one has
+# only job, the other only instance), so it must not be treated as a duplicate, matching Prometheus.
+# Both inner series stay un-enriched.
+load 1m
+  metric{job="1"} 1 2 3
+  metric{instance="a"} 4 5 6
+  target_info{job="1", instance="a", x="p"} 1 1 1
+  target_info{job="1", instance="a", x="q"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric)
+  metric{job="1"} 1 2 3
+  metric{instance="a"} 4 5 6
