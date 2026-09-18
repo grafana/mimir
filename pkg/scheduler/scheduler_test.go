@@ -312,7 +312,7 @@ func TestSchedulerLogsRejectedSubRequestWithRootQueryID(t *testing.T) {
 
 	testCases := map[string]struct {
 		rootQueryID string
-		// expectRootQueryIDLogged is false when the frontend reported no parent query, in which
+		// expectRootQueryIDLogged is false when the frontend reported no root query ID, in which
 		// case the field must be absent rather than reported as an empty value.
 		expectRootQueryIDLogged bool
 	}{

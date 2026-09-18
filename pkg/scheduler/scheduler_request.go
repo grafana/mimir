@@ -35,7 +35,7 @@ type SchedulerRequest struct {
 	UserID       string
 	QueryID      uint64
 	// RootQueryID identifies the user query this request is a sub-request of, as reported by the
-	// frontend. It is unique within a single frontend only. Zero means unknown.
+	// frontend. It is a random UUID, so it is globally unique. Empty means unknown.
 	RootQueryID               string
 	HttpRequest               *httpgrpc.HTTPRequest
 	ProtobufRequest           *schedulerpb.ProtobufRequest
@@ -67,8 +67,7 @@ func (sr *SchedulerRequest) LogFields() []any {
 }
 
 // requestLogFields returns the fields that identify a request, for inclusion in request-scoped log
-// lines. rootQueryID is omitted when it is zero, so that an unknown parent is not reported as
-// query 0.
+// lines. rootQueryID is omitted when it is empty.
 func requestLogFields(userID string, queryID uint64, rootQueryID string) []any {
 	return rootqueryid.AppendLogFields([]any{"user", userID, "query_id", queryID}, rootQueryID)
 }

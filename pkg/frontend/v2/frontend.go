@@ -168,7 +168,7 @@ type frontendRequest struct {
 	queryID uint64
 
 	// rootQueryID identifies the user query this request is a sub-request of. Many sub-requests
-	// of one user query share it, each with its own queryID. It is zero when the request did not
+	// of one user query share it, each with its own queryID. It is empty when the request did not
 	// come through the query-frontend's HTTP transport handler.
 	rootQueryID            string
 	userID                 string

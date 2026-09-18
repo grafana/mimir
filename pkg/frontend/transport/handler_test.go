@@ -1171,7 +1171,7 @@ func TestHandler_RootQueryID(t *testing.T) {
 				require.NotEmpty(t, rootQueryID)
 				distinctRootQueryIDs[rootQueryID] = struct{}{}
 			}
-			require.Len(t, distinctRootQueryIDs, queries, "each query should get a distinct parent query ID")
+			require.Len(t, distinctRootQueryIDs, queries, "each query should get a distinct root query ID")
 
 			if !testCase.expectStatsLogLine {
 				require.Empty(t, logger.logMessages)

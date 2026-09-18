@@ -25,7 +25,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestIDFromContext(t *testing.T) {
-	t.Run("round trips a parent query ID", func(t *testing.T) {
+	t.Run("round trips a root query ID", func(t *testing.T) {
 		ctx := ContextWithID(t.Context(), rootQueryID)
 		require.Equal(t, rootQueryID, IDFromContext(ctx))
 		require.Equal(t,
@@ -38,7 +38,7 @@ func TestIDFromContext(t *testing.T) {
 		require.Equal(t,
 			[]any{"existing", 1},
 			AppendLogFields([]any{"existing", 1}, IDFromContext(t.Context())),
-			"an unknown parent must not read as a real query")
+			"an unknown root must not read as a real query")
 	})
 
 	t.Run("treats an explicitly empty ID as unknown", func(t *testing.T) {
