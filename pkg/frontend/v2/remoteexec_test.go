@@ -2574,9 +2574,8 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 
 	for name, testCase := range map[string]struct {
 		expr string
-		// instant selects an instant query, which subquery spin-off requires. Splitting still
-		// applies beneath each spun-off subquery's evaluation root, so an instant query exercises
-		// splitting too.
+		// instant selects an instant query. Splitting applies per evaluation root, so an instant
+		// query with a spun-off subquery exercises splitting too.
 		instant        bool
 		splitEnabled   bool
 		spinOffEnabled bool
@@ -2707,11 +2706,11 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 	}
 
 	// Guards against splitting being configured but inert: if the split pass stopped taking effect,
-	// both range cases would produce the same legs and still agree on the ID.
+	// the paired cases would produce the same legs and still agree on the ID.
 	require.Greater(t, subRequestCounts["sharding and splitting"], subRequestCounts["sharding only"],
 		"splitting should add sub-requests on top of sharding (got %v)", subRequestCounts)
 	require.Greater(t, subRequestCounts["sharding, subquery spin-off and splitting"], subRequestCounts["sharding and subquery spin-off"],
-		"splitting should add sub-requests beneath a spun-off subquery too (got %v)", subRequestCounts)
+		"splitting should add sub-requests on top of spin-off and sharding (got %v)", subRequestCounts)
 }
 
 type mockSubquerySpinOffLimits struct{}
