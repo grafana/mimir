@@ -2574,8 +2574,9 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 
 	for name, testCase := range map[string]struct {
 		expr string
-		// instant selects an instant query. Splitting applies to range queries, and subquery
-		// spin-off applies to instant queries, so no single query exercises both.
+		// instant selects an instant query, which subquery spin-off requires. Splitting still
+		// applies beneath each spun-off subquery's evaluation root, so an instant query exercises
+		// splitting too.
 		instant        bool
 		splitEnabled   bool
 		spinOffEnabled bool
@@ -2590,9 +2591,18 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 		"sharding and subquery spin-off": {
 			// The spun-off subquery contains a shardable aggregation, so spin-off and sharding both
 			// contribute legs.
-			expr:           "max_over_time(sum(rate(metric_a[1m]))[2h:1m])",
+			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
 			instant:        true,
 			spinOffEnabled: true,
+		},
+		"sharding, subquery spin-off and splitting": {
+			// Splitting applies beneath each spun-off subquery's evaluation root, so an instant query
+			// does exercise splitting. The 48h subquery range spans more than the split interval, so
+			// this adds legs on top of spin-off and sharding.
+			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
+			instant:        true,
+			spinOffEnabled: true,
+			splitEnabled:   true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -2700,6 +2710,8 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 	// both range cases would produce the same legs and still agree on the ID.
 	require.Greater(t, subRequestCounts["sharding and splitting"], subRequestCounts["sharding only"],
 		"splitting should add sub-requests on top of sharding (got %v)", subRequestCounts)
+	require.Greater(t, subRequestCounts["sharding, subquery spin-off and splitting"], subRequestCounts["sharding and subquery spin-off"],
+		"splitting should add sub-requests beneath a spun-off subquery too (got %v)", subRequestCounts)
 }
 
 type mockSubquerySpinOffLimits struct{}
