@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -95,7 +96,19 @@ func MaterializeVectorSelector(_ context.Context, v *VectorSelector, _ *planning
 		Subsets:                  subsets,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
+	// Only collect per-node stats if we've been asked for them (an ID of 0 means "disabled").
+	var planningNodeId int64
+	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
+		planningNodeId = v.GetNodeId()
+	}
+
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(
+		selector,
+		params.MemoryConsumptionTracker,
+		v.ReturnSampleTimestamps,
+		v.ReturnSampleTimestampsPreserveHistograms,
+		planningNodeId,
+	)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {

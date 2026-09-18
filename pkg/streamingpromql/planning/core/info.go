@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -162,11 +163,18 @@ func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *pl
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
+	// Only collect per-node stats if we've been asked for them (an ID of 0 means "disabled").
+	var planningNodeId int64
+	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
+		planningNodeId = t.GetNodeId()
+	}
+
 	vectorSelector := selectors.NewInstantVectorSelector(
 		selector,
 		params.MemoryConsumptionTracker,
 		false, // returnSampleTimestamps
 		true,  // returnSampleTimestampsPreserveHistograms
+		planningNodeId,
 	)
 
 	return planning.NewSingleUseOperatorFactory(&functions.DataLabelSelector{InstantVectorSelector: vectorSelector}), nil
