@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -229,9 +230,13 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	//
 	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
 	//   was not discovered while iterating the bucket since all its files were already deleted.
-	if m, seen := f.cached[id]; seen {
+	f.mtx.Lock()
+	cachedMeta, seen := f.cached[id]
+	f.mtx.Unlock()
+
+	if seen {
 		f.metrics.CachedLoads.Inc()
-		return m, nil
+		return cachedMeta, nil
 	}
 
 	// Best effort load from local dir.
@@ -486,8 +491,9 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Syncs.Inc()
 	f.metrics.ResetTx()
 
-	// Run this in thread safe run group.
-	v, err, _ := f.g.Do("", func() (i interface{}, err error) {
+	// Run this in thread safe run group, keyed by the arguments the result depends on so that
+	// concurrent calls only share a result when they asked for the same thing.
+	v, err, _ := f.g.Do(strconv.FormatBool(excludeMarkedForDeletion), func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
 		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
