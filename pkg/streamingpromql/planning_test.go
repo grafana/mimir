@@ -1746,7 +1746,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, lookbackDelta, testCase.enableDelayedNameRemoval, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, lookbackDelta, testCase.enableDelayedNameRemoval, nil, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
@@ -1791,7 +1791,7 @@ func TestPlanEncoding_CacheDisabledPropagatesToQuerier(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
-	plan, err := planner.NewQueryPlan(ctx, "some_metric", types.NewInstantQueryTimeRange(timestamp.Time(1000)), 5*time.Minute, false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, "some_metric", types.NewInstantQueryTimeRange(timestamp.Time(1000)), 5*time.Minute, false, nil, NoopPlanningObserver{})
 	require.NoError(t, err)
 	require.True(t, plan.Parameters.CacheDisabled)
 
@@ -1815,7 +1815,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 
 	expr := `topk(5, foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, nil, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	aggregationNode := plan.Root.(*core.AggregateExpression)
@@ -1837,7 +1837,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 	expr := `sum(foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, nil, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	encoded, nodes, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions(), plan.Root, plan.Root)
@@ -2005,7 +2005,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -2041,7 +2041,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
-			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), DefaultLookbackDelta, false, nil, NoopPlanningObserver{})
 			require.NoError(b, err)
 
 			b.Run("encode", func(b *testing.B) {
@@ -2095,7 +2095,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, DefaultLookbackDelta, false, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, DefaultLookbackDelta, false, nil, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{
@@ -2428,7 +2428,7 @@ func TestInfoQueriedTimeRange(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, queryTimeRange, lookbackDelta, false, NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(context.Background(), tc.expr, queryTimeRange, lookbackDelta, false, nil, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			queried, err := plan.Root.QueriedTimeRange(queryTimeRange, lookbackDelta)
@@ -2450,7 +2450,7 @@ func TestPlanningAssignsNodeIds(t *testing.T) {
 
 	expr := `foo + foo`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), DefaultLookbackDelta, false, nil, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	require.Equal(t, int64(1), plan.Root.GetNodeId())

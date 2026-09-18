@@ -26,7 +26,7 @@ func TestEvaluationRootNode_VectorResult_Planning(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, `__vector_evaluation_root__(sum(foo))`, types.NewInstantQueryTimeRange(time.Now()), streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, `__vector_evaluation_root__(sum(foo))`, types.NewInstantQueryTimeRange(time.Now()), streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	root, ok := plan.Root.(*core.EvaluationRoot)
@@ -40,7 +40,7 @@ func TestEvaluationRootNode_ScalarResult_Planning(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, `__scalar_evaluation_root__(scalar(sum(foo)))`, types.NewInstantQueryTimeRange(time.Now()), streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, `__scalar_evaluation_root__(scalar(sum(foo)))`, types.NewInstantQueryTimeRange(time.Now()), streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	root, ok := plan.Root.(*core.EvaluationRoot)

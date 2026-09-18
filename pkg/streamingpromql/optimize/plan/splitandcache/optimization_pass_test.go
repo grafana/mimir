@@ -654,7 +654,7 @@ func runOptimizationPass(
 		planner.RegisterQueryPlanOptimizationPass(optimizationPass)
 	}
 
-	p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	return p.String()

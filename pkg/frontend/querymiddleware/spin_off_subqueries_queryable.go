@@ -168,7 +168,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			} else {
 				rangeEnd = alignedEnd
 			}
-			newRangeRequest := NewPrometheusRangeQueryRequest(rangePath, q.req.GetHeaders(), rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints(), q.req.GetStats())
+			newRangeRequest := NewPrometheusRangeQueryRequest(rangePath, q.req.GetHeaders(), rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints(), q.req.GetStats(), nil)
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == alignedEnd {
 				break

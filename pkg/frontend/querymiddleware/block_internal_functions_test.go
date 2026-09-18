@@ -55,7 +55,7 @@ func createTestRequest(t *testing.T, qs string) *PrometheusInstantQueryRequest {
 	expr, err := promqlext.NewPromQLParser().ParseExpr(qs)
 	require.NoError(t, err)
 
-	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, requestoptions.Options{}, nil, "")
+	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
 }
 
 func TestBlockInternalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
@@ -67,7 +67,7 @@ func TestBlockInternalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *
 	handler := middleware.Wrap(inner)
 
 	// Create a request with a nil queryExpr to simulate a failed parse.
-	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "")
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, requestoptions.Options{}, nil, "", nil)
 
 	require.NotPanics(t, func() {
 		resp, err := handler.Do(context.Background(), req)
