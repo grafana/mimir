@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -38,6 +39,8 @@ func TestNodeIdentifierOptimizationPass_Apply(t *testing.T) {
 	for name, testCase := range testCases {
 		timeRange := types.NewInstantQueryTimeRange(time.Now())
 		observer := streamingpromql.NoopPlanningObserver{}
+		options := requestoptions.Options{Explain: []requestoptions.ExplainValue{requestoptions.ExplainValueCost}}
+		ctx := requestoptions.ContextWithOptions(t.Context(), options)
 
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -45,7 +48,7 @@ func TestNodeIdentifierOptimizationPass_Apply(t *testing.T) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNodeIdentifierOptimizationPass())
 
 		t.Run(name, func(t *testing.T) {
-			p, err := planner.NewQueryPlan(t.Context(), testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 			verifyDepthFirstTree(t, 1, p.Root)
 		})

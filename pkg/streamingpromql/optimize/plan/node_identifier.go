@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 // NodeIdentifierOptimizationPass assigns a unique ID to each node in a query plan
@@ -22,9 +23,14 @@ func (n *NodeIdentifierOptimizationPass) Name() string {
 	return "node identifier"
 }
 
-func (n *NodeIdentifierOptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	id := int64(1)
+func (n *NodeIdentifierOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	// Only add an ID to each node if we have been asked to generate extra cost information.
+	options := requestoptions.OptionsFromContext(ctx)
+	if len(options.Explain) == 0 {
+		return plan, nil
+	}
 
+	id := int64(1)
 	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
 		if node.GetPlanningId() == 0 {
 			node.SetPlanningId(id)

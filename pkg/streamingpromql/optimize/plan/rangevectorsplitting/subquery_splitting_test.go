@@ -46,7 +46,7 @@ func TestQuerySplitting_SubqueryNestedAnnotationsAreAttributedPerBlock(t *testin
 		t.Run(name, func(t *testing.T) {
 			expectedEntries := len(expectWarning)
 
-			testCache, mimirEngine, _ := setupEngineAndCache(t)
+			testCache, mimirEngine := setupEngineAndCache(t)
 
 			promStorage := promqltest.LoadedStorage(t, mixedTypesLoad)
 			t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
@@ -353,7 +353,7 @@ func TestQuerySplitting_ConflictingDropNameAcrossSplits(t *testing.T) {
 			limits.EnableDelayedNameRemoval = true
 			opts.Limits = limits
 
-			_, splitEngine, _ := setupEngineAndCacheWithOpts(t, opts)
+			_, splitEngine := setupEngineAndCacheWithOpts(t, opts)
 
 			storage := promqltest.LoadedStorage(t, `
 				load 1h
