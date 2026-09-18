@@ -23,6 +23,10 @@ var (
 type ProduceResult struct {
 	resp *kmsg.ProduceResponse
 	err  error
+
+	// compressionTypes is the compression type each partition's batch was encoded
+	// with.
+	compressionTypes map[topicPartition]uint8
 }
 
 // succeeded reports whether ProduceResult is fully-successful.
