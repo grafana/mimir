@@ -126,6 +126,31 @@ func (c *Client) GetRawDashboardByUID(ctx context.Context, uid string) ([]byte, 
 	return envelope.Board, nil
 }
 
+// GetLibraryElementByUID returns the panel model for a Grafana library element with the given UID.
+func (c *Client) GetLibraryElementByUID(ctx context.Context, uid string) (Panel, error) {
+	raw, code, err := c.get(ctx, "api/library-elements/"+uid, nil)
+	if err != nil {
+		return Panel{}, err
+	}
+	if code != http.StatusOK {
+		return Panel{}, fmt.Errorf("HTTP error %d: returns %s", code, raw)
+	}
+	var envelope struct {
+		Result struct {
+			Model json.RawMessage `json:"model"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return Panel{}, fmt.Errorf("unmarshal library element: %w", err)
+	}
+
+	var panel Panel
+	if err := json.Unmarshal(envelope.Result.Model, &panel); err != nil {
+		return Panel{}, fmt.Errorf("unmarshal library element model: %w", err)
+	}
+	return panel, nil
+}
+
 func (c *Client) get(ctx context.Context, query string, params url.Values) ([]byte, int, error) {
 	u, err := url.Parse(c.baseURL)
 	if err != nil {
