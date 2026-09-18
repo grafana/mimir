@@ -153,11 +153,11 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 	}
 
-	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
-		return nil, err
-	}
 	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
 	if err != nil {
+		return nil, err
+	}
+	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries); err != nil {
 		return nil, err
 	}
 	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
@@ -277,11 +277,26 @@ func (f *InfoFunction) signature(lset labels.Labels) []byte {
 	return f.sigLb.Labels().Bytes(f.sigBuf)
 }
 
-func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
+func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) error {
 	// Initialize dedicated buffer and scratch builder for signature,
 	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
 	f.sigLb = labels.NewScratchBuilder(0)
+
+	// Signatures of inner series that can be enriched: not ignored, with at least one identifying
+	// label. An info series whose signature is absent here enriches nothing, so it is dropped below,
+	// matching Prometheus (which fetches info series per inner-series presence pattern). This avoids
+	// both enriching label-less series and spurious "duplicate series for info metric" errors from
+	// over-fetched cross-signature series.
+	enrichableSignatures := make(map[string]struct{}, len(innerMetadata))
+	for i, metadata := range innerMetadata {
+		if _, ignore := ignoreSeries[i]; ignore {
+			continue
+		}
+		if hasAnyIdentifyingLabel(metadata.Labels) {
+			enrichableSignatures[string(f.signature(metadata.Labels))] = struct{}{}
+		}
+	}
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))
 	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
@@ -298,11 +313,9 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			return err
 		}
 
-		// Skip info series with no identifying labels: they could only enrich an inner series that
-		// also has none, which Prometheus never enriches (it builds no matcher set for the empty
-		// presence pattern). The wider "mixed" fetch matcher can select them, so drop them to match.
-		// Samples were read above to keep the info series stream aligned with infoMetadata.
-		if !hasAnyIdentifyingLabel(metadata.Labels) {
+		// Drop info series that match no enrichable inner series. Samples were read above to keep
+		// the info series stream aligned with infoMetadata.
+		if _, ok := enrichableSignatures[string(sig)]; !ok {
 			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 			continue
 		}
