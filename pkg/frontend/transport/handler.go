@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 const (
@@ -282,14 +283,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var queryDetails *querydetails.QueryDetails
 
+	// Allocate a unique root query id which can be referenced for all sub-requests which
+	// are related to this query. This root_query_id will be logged on sub-requests running on the
+	// query-scheduler and querier components.
+	ctx := rootqueryid.ContextWithID(r.Context(), rootqueryid.New())
+
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
 	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
-		var ctx context.Context
-		queryDetails, ctx = querydetails.ContextWithEmptyDetails(r.Context())
-		r = r.WithContext(ctx)
+		queryDetails, ctx = querydetails.ContextWithEmptyDetails(ctx)
 	}
+
+	r = r.WithContext(ctx)
 
 	var params url.Values
 	var err error
@@ -349,7 +355,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, rootqueryid.IDFromContext(r.Context()), queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -383,6 +389,8 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"time_taken", queryResponseTime.String(),
 	}
+
+	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
 
 	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
@@ -463,6 +471,8 @@ func (f *Handler) reportQueryStats(
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,
 	}
+
+	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
@@ -698,7 +708,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryD
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querydetails.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, rootQueryID string, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -727,6 +737,11 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		// streaming, so the encode time is not available until after the headers have been sent.
 		// We only insert this if we are in a non-streaming response.
 		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	if rootQueryID != "" {
+		// Reported so that a caller can quote this value when it asks about a query it ran.
+		statsResponse = append(statsResponse, statsValue(rootqueryid.FieldName, rootQueryID))
 	}
 
 	return statsResponse

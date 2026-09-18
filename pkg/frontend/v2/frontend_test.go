@@ -60,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2510,4 +2511,59 @@ func TestFrontend_MaxInflightDispatchedMetrics_NoLeakWhenCallerCancels(t *testin
 	)), maxInflightRequestsMetric))
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
 		maxInflightRequestsMetric, maxInflightRequestAgeMetric))
+}
+func TestFrontendCreateNewRequestRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	t.Run("root query ID in context", func(t *testing.T) {
+		f, _ := setupFrontend(t, nil, nil)
+
+		ctx := rootqueryid.ContextWithID(user.InjectOrgID(t.Context(), "test"), rootQueryID)
+
+		freq, _, cancel, err := f.createNewRequest(ctx)
+		require.NoError(t, err)
+		defer cancel(errExecutingQueryRoundTripFinished)
+
+		require.Equal(t, rootQueryID, freq.rootQueryID)
+	})
+
+	t.Run("no root query ID in context", func(t *testing.T) {
+		f, _ := setupFrontend(t, nil, nil)
+
+		// Requests that don't come through the transport handler carry no root query ID, which in
+		// practice means query stats are disabled. The root query ID stays empty, which downstream
+		// treats as unknown. In particular it must not fall back to the sub-request query ID.
+		freq, _, cancel, err := f.createNewRequest(user.InjectOrgID(t.Context(), "test"))
+		require.NoError(t, err)
+		defer cancel(errExecutingQueryRoundTripFinished)
+
+		require.Zero(t, freq.rootQueryID)
+		require.NotEqual(t, freq.queryID, freq.rootQueryID)
+	})
+}
+
+func TestFrontendToSchedulerEnqueueRequestRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	adapter := &frontendToSchedulerAdapter{}
+
+	for name, expectedRootQueryID := range map[string]string{
+		"root query ID known":   rootQueryID,
+		"root query ID unknown": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			freq := &frontendRequest{
+				queryID:     117,
+				rootQueryID: expectedRootQueryID,
+				userID:      "test",
+				ctx:         t.Context(),
+				httpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+			}
+
+			msg, err := adapter.frontendToSchedulerEnqueueRequest(freq, "frontend-12345")
+			require.NoError(t, err)
+			require.Equal(t, uint64(117), msg.QueryID)
+			require.Equal(t, expectedRootQueryID, msg.RootQueryID)
+		})
+	}
 }

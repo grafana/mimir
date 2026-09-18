@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -161,7 +162,15 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID                uint64
+	// queryID identifies this one sub-request, and is the key its response is routed back on:
+	// requestsInProgress maps it to this struct, and the query-scheduler keys request identity
+	// on {frontendAddr, queryID}. It must be unique per sub-request.
+	queryID uint64
+
+	// rootQueryID identifies the user query this request is a sub-request of. Many sub-requests
+	// of one user query share it, each with its own queryID. It is empty when the request did not
+	// come through the query-frontend's HTTP transport handler.
+	rootQueryID            string
 	userID                 string
 	statsEnabled           bool
 	touchedQueryComponents []string
@@ -301,6 +310,7 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
+		rootQueryID:  rootqueryid.IDFromContext(ctx),
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
