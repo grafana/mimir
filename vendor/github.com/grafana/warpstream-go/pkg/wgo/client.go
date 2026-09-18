@@ -178,16 +178,19 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 	// Seed the record's parent context (like franz-go).
 	ensureRecordContext(record, ctx)
 
-	// Fire the buffered hook (which may inject a trace header) before any rejection,
-	// and wrap the promise so the unbuffered hook fires just before the caller sees
-	// the outcome on every path.
+	// Fire the buffered hook (which may inject a trace header) before any rejection.
 	if c.produceHooks.enabled() {
 		c.produceHooks.fireBuffered(record)
-		userPromise := promise
-		promise = func(r *kgo.Record, err error) {
-			c.produceHooks.fireUnbuffered(r, err)
-			userPromise(r, err)
-		}
+	}
+
+	// Wrap the promise once: every path below invokes it, so this stamps the
+	// produce-result fields and fires the unbuffered hook on every completion.
+	// Order matches franz-go: set fields, then unbuffered hook, then user promise.
+	userPromise := promise
+	promise = func(r *kgo.Record, err error) {
+		setProducedRecordFields(r)
+		c.produceHooks.fireUnbuffered(r, err)
+		userPromise(r, err)
 	}
 
 	c.metrics.produceRecordsTotal.Inc()
@@ -199,10 +202,12 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 	}
 
 	routed, err := c.routeRecord(record, func(res ProduceResult) {
-		// Post-dispatch failure counts on any non-nil error; the pre-dispatch
-		// rejections are counted by produceRecordsRejectedTotal.
 		resErr := recordErrFromResult(res, record.Topic, record.Partition)
-		if resErr != nil {
+		if resErr == nil {
+			record.Attrs = producedRecordAttrs(res, record.Topic, record.Partition)
+		} else {
+			// Post-dispatch failure counts on any non-nil error; the pre-dispatch
+			// rejections are counted by produceRecordsRejectedTotal.
 			c.metrics.produceRecordsFailedTotal.Inc()
 		}
 		promise(record, resErr)
@@ -247,17 +252,20 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 
 	results := make(kgo.ProduceResults, len(records))
 
-	// Fire the unbuffered hook for each record from this goroutine, in input order,
-	// just before returning. Every return path below fully populates results first
-	// (wg.Wait blocks until the async completions have run), so the terminal error
-	// is final here. Mirrors franz-go's "unbuffered hook, then the record's outcome".
-	if hasProduceHooks {
-		defer func() {
-			for i, r := range records {
+	// Set the produce-result fields on every record and fire the unbuffered hook
+	// (when set) from this goroutine, in input order, just before returning.
+	//
+	// Every return path below fully populates results first, so there's no race
+	// accessing the "results" slice, and the error set for each record is a terminal
+	// one.
+	defer func() {
+		for i, r := range records {
+			setProducedRecordFields(r)
+			if hasProduceHooks {
 				c.produceHooks.fireUnbuffered(r, results[i].Err)
 			}
-		}()
-	}
+		}
+	}()
 
 	var (
 		okRecords []*kgo.Record
@@ -284,7 +292,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	}
 
 	routed, err := c.routeRecords(okRecords, func(groupRecords []*kgo.Record) func(ProduceResult) {
-		return perPartitionDone(groupRecords[0].Topic, groupRecords[0].Partition, func(err error) {
+		return perPartitionDone(groupRecords[0].Topic, groupRecords[0].Partition, groupRecords, func(err error) {
 			if err != nil {
 				// Post-dispatch failure, resolved uniformly for the whole
 				// partition group; pre-dispatch rejections never reach here.
@@ -340,7 +348,22 @@ func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, partiti
 
 	flushCtx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
 	defer cancel()
-	return c.hedger.ProduceSync(flushCtx, nodeID, encoded)
+	res := c.hedger.ProduceSync(flushCtx, nodeID, encoded)
+
+	// Attach each partition's compression type so the completion path can set
+	// Record.Attrs.
+	//
+	// Record.Attrs are NOT here to avoid a race condition: a ctx-cancel fires
+	// the Produce promise from another goroutine while this flush goroutine could
+	// still run, so writing the record here would race.
+	if len(encoded) > 0 {
+		res.compressionTypes = make(map[topicPartition]uint8, len(encoded))
+		for _, e := range encoded {
+			res.compressionTypes[topicPartition{topic: e.topic, partition: e.partition}] = e.compressionType
+		}
+	}
+
+	return res
 }
 
 // BufferedProduceBytes returns the bytes of all records awaiting ack.
@@ -509,10 +532,23 @@ func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResu
 }
 
 // perPartitionDone adapts a batch-wide ProduceResult callback to a
-// per-partition outcome for one (topic, partition).
-func perPartitionDone(topic string, partition int32, user func(error)) func(ProduceResult) {
+// per-partition outcome for one (topic, partition). On success it sets Attrs on
+// records.
+func perPartitionDone(topic string, partition int32, records []*kgo.Record, user func(error)) func(ProduceResult) {
 	return func(res ProduceResult) {
-		user(recordErrFromResult(res, topic, partition))
+		err := recordErrFromResult(res, topic, partition)
+		if err == nil {
+			// We set one compression type for the whole group. A group split across
+			// batches (a single call's records for one partition exceeding
+			// BatchMaxBytes) may span batches that compressed differently; that
+			// mismatch is an accepted difference compared to franz-go (see README
+			// "Known differences").
+			attrs := producedRecordAttrs(res, topic, partition)
+			for _, r := range records {
+				r.Attrs = attrs
+			}
+		}
+		user(err)
 	}
 }
 
@@ -524,7 +560,12 @@ func recordErrFromResult(res ProduceResult, topic string, partition int32) error
 	// a partition that actually succeeded must report success even
 	// when res.err says some peer partition failed.
 	if res.resp == nil {
-		return res.err
+		if res.err != nil {
+			return res.err
+		}
+		// No response and no error is not a success; treat it as the empty
+		// result the rest of the package rejects (see ProduceResult.error).
+		return errEmptyProduceResult
 	}
 	err := partitionErrorFromResp(res.resp, topic, partition)
 	// A retriable kerr surfaced here means the Hedger exhausted its
