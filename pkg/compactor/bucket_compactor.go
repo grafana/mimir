@@ -469,27 +469,39 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	// Building sparse-index-headers is best-effort, we do not skip uploading a
-	// compacted block if there's an error affecting sparse-index-headers.
+	// Building sparse-index-headers is required: it is expensive to build a sparse-index-header
+	// at block load time, so every block we upload must already have one. A failure here fails
+	// the compaction job.
 	//
 	// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
 	// construct sparse-index-headers without making requests to object storage.
 	fsbkt, err := filesystem.NewBucket(subDir)
 	if err != nil {
 		c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
-		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-	} else {
-		// instrument filesystem.Bucket to objstore.InstrumentedBucket
-		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
-		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
-			blockToUpload := blocksToUpload[idx]
-			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
-			if err != nil {
-				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
-				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
-			}
-			return nil
-		})
+		return false, nil, fmt.Errorf("failed to create filesystem bucket for sparse index-header generation: %w", err)
+	}
+
+	// instrument filesystem.Bucket to objstore.InstrumentedBucket
+	fsInstrBkt := objstore.WithNoopInstr(fsbkt)
+	if err := concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
+		if err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig); err != nil {
+			c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
+			level.Warn(jobLogger).Log("msg", "failed to create sparse index header", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			return fmt.Errorf("failed to build sparse index-header for block %s: %w", blockToUpload.ulid, err)
+		}
+
+		// Verify the sparse-index-header landed where block.Upload will look for it, so a
+		// silently absent file fails the job here rather than being omitted from the upload.
+		sparseHeaderPath := filepath.Join(subDir, blockToUpload.ulid.String(), block.SparseIndexHeaderFilename)
+		if _, err := os.Stat(sparseHeaderPath); err != nil {
+			c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
+			level.Warn(jobLogger).Log("msg", "sparse index header missing after build", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			return fmt.Errorf("sparse index-header missing after build for block %s: %w", blockToUpload.ulid, err)
+		}
+		return nil
+	}); err != nil {
+		return false, nil, err
 	}
 
 	// upload all blocks
