@@ -19,6 +19,7 @@ import (
 
 //node:generate
 type MatrixSelector struct {
+	NodeIdentifier
 	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 

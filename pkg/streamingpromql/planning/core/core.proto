@@ -246,3 +246,7 @@ message DataLabelSelectorDetails {
   repeated LabelMatcher matchers = 1 [(gogoproto.nullable) = false];
   PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
 }
+
+message NodeIdentifier {
+  int64 planningId = 1;
+}

@@ -49,6 +49,9 @@ message EncodedNode {
   string type = 4;
   string description = 5;
   repeated string childrenLabels = 6;
+
+  // Optional ID for this node unique within the plan
+  int64 planningId = 7;
 }
 
 // FIXME: should we just use a generic integer for this? Adding this enum here seems to fly in the face of the

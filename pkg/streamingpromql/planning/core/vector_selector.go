@@ -19,6 +19,7 @@ import (
 
 //node:generate
 type VectorSelector struct {
+	NodeIdentifier
 	*VectorSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
