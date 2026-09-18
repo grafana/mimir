@@ -141,20 +141,6 @@ jobs:
           
           echo "Dependencies updated successfully"
 
-      # Re-sync our copies of the upstream PromQL test cases with the newly-vendored ones, preserving
-      # the cases we have disabled. This keeps TestOurUpstreamTestCasesAreInSyncWithUpstream passing
-      # for the common case where upstream only added or changed test cases. Cases that Mimir's engine
-      # cannot run are disabled in a later step. This is committed together with the vendor bump.
-      - name: Re-sync upstream PromQL test cases
-        env:
-          MIMIR_SYNC_REPORT: ${{ runner.temp }}/sync-report.md
-          MIMIR_SYNC_BASELINE_DIR: ${{ runner.temp }}/upstream-baseline
-        run: |
-          # Snapshot the pre-sync copies so the disabling step can tell whether a failing case is new
-          # from upstream or a regression in a case that was already present.
-          cp -a pkg/streamingpromql/testdata/upstream "$MIMIR_SYNC_BASELINE_DIR"
-          cd tools/sync-upstream-promql-tests && go run .
-
       - name: Create Pull Request
         id: create_pull_request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -172,92 +158,11 @@ jobs:
             - **Previous commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.old_hash) }}
             - **New commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.new_hash) }}
             - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-commit-info.outputs.old_hash, steps.get-commit-info.outputs.new_hash) }}
-
-            > This PR may auto-disable upstream PromQL test cases that Mimir's engine cannot run (see the section added below, if any). Please review those before approving, as a disabled case can hide a real regression. Approval and merge are manual by design.
-          commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}` and re-sync upstream PromQL test cases
+          commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
           branch: bot/${{ steps.branch-names.outputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ steps.branch-names.outputs.mimir_branch }}
           labels: vendored-mimir-prometheus-update
           delete-branch: true
-
-      # Re-checkout the workspace at the just-created PR branch so the working tree exactly matches
-      # commit 1 (vendor bump + re-sync). This makes the following disabling step independent of how
-      # create-pull-request leaves the local checkout.
-      - name: Check out the PR branch
-        if: steps.create_pull_request.outputs.pull-request-operation != 'none'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          ref: ${{ steps.create_pull_request.outputs.pull-request-branch }}
-          token: ${{ steps.app-token.outputs.token }}
-          fetch-depth: 0
-          set-safe-directory: '*'
-          persist-credentials: false
-
-      # Comment out any upstream case Mimir's engine cannot run (unsupported feature or divergent
-      # result). The tool runs TestUpstreamTestCases once, reads which cases failed, and disables them.
-      - name: Disable failing upstream PromQL test cases
-        if: steps.create_pull_request.outputs.pull-request-operation != 'none'
-        env:
-          MIMIR_SYNC_REPORT: ${{ runner.temp }}/sync-report.md
-          MIMIR_SYNC_DISABLED: ${{ runner.temp }}/disabled-cases.md
-          MIMIR_SYNC_BASELINE_DIR: ${{ runner.temp }}/upstream-baseline
-        run: |
-          cd tools/disable-failing-upstream-promql-tests && go run .
-
-      # Append the disabled cases as commit 2, signed and verified via the GitHub API (a plain git
-      # push would be unverified and blocked by branch protection).
-      - name: Commit disabled test cases
-        if: steps.create_pull_request.outputs.pull-request-operation != 'none'
-        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
-        with:
-          commit_message: Disable upstream PromQL test cases unsupported by Mimir's engine
-          repo: ${{ github.repository }}
-          branch: ${{ steps.create_pull_request.outputs.pull-request-branch }}
-          file_pattern: pkg/streamingpromql/testdata/upstream/*
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      # Surface the new files / merge conflicts / auto-disabled cases in the PR description, so the
-      # human reviewer sees exactly what was changed automatically before approving.
-      - name: Add sync report to PR description
-        if: steps.create_pull_request.outputs.pull-request-operation != 'none'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.create_pull_request.outputs.pull-request-number }}
-          REPORT: ${{ runner.temp }}/sync-report.md
-        run: |
-          set -euo pipefail
-          if [ ! -s "$REPORT" ]; then
-            echo "No sync report produced; leaving PR description unchanged."
-            exit 0
-          fi
-          BODY=$(gh pr view "$PR_NUMBER" --json body -q .body)
-          printf '%s\n\n## Automated test-case sync\n\n%s\n' "$BODY" "$(cat "$REPORT")" | gh pr edit "$PR_NUMBER" --body-file -
-
-      # When new cases were auto-disabled, notify the streaming engine owners on the PR (the same
-      # people the normal test-failure notification tags), since the disabling means CI stays green
-      # and would otherwise not alert them.
-      - name: Notify owners of auto-disabled test cases
-        if: steps.create_pull_request.outputs.pull-request-operation != 'none'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.create_pull_request.outputs.pull-request-number }}
-          DISABLED: ${{ runner.temp }}/disabled-cases.md
-        run: |
-          set -euo pipefail
-          if [ ! -s "$DISABLED" ]; then
-            echo "No cases were auto-disabled; nothing to notify."
-            exit 0
-          fi
-          {
-            printf ':warning: New upstream PromQL test cases were auto-disabled in this vendor update.\n\n'
-            cat "$DISABLED"
-            printf 'cc @charleskorn @56quarters @lamida @zenador @tcp13equals2\n\n'
-            printf 'Please review the disabled cases above, especially any under "EXISTING cases (possible regression)", and push fixes to this PR if a case should be supported.\n'
-          } > comment.md
-          gh pr comment "$PR_NUMBER" --body-file comment.md
 
       - name: Close Old Vendor PRs
         run: |
