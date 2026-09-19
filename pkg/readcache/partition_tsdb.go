@@ -483,7 +483,10 @@ func (p *partitionTSDB) CompactHead() error {
 	defer p.lockForMutation(tsdbMutationCompact)()
 
 	h := p.db.Head()
-	return p.db.CompactHead(tsdb.NewRangeHead(h, h.MinTime(), h.MaxTime()))
+	if err := p.db.CompactHead(tsdb.NewRangeHead(h, h.MinTime(), h.MaxTime())); err != nil {
+		return err
+	}
+	return p.db.CompactOOOHead(context.Background())
 }
 
 // Close shuts down the TSDB. Idempotent.
