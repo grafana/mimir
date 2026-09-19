@@ -60,7 +60,7 @@ class {'mimir':
 # Only if manage_user is set to true
 [user_shell: <string> | default = "/sbin/nologin"]
 
-# Additionnal groups the managed user should be connected to
+# Additional groups the managed user should be connected to
 # Only if manage_user is set to true
 [user_extra_groups: <array> | default =  []]
 
