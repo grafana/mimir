@@ -28,6 +28,13 @@ spec:
   {{- if .Values.ingester.service.trafficDistribution }}
   trafficDistribution: {{ .Values.ingester.service.trafficDistribution }}
   {{- end }}
+  {{- with .Values.ingester.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.ingester.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP

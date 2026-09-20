@@ -506,6 +506,10 @@ alertmanager:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
     # - port: 11811
     #   protocol: TCP
     #   name: reverse-proxy
@@ -842,6 +846,10 @@ distributor:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 
   resources:
@@ -948,6 +956,10 @@ ingester:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     # Note: This service is only used for admin endpoints like TSDB statistics, not for write or read path traffic.
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1237,6 +1249,10 @@ overrides_exporter:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   strategy:
     type: RollingUpdate
@@ -1356,6 +1372,10 @@ ruler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1500,6 +1520,10 @@ ruler_querier:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -1621,6 +1645,10 @@ ruler_query_frontend:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -1713,6 +1741,10 @@ ruler_query_scheduler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -1853,6 +1885,10 @@ querier:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -1978,6 +2014,10 @@ query_frontend:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -2073,6 +2113,10 @@ query_scheduler:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   resources:
     requests:
@@ -2174,6 +2218,10 @@ store_gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     # Note: This service is not responsible for read path traffic.
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2452,6 +2500,10 @@ compactor:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -2583,6 +2635,10 @@ compactor:
 gossip_ring:
   service:
     annotations: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 memcached:
   image:
@@ -2752,6 +2808,10 @@ chunks-cache:
     annotations: {}
     labels: {}
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
@@ -2865,6 +2925,10 @@ index-cache:
     annotations: {}
     labels: {}
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
@@ -2978,6 +3042,10 @@ metadata-cache:
     annotations: {}
     labels: {}
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
@@ -3091,6 +3159,10 @@ results-cache:
     annotations: {}
     labels: {}
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
@@ -3164,6 +3236,10 @@ kafka:
     annotations: {}
     # -- Service labels
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
   # -- Kafka persistence configuration
   persistence:
     # If false, use emptyDir
@@ -3384,6 +3460,10 @@ gateway:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
 
 
   ingress:
@@ -4053,6 +4133,10 @@ continuous_test:
     annotations: {}
     labels: {}
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilies: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/dual-stack/
+    ipFamilyPolicy: ""
   # -- Upgrade strategy for the continuous test Deployment
   strategy:
     type: RollingUpdate
