@@ -15,6 +15,13 @@ spec:
   type: ClusterIP
   clusterIP: None
   publishNotReadyAddresses: true
+  {{- with .Values.continuous_test.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.continuous_test.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" . }}
       protocol: TCP
