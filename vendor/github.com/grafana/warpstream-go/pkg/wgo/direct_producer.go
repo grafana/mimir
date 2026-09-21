@@ -17,10 +17,12 @@ import (
 //
 // The signature takes bare encodedTopicPartitionRecords (without nodeID, done,
 // or nodeState) so the "which agent does this batch go to" decision lives
-// in exactly one place — the nodeID parameter — and the function cannot
-// be called with a mismatched per-partition nodeID.
+// in exactly one place — the target parameter — and the function cannot
+// be called with a mismatched per-partition nodeID. target is an Agent rather
+// than a bare NodeID so routing-time State travels with the attempt; State is
+// not sent on the wire.
 type DirectProducer interface {
-	ProduceSync(ctx context.Context, nodeID int32, partitions []encodedTopicPartitionRecords) ProduceResult
+	ProduceSync(ctx context.Context, target Agent, partitions []encodedTopicPartitionRecords) ProduceResult
 }
 
 // KafkaDirectProducerConfig holds the per-request timings for
@@ -75,7 +77,7 @@ func NewKafkaDirectProducer(client *kgo.Client, topicID func(string) ([16]byte, 
 }
 
 // ProduceSync implements DirectProducer.
-func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []encodedTopicPartitionRecords) (retResult ProduceResult) {
+func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, target Agent, partitions []encodedTopicPartitionRecords) (retResult ProduceResult) {
 	req, reqStats, err := buildMultiTopicProduceRequestFromEncoded(s.version, s.topicID, partitions)
 	if err != nil {
 		return ProduceResult{err: err}
@@ -85,7 +87,8 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	attemptCtx, cancel := context.WithTimeout(ctx, s.cfg.ProduceRequestTimeout+s.cfg.ProduceRequestTimeoutOverhead)
 	defer cancel()
 
-	s.metrics.produceDirectRequestsTotal.Inc()
+	agentState := agentStateLabel(target.State)
+	s.metrics.produceDirectRequestsTotal.WithLabelValues(agentState).Inc()
 
 	// Observe per-attempt latency and the failure reason at the single exit.
 	// Classify via the returned ProduceResult, not the transport error, so a
@@ -109,13 +112,13 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 		} else {
 			reason := getProduceResultErr(retResult.error()).reason
 			s.metrics.produceDirectRequestLatencyFailure.WithLabelValues(reason).Observe(latencySeconds)
-			s.metrics.produceDirectRequestsFailedTotal.WithLabelValues(reason).Inc()
+			s.metrics.produceDirectRequestsFailedTotal.WithLabelValues(reason, agentState).Inc()
 		}
 	}()
 
 	// Uses Broker.Request (not RetriableRequest) so franz-go's internal retry
 	// loop stays out of the way: retries are owned by the caller.
-	resp, err := s.client.Broker(int(nodeID)).Request(attemptCtx, req)
+	resp, err := s.client.Broker(int(target.NodeID)).Request(attemptCtx, req)
 
 	// Decode the response up front so the hook always observes the same
 	// typed value the caller would see.
@@ -129,7 +132,7 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	}
 
 	if s.onProduceResponse != nil {
-		s.onProduceResponse(attemptCtx, nodeID, pr, err)
+		s.onProduceResponse(attemptCtx, target.NodeID, pr, err)
 		// The hook may have slept past the attempt deadline.
 		if ctxErr := attemptCtx.Err(); ctxErr != nil {
 			return ProduceResult{err: ctxErr}

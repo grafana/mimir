@@ -252,7 +252,6 @@ The following features are currently experimental:
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit, as well as `-query-frontend.subquery-spin-off-simple-subqueries` and `-query-frontend.subquery-spin-off-with-excess-downstream-queries`)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-  - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - Separate query sharding limit for cardinality API requests (active series and active native histogram metrics): `-query-frontend.cardinality-sharding-max-sharded-queries`
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
@@ -265,10 +264,10 @@ The following features are currently experimental:
   - Scalar common subexpression elimination: `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
-  - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
+  - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`

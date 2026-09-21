@@ -3997,6 +3997,7 @@ Use `evaluation stats` when asking:
 When looking at `msg="query stats"` consider the following attributes;
 
 - status, err — indicates success or failure with an error message indicating the failure reason
+- root_query_id — a unique ID allocated to the user query. This will be available in other query component logs processing the related sub-requests
 - param_query — the PromQL as submitted by the user
 - param_start — the start of the query time range
 - param_end — the end of the query time range
@@ -4039,6 +4040,7 @@ When looking at `msg="query stats"` consider the following attributes;
 When looking at `msg="evaluation stats"` consider the following attributes;
 
 - status, err - indicates success or failure with an error message indicating the failure reason
+- root_query_id - identifies the user query this evaluation belongs to, matching `root_query_id` on the query-frontend's `query stats` line for that query.
 - originalExpression - the PromQL before any query sharding or AST rewriting has been performed
 - nodeCount - the number of nodes/shards the query was distributed across
 - start, end, step - the query time range and step interval

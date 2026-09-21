@@ -631,6 +631,7 @@ Requires [authentication](#authentication).
     - `fetched_chunks_count`: The number of chunks fetched for the query, after any deduplication.
     - `fetched_index_bytes`: The number of index bytes fetched on the store-gateway for the query.
     - `fetched_series_count`: The number of series fetched for the query.
+    - `root_query_id`: Identifies this query in the query-frontend and related sub-requests in the query-scheduler and querier logs.
     - `query_wall_time_seconds`: The sum of all wall time, in seconds, spent in the querier to run the query.
     - `queue_time_seconds`: The sum of durations, in seconds, that the query spent in the queue, before being handled by querier.
     - `response_size_bytes`: The number of bytes of the response.
