@@ -2354,6 +2354,7 @@ func (d *Distributor) handlePushError(pushErr error) error {
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
+// Decoded data may be released before this call returns; middleware must not read it after next().
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
@@ -2592,7 +2593,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSyncWithRequestCleanup(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests, releaseRequest)
+	err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests, releaseRequest)
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
@@ -2645,7 +2646,7 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 			}
 
 			// Write all partitions of this compartment in a single ProduceSync call to its topic.
-			err = d.ingestStorageWriter.MultiWriteSyncWithRequestCleanup(writeCtx, ct.topic, tenantID, partitionRequests, releaseCompartment)
+			err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, ct.topic, tenantID, partitionRequests, releaseCompartment)
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
 			if err == nil {
