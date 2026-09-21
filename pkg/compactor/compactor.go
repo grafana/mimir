@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,12 +27,13 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
-	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compactor/blockupload"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -254,9 +256,7 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config, logger log.Logg
 // ConfigProvider defines the per-tenant config provider for the MultitenantCompactor.
 type ConfigProvider interface {
 	bucket.TenantConfigProvider
-
-	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
-	CompactorBlocksRetentionPeriod(user string) time.Duration
+	blockupload.Limits
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
@@ -280,15 +280,6 @@ type ConfigProvider interface {
 
 	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
 	CompactorBlockUploadEnabled(tenantID string) bool
-
-	// CompactorBlockUploadValidationEnabled returns whether block upload validation is enabled for a given tenant.
-	CompactorBlockUploadValidationEnabled(tenantID string) bool
-
-	// CompactorBlockUploadVerifyChunks returns whether chunk verification is enabled for a given tenant.
-	CompactorBlockUploadVerifyChunks(tenantID string) bool
-
-	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
-	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
 
 	// CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't
 	// considered in compactor cycles
@@ -371,11 +362,7 @@ type MultitenantCompactor struct {
 	// TSDB syncer metrics
 	syncerMetrics *aggregatedSyncerMetrics
 
-	// Block upload metrics
-	blockUploadBlocks      *prometheus.CounterVec
-	blockUploadBytes       *prometheus.CounterVec
-	blockUploadFiles       *prometheus.CounterVec
-	blockUploadValidations atomic.Int64
+	blockUpload *blockupload.BlockUploader
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
@@ -487,26 +474,19 @@ func newMultitenantCompactor(
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
-		blockUploadBlocks: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_block_upload_api_blocks_total",
-			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
-		}, []string{"user"}),
-		blockUploadBytes: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_block_upload_api_bytes_total",
-			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
-		}, []string{"user"}),
-		blockUploadFiles: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_block_upload_api_files_total",
-			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
-		}, []string{"user"}),
 	}
 
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_block_upload_validations_in_progress",
-		Help: "Number of block upload validations currently running.",
-	}, func() float64 {
-		return float64(c.blockUploadValidations.Load())
-	})
+	var maxBlockRange time.Duration
+	if len(compactorCfg.BlockRanges) > 0 {
+		maxBlockRange = compactorCfg.BlockRanges[len(compactorCfg.BlockRanges)-1]
+	}
+
+	c.blockUpload = blockupload.New(blockupload.Config{
+		MaxBlockRange: maxBlockRange,
+
+		ValidationDir:            blockUploadValidationDir(compactorCfg.DataDir),
+		MaxValidationConcurrency: compactorCfg.MaxBlockUploadValidationConcurrency,
+	}, cfgProvider, prometheus.WrapRegistererWithPrefix("cortex_block_upload_", registerer))
 
 	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
@@ -632,7 +612,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Remove validation directories possibly left behind by block upload
-	c.cleanupLeftoverValidationDirectories()
+	if err := os.RemoveAll(blockUploadValidationDir(c.compactorCfg.DataDir)); err != nil {
+		level.Warn(c.logger).Log("msg", "failed to clean up the block upload validation directory", "err", err)
+	}
 
 	return nil
 }
@@ -750,6 +732,52 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
 	return nil
+}
+
+// acceptBlockUploadRequest returns the tenant's bucket if the request can be served. Otherwise it
+// writes the rejection and returns false.
+func (c *MultitenantCompactor) acceptBlockUploadRequest(w http.ResponseWriter, r *http.Request) (objstore.Bucket, bool) {
+	if c.Service != nil && c.State() != services.Running {
+		http.Error(w, "compactor not ready", http.StatusServiceUnavailable)
+		return nil, false
+	}
+
+	tenantID, err := tenant.TenantID(r.Context())
+	if err != nil {
+		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
+		return nil, false
+	}
+
+	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
+		http.Error(w, "block upload is disabled", http.StatusBadRequest)
+		return nil, false
+	}
+
+	return bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider), true
+}
+
+func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.Request) {
+	if bkt, ok := c.acceptBlockUploadRequest(w, r); ok {
+		c.blockUpload.StartBlockUpload(w, r, bkt, c.logger)
+	}
+}
+
+func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
+	if bkt, ok := c.acceptBlockUploadRequest(w, r); ok {
+		c.blockUpload.UploadBlockFile(w, r, bkt, c.logger)
+	}
+}
+
+func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
+	if bkt, ok := c.acceptBlockUploadRequest(w, r); ok {
+		c.blockUpload.FinishBlockUpload(w, r, bkt, c.logger)
+	}
+}
+
+func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter, r *http.Request) {
+	if bkt, ok := c.acceptBlockUploadRequest(w, r); ok {
+		c.blockUpload.GetBlockUploadStateHandler(w, r, bkt, c.logger)
+	}
 }
 
 func (c *MultitenantCompactor) running(ctx context.Context) error {
@@ -1115,6 +1143,10 @@ const compactorMetaPrefix = "compactor-meta-"
 // the directory used by the Thanos Syncer, whatever is the user ID.
 func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 	return filepath.Join(c.compactorCfg.DataDir, compactorMetaPrefix+userID)
+}
+
+func blockUploadValidationDir(dataDir string) string {
+	return filepath.Join(dataDir, "upload")
 }
 
 // baseCompactDir is the base directory that contains subdirectories for compaction jobs
