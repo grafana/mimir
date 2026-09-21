@@ -183,18 +183,21 @@ func (w *Writer) WriteSync(ctx context.Context, topic string, partitionID int32,
 // MultiWriteSync writes data for multiple partitions to the ingest storage in a single ProduceSync call.
 // The function blocks until all data has been successfully committed, or an error occurred.
 func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest) error {
-	return w.MultiWriteSyncWithRequestCleanup(ctx, topic, userID, partitionRequests, nil)
+	return w.MultiWriteSyncWithRequestRelease(ctx, topic, userID, partitionRequests, nil)
 }
 
-// MultiWriteSyncWithRequestCleanup releases the decoded requests after serialization,
+// MultiWriteSyncWithRequestRelease releases the decoded requests after serialization,
 // before waiting for Kafka acknowledgements. releaseRequest is also called on early
 // errors and empty requests, exactly once, after the writer stops using the input.
-func (w *Writer) MultiWriteSyncWithRequestCleanup(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest, releaseRequest func()) error {
-	defer func() {
+func (w *Writer) MultiWriteSyncWithRequestRelease(ctx context.Context, topic string, userID string, partitionRequests []PartitionWriteRequest, releaseRequest func()) error {
+	release := func() {
 		if releaseRequest != nil {
-			releaseRequest()
+			callback := releaseRequest
+			releaseRequest = nil
+			callback()
 		}
-	}()
+	}
+	defer release()
 
 	client := w.client.Load()
 	if client == nil {
@@ -228,11 +231,7 @@ func (w *Writer) MultiWriteSyncWithRequestCleanup(ctx context.Context, topic str
 		requestSizeBytes += reqSizeBytes
 	}
 	w.serializeDuration.Observe(time.Since(startTime).Seconds())
-	if releaseRequest != nil {
-		cleanup := releaseRequest
-		releaseRequest = nil
-		cleanup()
-	}
+	release()
 
 	// Nothing to do if all requests were empty.
 	if len(allRecords) == 0 {

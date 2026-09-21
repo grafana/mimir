@@ -46,7 +46,7 @@ func TestWriter_ReleaseDecodedRequestBeforeAcknowledgement(t *testing.T) {
 				released := make(chan struct{})
 				done := make(chan error, 1)
 				go func() {
-					done <- writer.MultiWriteSyncWithRequestCleanup(t.Context(), "test", "user", []PartitionWriteRequest{{PartitionID: 0, WriteRequest: &decoded.WriteRequest}}, func() {
+					done <- writer.MultiWriteSyncWithRequestRelease(t.Context(), "test", "user", []PartitionWriteRequest{{PartitionID: 0, WriteRequest: &decoded.WriteRequest}}, func() {
 						mimirpb.ReuseSlice(decoded.Timeseries)
 						decoded = mimirpb.PreallocWriteRequest{}
 						for i := range wire {
@@ -115,7 +115,7 @@ func TestWriter_ReleaseDecodedRequestOnEarlyReturn(t *testing.T) {
 				writer.serializer = failingRequestSerializer{wantErr}
 			}
 			calls := 0
-			err := writer.MultiWriteSyncWithRequestCleanup(t.Context(), "test", "user", []PartitionWriteRequest{{PartitionID: 0, WriteRequest: request}}, func() { calls++ })
+			err := writer.MultiWriteSyncWithRequestRelease(t.Context(), "test", "user", []PartitionWriteRequest{{PartitionID: 0, WriteRequest: request}}, func() { calls++ })
 			require.ErrorIs(t, err, wantErr)
 			require.Equal(t, 1, calls)
 		})
