@@ -459,6 +459,65 @@ func TestCachedIter(t *testing.T) {
 	})
 }
 
+// TestCachedIter_StoresSynchronouslyWhenCacheLookupDisabled asserts that Iter() writes its
+// result to the cache synchronously when the cache lookup is disabled (i.e. the caller wants a
+// fresh listing because something just changed), instead of asynchronously. Otherwise, a
+// concurrent Iter() call with the cache lookup enabled could race with the asynchronous write
+// and observe a stale, cached listing that doesn't yet include the fresh result.
+func TestCachedIter_StoresSynchronouslyWhenCacheLookupDisabled(t *testing.T) {
+	inmem := objstore.NewInMemBucket()
+	require.NoError(t, inmem.Upload(context.Background(), "/file-1", strings.NewReader("hej")))
+
+	tc := newTrackingCache()
+	const cfgName = "dirs"
+	cfg := NewCachingBucketConfig()
+	cfg.CacheIter(cfgName, tc, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
+
+	cb, err := NewCachingBucket("test", "test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Cache lookup disabled: the fresh listing must be stored with the synchronous Set, not SetAsync.
+	require.NoError(t, cb.Iter(WithCacheLookupEnabled(ctx, false), "/", (&iterCollector{}).collect))
+	assert.Equal(t, 1, tc.setCalls)
+	assert.Equal(t, 0, tc.setAsyncCalls)
+
+	// Cache lookup enabled and the entry is already cached: Iter() returns the cached result
+	// without writing to the cache again.
+	require.NoError(t, cb.Iter(ctx, "/", (&iterCollector{}).collect))
+	assert.Equal(t, 1, tc.setCalls)
+	assert.Equal(t, 0, tc.setAsyncCalls)
+
+	// Cache lookup enabled but the cache is empty: the common, unchanged path still stores the
+	// result asynchronously.
+	tc.Flush()
+	require.NoError(t, cb.Iter(ctx, "/", (&iterCollector{}).collect))
+	assert.Equal(t, 1, tc.setCalls)
+	assert.Equal(t, 1, tc.setAsyncCalls)
+}
+
+// trackingCache wraps cache.MockCache to record whether Set() or SetAsync() was called.
+type trackingCache struct {
+	*cache.MockCache
+	setCalls      int
+	setAsyncCalls int
+}
+
+func newTrackingCache() *trackingCache {
+	return &trackingCache{MockCache: cache.NewMockCache()}
+}
+
+func (c *trackingCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	c.setAsyncCalls++
+	c.MockCache.SetAsync(key, value, ttl)
+}
+
+func (c *trackingCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	c.setCalls++
+	return c.MockCache.Set(ctx, key, value, ttl)
+}
+
 func verifyIter(ctx context.Context, t *testing.T, cb *CachingBucket, expectedFiles []string, expectedCacheLookup, expectedFromCache bool, cfgName string) {
 	requestsBefore := int(promtest.ToFloat64(cb.operationRequests.WithLabelValues(objstore.OpIter, cfgName)))
 	hitsBefore := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
