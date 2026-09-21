@@ -1199,7 +1199,7 @@ func TestHandler_SlowQueryLogReportsRootQueryID(t *testing.T) {
 	})
 
 	logger := &testLogger{}
-	cfg := HandlerConfig{QueryStatsEnabled: false, LogQueriesLongerThan: time.Nanosecond, MaxBodySize: 1024}
+	cfg := HandlerConfig{QueryStatsEnabled: false, DeprecatedLogQueriesLongerThan: time.Nanosecond, MaxBodySize: 1024}
 	handler := NewHandler(cfg, roundTripper, logger, prometheus.NewPedanticRegistry())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
@@ -1219,8 +1219,8 @@ func TestHandler_QueryStringLoggedLast(t *testing.T) {
 
 	logs := &concurrency.SyncBuffer{}
 	cfg := HandlerConfig{
-		QueryStatsEnabled:    true,
-		LogQueriesLongerThan: time.Nanosecond,
+		QueryStatsEnabled:              true,
+		DeprecatedLogQueriesLongerThan: time.Nanosecond,
 	}
 	handler := NewHandler(cfg, roundTripper, log.NewLogfmtLogger(logs), prometheus.NewPedanticRegistry())
 
