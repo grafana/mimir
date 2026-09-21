@@ -44,16 +44,17 @@ func TestEmitReadcacheSpotlightForPartition_OverlapEmits(t *testing.T) {
 	logger := log.NewLogfmtLogger(&buf)
 
 	spots := []rebalancer.SpotlightedRange{
-		{TraceId: "alpha", Lo: 100, Hi: 200, Reason: "phase3-move", FromPartitionId: 5, ToPartitionId: 9},
+		{TraceId: "alpha", TenantId: "tenant-a", Lo: 100, Hi: 200, Reason: "phase3-move", FromPartitionId: 5, ToPartitionId: 9},
 	}
 	// row at [150, 175] is fully inside spotlight [100, 200].
 	rows := []hashRangeCount{
-		{Range: assignment.HashRange{Lo: 150, Hi: 175}, Count: 1234, SampleRate: 87.5, Example: `{__name__="up", instance="i-1"}`},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 150, Hi: 175}, Count: 1234, SampleRate: 87.5, Example: `{__name__="up", instance="i-1"}`},
 	}
 	emitReadcacheSpotlightForPartition(logger, "rc-3", 9, spots, rows, "current")
 
 	out := buf.String()
 	assert.Contains(t, out, "spotlight_id=alpha")
+	assert.Contains(t, out, "tenant=tenant-a")
 	assert.Contains(t, out, "observed_partition=9")
 	assert.Contains(t, out, "observed_range_lo=150")
 	assert.Contains(t, out, "observed_range_hi=175")

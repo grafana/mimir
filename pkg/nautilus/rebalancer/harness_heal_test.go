@@ -146,7 +146,13 @@ func TestHarness_Heal_NoOpOnValidInput(t *testing.T) {
 	h.addReadcache("readcache-0")
 	h.addReadcache("readcache-1")
 
-	require.NoError(t, h.runRound()) // cold-start populates tier-1 cleanly
+	require.True(t, h.r.store.apply(
+		h.clock.Now(),
+		assignment.FineEvenSplitForTenant("tenant-a", []int32{0, 1, 2, 3}, initialSlicesPerPartition),
+		h.cfg.LeaseDuration,
+		h.r.hashLeaseLookahead(),
+		h.cfg.EntryRetention,
+	))
 	require.NotNil(t, h.tier1Active())
 
 	pre := h.logOutput()

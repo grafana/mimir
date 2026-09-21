@@ -25,9 +25,13 @@ type startupSyncRebalancer struct {
 
 	releaseNautilus  <-chan struct{}
 	releaseReadcache <-chan struct{}
+	requests         chan<- *rebalancer.WatchAssignmentsRequest
 }
 
-func (s *startupSyncRebalancer) WatchAssignments(_ *rebalancer.WatchAssignmentsRequest, stream rebalancer.NautilusRebalancer_WatchAssignmentsServer) error {
+func (s *startupSyncRebalancer) WatchAssignments(req *rebalancer.WatchAssignmentsRequest, stream rebalancer.NautilusRebalancer_WatchAssignmentsServer) error {
+	if s.requests != nil {
+		s.requests <- req
+	}
 	select {
 	case <-stream.Context().Done():
 		return stream.Context().Err()
@@ -96,9 +100,11 @@ func TestDistributor_StartingWaitsForInitialAssignmentSync(t *testing.T) {
 			lis, err := net.Listen("tcp", "127.0.0.1:0")
 			require.NoError(t, err)
 			server := grpc.NewServer()
+			requests := make(chan *rebalancer.WatchAssignmentsRequest, 1)
 			rebalancer.RegisterNautilusRebalancerServer(server, &startupSyncRebalancer{
 				releaseNautilus:  releaseNautilus,
 				releaseReadcache: releaseReadcache,
+				requests:         requests,
 			})
 			go func() {
 				_ = server.Serve(lis)
@@ -133,6 +139,14 @@ func TestDistributor_StartingWaitsForInitialAssignmentSync(t *testing.T) {
 			go func() {
 				started <- d.starting(ctx)
 			}()
+
+			select {
+			case req := <-requests:
+				require.True(t, req.SupportsDeltas)
+				require.True(t, req.SupportsTenantScopedAssignments)
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "distributor did not open WatchAssignments")
+			}
 
 			select {
 			case err := <-started:

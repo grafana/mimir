@@ -3,6 +3,8 @@
 package assignment
 
 import (
+	"fmt"
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -147,4 +149,51 @@ func BenchmarkLog_PartitionsOverlappingInterval_DevSized(b *testing.B) {
 		partitions := l.PartitionsOverlappingInterval(w0, w1, metricHashLo, metricHashHi)
 		runtime.KeepAlive(partitions)
 	}
+}
+
+func BenchmarkTenantScale10K_AssignmentLookups(b *testing.B) {
+	const tenantCount = 10_000
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	entries := make([]LogEntry, tenantCount)
+	tenantIDs := make([]string, tenantCount)
+	for i := range entries {
+		tenantIDs[i] = fmt.Sprintf("tenant-%05d", i)
+		entries[i] = LogEntry{
+			TenantID:    tenantIDs[i],
+			Range:       HashRange{Lo: 0, Hi: math.MaxUint32},
+			PartitionID: int32(i % 300),
+			From:        now.Add(-time.Hour),
+		}
+	}
+	assignmentLog := NewLogFromEntries(entries)
+	active := assignmentLog.ActiveTable(now)
+
+	b.Run("active_lookup", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			partition, ok := active.LookupForTenant(tenantIDs[i%tenantCount], uint32(i))
+			if !ok {
+				b.Fatal("active lookup missed")
+			}
+			runtime.KeepAlive(partition)
+		}
+	})
+
+	b.Run("historical_lookup", func(b *testing.B) {
+		w0, w1 := now.Add(-time.Minute), now.Add(time.Minute)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			partitions := assignmentLog.PartitionsOverlappingIntervalForTenant(
+				tenantIDs[i%tenantCount],
+				w0,
+				w1,
+				0x80000000,
+				0x8000ffff,
+			)
+			if len(partitions) != 1 {
+				b.Fatalf("historical lookup returned %d partitions", len(partitions))
+			}
+			runtime.KeepAlive(partitions)
+		}
+	})
 }

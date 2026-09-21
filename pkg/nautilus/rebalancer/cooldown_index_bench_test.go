@@ -46,7 +46,7 @@ func BenchmarkRunPhase3CooldownLookup(b *testing.B) {
 				var hits int
 				for i := 0; i < b.N; i++ {
 					for _, hr := range candidates {
-						if r.isInMoveCooldown(now, hr) {
+						if r.isInMoveCooldown(now, "", hr) {
 							hits++
 						}
 					}
@@ -60,7 +60,7 @@ func BenchmarkRunPhase3CooldownLookup(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					idx := newCooldownIndex(now, cooldowns)
 					for _, hr := range candidates {
-						if idx.overlaps(hr) {
+						if idx.overlaps("", hr) {
 							hits++
 						}
 					}
@@ -79,14 +79,14 @@ func BenchmarkRunPhase3CooldownLookup(b *testing.B) {
 //   - candidate ranges are similarly sized and overlap the cooldown
 //     set with ~5-15% probability, which matches the cooldown hit
 //     rate we see in the traces (most candidates pass the check).
-func genCooldownWorkload(numCooldowns, numCandidates int) (map[assignment.HashRange]time.Time, []assignment.HashRange) {
+func genCooldownWorkload(numCooldowns, numCandidates int) (map[tenantRangeKey]time.Time, []assignment.HashRange) {
 	rng := rand.New(rand.NewSource(42))
-	cooldowns := make(map[assignment.HashRange]time.Time, numCooldowns)
+	cooldowns := make(map[tenantRangeKey]time.Time, numCooldowns)
 	deadline := time.Now().Add(time.Minute)
 	for i := 0; i < numCooldowns; i++ {
 		lo := uint32(rng.Int63n(int64(^uint32(0))))
 		hi := lo + uint32(rng.Intn(1024))
-		cooldowns[assignment.HashRange{Lo: lo, Hi: hi}] = deadline
+		cooldowns[tenantRangeKey{hr: assignment.HashRange{Lo: lo, Hi: hi}}] = deadline
 	}
 
 	candidates := make([]assignment.HashRange, numCandidates)

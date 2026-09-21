@@ -24,6 +24,7 @@ import (
 // this internal domain type don't collide.
 type Spotlight struct {
 	TraceID       string
+	TenantID      string
 	Range         assignment.HashRange
 	StartedAt     time.Time
 	ExpiresAt     time.Time
@@ -85,14 +86,15 @@ func newSpotlightStore(seed int64, sampleRate float64, duration time.Duration) *
 // deterministic source via newSpotlightStore; keeping the predicate
 // here also means add() is a separate (unconditional) entry point
 // for tests that want to construct exact spotlight sets.
-func (s *spotlightStore) maybeSpotlight(at time.Time, hr assignment.HashRange, fromPID, toPID int32, reason string) (Spotlight, bool) {
+func (s *spotlightStore) maybeSpotlight(at time.Time, tenantID string, hr assignment.HashRange, fromPID, toPID int32, reason string) (Spotlight, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.rng.Float64() >= s.sampleRate {
 		return Spotlight{}, false
 	}
 	e := Spotlight{
-		TraceID:       fmt.Sprintf("sp-%d-%d-%d", hr.Lo, hr.Hi, at.UnixNano()),
+		TraceID:       fmt.Sprintf("sp-%x-%d-%d-%d", tenantID, hr.Lo, hr.Hi, at.UnixNano()),
+		TenantID:      tenantID,
 		Range:         hr,
 		StartedAt:     at,
 		ExpiresAt:     at.Add(s.duration),

@@ -86,7 +86,7 @@ func TestMergeAdjacentCold_StructuralCooldownBlocksMerge(t *testing.T) {
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 99}, PartitionID: 0}, load: 0.1},
 		{entry: assignment.Entry{Range: assignment.HashRange{Lo: 100, Hi: 199}, PartitionID: 0}, load: 0.1},
 	}
-	blocked := func(hr assignment.HashRange) bool {
+	blocked := func(_ string, hr assignment.HashRange) bool {
 		return hashRangesOverlap(hr, assignment.HashRange{Lo: 0, Hi: 199})
 	}
 
@@ -111,7 +111,7 @@ func TestRunSlicer_StructuralCooldownBlocksSplit(t *testing.T) {
 	}
 	r := &Rebalancer{
 		cfg:                 Config{StructuralCooldown: time.Minute},
-		structuralCooldowns: map[assignment.HashRange]time.Time{hotRange: now.Add(time.Minute)},
+		structuralCooldowns: map[tenantRangeKey]time.Time{{hr: hotRange}: now.Add(time.Minute)},
 	}
 
 	_, actions := r.runSlicer(current, rates, map[int32]float64{0: 100, 1: 2}, []int32{0, 1}, nil, now)

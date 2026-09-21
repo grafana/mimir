@@ -124,7 +124,10 @@ func TestValidate_DoesNotEndAtMax(t *testing.T) {
 }
 
 func TestJSONRoundTrip(t *testing.T) {
-	original := EvenSplit([]int32{10, 20, 30})
+	original := &Assignment{Entries: append(
+		EvenSplitForTenant("tenant-a", []int32{10, 20, 30}).Entries,
+		EvenSplitForTenant("tenant-b", []int32{40, 50, 60}).Entries...,
+	)}
 	require.NoError(t, original.Validate())
 
 	var buf bytes.Buffer
@@ -139,6 +142,33 @@ func TestJSONRoundTrip(t *testing.T) {
 	for i := range original.Entries {
 		assert.Equal(t, original.Entries[i], restored.Entries[i])
 	}
+}
+
+func TestAssignment_TenantScopedValidationAndLookup(t *testing.T) {
+	a := &Assignment{Entries: []Entry{
+		{TenantID: "tenant-a", Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+		{TenantID: "tenant-b", Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 2},
+	}}
+
+	require.NoError(t, a.Validate(), "identical numeric ranges are legal across tenants")
+	assert.Equal(t, int32(1), mustLookupAssignment(t, a, "tenant-a", 123))
+	assert.Equal(t, int32(2), mustLookupAssignment(t, a, "tenant-b", 123))
+	_, ok := a.LookupForTenant("tenant-c", 123)
+	assert.False(t, ok)
+
+	invalid := &Assignment{Entries: []Entry{
+		{TenantID: "tenant-a", Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+		{TenantID: "tenant-b", Range: HashRange{Lo: 0, Hi: 10}, PartitionID: 2},
+		{TenantID: "tenant-b", Range: HashRange{Lo: 12, Hi: math.MaxUint32}, PartitionID: 3},
+	}}
+	assert.Error(t, invalid.Validate(), "each tenant must independently tile the full space")
+}
+
+func mustLookupAssignment(t *testing.T, a *Assignment, tenantID string, key uint32) int32 {
+	t.Helper()
+	pid, ok := a.LookupForTenant(tenantID, key)
+	require.True(t, ok)
+	return pid
 }
 
 func TestEvenSplit_Empty(t *testing.T) {

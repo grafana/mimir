@@ -109,8 +109,8 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		return plan
 	}
 
-	log := d.GetNautilusLog()
-	if log == nil {
+	snapshot := d.nautilusSnapshotAt(d.now())
+	if snapshot == nil {
 		plan.Unavailable = "no live nautilus assignment log snapshot is available"
 		return plan
 	}
@@ -125,16 +125,11 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 	metricNames, metricScoped := extractMetricNamesForReadcacheRouting(matchers)
 	plan.MetricNames, plan.Named = slices.Clone(metricNames), metricScoped
 
-	var partitionIDs []int32
-	if metricScoped {
-		if len(metricNames) == 1 {
-			plan.MetricName = metricNames[0]
-			plan.HashLo, plan.HashHi = mimirpb.MetricNameHashRange(userID, metricNames[0])
-		}
-		partitionIDs = partitionsForMetricNames(log, userID, w0, w1, metricNames)
-	} else {
-		partitionIDs = log.AllPartitionsDuring(w0, w1)
+	if metricScoped && len(metricNames) == 1 {
+		plan.MetricName = metricNames[0]
+		plan.HashLo, plan.HashHi = mimirpb.MetricNameHashRange(userID, metricNames[0])
 	}
+	partitionIDs := partitionsForNautilusQuery(snapshot, userID, w0, w1, metricNames, metricScoped)
 	if len(partitionIDs) == 0 {
 		plan.Unavailable = "assignment log resolved no partitions for the query"
 		return plan

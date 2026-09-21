@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/loadstats"
 	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -285,14 +286,15 @@ func TestReadcache_SetAndGetHashRanges_PerPartition(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	defer func() { _ = services.StopAndAwaitTerminated(ctx, r) }()
 
-	// Rebalancer sends partition 0 → [0, 99], partition 1 → [100,
-	// 199], and a stray entry for unowned partition 9 (must be
-	// ignored).
+	// Rebalancer sends tenant-scoped ranges, including the same numeric
+	// range for two tenants on partition 0, plus a stray entry for
+	// unowned partition 9 (which must be ignored).
 	req := &ingester_client.SetHashRangesRequest{
 		Ranges: []ingester_client.HashRangeEntry{
-			{Lo: 100, Hi: 199, PartitionId: 1},
-			{Lo: 0, Hi: 99, PartitionId: 0},
-			{Lo: 500, Hi: 599, PartitionId: 9},
+			{Lo: 100, Hi: 199, PartitionId: 1, TenantId: "tenant-b"},
+			{Lo: 0, Hi: 99, PartitionId: 0, TenantId: "tenant-a"},
+			{Lo: 0, Hi: 99, PartitionId: 0, TenantId: "tenant-c"},
+			{Lo: 500, Hi: 599, PartitionId: 9, TenantId: "tenant-a"},
 		},
 	}
 	_, err = r.setHashRanges(ctx, req)
@@ -308,12 +310,104 @@ func TestReadcache_SetAndGetHashRanges_PerPartition(t *testing.T) {
 		if getResp.Ranges[i].PartitionId != getResp.Ranges[j].PartitionId {
 			return getResp.Ranges[i].PartitionId < getResp.Ranges[j].PartitionId
 		}
+		if getResp.Ranges[i].TenantId != getResp.Ranges[j].TenantId {
+			return getResp.Ranges[i].TenantId < getResp.Ranges[j].TenantId
+		}
 		return getResp.Ranges[i].Lo < getResp.Ranges[j].Lo
 	})
 	require.Equal(t, []ingester_client.HashRangeEntry{
-		{Lo: 0, Hi: 99, PartitionId: 0},
-		{Lo: 100, Hi: 199, PartitionId: 1},
+		{Lo: 0, Hi: 99, PartitionId: 0, TenantId: "tenant-a"},
+		{Lo: 0, Hi: 99, PartitionId: 0, TenantId: "tenant-c"},
+		{Lo: 100, Hi: 199, PartitionId: 1, TenantId: "tenant-b"},
 	}, getResp.Ranges)
+}
+
+func TestReadcache_HashRangeStats_UnknownTenantBootstrap(t *testing.T) {
+	p0 := newPartitionState(0)
+	p0.tenants["tenant-unknown"] = nil
+	p1 := newPartitionState(1)
+	p1.tenants["tenant-nonzero-only"] = nil
+
+	r := &Readcache{
+		cfg:                         Config{InstanceID: "test"},
+		logger:                      log.NewNopLogger(),
+		partitions:                  map[int32]*partitionState{0: p0, 1: p1},
+		partitionSeries:             loadstats.NewPartitionSeries(),
+		queryLoad:                   loadstats.NewTracker("test"),
+		seriesStatsRefreshRequested: make(chan struct{}, 1),
+	}
+
+	first, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.Len(t, first.UnknownTenants, 1)
+	assert.Equal(t, "tenant-unknown", first.UnknownTenants[0].TenantId)
+	assert.Equal(t, int32(0), first.UnknownTenants[0].PartitionId)
+	require.Positive(t, first.UnknownTenants[0].FirstSeenUnixMs)
+
+	time.Sleep(2 * time.Millisecond)
+	second, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.Len(t, second.UnknownTenants, 1)
+	assert.Equal(t, first.UnknownTenants[0].FirstSeenUnixMs, second.UnknownTenants[0].FirstSeenUnixMs,
+		"first_seen must remain stable while the tenant stays unknown")
+
+	_, err = r.setHashRanges(t.Context(), &ingester_client.SetHashRangesRequest{
+		Ranges: []ingester_client.HashRangeEntry{{
+			TenantId:    "tenant-unknown",
+			PartitionId: 1,
+			Lo:          0,
+			Hi:          99,
+		}},
+	})
+	require.NoError(t, err)
+
+	configured, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, configured.UnknownTenants, "configured tenants must stop appearing as unknown")
+	require.Len(t, configured.Rates, 1)
+	assert.Equal(t, "tenant-unknown", configured.Rates[0].TenantId)
+	assert.Equal(t, int32(1), configured.Rates[0].PartitionId)
+
+	// Unknown tracking is bounded to currently-live partition-0 TSDBs.
+	p0.tenants["tenant-gone"] = nil
+	withGone, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.Len(t, withGone.UnknownTenants, 1)
+	delete(p0.tenants, "tenant-gone")
+	withoutGone, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, withoutGone.UnknownTenants)
+	p0.ranges.mu.RLock()
+	_, retained := p0.ranges.unknownFirstSeen["tenant-gone"]
+	p0.ranges.mu.RUnlock()
+	assert.False(t, retained)
+}
+
+func TestReadcache_HashRangeStats_EmitsTenantScopedRates(t *testing.T) {
+	p := newPartitionState(0)
+	fullRange := assignment.HashRange{Lo: 0, Hi: ^uint32(0)}
+	p.ranges.setRangesForTenant("tenant-a", []assignment.HashRange{fullRange})
+	p.ranges.setRangesForTenant("tenant-b", []assignment.HashRange{fullRange})
+	p.ranges.recordSampleBatch("tenant-a", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 3)})
+	p.ranges.recordSampleBatch("tenant-b", []mimirpb.PreallocTimeseries{makeTSForHash("shared", 7)})
+	require.True(t, p.ranges.applyWalkResultForTenant("tenant-a", []assignment.HashRange{fullRange}, []int64{11}, nil))
+	require.True(t, p.ranges.applyWalkResultForTenant("tenant-b", []assignment.HashRange{fullRange}, []int64{22}, nil))
+	p.ranges.tickSampleRates()
+
+	r := &Readcache{
+		partitions:      map[int32]*partitionState{0: p},
+		partitionSeries: loadstats.NewPartitionSeries(),
+		queryLoad:       loadstats.NewTracker("test"),
+	}
+	resp, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Rates, 2)
+	assert.Equal(t, "tenant-a", resp.Rates[0].TenantId)
+	assert.Equal(t, int64(11), resp.Rates[0].ActiveSeries)
+	assert.InDelta(t, float64(3)/loadstats.TickInterval.Seconds(), resp.Rates[0].SampleRate, 1e-9)
+	assert.Equal(t, "tenant-b", resp.Rates[1].TenantId)
+	assert.Equal(t, int64(22), resp.Rates[1].ActiveSeries)
+	assert.InDelta(t, float64(7)/loadstats.TickInterval.Seconds(), resp.Rates[1].SampleRate, 1e-9)
 }
 
 func TestReadcache_SetHashRangesRequestsSeriesRefreshOnlyForChanges(t *testing.T) {
@@ -419,6 +513,51 @@ func TestReadcache_RefreshPartitionSeriesCounts(t *testing.T) {
 	assert.Equal(t, int32(7), snapshot.Partitions[0].PartitionID)
 	assert.Equal(t, int64(1), snapshot.Partitions[0].ActiveSeries)
 	assert.Equal(t, int64(1), snapshot.Total)
+}
+
+func TestReadcache_RefreshSeriesStatsWalksTenantScopedRanges(t *testing.T) {
+	cfg := newTestConfig(t, false, 0)
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	const partitionID = int32(7)
+	p := newPartitionState(partitionID)
+	r.partitions[partitionID] = p
+	fullRange := assignment.HashRange{Lo: 0, Hi: ^uint32(0)}
+	p.ranges.setRangesForTenant("tenant-a", []assignment.HashRange{fullRange})
+	p.ranges.setRangesForTenant("tenant-b", []assignment.HashRange{fullRange})
+
+	dbA, err := r.getOrOpenTSDB("tenant-a", partitionID)
+	require.NoError(t, err)
+	require.NotNil(t, dbA)
+	dbB, err := r.getOrOpenTSDB("tenant-b", partitionID)
+	require.NoError(t, err)
+	require.NotNil(t, dbB)
+	t.Cleanup(func() {
+		require.NoError(t, dbA.Close())
+		require.NoError(t, dbB.Close())
+	})
+
+	appA := dbA.Appender(t.Context())
+	_, err = appA.Append(0, labels.FromStrings("__name__", "shared", "instance", "a"), 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, appA.Commit())
+
+	appB := dbB.Appender(t.Context())
+	_, err = appB.Append(0, labels.FromStrings("__name__", "shared", "instance", "b-1"), 1, 1)
+	require.NoError(t, err)
+	_, err = appB.Append(0, labels.FromStrings("__name__", "shared", "instance", "b-2"), 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, appB.Commit())
+
+	r.refreshSeriesStats(t.Context())
+	snapshot := p.ranges.snapshotCounts()
+	require.Len(t, snapshot, 2)
+	assert.Equal(t, "tenant-a", snapshot[0].TenantID)
+	assert.Equal(t, int64(1), snapshot[0].Count)
+	assert.Equal(t, "tenant-b", snapshot[1].TenantID)
+	assert.Equal(t, int64(2), snapshot[1].Count)
 }
 
 // TestReadcache_HashRangeStats_ResidueOnFormerOwner verifies the

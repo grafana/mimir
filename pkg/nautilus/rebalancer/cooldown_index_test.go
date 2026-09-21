@@ -16,34 +16,34 @@ import (
 func TestCooldownIndex_Empty(t *testing.T) {
 	idx := newCooldownIndex(time.Now(), nil)
 	assert.Equal(t, 0, idx.len())
-	assert.False(t, idx.overlaps(assignment.HashRange{Lo: 0, Hi: 100}))
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 0, Hi: 100}))
 }
 
 func TestCooldownIndex_DroppedWhenAllExpired(t *testing.T) {
 	now := time.Now()
-	idx := newCooldownIndex(now, map[assignment.HashRange]time.Time{
-		{Lo: 0, Hi: 99}:    now.Add(-time.Second),
-		{Lo: 100, Hi: 199}: now, // deadline == now is treated as expired
+	idx := newCooldownIndex(now, map[tenantRangeKey]time.Time{
+		{hr: assignment.HashRange{Lo: 0, Hi: 99}}:    now.Add(-time.Second),
+		{hr: assignment.HashRange{Lo: 100, Hi: 199}}: now, // deadline == now is treated as expired
 	})
 	assert.Equal(t, 0, idx.len())
-	assert.False(t, idx.overlaps(assignment.HashRange{Lo: 50, Hi: 150}))
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 50, Hi: 150}))
 }
 
 func TestCooldownIndex_MergesOverlappingAndTouching(t *testing.T) {
 	now := time.Now()
 	future := now.Add(time.Minute)
-	idx := newCooldownIndex(now, map[assignment.HashRange]time.Time{
-		{Lo: 0, Hi: 99}:    future,
-		{Lo: 100, Hi: 199}: future, // touching the previous interval (Hi+1 == Lo)
-		{Lo: 150, Hi: 250}: future, // overlaps with the previous
-		{Lo: 500, Hi: 599}: future, // disjoint
+	idx := newCooldownIndex(now, map[tenantRangeKey]time.Time{
+		{hr: assignment.HashRange{Lo: 0, Hi: 99}}:    future,
+		{hr: assignment.HashRange{Lo: 100, Hi: 199}}: future, // touching the previous interval (Hi+1 == Lo)
+		{hr: assignment.HashRange{Lo: 150, Hi: 250}}: future, // overlaps with the previous
+		{hr: assignment.HashRange{Lo: 500, Hi: 599}}: future, // disjoint
 	})
 	require.Equal(t, 2, idx.len(), "touching+overlapping intervals should merge into one; disjoint stays separate")
 	// Merged interval covers [0..250]; second covers [500..599].
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 0, Hi: 0}))
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 250, Hi: 250}))
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 251, Hi: 499}) == false, "between merged intervals should not overlap")
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 500, Hi: 500}))
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 0, Hi: 0}))
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 250, Hi: 250}))
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 251, Hi: 499}), "between merged intervals should not overlap")
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 500, Hi: 500}))
 }
 
 func TestCooldownIndex_OverlapMatchesSplitsAndMerges(t *testing.T) {
@@ -52,29 +52,29 @@ func TestCooldownIndex_OverlapMatchesSplitsAndMerges(t *testing.T) {
 	// new index.
 	moved := assignment.HashRange{Lo: 1000, Hi: 1999}
 	now := time.Now()
-	idx := newCooldownIndex(now, map[assignment.HashRange]time.Time{
-		moved: now.Add(time.Minute),
+	idx := newCooldownIndex(now, map[tenantRangeKey]time.Time{
+		{hr: moved}: now.Add(time.Minute),
 	})
 	require.Equal(t, 1, idx.len())
 
-	assert.True(t, idx.overlaps(moved), "exact match")
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 1000, Hi: 1499}), "sub-range (split)")
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 1500, Hi: 1999}), "sub-range (split)")
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: 500, Hi: 2500}), "super-range (merge)")
-	assert.False(t, idx.overlaps(assignment.HashRange{Lo: 2000, Hi: 2500}), "adjacent but disjoint")
-	assert.False(t, idx.overlaps(assignment.HashRange{Lo: 0, Hi: 999}), "adjacent but disjoint")
+	assert.True(t, idx.overlaps("", moved), "exact match")
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 1000, Hi: 1499}), "sub-range (split)")
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 1500, Hi: 1999}), "sub-range (split)")
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: 500, Hi: 2500}), "super-range (merge)")
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 2000, Hi: 2500}), "adjacent but disjoint")
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 0, Hi: 999}), "adjacent but disjoint")
 }
 
 func TestCooldownIndex_BoundariesMaxUint32(t *testing.T) {
 	now := time.Now()
 	future := now.Add(time.Minute)
 	max := ^uint32(0)
-	idx := newCooldownIndex(now, map[assignment.HashRange]time.Time{
-		{Lo: max - 100, Hi: max}: future,
+	idx := newCooldownIndex(now, map[tenantRangeKey]time.Time{
+		{hr: assignment.HashRange{Lo: max - 100, Hi: max}}: future,
 	})
 	require.Equal(t, 1, idx.len())
-	assert.True(t, idx.overlaps(assignment.HashRange{Lo: max, Hi: max}))
-	assert.False(t, idx.overlaps(assignment.HashRange{Lo: 0, Hi: max - 101}))
+	assert.True(t, idx.overlaps("", assignment.HashRange{Lo: max, Hi: max}))
+	assert.False(t, idx.overlaps("", assignment.HashRange{Lo: 0, Hi: max - 101}))
 }
 
 func TestCooldownIndex_MatchesIsInMoveCooldown_RandomizedFuzz(t *testing.T) {
@@ -84,7 +84,7 @@ func TestCooldownIndex_MatchesIsInMoveCooldown_RandomizedFuzz(t *testing.T) {
 	// proof that the index didn't change behaviour for runPhase3.
 	rng := rand.New(rand.NewSource(1))
 	now := time.Now()
-	cooldowns := make(map[assignment.HashRange]time.Time, 500)
+	cooldowns := make(map[tenantRangeKey]time.Time, 500)
 	for i := 0; i < 500; i++ {
 		lo := uint32(rng.Intn(1 << 20))
 		hi := lo + uint32(rng.Intn(1<<10))
@@ -95,7 +95,7 @@ func TestCooldownIndex_MatchesIsInMoveCooldown_RandomizedFuzz(t *testing.T) {
 		} else {
 			deadline = now.Add(time.Duration(rng.Intn(60)+1) * time.Second)
 		}
-		cooldowns[assignment.HashRange{Lo: lo, Hi: hi}] = deadline
+		cooldowns[tenantRangeKey{hr: assignment.HashRange{Lo: lo, Hi: hi}}] = deadline
 	}
 
 	r := &Rebalancer{
@@ -108,8 +108,8 @@ func TestCooldownIndex_MatchesIsInMoveCooldown_RandomizedFuzz(t *testing.T) {
 		lo := uint32(rng.Intn(1 << 20))
 		hi := lo + uint32(rng.Intn(1<<10))
 		hr := assignment.HashRange{Lo: lo, Hi: hi}
-		want := r.isInMoveCooldown(now, hr)
-		got := idx.overlaps(hr)
+		want := r.isInMoveCooldown(now, "", hr)
+		got := idx.overlaps("", hr)
 		require.Equalf(t, want, got, "mismatch on %+v", hr)
 	}
 }

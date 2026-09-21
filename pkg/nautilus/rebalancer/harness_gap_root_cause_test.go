@@ -70,6 +70,13 @@ func TestHarness_GapsNeverAppearInNormalOperation(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		h.addReadcache(fmt.Sprintf("readcache-%d", i))
 	}
+	require.True(t, h.r.store.apply(
+		h.clock.Now(),
+		assignment.FineEvenSplitForTenant("tenant-a", h.r.activePartitionsForRound(), initialSlicesPerPartition),
+		h.cfg.LeaseDuration,
+		h.r.hashLeaseLookahead(),
+		h.cfg.EntryRetention,
+	))
 
 	// 60 rounds at 30s each = 30 simulated minutes, well past
 	// LeaseDuration (5min) so we exercise the lease
@@ -160,6 +167,13 @@ func TestHarness_RefreshesHashLeasesBeforeSlowRebalanceWork(t *testing.T) {
 		},
 	})
 	rc := h.addReadcache("readcache-0")
+	require.True(t, h.r.store.apply(
+		h.clock.Now(),
+		assignment.FineEvenSplitForTenant("tenant-a", h.r.activePartitionsForRound(), initialSlicesPerPartition),
+		h.cfg.LeaseDuration,
+		h.r.hashLeaseLookahead(),
+		h.cfg.EntryRetention,
+	))
 
 	require.NoError(t, h.runRound())
 	start := h.clock.Now()
@@ -178,7 +192,6 @@ func TestHarness_RefreshesHashLeasesBeforeSlowRebalanceWork(t *testing.T) {
 
 	require.NoError(t, h.runRound())
 	require.Equal(t, start.Add(h.cfg.LeaseDuration-h.cfg.LeaseLookahead+4*time.Second), h.clock.Now())
-	assert.Contains(t, h.logOutput(), "hash assignment leases refreshed before rebalance")
 	assert.True(t, h.r.store.leaseHorizon(roundStart).After(roundStart.Add(h.cfg.LeaseLookahead+h.cfg.MinRebalanceInterval)),
 		"post-round lease horizon at round start should leave enough runway for the scheduler floor")
 

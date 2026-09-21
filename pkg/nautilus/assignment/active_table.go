@@ -15,11 +15,9 @@ import (
 // lookup.
 //
 // The table is immutable after construction. Each entry covers a
-// disjoint, non-overlapping portion of the 32-bit hash space; if
-// the source Log was driven by valid Apply calls the entries also
-// tile the full space contiguously. Entries are sorted ascending by
-// Range.Lo so binary search by Range.Hi resolves the unique
-// containing tile.
+// disjoint, non-overlapping portion of its tenant's 32-bit hash space; if the
+// source Log was driven by valid Apply calls, each tenant's entries also tile
+// the full space contiguously. Entries are sorted by (TenantID, Range.Lo).
 //
 // ValidUntil reports the soonest expiration of any included entry:
 // after that wall-clock instant, at least one tile is no longer
@@ -29,19 +27,21 @@ import (
 // that became active in the meantime).
 type ActiveTable struct {
 	// entries is the list of entries from the source Log that were
-	// active at the wall-clock passed to NewActiveTable, sorted by
-	// Range.Lo.
+	// active at the wall-clock passed to ActiveTable, sorted by
+	// (TenantID, Range.Lo).
 	entries []LogEntry
+	tenants map[string]activeTenantTable
 
 	// builtAt is the `at` argument passed to NewActiveTable. Lookups
 	// for `at` strictly less than builtAt may return entries whose
 	// leases hadn't started yet, so callers should rebuild for
 	// significantly earlier `at` values.
 	builtAt time.Time
+}
 
-	// validUntil is the minimum To across the entries. Once
-	// wall-clock crosses this, at least one tile in the table is no
-	// longer active.
+type activeTenantTable struct {
+	start      int
+	end        int
 	validUntil time.Time
 }
 
@@ -74,9 +74,22 @@ func (d LookupMissDebug) String() string {
 // at. The returned table holds its own slice and is safe to use
 // concurrently with further mutations of l (including via Apply).
 func (l *Log) ActiveTable(at time.Time) *ActiveTable {
+	return l.activeTable(at, nil)
+}
+
+// ActiveTableForTenant returns a query-optimized view containing only
+// tenantID's entries active at at.
+func (l *Log) ActiveTableForTenant(tenantID string, at time.Time) *ActiveTable {
+	return l.activeTable(at, &tenantID)
+}
+
+func (l *Log) activeTable(at time.Time, onlyTenant *string) *ActiveTable {
 	// Avoid allocating ActiveAt's slice; we'll do our own pass.
 	count := 0
 	for _, e := range l.entries {
+		if onlyTenant != nil && e.TenantID != *onlyTenant {
+			continue
+		}
 		if e.ActiveAt(at) {
 			count++
 		}
@@ -86,23 +99,39 @@ func (l *Log) ActiveTable(at time.Time) *ActiveTable {
 	}
 
 	entries := make([]LogEntry, 0, count)
-	var validUntil time.Time
 	for _, e := range l.entries {
+		if onlyTenant != nil && e.TenantID != *onlyTenant {
+			continue
+		}
 		if !e.ActiveAt(at) {
 			continue
 		}
 		entries = append(entries, e)
-		if validUntil.IsZero() || e.To.Before(validUntil) {
-			validUntil = e.To
-		}
 	}
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].TenantID != entries[j].TenantID {
+			return entries[i].TenantID < entries[j].TenantID
+		}
 		return entries[i].Range.Lo < entries[j].Range.Lo
 	})
+	tenants := make(map[string]activeTenantTable)
+	for start := 0; start < len(entries); {
+		tenantID := entries[start].TenantID
+		end := start + 1
+		tenantValidUntil := entries[start].To
+		for end < len(entries) && entries[end].TenantID == tenantID {
+			if tenantValidUntil.IsZero() || (!entries[end].To.IsZero() && entries[end].To.Before(tenantValidUntil)) {
+				tenantValidUntil = entries[end].To
+			}
+			end++
+		}
+		tenants[tenantID] = activeTenantTable{start: start, end: end, validUntil: tenantValidUntil}
+		start = end
+	}
 	return &ActiveTable{
-		entries:    entries,
-		builtAt:    at,
-		validUntil: validUntil,
+		entries: entries,
+		tenants: tenants,
+		builtAt: at,
 	}
 }
 
@@ -114,13 +143,22 @@ func (l *Log) ActiveTable(at time.Time) *ActiveTable {
 // the result. The lookup itself is correct regardless: it simply
 // returns whatever tile owned key at the table's construction time.
 func (t *ActiveTable) Lookup(key uint32) (int32, bool) {
+	return t.LookupForTenant("", key)
+}
+
+// LookupForTenant returns the partition ID of tenantID's tile containing key.
+func (t *ActiveTable) LookupForTenant(tenantID string, key uint32) (int32, bool) {
+	bounds, ok := t.tenants[tenantID]
+	if !ok {
+		return 0, false
+	}
 	// Find the first tile whose Range.Hi >= key. Because tiles in
 	// the table are non-overlapping and sorted by Range.Lo, that
 	// tile (if it exists) is the unique candidate.
-	idx := sort.Search(len(t.entries), func(i int) bool {
-		return t.entries[i].Range.Hi >= key
+	idx := bounds.start + sort.Search(bounds.end-bounds.start, func(i int) bool {
+		return t.entries[bounds.start+i].Range.Hi >= key
 	})
-	if idx >= len(t.entries) {
+	if idx >= bounds.end {
 		return 0, false
 	}
 	e := &t.entries[idx]
@@ -134,30 +172,39 @@ func (t *ActiveTable) Lookup(key uint32) (int32, bool) {
 // DebugLookupMiss returns a compact diagnostic view around key after
 // Lookup(key) returned false.
 func (t *ActiveTable) DebugLookupMiss(key uint32) LookupMissDebug {
+	return t.DebugLookupMissForTenant("", key)
+}
+
+// DebugLookupMissForTenant returns diagnostics for a tenant-scoped miss.
+func (t *ActiveTable) DebugLookupMissForTenant(tenantID string, key uint32) LookupMissDebug {
 	out := LookupMissDebug{ByLoIndex: -1}
-	out.SearchIndex = sort.Search(len(t.entries), func(i int) bool {
-		return t.entries[i].Range.Hi >= key
+	bounds, ok := t.tenants[tenantID]
+	if !ok {
+		return out
+	}
+	out.SearchIndex = bounds.start + sort.Search(bounds.end-bounds.start, func(i int) bool {
+		return t.entries[bounds.start+i].Range.Hi >= key
 	})
-	if out.SearchIndex < len(t.entries) {
+	if out.SearchIndex < bounds.end {
 		out.HasByHiEntry = true
 		out.ByHiEntry = t.entries[out.SearchIndex]
 	}
 
-	byLo := sort.Search(len(t.entries), func(i int) bool {
-		return t.entries[i].Range.Lo > key
+	byLo := bounds.start + sort.Search(bounds.end-bounds.start, func(i int) bool {
+		return t.entries[bounds.start+i].Range.Lo > key
 	}) - 1
 	out.ByLoIndex = byLo
-	if byLo >= 0 {
+	if byLo >= bounds.start {
 		out.HasByLoEntry = true
 		out.ByLoEntry = t.entries[byLo]
 	}
-	if byLo+1 >= 0 && byLo+1 < len(t.entries) {
+	if byLo+1 >= bounds.start && byLo+1 < bounds.end {
 		out.HasNextByLoEntry = true
 		out.NextByLoEntry = t.entries[byLo+1]
 	}
 
 	seen := map[int32]struct{}{}
-	for i := range t.entries {
+	for i := bounds.start; i < bounds.end; i++ {
 		e := &t.entries[i]
 		if e.Range.Lo > key {
 			break
@@ -187,20 +234,27 @@ func (t *ActiveTable) DebugLookupMiss(key uint32) LookupMissDebug {
 // straddle more than one tile, so a single query can resolve to
 // several partitions.
 func (t *ActiveTable) PartitionsOverlapping(lo, hi uint32) []int32 {
-	if len(t.entries) == 0 || hi < lo {
+	return t.PartitionsOverlappingForTenant("", lo, hi)
+}
+
+// PartitionsOverlappingForTenant is the tenant-scoped form of
+// PartitionsOverlapping.
+func (t *ActiveTable) PartitionsOverlappingForTenant(tenantID string, lo, hi uint32) []int32 {
+	bounds, ok := t.tenants[tenantID]
+	if !ok || hi < lo {
 		return nil
 	}
 	// Find the first tile whose Range.Hi >= lo; earlier tiles end
 	// strictly before the query range and cannot overlap.
-	start := sort.Search(len(t.entries), func(i int) bool {
-		return t.entries[i].Range.Hi >= lo
+	start := bounds.start + sort.Search(bounds.end-bounds.start, func(i int) bool {
+		return t.entries[bounds.start+i].Range.Hi >= lo
 	})
 
 	var (
 		out  []int32
 		seen map[int32]struct{}
 	)
-	for i := start; i < len(t.entries); i++ {
+	for i := start; i < bounds.end; i++ {
 		e := &t.entries[i]
 		// Tiles are sorted by Range.Lo, so once a tile begins past
 		// the query range nothing later can overlap.
@@ -226,12 +280,18 @@ func (t *ActiveTable) PartitionsOverlapping(lo, hi uint32) []int32 {
 // multiple tiles appears once). It is the full-fanout case of a read
 // query that cannot be narrowed to a metric-name hash range.
 func (t *ActiveTable) AllPartitions() []int32 {
-	if len(t.entries) == 0 {
+	return t.AllPartitionsForTenant("")
+}
+
+// AllPartitionsForTenant is the tenant-scoped form of AllPartitions.
+func (t *ActiveTable) AllPartitionsForTenant(tenantID string) []int32 {
+	bounds, ok := t.tenants[tenantID]
+	if !ok {
 		return nil
 	}
-	out := make([]int32, 0, len(t.entries))
-	seen := make(map[int32]struct{}, len(t.entries))
-	for i := range t.entries {
+	out := make([]int32, 0, bounds.end-bounds.start)
+	seen := make(map[int32]struct{}, bounds.end-bounds.start)
+	for i := bounds.start; i < bounds.end; i++ {
 		pid := t.entries[i].PartitionID
 		if _, ok := seen[pid]; ok {
 			continue
@@ -243,17 +303,34 @@ func (t *ActiveTable) AllPartitions() []int32 {
 }
 
 // ValidUntil returns the soonest expiration across all entries in
-// the table. After this wall-clock the table is stale.
-func (t *ActiveTable) ValidUntil() time.Time { return t.validUntil }
+// the legacy empty tenant. After this wall-clock the table is stale.
+func (t *ActiveTable) ValidUntil() time.Time { return t.ValidUntilForTenant("") }
+
+// ValidUntilForTenant returns the soonest expiration across tenantID's entries.
+func (t *ActiveTable) ValidUntilForTenant(tenantID string) time.Time {
+	return t.tenants[tenantID].validUntil
+}
 
 // BuiltAt returns the wall-clock the table was built for.
 func (t *ActiveTable) BuiltAt() time.Time { return t.builtAt }
 
-// Len returns the number of tiles in the table.
-func (t *ActiveTable) Len() int { return len(t.entries) }
+// Len returns the number of legacy empty-tenant tiles in the table.
+func (t *ActiveTable) Len() int { return t.LenForTenant("") }
+
+// LenForTenant returns the number of tenantID's tiles in the table.
+func (t *ActiveTable) LenForTenant(tenantID string) int {
+	bounds := t.tenants[tenantID]
+	return bounds.end - bounds.start
+}
 
 // CoversAt reports whether the table is safe to use for wall-clock
 // at: built at or before at, and not yet stale.
 func (t *ActiveTable) CoversAt(at time.Time) bool {
-	return !at.Before(t.builtAt) && at.Before(t.validUntil)
+	return t.CoversTenantAt("", at)
+}
+
+// CoversTenantAt reports whether tenantID's table is safe to use at.
+func (t *ActiveTable) CoversTenantAt(tenantID string, at time.Time) bool {
+	bounds, ok := t.tenants[tenantID]
+	return ok && !at.Before(t.builtAt) && (bounds.validUntil.IsZero() || at.Before(bounds.validUntil))
 }

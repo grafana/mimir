@@ -166,7 +166,7 @@ details>summary::-webkit-details-marker{display:none}
 	<div class="part-ranges open">
 		<div class="range-grid">
 		{{range .Ranges}}
-			<span class="range {{actionClass .LastAction}}" title="Size: {{fmtPct .SizePct}} · Head series: {{fmtSeries .Series}}">{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s</span></span>
+			<span class="range {{actionClass .LastAction}}" title="Tenant: {{.TenantID}} · Size: {{fmtPct .SizePct}} · Head series: {{fmtSeries .Series}}">{{if .TenantID}}{{.TenantID}} {{end}}{{hexRange .Lo .Hi}}<span class="rate">{{fmtSeries .Series}}s</span></span>
 		{{end}}
 		</div>
 	</div>
@@ -194,7 +194,7 @@ details>summary::-webkit-details-marker{display:none}
 	{{if $r.Actions}}
 	<div class="round-actions">
 	{{range $r.Actions}}
-		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
+		<span class="action-pill {{actionClass .Kind}}" title="{{.Detail}}">{{.Kind}} {{if .TenantID}}{{.TenantID}} {{end}}{{hexRange .Range.Lo .Range.Hi}}{{if and .FromPart .ToPart}} P{{.FromPart}}→P{{.ToPart}}{{end}}{{if .Series}} ({{fmtSeries .Series}}s){{end}}</span>
 	{{end}}
 	</div>
 	{{end}}

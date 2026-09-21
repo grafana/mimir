@@ -50,7 +50,8 @@ message WatchAssignmentsRequest {
   // message, but subsequent broadcasts carry only the entries
   // created or mutated since the previous message on this stream
   // (reset=false), which the client must upsert into its local log
-  // by lease identity (lo, hi, partition_id, from_unix_ms). Leases
+  // by lease identity
+  // (tenant_id, lo, hi, partition_id, from_unix_ms). Leases
   // are never deleted by the rebalancer — preemption rewrites
   // to_unix_ms in place (possibly to a zero-length [from, from)
   // window) — so upsert plus client-side pruning by
@@ -61,6 +62,12 @@ message WatchAssignmentsRequest {
   // resends the entire retention window (~hours of lease history)
   // every rebalance round.
   bool supports_deltas = 1;
+
+  // supports_tenant_scoped_assignments declares that the subscriber keys
+  // entries by tenant_id as well as range identity. This capability is
+  // mandatory; the server rejects a subscriber that does not declare it,
+  // including while the assignment is empty.
+  bool supports_tenant_scoped_assignments = 2;
 }
 
 // WatchAssignmentsResponse carries either a full snapshot of the
@@ -70,7 +77,7 @@ message WatchAssignmentsResponse {
   repeated LogEntry entries = 1 [(gogoproto.nullable) = false];
   // reset=true: entries is a complete snapshot; replace any local
   // state. reset=false: entries are upserts keyed by
-  // (lo, hi, partition_id, from_unix_ms).
+  // (tenant_id, lo, hi, partition_id, from_unix_ms).
   bool reset = 2;
   // prune_before_unix_ms is the server's retention horizon at
   // broadcast time: entries whose to_unix_ms is strictly before it
@@ -79,6 +86,11 @@ message WatchAssignmentsResponse {
   // skip pruning, matching the historical replace-wholesale
   // behavior where snapshots were already retention-bounded.
   int64 prune_before_unix_ms = 3;
+  // assignment_generation changes only when range placement changes.
+  // assignment_valid_until_unix_ms is the global heartbeat deadline after
+  // which consumers must stop trusting this generation unless refreshed.
+  uint64 assignment_generation = 4;
+  int64 assignment_valid_until_unix_ms = 5;
 }
 
 // LogEntry is the wire representation of a single (partition, hash
@@ -102,6 +114,9 @@ message LogEntry {
   // leases by comparing to_unix_ms against their local clock.
   int64 from_unix_ms = 4;
   int64 to_unix_ms = 5;
+  // tenant_id scopes the hash-range tiling. Empty preserves the legacy
+  // single-tenant assignment namespace.
+  string tenant_id = 6;
 }
 
 message WatchReadcacheAssignmentsRequest {
@@ -191,4 +206,7 @@ message SpotlightedRange {
   // segment spotlights when correlating decision-time logs with
   // post-decision observations.
   string reason = 8;
+  // tenant_id scopes the numeric hash range to one tenant's independent
+  // uint32 hash space.
+  string tenant_id = 9;
 }

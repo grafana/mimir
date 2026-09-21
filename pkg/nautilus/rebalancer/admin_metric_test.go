@@ -25,7 +25,7 @@ import (
 // metric's hash range moves to P2 (owned by rc-new). This produces a
 // lookup where window-vs-instant partition counts differ — the churn
 // amplification the tool exists to expose.
-func metricLookupTestRebalancer(t *testing.T, now, moveAt time.Time, lo uint32) *Rebalancer {
+func metricLookupTestRebalancer(t *testing.T, tenantID string, now, moveAt time.Time, lo uint32) *Rebalancer {
 	t.Helper()
 
 	require.Greater(t, lo, uint32(0), "test fixture assumes the metric's hash range doesn't start at 0")
@@ -33,17 +33,22 @@ func metricLookupTestRebalancer(t *testing.T, now, moveAt time.Time, lo uint32) 
 	store := newLogStore()
 	store.seedFromEntries([]assignment.LogEntry{
 		// Before the move: one tile spanning everything on P1.
-		{Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: moveAt.Add(-time.Hour), To: moveAt},
+		{TenantID: tenantID, Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: moveAt.Add(-time.Hour), To: moveAt},
 		// After the move: the slice holding the metric's range goes
-		// to P2, the rest stays on P1.
-		{Range: assignment.HashRange{Lo: lo, Hi: math.MaxUint32}, PartitionID: 2, From: moveAt, To: now.Add(time.Hour)},
-		{Range: assignment.HashRange{Lo: 0, Hi: lo - 1}, PartitionID: 1, From: moveAt, To: now.Add(time.Hour)},
+		// to P2, the rest stays on P1. Current tenant placements are
+		// open-ended: a zero To means valid until superseded.
+		{TenantID: tenantID, Range: assignment.HashRange{Lo: lo, Hi: math.MaxUint32}, PartitionID: 2, From: moveAt},
+		{TenantID: tenantID, Range: assignment.HashRange{Lo: 0, Hi: lo - 1}, PartitionID: 1, From: moveAt},
+		// Another tenant owns the same numerical hash space. Its tile
+		// must not affect this tenant's lookup.
+		{TenantID: "other-tenant", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 3, From: moveAt},
 	})
 
 	rcStore := newReadcacheLogStore()
 	rcStore.seedFromEntries([]readcacheassignment.LogEntry{
 		{PartitionID: 1, InstanceID: "rc-old", From: moveAt.Add(-time.Hour), To: now.Add(time.Hour)},
 		{PartitionID: 2, InstanceID: "rc-new", From: moveAt, To: now.Add(time.Hour)},
+		{PartitionID: 3, InstanceID: "rc-other-tenant", From: moveAt, To: now.Add(time.Hour)},
 	})
 
 	return &Rebalancer{
@@ -61,7 +66,7 @@ func TestServeMetricLookup(t *testing.T) {
 	now := time.Unix(100000, 0)
 	moveAt := now.Add(-5 * time.Minute)
 	lo, hi := mimirpb.MetricNameHashRange(user, metric)
-	r := metricLookupTestRebalancer(t, now, moveAt, lo)
+	r := metricLookupTestRebalancer(t, user, now, moveAt, lo)
 
 	t.Run("json resolves range, window partitions, and owners", func(t *testing.T) {
 		req := httptest.NewRequest("GET", fmt.Sprintf("%s/metric?user=%s&metric=%s&window=15m&format=json", adminPathPrefix, user, metric), nil)
@@ -81,6 +86,7 @@ func TestServeMetricLookup(t *testing.T) {
 		assert.Equal(t, 2, got.NumPartitionsWindow, "window must union across the range->partition move")
 		assert.Equal(t, 1, got.NumPartitionsNow, "only the post-move partition is active at now")
 		assert.Equal(t, 2, got.DistinctReadcaches)
+		assert.Len(t, got.Tiles, 2)
 
 		require.Len(t, got.Partitions, 2)
 		assert.Equal(t, int32(1), got.Partitions[0].PartitionID)
@@ -89,6 +95,9 @@ func TestServeMetricLookup(t *testing.T) {
 		assert.Equal(t, int32(2), got.Partitions[1].PartitionID)
 		require.Len(t, got.Partitions[1].Owners, 1)
 		assert.Equal(t, "rc-new", got.Partitions[1].Owners[0].InstanceID)
+		assert.NotContains(t, rec.Body.String(), "rc-other-tenant")
+		assert.True(t, got.Tiles[1].To.IsZero(), "the active open-ended placement must be included")
+		assert.Equal(t, "active", got.Tiles[1].Status)
 	})
 
 	t.Run("short window excludes the pre-move partition", func(t *testing.T) {
@@ -114,6 +123,8 @@ func TestServeMetricLookup(t *testing.T) {
 		assert.Contains(t, body, formatHexRange(lo, hi))
 		assert.Contains(t, body, "rc-old")
 		assert.Contains(t, body, "rc-new")
+		assert.NotContains(t, body, "rc-other-tenant")
+		assert.Contains(t, body, ">open<")
 		assert.True(t, strings.Contains(body, "P1") && strings.Contains(body, "P2"))
 	})
 

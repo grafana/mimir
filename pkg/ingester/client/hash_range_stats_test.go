@@ -12,11 +12,14 @@ import (
 func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	original := &HashRangeStatsResponse{
 		Rates: []HashRangeRate{
-			{Lo: 0, Hi: 1000, ActiveSeries: 12345},
-			{Lo: 1001, Hi: 2000, ActiveSeries: 0},
+			{Lo: 0, Hi: 1000, ActiveSeries: 12345, TenantId: "tenant-a"},
+			{Lo: 1001, Hi: 2000, ActiveSeries: 0, TenantId: "tenant-b"},
 			{Lo: 2001, Hi: 4294967295, ActiveSeries: 9876543210},
 		},
 		TotalActiveSeries: 9876555555,
+		UnknownTenants: []UnknownTenant{
+			{TenantId: "tenant-bootstrap", PartitionId: 0, FirstSeenUnixMs: 1700000000123},
+		},
 	}
 
 	data, err := original.Marshal()
@@ -31,14 +34,20 @@ func TestHashRangeStatsResponse_MarshalUnmarshal(t *testing.T) {
 	assert.Equal(t, uint32(0), restored.Rates[0].Lo)
 	assert.Equal(t, uint32(1000), restored.Rates[0].Hi)
 	assert.Equal(t, int64(12345), restored.Rates[0].ActiveSeries)
+	assert.Equal(t, "tenant-a", restored.Rates[0].TenantId)
 
 	assert.Equal(t, uint32(1001), restored.Rates[1].Lo)
 	assert.Equal(t, uint32(2000), restored.Rates[1].Hi)
 	assert.Equal(t, int64(0), restored.Rates[1].ActiveSeries)
+	assert.Equal(t, "tenant-b", restored.Rates[1].TenantId)
 
 	assert.Equal(t, uint32(2001), restored.Rates[2].Lo)
 	assert.Equal(t, uint32(4294967295), restored.Rates[2].Hi)
 	assert.Equal(t, int64(9876543210), restored.Rates[2].ActiveSeries)
+	assert.Empty(t, restored.Rates[2].TenantId, "legacy empty tenant ID must round-trip")
+	require.Equal(t, []UnknownTenant{
+		{TenantId: "tenant-bootstrap", PartitionId: 0, FirstSeenUnixMs: 1700000000123},
+	}, restored.UnknownTenants)
 }
 
 func TestHashRangeStatsResponse_QueryLoadFields_RoundTrip(t *testing.T) {
@@ -150,7 +159,7 @@ func TestHashRangeStatsResponse_Size(t *testing.T) {
 func TestSetHashRangesRequest_MarshalUnmarshal(t *testing.T) {
 	original := &SetHashRangesRequest{
 		Ranges: []HashRangeEntry{
-			{Lo: 0, Hi: 1000},
+			{Lo: 0, Hi: 1000, PartitionId: 3, TenantId: "tenant-a"},
 			{Lo: 1001, Hi: 4294967295},
 		},
 	}
@@ -166,8 +175,11 @@ func TestSetHashRangesRequest_MarshalUnmarshal(t *testing.T) {
 	require.Len(t, restored.Ranges, 2)
 	assert.Equal(t, uint32(0), restored.Ranges[0].Lo)
 	assert.Equal(t, uint32(1000), restored.Ranges[0].Hi)
+	assert.Equal(t, int32(3), restored.Ranges[0].PartitionId)
+	assert.Equal(t, "tenant-a", restored.Ranges[0].TenantId)
 	assert.Equal(t, uint32(1001), restored.Ranges[1].Lo)
 	assert.Equal(t, uint32(4294967295), restored.Ranges[1].Hi)
+	assert.Empty(t, restored.Ranges[1].TenantId, "legacy empty tenant ID must round-trip")
 }
 
 func TestSetHashRangesRequest_Size(t *testing.T) {

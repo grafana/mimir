@@ -32,6 +32,7 @@ const (
 // the slicer's algorithm runs on sample rate, not series.
 type Action struct {
 	Kind     ActionKind           `json:"kind"`
+	TenantID string               `json:"tenant_id,omitempty"`
 	Range    assignment.HashRange `json:"range"`
 	FromPart int32                `json:"from_partition,omitempty"`
 	ToPart   int32                `json:"to_partition,omitempty"`
@@ -297,6 +298,7 @@ type partitionView struct {
 
 // rangeView is the data for one hash range in the admin page.
 type rangeView struct {
+	TenantID   string
 	Lo         uint32
 	Hi         uint32
 	Series     int64
@@ -383,16 +385,16 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	}
 
 	// Compute last-round action lookups.
-	lastActions := make(map[assignment.HashRange]ActionKind)
+	lastActions := make(map[tenantRangeKey]ActionKind)
 	if len(rounds) > 0 {
 		for _, a := range rounds[len(rounds)-1].Actions {
-			lastActions[a.Range] = a.Kind
+			lastActions[tenantRangeKey{tenantID: a.TenantID, hr: a.Range}] = a.Kind
 		}
 	}
 
 	// Build partition views.
 	partMap := make(map[int32]*partitionView)
-	hashSpaceTotal := float64(uint64(math.MaxUint32) + 1)
+	hashSpaceTotal := float64(uint64(math.MaxUint32)+1) * float64(tenantCount(current.Entries))
 	var totalOwnedSeries int64
 
 	for _, e := range current.Entries {
@@ -402,12 +404,13 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 			partMap[e.PartitionID] = pv
 		}
 
-		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
+		stat := lastStats[partitionRangeKey{tenantID: e.TenantID, partitionID: e.PartitionID, hr: e.Range}]
 		sizePct := float64(e.Range.Size()) / hashSpaceTotal * 100
 
-		action := lastActions[e.Range]
+		action := lastActions[tenantRangeKey{tenantID: e.TenantID, hr: e.Range}]
 
 		pv.Ranges = append(pv.Ranges, rangeView{
+			TenantID:   e.TenantID,
 			Lo:         e.Range.Lo,
 			Hi:         e.Range.Hi,
 			Series:     stat.Series,
@@ -542,7 +545,7 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	heatmap := make([]float64, heatmapBuckets)
 	bucketSize := (uint64(math.MaxUint32) + 1) / uint64(heatmapBuckets)
 	for _, e := range current.Entries {
-		stat := lastStats[partitionRangeKey{partitionID: e.PartitionID, hr: e.Range}]
+		stat := lastStats[partitionRangeKey{tenantID: e.TenantID, partitionID: e.PartitionID, hr: e.Range}]
 		if stat.Series == 0 {
 			continue
 		}

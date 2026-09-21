@@ -1049,3 +1049,98 @@ func TestLog_AllPartitionsDuring(t *testing.T) {
 		assert.Empty(t, l.AllPartitionsDuring(day(20), day(22)))
 	})
 }
+
+func TestLog_TenantScopedIdenticalRangesAndHistoricalFanout(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+	full := HashRange{Lo: 0, Hi: math.MaxUint32}
+	l := NewLog()
+	initial := &Assignment{Entries: []Entry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1},
+		{TenantID: "tenant-b", Range: full, PartitionID: 2},
+	}}
+	require.NoError(t, initial.Validate())
+	require.True(t, l.Apply(t0, initial, testLease, testLookahead))
+	require.NoError(t, l.ActiveTilesFullSpaceForTenant("tenant-a", t0))
+	require.NoError(t, l.ActiveTilesFullSpaceForTenant("tenant-b", t0))
+
+	assert.Equal(t, int32(1), mustLookupLog(t, l, "tenant-a", t0, 42))
+	assert.Equal(t, int32(2), mustLookupLog(t, l, "tenant-b", t0, 42))
+
+	table := l.ActiveTable(t0)
+	require.NotNil(t, table)
+	assert.Equal(t, int32(1), mustLookupTable(t, table, "tenant-a", 42))
+	assert.Equal(t, int32(2), mustLookupTable(t, table, "tenant-b", 42))
+	assert.Equal(t, []int32{1}, table.AllPartitionsForTenant("tenant-a"))
+	assert.Equal(t, []int32{2}, table.PartitionsOverlappingForTenant("tenant-b", 0, math.MaxUint32))
+
+	t1 := t0.Add(time.Minute)
+	moved := &Assignment{Entries: []Entry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1},
+		{TenantID: "tenant-b", Range: full, PartitionID: 3},
+	}}
+	require.True(t, l.Apply(t1, moved, testLease, testLookahead))
+
+	assert.Equal(t, []int32{1}, l.PartitionsOverlappingIntervalForTenant("tenant-a", t0, t1.Add(time.Minute), 42, 42))
+	assert.Equal(t, []int32{2, 3}, l.PartitionsOverlappingIntervalForTenant("tenant-b", t0, t1.Add(time.Minute), 42, 42))
+	assert.Equal(t, []int32{2, 3}, l.AllPartitionsDuringForTenant("tenant-b", t0, t1.Add(time.Minute)))
+}
+
+func TestLog_MergedWithEntriesTenantIsPartOfIdentity(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+	full := HashRange{Lo: 0, Hi: math.MaxUint32}
+	aTo := t0.Add(time.Minute)
+	bTo := t0.Add(2 * time.Minute)
+	l := NewLogFromEntries([]LogEntry{
+		{TenantID: "tenant-a", Range: full, PartitionID: 1, From: t0, To: aTo},
+		{TenantID: "tenant-b", Range: full, PartitionID: 1, From: t0, To: bTo},
+	})
+
+	newBTo := t0.Add(3 * time.Minute)
+	merged := l.MergedWithEntries([]LogEntry{
+		{TenantID: "tenant-b", Range: full, PartitionID: 1, From: t0, To: newBTo},
+	})
+	require.Len(t, merged.Entries(), 2)
+	assert.Equal(t, aTo, merged.Entries()[0].To)
+	assert.Equal(t, newBTo, merged.Entries()[1].To)
+}
+
+func TestLog_TenantAssignmentsAreChangeDriven(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	initial := EvenSplitForTenant("tenant-a", []int32{0})
+	l := NewLog()
+
+	require.True(t, l.Apply(t0, initial, time.Minute, 10*time.Second))
+	require.Len(t, l.Entries(), 1)
+	assert.True(t, l.Entries()[0].To.IsZero(), "current tenant placement must remain open-ended")
+
+	// A heartbeat with unchanged placement must not duplicate every range.
+	require.False(t, l.Apply(t0.Add(time.Minute), initial, time.Minute, 10*time.Second))
+	require.Len(t, l.Entries(), 1)
+
+	next := EvenSplitForTenant("tenant-a", []int32{0, 1})
+	require.True(t, l.Apply(t0.Add(2*time.Minute), next, time.Minute, 10*time.Second))
+	require.Len(t, l.Entries(), 3)
+
+	var closed int
+	for _, entry := range l.Entries() {
+		if entry.To.Equal(t0.Add(2 * time.Minute)) {
+			closed++
+		}
+	}
+	assert.Equal(t, 1, closed)
+	require.NoError(t, l.ActiveTilesFullSpaceForTenant("tenant-a", t0.Add(3*time.Minute)))
+}
+
+func mustLookupLog(t *testing.T, l *Log, tenantID string, at time.Time, key uint32) int32 {
+	t.Helper()
+	pid, ok := l.LookupForTenant(tenantID, at, key)
+	require.True(t, ok)
+	return pid
+}
+
+func mustLookupTable(t *testing.T, table *ActiveTable, tenantID string, key uint32) int32 {
+	t.Helper()
+	pid, ok := table.LookupForTenant(tenantID, key)
+	require.True(t, ok)
+	return pid
+}

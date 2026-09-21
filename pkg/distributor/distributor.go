@@ -126,6 +126,14 @@ type usageTrackerGenericClient interface {
 	CanTrackAsync(userID string) bool
 }
 
+type nautilusAssignmentSnapshot struct {
+	log          *assignment.Log
+	table        *assignment.ActiveTable
+	generation   uint64
+	validUntil   time.Time
+	tenantScoped bool
+}
+
 // Distributor forwards appends and queries to individual ingesters.
 type Distributor struct {
 	services.Service
@@ -268,6 +276,12 @@ type Distributor struct {
 	// successor leases — without waiting for a fresh stream snapshot.
 	nautilusLog syncatomic.Pointer[assignment.Log]
 
+	// nautilusAssignmentSnapshot publishes the streamed log together with its
+	// generation-validity heartbeat and derived active table. Keeping these in
+	// one atomic value prevents a delta/reset race from combining one
+	// generation's tenant identities with another generation's table.
+	nautilusAssignmentSnapshot syncatomic.Pointer[nautilusAssignmentSnapshot]
+
 	// nautilusActiveTable is a sorted-by-Range.Lo view of the entries
 	// in nautilusLog whose leases are active right now. Lookups are
 	// O(log N), so the per-series routing cost stays tiny even with
@@ -349,6 +363,9 @@ func defaultNow() time.Time        { return time.Now() }
 // GetNautilusLog returns the current assignment log streamed from the
 // nautilus rebalancer, or nil if no snapshot has been received yet.
 func (d *Distributor) GetNautilusLog() *assignment.Log {
+	if snapshot := d.nautilusAssignmentSnapshot.Load(); snapshot != nil {
+		return snapshot.log
+	}
 	return d.nautilusLog.Load()
 }
 
@@ -1281,10 +1298,10 @@ func (d *Distributor) running(ctx context.Context) error {
 // per-distributor clocks still differ from the rebalancer's, so a
 // brief routing split across rebalance boundaries remains possible.
 //
-// The log itself is self-expiring: each entry is a time-boxed lease,
-// so if this loop fails to reconnect for longer than the lease
-// duration, Lookup returns false and routing falls back to the
-// partition ring without any extra liveness checks here.
+// Every response carries a generation-validity heartbeat. If this loop
+// fails to reconnect before that heartbeat expires, tenant assignment
+// routing becomes unavailable even though the last placement entries are
+// intentionally open-ended.
 func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 	conn, ok := d.nautilusRebalancerConn.(*grpc.ClientConn)
 	if !ok || conn == nil {
@@ -1299,7 +1316,10 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 	backoff := minBackoff
 
 	for ctx.Err() == nil {
-		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{SupportsDeltas: true})
+		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{
+			SupportsDeltas:                  true,
+			SupportsTenantScopedAssignments: true,
+		})
 		if err != nil {
 			level.Warn(d.log).Log("msg", "failed to open nautilus WatchAssignments stream", "err", err, "backoff", backoff)
 			d.sleepWithCtx(ctx, backoff)
@@ -1333,10 +1353,9 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 // replaces the local log wholesale, or a delta (reset=false) whose
 // entries are upserted into the previous log by lease identity. The
 // merged log is then pruned to the server's retention horizon. The
-// first message is treated as a snapshot regardless of the flag so
-// a mixed-version rollout (old rebalancer that never sets reset)
-// degrades to the legacy replace-wholesale behavior instead of
-// merging snapshots into each other.
+// first message is treated as a snapshot regardless of the flag. The
+// request requires tenant-scoped assignments, so even an empty snapshot
+// represents an authoritative tenant-aware generation.
 func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer_WatchAssignmentsClient) error {
 	first := true
 	for {
@@ -1344,55 +1363,78 @@ func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer
 		if err != nil {
 			return err
 		}
-		entries := rebalancer.EntriesFromProto(resp.Entries)
-		var log *assignment.Log
-		if resp.Reset_ || first {
-			log = assignment.NewLogFromEntries(entries)
-		} else {
-			log = d.nautilusLog.Load().MergedWithEntries(entries)
-		}
-		if resp.PruneBeforeUnixMs > 0 {
-			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
-		}
+		d.applyNautilusAssignmentResponse(resp, first)
 		first = false
-		d.nautilusLog.Store(log)
-		// Pre-build the active table for "now" so the next write
-		// request hits the fast path immediately. Hold the rebuild
-		// mutex so a concurrent stale-rebuild from getKeysByAssignment
-		// doesn't overwrite us with an older snapshot.
-		now := d.now()
-		table := log.ActiveTable(now)
-		d.nautilusActiveTableMu.Lock()
-		d.nautilusActiveTable.Store(table)
-		d.nautilusActiveTableMu.Unlock()
-		d.nautilusAssignmentsReceived.Inc()
-		if d.nautilusInitialSync != nil {
-			d.nautilusInitialSyncOnce.Do(func() {
-				close(d.nautilusInitialSync)
-			})
-		}
-
-		fields := []interface{}{
-			"msg", "received nautilus assignment update",
-			"entries", len(resp.Entries),
-			"reset", resp.Reset_,
-			"log_entries", log.Len(),
-		}
-		if table != nil {
-			fields = append(fields,
-				"active_tiles", table.Len(),
-				"valid_until", table.ValidUntil().Format(time.RFC3339),
-				"built_at", table.BuiltAt().Format(time.RFC3339),
-			)
-		} else {
-			fields = append(fields, "active_tiles", 0)
-		}
-		if err := log.ActiveTilesFullSpace(now); err != nil {
-			level.Warn(d.log).Log(append(fields, "validation_err", err.Error())...)
-		} else {
-			level.Info(d.log).Log(fields...)
-		}
 	}
+}
+
+func (d *Distributor) applyNautilusAssignmentResponse(resp *rebalancer.WatchAssignmentsResponse, first bool) {
+	entries := rebalancer.EntriesFromProto(resp.Entries)
+	var assignmentLog *assignment.Log
+	if resp.Reset_ || first {
+		assignmentLog = assignment.NewLogFromEntries(entries)
+	} else if previous := d.nautilusAssignmentSnapshot.Load(); previous != nil {
+		assignmentLog = previous.log.MergedWithEntries(entries)
+	} else {
+		assignmentLog = d.nautilusLog.Load().MergedWithEntries(entries)
+	}
+	if resp.PruneBeforeUnixMs > 0 {
+		assignmentLog.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
+	}
+
+	now := d.now()
+	table := assignmentLog.ActiveTable(now)
+	var validUntil time.Time
+	if resp.AssignmentValidUntilUnixMs != 0 {
+		validUntil = time.UnixMilli(resp.AssignmentValidUntilUnixMs)
+	}
+	snapshot := &nautilusAssignmentSnapshot{
+		log:          assignmentLog,
+		table:        table,
+		generation:   resp.AssignmentGeneration,
+		validUntil:   validUntil,
+		tenantScoped: true,
+	}
+
+	// Publish the table and its generation metadata together while excluding a
+	// concurrent legacy-lease rebuild.
+	d.nautilusActiveTableMu.Lock()
+	d.nautilusActiveTable.Store(table)
+	d.nautilusAssignmentSnapshot.Store(snapshot)
+	d.nautilusLog.Store(assignmentLog)
+	d.nautilusActiveTableMu.Unlock()
+
+	if d.nautilusAssignmentsReceived != nil {
+		d.nautilusAssignmentsReceived.Inc()
+	}
+	if d.nautilusInitialSync != nil {
+		d.nautilusInitialSyncOnce.Do(func() {
+			close(d.nautilusInitialSync)
+		})
+	}
+
+	fields := []interface{}{
+		"msg", "received nautilus assignment update",
+		"entries", len(resp.Entries),
+		"reset", resp.Reset_,
+		"log_entries", assignmentLog.Len(),
+		"assignment_generation", resp.AssignmentGeneration,
+		"assignment_valid_until", validUntil.Format(time.RFC3339),
+		"tenant_scoped", snapshot.tenantScoped,
+	}
+	if table != nil {
+		fields = append(fields, "built_at", table.BuiltAt().Format(time.RFC3339))
+	}
+	if active := assignmentLog.LatestActiveAssignments(now); active != nil {
+		fields = append(fields, "active_tiles", len(active.Entries))
+		if err := active.Validate(); err != nil {
+			level.Warn(d.log).Log(append(fields, "validation_err", err.Error())...)
+			return
+		}
+	} else {
+		fields = append(fields, "active_tiles", 0)
+	}
+	level.Info(d.log).Log(fields...)
 }
 
 // sleepWithCtx sleeps for dur but returns early if ctx is cancelled.
@@ -2835,7 +2877,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// Capture `now` once so all keys in this write request consult the
 	// same point-in-time view of the assignment log.
 	now := d.now()
-	table := d.nautilusActiveTableFor(now)
+	routing := d.nautilusRoutingForTenant(tenantID, now)
 
 	// Authoritative-nautilus mode: if the assignment table is
 	// unavailable we must not silently route through the partition
@@ -2843,7 +2885,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// Reject the whole write so the writer retries (503); a sustained
 	// rebalancer outage is best surfaced via the writer's own
 	// retry/backoff, not silent fallthrough.
-	if table == nil && d.cfg.NautilusRequired {
+	if !routing.snapshotAvailable && d.cfg.NautilusRequired {
 		level.Warn(d.log).Log(
 			"msg", "nautilus routing rejected: assignment table unavailable",
 			"tenant", tenantID,
@@ -2900,8 +2942,16 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 			return nautilusKeys, nautilusErr
 		}
 		nautilusComputed = true
-		if table != nil {
-			nautilusKeys, nautilusErr = d.getKeysByAssignment(ctx, tenantID, table, tenantRing, nautilusRoutingKeys())
+		if routing.snapshotAvailable && !routing.tenantKnown {
+			// A tenant-aware snapshot with no history for this tenant is the
+			// bootstrap state. Keep all of the request together on P0,
+			// including metadata, until the rebalancer publishes the tenant's
+			// first explicit tiling.
+			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys())
+			return nautilusKeys, nil
+		}
+		if routing.snapshotAvailable {
+			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys())
 			usedNautilus = nautilusErr == nil
 			return nautilusKeys, nautilusErr
 		}
@@ -3000,7 +3050,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// keyspace, so match against the locality tokens (which are
 	// already computed whenever usedNautilus is true).
 	if usedNautilus && nautilusKeys != nil && d.spotlights != nil {
-		d.spotlights.observeWrite(nautilusRoutingKeys(), nautilusKeys, req, initialMetadataIndex)
+		d.spotlights.observeWrite(tenantID, nautilusRoutingKeys(), nautilusKeys, req, initialMetadataIndex)
 	}
 
 	return nil
@@ -3165,39 +3215,113 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 // The fast path is a single atomic load. The slow path takes the
 // rebuild mutex so simultaneous lookups don't all rebuild
 // independently.
-func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTable {
-	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
-		return t
+type nautilusTenantRouting struct {
+	table             *assignment.ActiveTable
+	lookupTenantID    string
+	snapshotAvailable bool
+	tenantKnown       bool
+}
+
+func (d *Distributor) nautilusSnapshotAt(at time.Time) *nautilusAssignmentSnapshot {
+	if snapshot := d.nautilusAssignmentSnapshot.Load(); snapshot != nil {
+		hasGenerationMetadata := snapshot.generation != 0 || !snapshot.validUntil.IsZero()
+		if (hasGenerationMetadata && (snapshot.validUntil.IsZero() || !at.Before(snapshot.validUntil))) ||
+			(snapshot.tenantScoped && snapshot.validUntil.IsZero()) {
+			return nil
+		}
+		return snapshot
 	}
+
+	// Preserve compatibility with tests and old in-process users that seed the
+	// pre-metadata log pointer directly. A tenant-scoped open-ended log is not
+	// safe without a generation heartbeat; legacy empty-tenant leases retain
+	// their original per-range expiry behavior.
+	assignmentLog := d.nautilusLog.Load()
+	if assignmentLog == nil || assignmentLog.HasTenantScopedEntries() {
+		return nil
+	}
+	return &nautilusAssignmentSnapshot{
+		log:   assignmentLog,
+		table: d.nautilusActiveTable.Load(),
+	}
+}
+
+func (d *Distributor) nautilusRoutingForTenant(tenantID string, at time.Time) nautilusTenantRouting {
+	snapshot := d.nautilusSnapshotAt(at)
+	if snapshot == nil {
+		return nautilusTenantRouting{}
+	}
+
+	lookupTenantID := ""
+	if snapshot.tenantScoped {
+		lookupTenantID = tenantID
+	}
+
+	table := snapshot.table
+	if snapshot.tenantScoped {
+		// Tenant placements are open-ended and fenced by the snapshot's global
+		// validity heartbeat, so they don't require lease-boundary rebuilds.
+		if table == nil || at.Before(table.BuiltAt()) {
+			table = d.rebuildNautilusActiveTable(snapshot, at)
+		}
+		return nautilusTenantRouting{
+			table:             table,
+			lookupTenantID:    lookupTenantID,
+			snapshotAvailable: true,
+			tenantKnown:       snapshot.log.HasTenantHistory(tenantID),
+		}
+	}
+
+	// Legacy streams have zero generation metadata and one shared empty-tenant
+	// tiling. Keep the old per-range lease freshness behavior.
+	if table == nil || !table.CoversTenantAt("", at) {
+		table = d.rebuildNautilusActiveTable(snapshot, at)
+	}
+	if table == nil || !table.CoversTenantAt("", at) {
+		return nautilusTenantRouting{}
+	}
+	return nautilusTenantRouting{
+		table:             table,
+		lookupTenantID:    "",
+		snapshotAvailable: true,
+		tenantKnown:       true,
+	}
+}
+
+func (d *Distributor) rebuildNautilusActiveTable(snapshot *nautilusAssignmentSnapshot, at time.Time) *assignment.ActiveTable {
 	d.nautilusActiveTableMu.Lock()
 	defer d.nautilusActiveTableMu.Unlock()
 
-	// Re-check under the lock: another goroutine may have just
-	// rebuilt the table.
-	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
-		return t
+	current := d.nautilusAssignmentSnapshot.Load()
+	if current != nil {
+		snapshot = current
 	}
-	log := d.nautilusLog.Load()
-	if log == nil {
-		return nil
+	table := snapshot.log.ActiveTable(at)
+	successor := *snapshot
+	successor.table = table
+	if current != nil {
+		d.nautilusAssignmentSnapshot.Store(&successor)
 	}
-	t := log.ActiveTable(at)
-	d.nautilusActiveTable.Store(t)
-	return t
+	d.nautilusActiveTable.Store(table)
+	return table
 }
 
-// getKeysByAssignment groups keys by partition using a nautilus
-// ActiveTable. When the table doesn't cover a given key (e.g. a
-// hash gap or a transition edge case) the behaviour depends on
-// d.cfg.NautilusRequired: if false, fall back per-key to the
-// tenantRing's ActivePartitionForKey; if true, return a 503
-// nautilusRoutingUnavailableError so the writer retries instead of
-// silently routing through hash-mod sharding.
-func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, table *assignment.ActiveTable, tenantRing *ring.ActivePartitionBatchRing, keys []uint32) ([]ring.PartitionKeys, error) {
-	// tenantRing is consulted only for keys missing from the assignment table, and never in
-	// NautilusRequired mode.
-	var ringFallbackKeys int
+func (d *Distributor) getKeysByTenantAssignment(ctx context.Context, tenantID string, routing nautilusTenantRouting, keys []uint32) ([]ring.PartitionKeys, error) {
+	if !routing.tenantKnown {
+		return keysForSinglePartition(0, len(keys)), nil
+	}
+	if routing.table == nil {
+		return nil, newNautilusRoutingUnavailableError("existing tenant has no active assignment tiling")
+	}
+	return d.getKeysByAssignment(ctx, tenantID, routing.lookupTenantID, routing.table, keys)
+}
 
+// getKeysByAssignment groups keys by partition using one tenant's Nautilus
+// ActiveTable. A missing key in an existing tenant is always an invalid partial
+// tiling and returns a retryable error; only a wholly unknown tenant may use the
+// partition-0 bootstrap route, which the caller handles before invoking this
+// method.
+func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID, lookupTenantID string, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
 	partitionIndexes := make(map[int32][]int)
 	for i, key := range keys {
 		if i%10e3 == 0 {
@@ -3206,57 +3330,34 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 			}
 		}
 
-		pid, ok := table.Lookup(key)
+		pid, ok := table.LookupForTenant(lookupTenantID, key)
 		if !ok {
-			if d.cfg.NautilusRequired {
-				missDebug := table.DebugLookupMiss(key)
-				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
-				level.Warn(d.log).Log(
-					"msg", "nautilus routing rejected: key not covered by assignment",
-					"tenant", tenantID,
-					"key", key,
-					"key_index", i,
-					"total_keys", len(keys),
-					"table_len", table.Len(),
-					"table_built_at", table.BuiltAt().UTC().Format(time.RFC3339Nano),
-					"table_valid_until", table.ValidUntil().UTC().Format(time.RFC3339Nano),
-					"table_covers_now", table.CoversAt(d.now()),
-					"now", d.now().UTC().Format(time.RFC3339Nano),
-					"lookup_miss_debug", fmt.Sprintf("%+v", missDebug),
-					"log_entries", func() int {
-						if log := d.nautilusLog.Load(); log != nil {
-							return log.Len()
-						}
-						return 0
-					}(),
-					"stream_connected", d.nautilusStreamConnected.Load(),
-				)
-				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
-			}
-			ringFallbackKeys++
-			if tenantRing == nil {
-				return nil, errors.New("partition ring is required for nautilus fallback routing")
-			}
-			rs, err := tenantRing.Get(key, ring.WriteNoExtend, nil, nil, nil)
-			if err != nil {
-				return nil, err
-			}
-			pid64, err := strconv.ParseInt(rs.Instances[0].Id, 10, 32)
-			if err != nil {
-				return nil, err
-			}
-			pid = int32(pid64)
+			missDebug := table.DebugLookupMissForTenant(lookupTenantID, key)
+			d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
+			level.Warn(d.log).Log(
+				"msg", "nautilus routing rejected: key not covered by assignment",
+				"tenant", tenantID,
+				"assignment_tenant", lookupTenantID,
+				"key", key,
+				"key_index", i,
+				"total_keys", len(keys),
+				"table_len", table.LenForTenant(lookupTenantID),
+				"table_built_at", table.BuiltAt().UTC().Format(time.RFC3339Nano),
+				"table_valid_until", table.ValidUntilForTenant(lookupTenantID).UTC().Format(time.RFC3339Nano),
+				"table_covers_now", table.CoversTenantAt(lookupTenantID, d.now()),
+				"now", d.now().UTC().Format(time.RFC3339Nano),
+				"lookup_miss_debug", fmt.Sprintf("%+v", missDebug),
+				"log_entries", func() int {
+					if assignmentLog := d.GetNautilusLog(); assignmentLog != nil {
+						return assignmentLog.Len()
+					}
+					return 0
+				}(),
+				"stream_connected", d.nautilusStreamConnected.Load(),
+			)
+			return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log for tenant %q does not cover key %d", tenantID, key))
 		}
 		partitionIndexes[pid] = append(partitionIndexes[pid], i)
-	}
-
-	if ringFallbackKeys > 0 {
-		level.Warn(d.log).Log(
-			"msg", "keys missing from nautilus assignment; fell back to partition ring",
-			"tenant", tenantID,
-			"ring_fallback_keys", ringFallbackKeys,
-			"total_keys", len(keys),
-		)
 	}
 
 	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))
@@ -3267,6 +3368,14 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 		})
 	}
 	return result, nil
+}
+
+func keysForSinglePartition(partitionID int32, keyCount int) []ring.PartitionKeys {
+	indexes := make([]int, keyCount)
+	for i := range indexes {
+		indexes[i] = i
+	}
+	return []ring.PartitionKeys{{PartitionID: partitionID, Indexes: indexes}}
 }
 
 func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {

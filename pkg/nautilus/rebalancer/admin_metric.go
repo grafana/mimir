@@ -141,20 +141,22 @@ func (r *Rebalancer) buildMetricLookupData(user, metric string, now time.Time, w
 	partitionsWindow := make(map[int32]struct{})
 	partitionsNow := make(map[int32]struct{})
 	for _, e := range r.store.snapshot() {
+		if e.TenantID != user {
+			continue
+		}
 		if !e.Range.Overlaps(lo, hi) {
 			continue
 		}
-		if !e.From.Before(w1) || !e.To.After(w0) {
+		if !e.From.Before(w1) || (!e.To.IsZero() && !e.To.After(w0)) {
 			continue
 		}
-		status := "active"
+		status := "expired"
 		switch {
-		case !e.To.After(now):
-			status = "expired"
+		case e.ActiveAt(now):
+			status = "active"
+			partitionsNow[e.PartitionID] = struct{}{}
 		case e.From.After(now):
 			status = "future"
-		default:
-			partitionsNow[e.PartitionID] = struct{}{}
 		}
 		partitionsWindow[e.PartitionID] = struct{}{}
 		data.Tiles = append(data.Tiles, metricTileView{
@@ -203,6 +205,9 @@ var metricLookupTemplate = template.Must(template.New("metric").Funcs(template.F
 		return formatFloat(f, 4) + "%"
 	},
 	"fmtTS": func(t time.Time) string {
+		if t.IsZero() {
+			return "open"
+		}
 		return t.UTC().Format("15:04:05.000")
 	},
 }).Parse(`<!DOCTYPE html>

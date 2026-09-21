@@ -57,7 +57,7 @@ func TestCollectRatesFromReadcaches_MirrorsAggregateWithMax(t *testing.T) {
 	solo.setLoad(1, hrC, 160, 1600)
 	solo.pQuery[1] = 720
 
-	rates, _, partitionTotals, partitionQuerySamples, _, failed, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, partitionTotals, partitionQuerySamples, _, _, failed, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Empty(t, failed)
 
@@ -121,7 +121,7 @@ func TestCollectRatesFromReadcaches_WarmingMirrorRateIgnored(t *testing.T) {
 	replaying.pQuery[0] = 9000
 	replaying.setWarming(0)
 
-	rates, _, partitionTotals, partitionQuerySamples, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, partitionTotals, partitionQuerySamples, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 1)
 
@@ -149,7 +149,7 @@ func TestCollectRatesFromReadcaches_AllMirrorsWarmingReadsZero(t *testing.T) {
 		rc.setWarming(0)
 	}
 
-	rates, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 1)
 	assert.Zero(t, rates[0].sampleRate)
@@ -180,7 +180,7 @@ func TestCollectRatesFromReadcaches_ResidueStaysSeparate(t *testing.T) {
 	newOwner.owned[1] = []assignment.HashRange{hr}
 	newOwner.setLoad(1, hr, 50, 500)
 
-	rates, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	rates, _, _, _, _, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 	require.NoError(t, err)
 	require.Len(t, rates, 2)
 

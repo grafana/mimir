@@ -180,9 +180,10 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no current ranges &mdash; this partition has nothing assigned to it on this instance)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
+				<tr><th>Tenant</th><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
 				{{range .Current}}
 				<tr>
+					<td>{{if .Tenant}}{{.Tenant}}{{else}}<span class="muted">(legacy)</span>{{end}}</td>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>
@@ -201,9 +202,10 @@ all partitions have been moved off to other instances.</p>
 			<div class="empty">(no residue &mdash; nothing has been moved off this partition recently, or it has already drained)</div>
 			{{else}}
 			<table>
-				<tr><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
+				<tr><th>Tenant</th><th>Range (lo-hi)</th><th>Size</th><th>Hash %</th><th>Series</th><th>Ingest rate</th><th>Example series</th></tr>
 				{{range .Historical}}
 				<tr>
+					<td>{{if .Tenant}}{{.Tenant}}{{else}}<span class="muted">(legacy)</span>{{end}}</td>
 					<td class="hex">{{hexRange .Lo .Hi}}</td>
 					<td class="num">{{.SizeB}}</td>
 					<td class="num">{{fmtPct4 .SizeP}}</td>

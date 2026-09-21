@@ -19,10 +19,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
-// logFileVersion is the on-disk schema version for the rebalancer's
-// persisted logs. Bump when changing the JSON shape and add a
-// migration in load() for any prior version we still want to read.
-const logFileVersion = 1
+// The assignment log has its own version because its tenant and heartbeat
+// migration must not invalidate the independently persisted readcache and
+// cooldown files.
+const (
+	logFileVersion           = 1
+	assignmentLogFileVersion = 2
+)
 
 // logFileData is the JSON envelope shared by the assignment log, the
 // readcache-assignment log, and the move-cooldown state. We persist
@@ -37,8 +40,10 @@ type logFileData struct {
 	Entries          []assignment.LogEntry          `json:"entries,omitempty"`
 	ReadcacheEntries []readcacheassignment.LogEntry `json:"readcache_entries,omitempty"`
 
-	// MoveCooldowns is keyed by "lo:hi" (decimal), the same encoding
-	// Trace.Cooldowns uses; see FormatHashRangeKey / ParseHashRangeKey.
+	AssignmentGeneration uint64    `json:"assignment_generation,omitempty"`
+	AssignmentValidUntil time.Time `json:"assignment_valid_until,omitempty"`
+
+	// Cooldowns use Trace.Cooldowns' tenant-aware string encoding.
 	MoveCooldowns               map[string]time.Time `json:"move_cooldowns,omitempty"`
 	StructuralCooldowns         map[string]time.Time `json:"structural_cooldowns,omitempty"`
 	RecentSourcePartitions      map[int32]time.Time  `json:"recent_source_partitions,omitempty"`
@@ -50,8 +55,9 @@ type logFileData struct {
 // Modelled on pkg/storage/ingest/offset_file.go: writes go through
 // pkg/util/atomicfs.CreateFile (write to .tmp, fsync, rename) so a
 // crash mid-write never leaves the on-disk file in a half-written
-// state. Reads tolerate missing-or-corrupt files by returning ok=false
-// — the rebalancer falls back to its FineEvenSplit seed in that case.
+// state. Reads tolerate missing-or-corrupt files by returning ok=false;
+// the rebalancer then reconstructs tenant placements from readcache
+// reports or starts with an empty tier-1 assignment.
 type logFile struct {
 	filePath string
 	logger   log.Logger
@@ -63,8 +69,8 @@ func newLogFile(filePath string, logger log.Logger) *logFile {
 	return &logFile{filePath: filePath, logger: logger}
 }
 
-// readAssignmentLog returns the persisted entries plus ok=true on
-// success. Returns (nil, false) when:
+// readAssignmentLog returns the persisted state plus ok=true on
+// success. Returns a zero state and false when:
 //   - the file doesn't exist (cold start),
 //   - the file is unreadable or unparseable (corrupted), or
 //   - the file's schema version is unrecognised.
@@ -73,36 +79,55 @@ func newLogFile(filePath string, logger log.Logger) *logFile {
 // an error: the rebalancer treats it as a cold start so a single
 // unrecoverable on-disk state can't pin the rebalancer in a crash
 // loop.
-func (f *logFile) readAssignmentLog() ([]assignment.LogEntry, bool) {
+func (f *logFile) readAssignmentLog() (assignment.LogState, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	data, err := os.ReadFile(f.filePath)
 	if os.IsNotExist(err) {
-		return nil, false
+		return assignment.LogState{}, false
 	}
 	if err != nil {
 		level.Error(f.logger).Log("msg", "failed to read rebalancer log file", "file", f.filePath, "err", err)
-		return nil, false
+		return assignment.LogState{}, false
 	}
 
 	var parsed logFileData
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		level.Error(f.logger).Log("msg", "failed to parse rebalancer log file", "file", f.filePath, "err", err)
-		return nil, false
+		return assignment.LogState{}, false
 	}
-	if parsed.Version != logFileVersion {
+	switch parsed.Version {
+	case logFileVersion:
+		// Version 1 predates tenant IDs and generation metadata. Missing
+		// tenant_id fields naturally migrate into the legacy empty tenant.
+		generation := uint64(0)
+		if len(parsed.Entries) > 0 {
+			generation = 1
+		}
+		return assignment.LogState{Entries: parsed.Entries, Generation: generation}, true
+	case assignmentLogFileVersion:
+		return assignment.LogState{
+			Entries:    parsed.Entries,
+			Generation: parsed.AssignmentGeneration,
+			ValidUntil: parsed.AssignmentValidUntil,
+		}, true
+	default:
 		level.Error(f.logger).Log("msg", "rebalancer log file has unknown version", "file", f.filePath, "version", parsed.Version)
-		return nil, false
+		return assignment.LogState{}, false
 	}
-	return parsed.Entries, true
 }
 
 // writeAssignmentLog atomically replaces the file's contents with
 // entries. Empty entries is a valid persisted state (the rebalancer
 // briefly observes it on cold start).
-func (f *logFile) writeAssignmentLog(entries []assignment.LogEntry) error {
-	return f.write(logFileData{Version: logFileVersion, Entries: entries})
+func (f *logFile) writeAssignmentLog(state assignment.LogState) error {
+	return f.write(logFileData{
+		Version:              assignmentLogFileVersion,
+		Entries:              state.Entries,
+		AssignmentGeneration: state.Generation,
+		AssignmentValidUntil: state.ValidUntil,
+	})
 }
 
 // readReadcacheLog mirrors readAssignmentLog for the (partition ->

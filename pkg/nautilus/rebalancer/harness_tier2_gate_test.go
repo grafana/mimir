@@ -282,8 +282,9 @@ func seedBalancedTierAssignments(t *testing.T, h *harness, instances []string) {
 	}
 
 	hashEntries := make([]assignment.LogEntry, 0, h.cfg.PartitionCount)
-	for _, e := range assignment.EvenSplit(partitions).Entries {
+	for _, e := range assignment.EvenSplitForTenant("tenant-a", partitions).Entries {
 		hashEntries = append(hashEntries, assignment.LogEntry{
+			TenantID:    e.TenantID,
 			Range:       e.Range,
 			PartitionID: e.PartitionID,
 			From:        now.Add(-time.Second),

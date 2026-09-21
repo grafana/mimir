@@ -78,13 +78,13 @@ func healAssignmentGaps(current *assignment.Assignment, activePartitions []int32
 		return current, healReport{}
 	}
 
-	// Defensive copy and sort. Production callers pass an assignment
-	// that's already sorted by Range.Lo, but Validate only checks the
-	// adjacency relation, not strict sortedness — we re-sort so the
-	// healer is correct on every shape of input.
+	// Defensive copy and sort each independent tenant tiling.
 	src := make([]assignment.Entry, len(current.Entries))
 	copy(src, current.Entries)
 	sort.Slice(src, func(i, j int) bool {
+		if src[i].TenantID != src[j].TenantID {
+			return src[i].TenantID < src[j].TenantID
+		}
 		if src[i].Range.Lo != src[j].Range.Lo {
 			return src[i].Range.Lo < src[j].Range.Lo
 		}
@@ -100,54 +100,55 @@ func healAssignmentGaps(current *assignment.Assignment, activePartitions []int32
 	}
 
 	healed := make([]assignment.Entry, 0, len(src)+1)
-	recordGap := func(from, to uint64) {
-		rep.gapsFilled++
-		rep.gapHashesFilled += to - from + 1
-		if !rep.hasFirstGap {
-			rep.firstGap = assignment.HashRange{Lo: uint32(from), Hi: uint32(to)}
-			rep.hasFirstGap = true
+	for start := 0; start < len(src); {
+		end := start + 1
+		for end < len(src) && src[end].TenantID == src[start].TenantID {
+			end++
 		}
-		healed = append(healed, assignment.Entry{
-			Range:       assignment.HashRange{Lo: uint32(from), Hi: uint32(to)},
-			PartitionID: pickPartition(),
-		})
-	}
-
-	// next tracks the first hash position that has not yet been
-	// covered by an emitted entry. Promoted to uint64 so we can
-	// represent "past the end of the keyspace" (hashSpaceEnd+1)
-	// without overflow, which lets the trailing-gap check below
-	// be a single comparison.
-	var next uint64
-	for _, e := range src {
-		lo := uint64(e.Range.Lo)
-		hi := uint64(e.Range.Hi)
-		switch {
-		case lo > next:
-			recordGap(next, lo-1)
-			healed = append(healed, e)
-			next = hi + 1
-		case lo == next:
-			healed = append(healed, e)
-			next = hi + 1
-		default: // lo < next: overlap
-			rep.overlapsResolved++
-			if hi < next {
-				// Entry is fully shadowed by what we already
-				// emitted.
-				rep.overlapHashesResolved += hi - lo + 1
-				continue
+		tenantID := src[start].TenantID
+		recordGap := func(from, to uint64) {
+			rep.gapsFilled++
+			rep.gapHashesFilled += to - from + 1
+			if !rep.hasFirstGap {
+				rep.firstGap = assignment.HashRange{Lo: uint32(from), Hi: uint32(to)}
+				rep.hasFirstGap = true
 			}
-			// Partial overlap: trim the entry's Lo to next.
-			rep.overlapHashesResolved += next - lo
-			trimmed := e
-			trimmed.Range.Lo = uint32(next)
-			healed = append(healed, trimmed)
-			next = hi + 1
+			healed = append(healed, assignment.Entry{
+				TenantID:    tenantID,
+				Range:       assignment.HashRange{Lo: uint32(from), Hi: uint32(to)},
+				PartitionID: pickPartition(),
+			})
 		}
-	}
-	if next <= hashSpaceEnd {
-		recordGap(next, hashSpaceEnd)
+
+		var next uint64
+		for _, e := range src[start:end] {
+			lo := uint64(e.Range.Lo)
+			hi := uint64(e.Range.Hi)
+			switch {
+			case lo > next:
+				recordGap(next, lo-1)
+				healed = append(healed, e)
+				next = hi + 1
+			case lo == next:
+				healed = append(healed, e)
+				next = hi + 1
+			default:
+				rep.overlapsResolved++
+				if hi < next {
+					rep.overlapHashesResolved += hi - lo + 1
+					continue
+				}
+				rep.overlapHashesResolved += next - lo
+				trimmed := e
+				trimmed.Range.Lo = uint32(next)
+				healed = append(healed, trimmed)
+				next = hi + 1
+			}
+		}
+		if next <= hashSpaceEnd {
+			recordGap(next, hashSpaceEnd)
+		}
+		start = end
 	}
 	return &assignment.Assignment{Entries: healed}, rep
 }

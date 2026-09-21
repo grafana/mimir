@@ -34,9 +34,9 @@ import (
 // (by recordMoveCooldowns) and deleted (by pruneExpiredCooldowns)
 // between rounds.
 type cooldownIndex struct {
-	// intervals are sorted by Lo, ascending, and non-overlapping
+	// intervals are grouped by tenant, sorted by Lo, and non-overlapping
 	// (touching or overlapping inputs were merged at build time).
-	intervals []assignment.HashRange
+	intervals map[string][]assignment.HashRange
 }
 
 // newCooldownIndex builds an index from the supplied cooldown map.
@@ -45,51 +45,49 @@ type cooldownIndex struct {
 // deadline==now is treated as expired). Returns a zero-value index
 // when cooldowns is empty or every entry has expired; the zero
 // value is safe to query and always returns false.
-func newCooldownIndex(now time.Time, cooldowns map[assignment.HashRange]time.Time) cooldownIndex {
+func newCooldownIndex(now time.Time, cooldowns map[tenantRangeKey]time.Time) cooldownIndex {
 	if len(cooldowns) == 0 {
 		return cooldownIndex{}
 	}
-	active := make([]assignment.HashRange, 0, len(cooldowns))
-	for hr, deadline := range cooldowns {
+	active := make(map[string][]assignment.HashRange)
+	for key, deadline := range cooldowns {
 		if now.Before(deadline) {
-			active = append(active, hr)
+			active[key.tenantID] = append(active[key.tenantID], key.hr)
 		}
 	}
 	if len(active) == 0 {
 		return cooldownIndex{}
 	}
-	sort.Slice(active, func(i, j int) bool {
-		if active[i].Lo != active[j].Lo {
-			return active[i].Lo < active[j].Lo
+	for tenantID, intervals := range active {
+		sort.Slice(intervals, func(i, j int) bool {
+			if intervals[i].Lo != intervals[j].Lo {
+				return intervals[i].Lo < intervals[j].Lo
+			}
+			return intervals[i].Hi < intervals[j].Hi
+		})
+		// Merge overlapping or touching intervals within this tenant only.
+		merged := intervals[:1]
+		for _, hr := range intervals[1:] {
+			last := &merged[len(merged)-1]
+			if last.Hi < ^uint32(0) && hr.Lo > last.Hi+1 {
+				merged = append(merged, hr)
+				continue
+			}
+			if hr.Hi > last.Hi {
+				last.Hi = hr.Hi
+			}
 		}
-		return active[i].Hi < active[j].Hi
-	})
-	// Merge overlapping or touching intervals. Touching intervals
-	// (cur.Hi+1 == next.Lo) are merged too: from the overlaps()
-	// perspective they're indistinguishable from a single wider
-	// interval, and merging shrinks the search space.
-	merged := active[:1]
-	for _, hr := range active[1:] {
-		last := &merged[len(merged)-1]
-		// hr.Lo > last.Hi+1 means a strict gap; else extend.
-		// Guard against last.Hi == MaxUint32 overflow when testing
-		// adjacency.
-		if last.Hi < ^uint32(0) && hr.Lo > last.Hi+1 {
-			merged = append(merged, hr)
-			continue
-		}
-		if hr.Hi > last.Hi {
-			last.Hi = hr.Hi
-		}
+		active[tenantID] = merged
 	}
-	return cooldownIndex{intervals: merged}
+	return cooldownIndex{intervals: active}
 }
 
 // overlaps reports whether the supplied range shares at least one
 // hash value with any active cooldown interval. Matches the semantics
 // of (*Rebalancer).isInMoveCooldown.
-func (c cooldownIndex) overlaps(hr assignment.HashRange) bool {
-	if len(c.intervals) == 0 {
+func (c cooldownIndex) overlaps(tenantID string, hr assignment.HashRange) bool {
+	intervals := c.intervals[tenantID]
+	if len(intervals) == 0 {
 		return false
 	}
 	// Find the first interval whose Hi is >= hr.Lo. That interval
@@ -98,18 +96,22 @@ func (c cooldownIndex) overlaps(hr assignment.HashRange) bool {
 	// starts after that candidate (which has Lo > prev.Hi >= hr.Lo
 	// only if non-overlapping, but our index is non-overlapping by
 	// construction so the candidate is unique).
-	i := sort.Search(len(c.intervals), func(i int) bool {
-		return c.intervals[i].Hi >= hr.Lo
+	i := sort.Search(len(intervals), func(i int) bool {
+		return intervals[i].Hi >= hr.Lo
 	})
-	if i >= len(c.intervals) {
+	if i >= len(intervals) {
 		return false
 	}
-	return c.intervals[i].Lo <= hr.Hi
+	return intervals[i].Lo <= hr.Hi
 }
 
 // len returns the number of merged active intervals in the index.
 // Exposed for tests and for cheap "is the index empty" checks; the
 // production hot path uses overlaps() directly.
 func (c cooldownIndex) len() int {
-	return len(c.intervals)
+	var total int
+	for _, intervals := range c.intervals {
+		total += len(intervals)
+	}
+	return total
 }

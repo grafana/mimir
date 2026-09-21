@@ -25,7 +25,7 @@ func TestSpotlightStore_MaybeSpotlight_Always(t *testing.T) {
 	t0 := time.Unix(1700000000, 0)
 
 	hr := assignment.HashRange{Lo: 100, Hi: 200}
-	sp1, ok := store.maybeSpotlight(t0, hr, 5, 9, "phase3-move")
+	sp1, ok := store.maybeSpotlight(t0, "", hr, 5, 9, "phase3-move")
 	require.True(t, ok)
 	require.Equal(t, "phase3-move", sp1.Reason)
 	require.Equal(t, hr, sp1.Range)
@@ -36,7 +36,7 @@ func TestSpotlightStore_MaybeSpotlight_Always(t *testing.T) {
 	// Re-sampling the same (range, partitions) at a later instant
 	// produces a distinct TraceID; the wall-clock component
 	// disambiguates the two even when range and partitions match.
-	sp2, ok := store.maybeSpotlight(t0.Add(time.Second), hr, 5, 9, "phase3-move")
+	sp2, ok := store.maybeSpotlight(t0.Add(time.Second), "", hr, 5, 9, "phase3-move")
 	require.True(t, ok)
 	require.NotEqual(t, sp1.TraceID, sp2.TraceID)
 	require.Equal(t, 2, store.len())
@@ -49,7 +49,7 @@ func TestSpotlightStore_MaybeSpotlight_Always(t *testing.T) {
 func TestSpotlightStore_MaybeSpotlight_Never(t *testing.T) {
 	store := newSpotlightStore(1, 0.0, time.Minute)
 	for i := 0; i < 100; i++ {
-		_, ok := store.maybeSpotlight(time.Now(), assignment.HashRange{Lo: 0, Hi: 100}, 0, 1, "phase3-move")
+		_, ok := store.maybeSpotlight(time.Now(), "", assignment.HashRange{Lo: 0, Hi: 100}, 0, 1, "phase3-move")
 		require.False(t, ok)
 	}
 	require.Equal(t, 0, store.len())
@@ -122,6 +122,7 @@ func TestRebalancer_GetSpotlightedRanges_RoundTrips(t *testing.T) {
 	t0 := time.UnixMilli(1700000000123)
 	store.add(Spotlight{
 		TraceID:       "alpha",
+		TenantID:      "tenant-a",
 		Range:         assignment.HashRange{Lo: 100, Hi: 200},
 		StartedAt:     t0,
 		ExpiresAt:     t0.Add(10 * time.Minute),
@@ -146,6 +147,7 @@ func TestRebalancer_GetSpotlightedRanges_RoundTrips(t *testing.T) {
 
 	sort.Slice(resp.Ranges, func(i, j int) bool { return resp.Ranges[i].TraceId < resp.Ranges[j].TraceId })
 	assert.Equal(t, "alpha", resp.Ranges[0].TraceId)
+	assert.Equal(t, "tenant-a", resp.Ranges[0].TenantId)
 	assert.Equal(t, uint32(100), resp.Ranges[0].Lo)
 	assert.Equal(t, uint32(200), resp.Ranges[0].Hi)
 	assert.Equal(t, t0.UnixMilli(), resp.Ranges[0].StartedAtUnixMs)

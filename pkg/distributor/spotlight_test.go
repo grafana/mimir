@@ -22,7 +22,7 @@ import (
 // observation map and must not panic.
 func TestDistributorSpotlightTracker_NoSpotlights(t *testing.T) {
 	tr := newDistributorSpotlightTracker()
-	tr.observeWrite([]uint32{1, 2, 3}, nil, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{}}}, 3)
+	tr.observeWrite("", []uint32{1, 2, 3}, nil, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{}}}, 3)
 	assert.Empty(t, tr.observations)
 }
 
@@ -34,7 +34,7 @@ func TestDistributorSpotlightTracker_NoSpotlights(t *testing.T) {
 func TestDistributorSpotlightTracker_ObserveCountsSamples(t *testing.T) {
 	tr := newDistributorSpotlightTracker()
 	tr.setSpotlights([]rebalancer.SpotlightedRange{
-		{TraceId: "alpha", Lo: 100, Hi: 200, FromPartitionId: 5, ToPartitionId: 9, Reason: "phase3-move"},
+		{TraceId: "alpha", TenantId: "tenant-a", Lo: 100, Hi: 200, FromPartitionId: 5, ToPartitionId: 9, Reason: "phase3-move"},
 	})
 
 	// 3 series with hashes 50, 150, 175. Only 150 and 175 fall in
@@ -52,7 +52,9 @@ func TestDistributorSpotlightTracker_ObserveCountsSamples(t *testing.T) {
 		{PartitionID: 9, Indexes: []int{1, 2}}, // keys 150, 175 -> P9, inside spotlight
 	}
 
-	tr.observeWrite(keys, partitionKeys, req, 3) // all 3 are series keys, no metadata
+	tr.observeWrite("tenant-b", keys, partitionKeys, req, 3)
+	require.Empty(t, tr.observations, "an identical numeric range from another tenant must not match")
+	tr.observeWrite("tenant-a", keys, partitionKeys, req, 3) // all 3 are series keys, no metadata
 
 	require.Contains(t, tr.observations, "alpha")
 	assert.Equal(t, int64(3), tr.observations["alpha"][9],
@@ -80,7 +82,7 @@ func TestDistributorSpotlightTracker_SkipMetadata(t *testing.T) {
 		{PartitionID: 1, Indexes: []int{0, 1}},
 	}
 
-	tr.observeWrite(keys, partitionKeys, req, 1)
+	tr.observeWrite("", keys, partitionKeys, req, 1)
 
 	require.Contains(t, tr.observations, "alpha")
 	assert.Equal(t, int64(1), tr.observations["alpha"][1],

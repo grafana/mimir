@@ -10,22 +10,24 @@ import "time"
 // subtree when every range ends before lo or the subtree's first range
 // starts after hi.
 type hashRangeIndex struct {
+	entryStart int
 	entryCount int
 	leafBase   int
 	maxHi      []uint32
 }
 
-func newHashRangeIndex(entries []LogEntry) *hashRangeIndex {
-	if len(entries) == 0 {
+func newHashRangeIndex(entries []LogEntry, start, end int) *hashRangeIndex {
+	if start == end {
 		return nil
 	}
 
+	count := end - start
 	leafBase := 1
-	for leafBase < len(entries) {
+	for leafBase < count {
 		leafBase *= 2
 	}
 	maxHi := make([]uint32, 2*leafBase)
-	for i, e := range entries {
+	for i, e := range entries[start:end] {
 		maxHi[leafBase+i] = e.Range.Hi
 	}
 	for i := leafBase - 1; i > 0; i-- {
@@ -33,14 +35,15 @@ func newHashRangeIndex(entries []LogEntry) *hashRangeIndex {
 	}
 
 	return &hashRangeIndex{
-		entryCount: len(entries),
+		entryStart: start,
+		entryCount: count,
 		leafBase:   leafBase,
 		maxHi:      maxHi,
 	}
 }
 
 func (idx *hashRangeIndex) addPartitionsOverlappingInterval(entries []LogEntry, w0, w1 time.Time, lo, hi uint32, seen map[int32]struct{}) {
-	if idx == nil || idx.entryCount != len(entries) {
+	if idx == nil || idx.entryStart+idx.entryCount > len(entries) {
 		return
 	}
 	idx.addPartitionsOverlappingIntervalNode(entries, 1, 0, idx.leafBase, w0, w1, lo, hi, seen)
@@ -49,12 +52,13 @@ func (idx *hashRangeIndex) addPartitionsOverlappingInterval(entries []LogEntry, 
 func (idx *hashRangeIndex) addPartitionsOverlappingIntervalNode(entries []LogEntry, node, left, right int, w0, w1 time.Time, lo, hi uint32, seen map[int32]struct{}) {
 	// entries are sorted by Range.Lo, so entries[left] is the minimum
 	// Lo in this subtree. maxHi[node] is its maximum Hi.
-	if left >= idx.entryCount || entries[left].Range.Lo > hi || idx.maxHi[node] < lo {
+	entry := idx.entryStart + left
+	if left >= idx.entryCount || entries[entry].Range.Lo > hi || idx.maxHi[node] < lo {
 		return
 	}
 	if right-left == 1 {
-		e := &entries[left]
-		if e.From.Before(w1) && e.To.After(w0) {
+		e := &entries[entry]
+		if e.From.Before(w1) && e.endsAfter(w0) {
 			seen[e.PartitionID] = struct{}{}
 		}
 		return
