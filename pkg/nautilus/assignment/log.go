@@ -79,15 +79,22 @@ type Log struct {
 	// Kept sorted by (TenantID, Range.Lo, From) for predictable iteration.
 	entries []LogEntry
 
-	// rangeIndexes accelerate tenant-scoped historical hash-range lookups.
-	// rangeIndex is retained as the legacy empty-tenant alias for tests.
-	rangeIndexes map[string]*hashRangeIndex
-	rangeIndex   *hashRangeIndex
+	// tenants is the first-class tenant view over entries. Keeping the entries
+	// contiguous preserves cache-efficient whole-log operations and wire
+	// snapshots, while callers can address one tenant without understanding
+	// the global sort order or detecting tenant boundaries themselves.
+	tenants map[string]tenantLogSpan
+}
+
+type tenantLogSpan struct {
+	start      int
+	end        int
+	rangeIndex *hashRangeIndex
 }
 
 // NewLog returns an empty Log.
 func NewLog() *Log {
-	return &Log{}
+	return &Log{tenants: make(map[string]tenantLogSpan)}
 }
 
 // NewLogFromEntries returns a Log seeded with a defensive copy of
@@ -98,7 +105,7 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 	copy(cp, entries)
 	sortEntries(cp)
 	l := &Log{entries: cp}
-	l.rebuildRangeIndex()
+	l.rebuildTenantIndex()
 	return l
 }
 
@@ -144,7 +151,7 @@ func (l *Log) MergedWithEntries(deltas []LogEntry) *Log {
 	}
 	sortEntries(merged)
 	out := &Log{entries: merged}
-	out.rebuildRangeIndex()
+	out.rebuildTenantIndex()
 	return out
 }
 
@@ -367,7 +374,7 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 
 	if changed {
 		sortEntries(l.entries)
-		l.rebuildRangeIndex()
+		l.rebuildTenantIndex()
 	}
 	return changed
 }
@@ -427,7 +434,7 @@ func (l *Log) applyTenantPlacements(at time.Time, next *Assignment) (changed boo
 
 	if changed {
 		sortEntries(l.entries)
-		l.rebuildRangeIndex()
+		l.rebuildTenantIndex()
 	}
 	return changed
 }
@@ -449,8 +456,7 @@ func (l *Log) BootstrapTenant(at time.Time, initial *Assignment) (bool, error) {
 			return false, fmt.Errorf("bootstrap assignment contains multiple tenants")
 		}
 	}
-	start, end := l.tenantBounds(tenantID)
-	if start != end {
+	if _, ok := l.tenants[tenantID]; ok {
 		return false, nil
 	}
 	for _, entry := range initial.Entries {
@@ -462,7 +468,7 @@ func (l *Log) BootstrapTenant(at time.Time, initial *Assignment) (bool, error) {
 		})
 	}
 	sortEntries(l.entries)
-	l.rebuildRangeIndex()
+	l.rebuildTenantIndex()
 	return true, nil
 }
 
@@ -480,8 +486,11 @@ func (l *Log) Lookup(at time.Time, key uint32) (int32, bool) {
 // LookupForTenant returns the partition ID of tenantID's entry whose lease is
 // active at at and whose range contains key.
 func (l *Log) LookupForTenant(tenantID string, at time.Time, key uint32) (int32, bool) {
-	start, end := l.tenantBounds(tenantID)
-	for _, e := range l.entries[start:end] {
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return 0, false
+	}
+	for _, e := range l.entries[span.start:span.end] {
 		if !e.ActiveAt(at) {
 			continue
 		}
@@ -516,14 +525,14 @@ func (l *Log) PartitionsOverlappingInterval(w0, w1 time.Time, lo, hi uint32) []i
 // PartitionsOverlappingInterval.
 func (l *Log) PartitionsOverlappingIntervalForTenant(tenantID string, w0, w1 time.Time, lo, hi uint32) []int32 {
 	seen := make(map[int32]struct{})
-	start, end := l.tenantBounds(tenantID)
-	if idx := l.rangeIndexes[tenantID]; idx != nil && idx.entryCount == end-start {
-		idx.addPartitionsOverlappingInterval(l.entries, w0, w1, lo, hi, seen)
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return nil
+	}
+	if span.rangeIndex != nil && span.rangeIndex.entryCount == span.end-span.start {
+		span.rangeIndex.addPartitionsOverlappingInterval(l.entries, w0, w1, lo, hi, seen)
 	} else {
-		// Logs built through the public constructors always have an
-		// index. Keep the linear fallback for empty logs and internal
-		// test fixtures that populate entries directly.
-		for _, e := range l.entries[start:end] {
+		for _, e := range l.entries[span.start:span.end] {
 			if !e.From.Before(w1) || !e.endsAfter(w0) {
 				continue
 			}
@@ -534,6 +543,25 @@ func (l *Log) PartitionsOverlappingIntervalForTenant(tenantID string, w0, w1 tim
 		}
 	}
 	return sortedDistinctPartitions(seen)
+}
+
+// EntriesOverlappingIntervalForTenant returns a defensive copy of tenantID's
+// entries whose placement windows intersect [w0, w1) and whose hash ranges
+// overlap [lo, hi]. It is intended for diagnostics that need the matching
+// placement details rather than only the distinct partition IDs.
+func (l *Log) EntriesOverlappingIntervalForTenant(tenantID string, w0, w1 time.Time, lo, hi uint32) []LogEntry {
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return nil
+	}
+	var out []LogEntry
+	for _, e := range l.entries[span.start:span.end] {
+		if !e.From.Before(w1) || !e.endsAfter(w0) || !e.Range.Overlaps(lo, hi) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // AllPartitionsDuring returns the distinct partition IDs of every lease
@@ -555,8 +583,11 @@ func (l *Log) AllPartitionsDuring(w0, w1 time.Time) []int32 {
 // AllPartitionsDuring.
 func (l *Log) AllPartitionsDuringForTenant(tenantID string, w0, w1 time.Time) []int32 {
 	seen := make(map[int32]struct{})
-	start, end := l.tenantBounds(tenantID)
-	for _, e := range l.entries[start:end] {
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return nil
+	}
+	for _, e := range l.entries[span.start:span.end] {
 		if !e.From.Before(w1) || !e.endsAfter(w0) {
 			continue
 		}
@@ -586,8 +617,11 @@ func (l *Log) ActiveAt(at time.Time) []LogEntry {
 // ActiveAtForTenant returns a copy of tenantID's entries active at at.
 func (l *Log) ActiveAtForTenant(tenantID string, at time.Time) []LogEntry {
 	var out []LogEntry
-	start, end := l.tenantBounds(tenantID)
-	for _, e := range l.entries[start:end] {
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return nil
+	}
+	for _, e := range l.entries[span.start:span.end] {
 		if e.ActiveAt(at) {
 			out = append(out, e)
 		}
@@ -613,7 +647,7 @@ func (l *Log) Prune(closedBefore time.Time) {
 	}
 	l.entries = out
 	if len(l.entries) != previousLen {
-		l.rebuildRangeIndex()
+		l.rebuildTenantIndex()
 	}
 }
 
@@ -621,6 +655,19 @@ func (l *Log) Prune(closedBefore time.Time) {
 func (l *Log) Entries() []LogEntry {
 	out := make([]LogEntry, len(l.entries))
 	copy(out, l.entries)
+	return out
+}
+
+// EntriesForTenant returns a defensive copy of all retained placement history
+// for tenantID. Callers should use this instead of scanning Entries and
+// interpreting the log's global tenant sort order.
+func (l *Log) EntriesForTenant(tenantID string) []LogEntry {
+	span, ok := l.tenants[tenantID]
+	if !ok {
+		return nil
+	}
+	out := make([]LogEntry, span.end-span.start)
+	copy(out, l.entries[span.start:span.end])
 	return out
 }
 
@@ -655,8 +702,8 @@ func (l *Log) Len() int { return len(l.entries) }
 // HasTenantHistory reports whether the log contains any placement history for
 // tenantID, including expired entries.
 func (l *Log) HasTenantHistory(tenantID string) bool {
-	start, end := l.tenantBounds(tenantID)
-	return start != end
+	_, ok := l.tenants[tenantID]
+	return ok
 }
 
 // HasTenantScopedEntries reports whether the log contains placement history
@@ -673,12 +720,12 @@ func (l *Log) HasTenantScopedEntries() bool {
 // EarliestFromForTenant returns the beginning of tenantID's earliest
 // placement history.
 func (l *Log) EarliestFromForTenant(tenantID string) (time.Time, bool) {
-	start, end := l.tenantBounds(tenantID)
-	if start == end {
+	span, ok := l.tenants[tenantID]
+	if !ok {
 		return time.Time{}, false
 	}
-	earliest := l.entries[start].From
-	for _, entry := range l.entries[start+1 : end] {
+	earliest := l.entries[span.start].From
+	for _, entry := range l.entries[span.start+1 : span.end] {
 		if entry.From.Before(earliest) {
 			earliest = entry.From
 		}
@@ -823,28 +870,21 @@ func (l *Log) LatestActiveAssignments(at time.Time) *Assignment {
 	return &Assignment{Entries: entries}
 }
 
-func (l *Log) rebuildRangeIndex() {
-	l.rangeIndexes = make(map[string]*hashRangeIndex)
+func (l *Log) rebuildTenantIndex() {
+	l.tenants = make(map[string]tenantLogSpan)
 	for start := 0; start < len(l.entries); {
 		tenantID := l.entries[start].TenantID
 		end := start + 1
 		for end < len(l.entries) && l.entries[end].TenantID == tenantID {
 			end++
 		}
-		l.rangeIndexes[tenantID] = newHashRangeIndex(l.entries, start, end)
+		l.tenants[tenantID] = tenantLogSpan{
+			start:      start,
+			end:        end,
+			rangeIndex: newHashRangeIndex(l.entries, start, end),
+		}
 		start = end
 	}
-	l.rangeIndex = l.rangeIndexes[""]
-}
-
-func (l *Log) tenantBounds(tenantID string) (int, int) {
-	start := sort.Search(len(l.entries), func(i int) bool {
-		return l.entries[i].TenantID >= tenantID
-	})
-	end := start + sort.Search(len(l.entries)-start, func(i int) bool {
-		return l.entries[start+i].TenantID > tenantID
-	})
-	return start, end
 }
 
 // sortEntries sorts entries ascending by (TenantID, Range.Lo, From). Used to

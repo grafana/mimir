@@ -140,16 +140,7 @@ func (r *Rebalancer) buildMetricLookupData(user, metric string, now time.Time, w
 	// during the window, annotated with its lifecycle status at now.
 	partitionsWindow := make(map[int32]struct{})
 	partitionsNow := make(map[int32]struct{})
-	for _, e := range r.store.snapshot() {
-		if e.TenantID != user {
-			continue
-		}
-		if !e.Range.Overlaps(lo, hi) {
-			continue
-		}
-		if !e.From.Before(w1) || (!e.To.IsZero() && !e.To.After(w0)) {
-			continue
-		}
+	for _, e := range r.store.entriesOverlappingIntervalForTenant(user, w0, w1, lo, hi) {
 		status := "expired"
 		switch {
 		case e.ActiveAt(now):

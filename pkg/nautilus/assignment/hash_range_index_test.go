@@ -29,7 +29,7 @@ func TestHashRangeIndex_AgreesWithLinearScan(t *testing.T) {
 		}
 	}
 	l := NewLogFromEntries(entries)
-	require.NotNil(t, l.rangeIndex)
+	require.NotNil(t, l.tenants[""].rangeIndex)
 
 	for range 1000 {
 		lo, hi := rng.Uint32(), rng.Uint32()
@@ -96,7 +96,7 @@ func linearPartitionsOverlappingInterval(entries []LogEntry, w0, w1 time.Time, l
 
 func assertIndexMatchesLinear(t *testing.T, l *Log, w0, w1 time.Time, lo, hi uint32) {
 	t.Helper()
-	require.NotNil(t, l.rangeIndex)
+	require.NotNil(t, l.tenants[""].rangeIndex)
 	assert.Equal(t,
 		linearPartitionsOverlappingInterval(l.entries, w0, w1, lo, hi),
 		l.PartitionsOverlappingInterval(w0, w1, lo, hi),

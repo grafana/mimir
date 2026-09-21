@@ -351,6 +351,12 @@ func (s *logStore) snapshot() []assignment.LogEntry {
 	return s.log.Entries()
 }
 
+func (s *logStore) entriesOverlappingIntervalForTenant(tenantID string, w0, w1 time.Time, lo, hi uint32) []assignment.LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.log.EntriesOverlappingIntervalForTenant(tenantID, w0, w1, lo, hi)
+}
+
 // latestActiveAssignment returns the entries whose leases are
 // active at `at` collapsed into an *Assignment value, or nil if no
 // entries are active (e.g. all leases have expired).

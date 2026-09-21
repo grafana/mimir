@@ -1104,6 +1104,29 @@ func TestLog_MergedWithEntriesTenantIsPartOfIdentity(t *testing.T) {
 	assert.Equal(t, newBTo, merged.Entries()[1].To)
 }
 
+func TestLog_TenantViewsHideGlobalEntryLayout(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Hour)
+	log := NewLogFromEntries([]LogEntry{
+		{TenantID: "tenant-b", Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 3, From: t0},
+		{TenantID: "tenant-a", Range: HashRange{Lo: 0, Hi: 49}, PartitionID: 1, From: t0, To: t1},
+		{TenantID: "tenant-a", Range: HashRange{Lo: 50, Hi: 99}, PartitionID: 2, From: t0},
+	})
+
+	tenantA := log.EntriesForTenant("tenant-a")
+	require.Len(t, tenantA, 2)
+	assert.Equal(t, []int32{1, 2}, []int32{tenantA[0].PartitionID, tenantA[1].PartitionID})
+	assert.Empty(t, log.EntriesForTenant("missing"))
+
+	overlapping := log.EntriesOverlappingIntervalForTenant("tenant-a", t1, t1.Add(time.Minute), 75, 75)
+	require.Len(t, overlapping, 1)
+	assert.Equal(t, int32(2), overlapping[0].PartitionID)
+	assert.Empty(t, log.EntriesOverlappingIntervalForTenant("tenant-b", t1, t1.Add(time.Minute), 100, 100))
+
+	tenantA[0].PartitionID = 99
+	assert.Equal(t, int32(1), log.EntriesForTenant("tenant-a")[0].PartitionID, "tenant views must be defensive copies")
+}
+
 func TestLog_TenantAssignmentsAreChangeDriven(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	initial := EvenSplitForTenant("tenant-a", []int32{0})
