@@ -5,11 +5,15 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"runtime"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -99,14 +103,75 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
-	// Recover from panics during evaluation so the stats logging above reports the query as failed
-	// instead of successful. Re-panic afterward to crash.
+	// Recover from panics during evaluation. A panic can come from the engine's own invariant checks,
+	// a Go runtime error, or library code (notably the Prometheus histogram library, which panics on
+	// invalid data such as a native histogram with a negative-offset span that older versions could
+	// write). Unhandled, it would crash a querier or ruler shared by many tenants.
+	//
+	// surfaceEvaluationPanics decides what happens, regardless of the panic's source:
+	//   - Enabled (dev and ops): re-raise every panic so it crashes the process and bugs fail fast.
+	//   - Disabled (the default, production): convert every panic into a query error, matching the
+	//     Prometheus engine, so one bad query or series cannot take down the component.
+	//
+	// Either way the stats logging above reports the query as failed. Recovered panics are counted,
+	// labelled by tenant and a coarse reason, and logged with a stack trace (except known invalid-data
+	// panics, which can recur on every evaluation over the same series).
 	defer func() {
-		if r := recover(); r != nil {
-			if err == nil {
+		r := recover()
+		if r == nil {
+			return
+		}
+
+		rErr, isErr := r.(error)
+		if err == nil {
+			if isErr {
+				err = rErr
+			} else {
 				err = fmt.Errorf("panic during query evaluation: %v", r)
 			}
+		}
+
+		// logWithStack logs msg with the panic's stack trace. It must run in this deferred function,
+		// while the unwinding stack is still intact, so the trace reaches the panic site: re-panicking
+		// would otherwise discard those frames, and when recovering the log is the only pointer to them.
+		logWithStack := func(l log.Logger, msg string) {
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+			l.Log("msg", msg, "err", r, "expr", e.originalExpression, "stacktrace", string(buf))
+		}
+
+		if e.engine.surfaceEvaluationPanics {
+			logWithStack(level.Error(logger), "panic while evaluating query, re-panicking to crash")
 			panic(r)
+		}
+
+		userID := ""
+		if tenantIDs, tenantErr := tenant.TenantIDs(ctx); tenantErr == nil {
+			userID = tenant.JoinTenantIDs(tenantIDs)
+		}
+
+		// Classify the panic so data problems and likely bugs can be told apart without reading logs.
+		// Validation errors from the histogram library mean invalid stored data; a Go runtime error is
+		// almost certainly an engine bug; anything else is unclassified and may also be a bug.
+		_, isRuntimeErr := r.(runtime.Error)
+		reason := "other"
+		if isErr {
+			var validationErr histogram.Error
+			switch {
+			case errors.As(rErr, &validationErr):
+				reason = "invalid_data"
+			case isRuntimeErr:
+				reason = "runtime_error"
+			}
+		}
+
+		e.engine.evaluationPanics.WithLabelValues(userID, reason).Inc()
+		if reason == "invalid_data" {
+			// Origin is known and this recurs over the same invalid series, so log no stack trace.
+			level.Warn(logger).Log("msg", "recovered from panic while evaluating query, returning it as a query error", "err", r, "expr", e.originalExpression)
+		} else {
+			// A possible engine bug that no longer crashes: the stack trace is the only pointer to its origin.
+			logWithStack(level.Error(logger), "recovered from panic while evaluating query, returning it as a query error")
 		}
 	}()
 

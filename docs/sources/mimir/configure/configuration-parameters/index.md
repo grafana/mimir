@@ -2120,6 +2120,13 @@ store_gateway_client:
 [enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
 
 mimir_query_engine:
+  # (advanced) Crash the process on query evaluation panics instead of
+  # recovering them as query errors. Enable in non-production environments to
+  # surface bugs early; keep it disabled in production so one bad query or
+  # series cannot crash a shared querier or ruler.
+  # CLI flag: -querier.mimir-query-engine.surface-evaluation-panics
+  [surface_evaluation_panics: <boolean> | default = false]
+
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination

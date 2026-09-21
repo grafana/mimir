@@ -283,6 +283,109 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	})
 }
 
+// TestLimitingBucketedPool_ReturnedSliceSafety covers how a slice returned to a pool could go wrong
+// if a query aborts partway through (for example a recovered evaluation panic), checking each is
+// prevented or made visible rather than silently corrupting a later query that reuses the memory:
+//   - double return: the same backing slice is returned to the pool twice.
+//   - leak: a slice is taken from the pool but never returned.
+//   - use-after-return: a slice is read or written after being returned to the pool.
+func TestLimitingBucketedPool_ReturnedSliceSafety(t *testing.T) {
+	// The use-after-return case relies on returned slices being mangled (enabled package-wide in
+	// init_test.go). Assert it so the test fails loudly rather than passing for the wrong reason.
+	require.True(t, EnableManglingReturnedSlices.Load(), "these tests rely on slice mangling being enabled")
+
+	t.Run("double return is detected, not silently corrupting the pool", func(t *testing.T) {
+		_, metric := createRejectedMetric()
+		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "double return test")
+
+		s, err := FPointSlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3}, promql.FPoint{T: 4, F: 4})
+		require.Greater(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), uint64(0))
+
+		// Keep a second reference to the backing slice, simulating a stale reference that outlives the
+		// return (Put nils out the reference it is given, so we cannot rely on s).
+		staleRef := s
+
+		FPointSlicePool.Put(&s, tracker)
+		require.Nil(t, s, "reference should be cleared on Put")
+		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+		// Returning the slice again must be caught by the memory tracker guard, which runs before the
+		// slice reaches the pool, so the pool never hands it to two callers. It panics rather than
+		// silently under-counting memory.
+		var recovered any
+		func() {
+			defer func() { recovered = recover() }()
+			FPointSlicePool.Put(&staleRef, tracker)
+		}()
+		require.NotNil(t, recovered, "returning a slice twice should panic")
+		require.Contains(t, fmt.Sprint(recovered), "returned to a pool more than once")
+	})
+
+	t.Run("leaked slice is accounted and never reused by a later query", func(t *testing.T) {
+		_, metric := createRejectedMetric()
+		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "leak test")
+
+		// Take a slice and never return it, as would happen if a query aborted before cleanup.
+		leaked, err := Float64SlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		leaked = leaked[:4]
+
+		// The leak stays accounted in the per-query tracker, so it is detectable: pedantic Query.Close()
+		// panics when consumption is non-zero after a query finishes.
+		leakedBytes := tracker.CurrentEstimatedMemoryConsumptionBytes()
+		require.Greater(t, leakedBytes, uint64(0))
+
+		// The leaked slice is never returned, so a later Get cannot receive it and it cannot leak into
+		// another query; the GC reclaims it once unreferenced.
+		reused, err := Float64SlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		require.NotSame(t, unsafe.SliceData(leaked), unsafe.SliceData(reused), "a leaked slice must not be handed out again")
+		require.Equal(t, 2*leakedBytes, tracker.CurrentEstimatedMemoryConsumptionBytes(), "both slices remain accounted")
+
+		Float64SlicePool.Put(&reused, tracker)
+	})
+
+	// A returned slice is poisoned so reading it after return sees obviously-wrong data, not plausible
+	// stale values. Pools not cleared on Get (FPointSlicePool) overwrite with sentinels via a mangling
+	// function; pools cleared on Get (Float64SlicePool) zero the contents. Both run only while
+	// EnableManglingReturnedSlices is set (asserted above).
+	t.Run("use-after-return is made visible", func(t *testing.T) {
+		t.Run("mangling pool overwrites contents with sentinels", func(t *testing.T) {
+			_, metric := createRejectedMetric()
+			tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "use-after-return mangle test")
+
+			s, err := FPointSlicePool.Get(4, tracker)
+			require.NoError(t, err)
+			s = append(s, promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3}, promql.FPoint{T: 4, F: 4})
+
+			staleRef := s // Reference retained past the return, then read below.
+			FPointSlicePool.Put(&s, tracker)
+
+			for i, p := range staleRef {
+				require.Equalf(t, mangleInt64(0), p.T, "element %d timestamp should be mangled after return", i)
+				require.Equalf(t, mangleFloat64(0), p.F, "element %d value should be mangled after return", i)
+			}
+		})
+
+		t.Run("clear-on-get pool zeroes contents", func(t *testing.T) {
+			_, metric := createRejectedMetric()
+			tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "use-after-return clear-on-get test")
+
+			s, err := Float64SlicePool.Get(4, tracker)
+			require.NoError(t, err)
+			s = s[:4]
+			s[0], s[1], s[2], s[3] = 10, 20, 30, 40
+
+			staleRef := s // Reference retained past the return, then read below.
+			Float64SlicePool.Put(&s, tracker)
+
+			require.Equal(t, []float64{0, 0, 0, 0}, staleRef, "clear-on-get pool should zero returned contents so a stale read sees cleared data")
+		})
+	})
+}
+
 func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
 	onPutHookSlices := [][]promql.FPoint{}

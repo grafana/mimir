@@ -100,6 +100,10 @@ querier:
   # Query store-gateways for recent data too, so the compartment-aware blocks-storage path is exercised in
   # development.
   query_store_after: 5m
+  mimir_query_engine:
+    # Crash on query evaluation panics in this dev cluster so engine bugs surface early, instead of
+    # being turned into query errors as they are in production.
+    surface_evaluation_panics: true
 
 
 memberlist:

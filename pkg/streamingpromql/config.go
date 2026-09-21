@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -32,6 +33,12 @@ type EngineOpts struct {
 	// (indicating something was not returned to a pool).
 	// Should only be used in tests.
 	Pedantic bool `yaml:"-"`
+
+	// SurfaceEvaluationPanics controls query evaluation panics. When true, they are re-raised to crash
+	// the process (fail fast, for dev and ops). When false (the default, for production), they are
+	// recovered into a query error so one bad query or series cannot take down a shared querier or
+	// ruler, and counted by cortex_mimir_query_engine_evaluation_panics_total.
+	SurfaceEvaluationPanics bool `yaml:"surface_evaluation_panics" category:"advanced"`
 
 	// Prometheus' engine evaluates all selectors (ie. calls Querier.Select()) before evaluating any part of the query.
 	// We rely on this behavior in query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
@@ -138,6 +145,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
 	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableRemoveStaticallyEmptyExpressions, "querier.mimir-query-engine.enable-remove-statically-empty-expressions", true, "Enable removing expressions that are guaranteed to produce no results.")
+	f.BoolVar(&o.SurfaceEvaluationPanics, "querier.mimir-query-engine.surface-evaluation-panics", false, "Crash the process on query evaluation panics instead of recovering them as query errors. Enable in non-production environments to surface bugs early; keep it disabled in production so one bad query or series cannot crash a shared querier or ruler.")
 
 	o.RangeVectorSplitting.RegisterFlags(f)
 	o.RangeQuerySplittingAndCaching.RegisterFlags(f)
@@ -230,6 +238,10 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 }
 
 func NewTestEngineOpts() EngineOpts {
+	// Enable slice mangling so any package building a test engine through this helper detects
+	// use-after-return bugs without its own init_test.go. Process-wide, test-only, only ever set on.
+	types.EnableManglingReturnedSlices.Store(true)
+
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
 			Logger:                   nil,
@@ -243,8 +255,10 @@ func NewTestEngineOpts() EngineOpts {
 		},
 
 		Pedantic: true,
-		Logger:   log.NewNopLogger(),
-		Limits:   NewStaticQueryLimitsProvider(),
+		// Surface panics in tests so engine bugs fail fast instead of being turned into query errors.
+		SurfaceEvaluationPanics: true,
+		Logger:                  log.NewNopLogger(),
+		Limits:                  NewStaticQueryLimitsProvider(),
 
 		EnableCommonSubexpressionElimination:                      true,
 		EnableSubsetSelectorElimination:                           true,
