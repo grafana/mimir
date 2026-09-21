@@ -1081,6 +1081,80 @@ func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
 	verifyCacheStats(t, backend, 2, 1, 1)
 }
 
+// A block's intermediate result is cached as soon as the block is old enough to be cacheable, but its data may
+// still be arriving at that point: under ingest storage the ingester consumes behind wall-clock time, so a block
+// the splitter already considers complete can be missing its most recent samples. Those samples then arrive in
+// order, yet the cached result keeps being served for the whole TTL. The result must reflect the complete data.
+func TestQuerySplitting_CachedBlockMustReflectSamplesArrivingAfterItWasCached(t *testing.T) {
+	backend := caching.NewInMemoryCache()
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+
+	opts := defaultSplittingOpts()
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
+	limits.MaxOutOfOrderTimeWindow = 2 * time.Hour
+	opts.Limits = limits
+
+	baseT := timestamp.Time(0)
+	fixedNow := baseT.Add(12 * time.Hour)
+	// The out-of-order threshold is computed at materialize time using the engine's TimeNow, so set a fixed "now".
+	opts.TimeNow = func() time.Time { return fixedNow }
+
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	require.NoError(t, err)
+
+	// Query at 12h with 7h range: (5h, 12h]
+	// Expected splits (out-of-order threshold is 12h - 2h = 10h):
+	// - Head: (5h, 6h-1ms]
+	// - Block: (6h-1ms, 8h-1ms] - cacheable
+	// - Block: (8h-1ms, 10h-1ms] - cacheable, but its last samples have not been ingested yet
+	// - Tail: (10h-1ms, 12h] - non-cacheable (in OOO window)
+	storage := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	ctx := context.Background()
+	appendSamples := func(fromIdx, toIdx int) {
+		app := storage.Appender(ctx)
+		for i := fromIdx; i <= toIdx; i++ {
+			ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
+			_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// The ingester is behind: only samples up to 9h20m (index 56) have arrived when the first query runs, so the
+	// (8h-1ms, 10h-1ms] block is missing its 9h30m, 9h40m and 9h50m samples (indices 57-59).
+	appendSamples(0, 56)
+
+	expr := "sum_over_time(test_metric[7h])"
+	ts := fixedNow
+
+	// First query: both aligned blocks are cached, the second one while it is still incomplete.
+	// Samples at 5h10m (31) to 9h20m (56) = 26 samples, sum = (31+56)*26/2 = 1131
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 1131, "env", "prod"), result1)
+	verifyEvaluationStats(t, stats, 26, 26)
+	verifyCacheStats(t, backend, 2, 0, 2)
+	require.Equal(t, []storageQueryRange{
+		{mint: 5*hourInMs + 1, maxt: 6*hourInMs - 1},
+		{mint: 6 * hourInMs, maxt: 10*hourInMs - 1},
+		{mint: 10 * hourInMs, maxt: 12 * hourInMs},
+	}, ranges1)
+
+	// The remaining samples arrive, in order: the missing block samples (57-59) and the tail (60-72).
+	appendSamples(57, 72)
+
+	// The same query must now include the samples that arrived inside the cached block.
+	// Samples at 5h10m (31) to 12h (72) = 42 samples, sum = (31+72)*42/2 = 2163
+	result2, stats, _ := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 2163, "env", "prod"), result2)
+	verifyEvaluationStats(t, stats, 42, 42)
+}
+
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
