@@ -202,7 +202,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
 			expectedLastMatchingIdx: -1,
-			expectedErr:             "histogram at timestamp .* has sum .* while was expecting .*",
+			expectedErr:             "histogram at timestamp .* has count .* while was expecting .*\nhas sum .* while was expecting .*\nbucket 0 has count .* while was expecting .*",
 		},
 		"should return error if there's a missing histogram": {
 			histograms: []model.SampleHistogramPair{
@@ -224,6 +224,17 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 			expectedStep:            10 * time.Second,
 			expectedLastMatchingIdx: 2,
 			expectedErr:             "histogram at timestamp .* was expected to have timestamp .*",
+		},
+		"should return error naming the bucket if only a bucket diverges": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 5)),
+				newSampleHistogramPair(now.Add(20*time.Second), generateSampleHistogram(now.Add(20*time.Second), 5)),
+				newSampleHistogramPair(now.Add(30*time.Second), withFirstBucketCountOffset(t, generateSampleHistogram(now.Add(30*time.Second), 5), 1)),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: -1,
+			expectedErr:             "histogram at timestamp .* bucket 0 has count .* while was expecting .*",
 		},
 	}
 
@@ -303,6 +314,21 @@ func newSamplePair(ts time.Time, value float64) model.SamplePair {
 		Timestamp: model.Time(ts.UnixMilli()),
 		Value:     model.SampleValue(value),
 	}
+}
+
+// withFirstBucketCountOffset returns a copy of hist with offset added to the count of its first bucket.
+// Count and Sum are unchanged, so only the bucket comparison can detect the difference.
+func withFirstBucketCountOffset(t *testing.T, hist *model.SampleHistogram, offset model.FloatString) *model.SampleHistogram {
+	require.NotEmpty(t, hist.Buckets)
+
+	buckets := make(model.HistogramBuckets, 0, len(hist.Buckets))
+	for _, bucket := range hist.Buckets {
+		copied := *bucket
+		buckets = append(buckets, &copied)
+	}
+	buckets[0].Count += offset
+
+	return &model.SampleHistogram{Count: hist.Count, Sum: hist.Sum, Buckets: buckets}
 }
 
 func newSampleHistogramPair(ts time.Time, hist *model.SampleHistogram) model.SampleHistogramPair {
