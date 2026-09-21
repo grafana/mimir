@@ -106,6 +106,8 @@ type Demoter struct {
 	// Refresh prunes entries for agents no longer in the pool.
 	lastDemotedProbeMu sync.Mutex
 	lastDemotedProbe   map[int32]time.Time
+
+	transitionsTotal *prometheus.CounterVec
 }
 
 // NewDemoter wraps inner with the demotion policy described on Demoter.
@@ -121,6 +123,10 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 		logger:           logger,
 		now:              time.Now,
 		lastDemotedProbe: make(map[int32]time.Time),
+		transitionsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "warpstream_demoter_transitions_total",
+			Help: "Total number of Demoter state edges, by transition (demoted or restored). Dropping a departed agent is not a restore.",
+		}, []string{"transition"}),
 	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -292,9 +298,11 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 
 	switch {
 	case demoted:
+		d.transitionsTotal.WithLabelValues("demoted").Inc()
 		log(d.logger, kgo.LogLevelInfo, "warpstream agent demoted", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
 	case restored:
-		log(d.logger, kgo.LogLevelInfo, "warpstream agent restored", "node_id", nodeID)
+		d.transitionsTotal.WithLabelValues("restored").Inc()
+		log(d.logger, kgo.LogLevelInfo, "warpstream agent restored", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
 	}
 
 	return isFaulty
@@ -333,6 +341,8 @@ func (d *Demoter) Refresh(currentAgents []int32) {
 	defer d.lastDemotedProbeMu.Unlock()
 	for nodeID := range d.lastDemotedProbe {
 		if _, ok := current[nodeID]; !ok {
+			// Leaving the pool is not recovery: do not count a departed agent
+			// as restored on transitionsTotal.
 			delete(d.lastDemotedProbe, nodeID)
 		}
 	}

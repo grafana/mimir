@@ -643,8 +643,8 @@ alertmanager:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxUnavailable: 0
+      maxSurge: 1
   # -- updateStrategy of the alertmanager statefulset. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
   statefulStrategy:
     type: RollingUpdate
@@ -4042,6 +4042,9 @@ continuous_test:
   initContainers: []
   # -- Nodeselector of continuous test replicas
   nodeSelector: {}
+  # -- Pod Disruption Budget for continuous test
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for continuous test pods
   priorityClassName: null
   # -- Kubernetes resource requests and limits for continuous test
