@@ -114,13 +114,28 @@ func (p routedEncodedTopicPartitionRecords) mergeWith(others []routedEncodedTopi
 }
 
 // unrouteEncodedTopicPartitionRecords returns the routing-less encodedTopicPartitionRecords view for
-// the DirectProducer chain, which takes the nodeID separately.
+// the DirectProducer chain, which takes the destination agent separately.
 func unrouteEncodedTopicPartitionRecords(parts []routedEncodedTopicPartitionRecords) []encodedTopicPartitionRecords {
 	out := make([]encodedTopicPartitionRecords, len(parts))
 	for i, p := range parts {
 		out[i] = p.encodedTopicPartitionRecords
 	}
 	return out
+}
+
+// agentFromRouted resolves the destination Agent for one wire attempt: nodeID,
+// plus AgentStateDemoted if any partition was routed there as a probe. A mixed
+// group only arises when demotion flipped mid-linger, and demoted wins so a
+// probe is never reported as ordinary traffic.
+func agentFromRouted(nodeID int32, parts []routedEncodedTopicPartitionRecords) Agent {
+	a := Agent{NodeID: nodeID}
+	for _, p := range parts {
+		if p.nodeState == AgentStateDemoted {
+			a.State = AgentStateDemoted
+			return a
+		}
+	}
+	return a
 }
 
 // newMultiRoutedEncodedTopicPartitionRecords stamps each encoded partition with

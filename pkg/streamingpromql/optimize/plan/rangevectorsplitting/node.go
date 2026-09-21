@@ -68,7 +68,26 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if containsSubquery(s.Inner) {
+		return planning.QueryPlanV21, nil
+	}
+
 	return planning.QueryPlanV18, nil
+}
+
+// containsSubquery returns true if n or any of its descendants is a Subquery.
+func containsSubquery(n planning.Node) bool {
+	if _, ok := n.(*core.Subquery); ok {
+		return true
+	}
+
+	for child := range planning.ChildrenIter(n) {
+		if containsSubquery(child) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // limitsProvider provides the tenant limits needed to compute split ranges at materialize time.
@@ -77,12 +96,13 @@ type limitsProvider interface {
 }
 
 type Materializer struct {
-	enabled       bool
-	splitInterval time.Duration
-	limits        limitsProvider
-	timeNow       func() time.Time
-	cache         *cache.CacheFactory
-	logger        log.Logger
+	enabled                 bool
+	splitInterval           time.Duration
+	enableSubquerySplitting bool
+	limits                  limitsProvider
+	timeNow                 func() time.Time
+	cache                   *cache.CacheFactory
+	logger                  log.Logger
 
 	nodesSplit   prometheus.Counter
 	nodesUnsplit *prometheus.CounterVec
@@ -90,18 +110,19 @@ type Materializer struct {
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(enabled bool, splitInterval time.Duration, limits limitsProvider, timeNow func() time.Time, cache *cache.CacheFactory, reg prometheus.Registerer, logger log.Logger) *Materializer {
+func NewMaterializer(enabled bool, splitInterval time.Duration, enableSubquerySplitting bool, limits limitsProvider, timeNow func() time.Time, cache *cache.CacheFactory, reg prometheus.Registerer, logger log.Logger) *Materializer {
 	if timeNow == nil {
 		timeNow = time.Now
 	}
 
 	return &Materializer{
-		enabled:       enabled,
-		splitInterval: splitInterval,
-		limits:        limits,
-		timeNow:       timeNow,
-		cache:         cache,
-		logger:        logger,
+		enabled:                 enabled,
+		splitInterval:           splitInterval,
+		enableSubquerySplitting: enableSubquerySplitting,
+		limits:                  limits,
+		timeNow:                 timeNow,
+		cache:                   cache,
+		logger:                  logger,
 		nodesSplit: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_materialized_split_total",
 			Help: "Total number of range vector splitting nodes materialized as split operators.",
@@ -143,11 +164,17 @@ func (m Materializer) Materialize(ctx context.Context, n planning.Node, material
 		return nil, fmt.Errorf("inner node of split function call does not implement SplitNode: %T", innerNode)
 	}
 
+	if containsSubquery(innerNode) && !m.enableSubquerySplitting {
+		level.Warn(m.logger).Log("msg", "split function node wraps a subquery but subquery splitting is disabled, falling back to unsplit execution; this can happen if subquery splitting is enabled on the query-frontend but not yet on the querier")
+		m.nodesUnsplit.WithLabelValues("subquery_splitting_disabled").Inc()
+		return materializer.FactoryForNode(ctx, s.Inner, timeRange)
+	}
+
 	// The split ranges are computed here, at materialize time, rather than at planning time, because they depend on
 	// the querier's current time and the tenant's out-of-order window. If the ranges turn out not to be worth
 	// splitting (e.g. there's no complete cacheable block, or every block falls within the out-of-order window), fall
 	// back to unsplit execution.
-	ranges, notApplied, err := m.computeRanges(ctx, splitNode, timeRange)
+	ranges, notApplied, err := m.computeRanges(ctx, splitNode, timeRange, params.QueryParameters.LookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +220,7 @@ func (m Materializer) Materialize(ctx context.Context, n planning.Node, material
 // ranges is nil and the caller should fall back to unsplit execution). The notApplied reasons mirror those recorded by
 // the optimization pass at planning time, but for the checks that depend on runtime state (the current time and the
 // tenant's out-of-order window).
-func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNode, timeRange types.QueryTimeRange) (ranges []Range, notApplied string, err error) {
+func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNode, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (ranges []Range, notApplied string, err error) {
 	timeParams := inner.GetRangeParams()
 	if !timeParams.IsSet {
 		// Should always be set if it's a splittable node.
@@ -208,16 +235,41 @@ func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNod
 		return nil, "no_complete_cache_block", nil
 	}
 
-	var oooThreshold int64
 	oooWindow, err := m.limits.GetMaxOutOfOrderTimeWindow(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	if oooWindow > 0 {
-		oooThreshold = m.timeNow().Add(-oooWindow).UnixMilli()
+
+	// Matrix-selector split boundaries are already in storage time, so comparing the split end with the OOO threshold
+	// is sufficient. When the OOO window is zero, this comparison is disabled to preserve the existing matrix-selector
+	// behavior. A subquery's nested offsets and @ modifiers can move the actual storage query away from its split
+	// boundaries, so subqueries instead calculate the queried range for every split. That check remains enabled with a
+	// zero OOO window, using the current time as the threshold.
+	oooThreshold := m.timeNow().Add(-oooWindow).UnixMilli()
+	innerIsSubquery := containsSubquery(inner)
+	var isRangeCacheable cacheabilityChecker
+
+	if innerIsSubquery {
+		isRangeCacheable = func(splitRange Range) (bool, error) {
+			splitTimeRange, overrideRangeParams := queryTimeRangeForSplit(splitRange.Start, splitRange.End, splitRange.End-splitRange.Start)
+			queriedTimeRange, err := inner.QueriedTimeRangeWithSubRange(splitTimeRange, overrideRangeParams, lookbackDelta)
+			if err != nil {
+				return false, fmt.Errorf("computing queried time range for split (%d, %d]: %w", splitRange.Start, splitRange.End, err)
+			}
+
+			return !queriedTimeRange.AnyDataQueried || queriedTimeRange.MaxT.UnixMilli() < oooThreshold, nil
+		}
+	} else {
+		if oooWindow == 0 {
+			oooThreshold = 0
+		}
+		isRangeCacheable = newOOOCacheabilityChecker(oooThreshold)
 	}
 
-	ranges = computeSplitRanges(startTs, endTs, m.splitInterval, oooThreshold)
+	ranges, err = computeSplitRanges(startTs, endTs, m.splitInterval, isRangeCacheable)
+	if err != nil {
+		return nil, "", err
+	}
 
 	hasCacheable := false
 	for _, r := range ranges {
@@ -227,6 +279,9 @@ func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNod
 		}
 	}
 	if !hasCacheable {
+		if innerIsSubquery {
+			return nil, "no_cacheable_blocks_after_subquery_range_filter", nil
+		}
 		return nil, "no_cacheable_blocks_after_ooo_filter", nil
 	}
 

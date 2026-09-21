@@ -30,11 +30,18 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
+* [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
+* [CHANGE] Stop restarting every pod on a chart version bump: the `checksum/config` and `checksum/alertmanager-fallback-config` annotations now hash only the data of the ConfigMap or Secret, and `helm.sh/chart` is no longer set on the pod labels. The chart version remains on the objects themselves. Adopting this release recomputes the annotations once, so the pods roll a single time on this specific upgrade. #16571
+* [CHANGE] Alertmanager: set the default rolling update strategy to `maxUnavailable: 0`, so a rollout no longer stops the only running replica. This only affects installations with `alertmanager.statefulSet.enabled: false`. #16595
 * [ENHANCEMENT] Memcached: update the default `memcached` and `memcached-exporter` images to `1.6.42-alpine` and `v0.16.0` respectively. #16372
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440
-* [ENHANCEMENT] Add support for `hostAliases` for all components.
-
+* [ENHANCEMENT] Upgrade rollout-operator chart for v0.40.0. The rendered rollout-operator manifests no longer set the deprecated `-zpdb.pod-ready-annotation-patch-timeout` flag and no longer grant the `patch` verb on pods, because cross-zone eviction delays now read the Pod Ready condition instead of patching the `grafana.com/ready-time` annotation. #16564
+* [ENHANCEMENT] Add a Pod Disruption Budget for continuous test to keep parity with other resources. The component is expected to be running with a single replica, therefore the default PDB sets `maxUnavailable: 1` matching that. #16597
+* [BUGFIX] Gateway: use the distributor ClusterIP Service when `distributor.service.trafficDistribution` is configured so that Kubernetes traffic distribution can take effect. #16448
+* [BUGFIX] Alertmanager: Render priorityClassName in Deployment based on the `alertmanager` per-component value. Historically the value from `query_frontend` was being mistakenly rendered. #16537
+* [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
+* [ENHANCEMENT] Add support for `hostAliases` for all components. #16446
 
 ## 6.2.0
 

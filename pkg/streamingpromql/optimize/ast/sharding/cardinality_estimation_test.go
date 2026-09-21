@@ -4,6 +4,7 @@ package sharding
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"math"
 	"slices"
@@ -144,6 +145,66 @@ func TestCollectSelectorTimeRanges(t *testing.T) {
 		require.Equal(t, startT-(time.Hour-time.Minute+7*time.Minute).Milliseconds()+1, ranges[0].minT)
 		require.Equal(t, endT, ranges[0].maxT)
 	})
+}
+
+// TestSubqueryRangeShorterThanStepCanInvertQueriedTimeRange is a regression test for a production
+// incident where a tenant had sibling rules evaluating the same metric with a `[10m:X]` subquery for
+// several values of X (5m, 30m, 1h, 2h, 6h, 1d, 3d) - a multi-window burn-rate pattern. Every one of
+// them evaluated successfully except the longest, [10m:3d], which failed every tick with:
+//
+//	last bucket must not be before first bucket, but got minT=... and maxT=...
+//
+// Root cause: SubqueryChildrenTimeRange (pkg/streamingpromql/planning/core/subquery.go) aligns the
+// subquery's child time range to the step's epoch-aligned grid. When the step is much larger than the
+// range, there may be no grid point inside [end-range, end], so the aligned start ends up *after* the
+// parent query's end. types.NewRangeQueryTimeRange documents that a start-after-end range is legitimate
+// (it means the subquery selects no points), and selectorCardinalityCacheKeys now handles that case the
+// same way: it returns no cache keys (and no error) for an inverted range, so the query proceeds without
+// a cardinality estimate for that selector instead of failing outright.
+func TestSubqueryRangeShorterThanStepCanInvertQueriedTimeRange(t *testing.T) {
+	// Chosen as an exact multiple of 1 day so it also lands exactly on a step boundary for every step
+	// below except 3d, isolating the step length as the only variable that determines whether the
+	// range inverts - matching what was observed in the incident, where only the 3d-step sibling rule
+	// failed.
+	instant := types.NewInstantQueryTimeRange(timestamp.Time(20 * 24 * time.Hour.Milliseconds()))
+	lookbackDelta := 5 * time.Minute
+
+	testCases := map[string]struct {
+		step           string
+		expectInverted bool
+	}{
+		"[10m:5m]":  {step: "5m", expectInverted: false},
+		"[10m:30m]": {step: "30m", expectInverted: false},
+		"[10m:1h]":  {step: "1h", expectInverted: false},
+		"[10m:2h]":  {step: "2h", expectInverted: false},
+		"[10m:6h]":  {step: "6h", expectInverted: false},
+		"[10m:1d]":  {step: "1d", expectInverted: false},
+		"[10m:3d]":  {step: "3d", expectInverted: true}, // The one that caused the incident.
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			queryExpr := fmt.Sprintf("sum_over_time(foo[10m:%s])", testCase.step)
+			expr, err := promqlext.NewPromQLParser().ParseExpr(queryExpr)
+			require.NoError(t, err)
+
+			ranges := collectSelectorTimeRanges(expr, instant, lookbackDelta)
+			require.Len(t, ranges, 1)
+			minT, maxT := ranges[0].minT, ranges[0].maxT
+
+			_, cfg := setupCardinalityEstimationTest()
+			keys, err := selectorCardinalityCacheKeys(context.Background(), cfg, queryExpr, "foo", minT, maxT, true, newNoOpSpanLogger(t))
+			require.NoError(t, err, "an inverted/empty queried time range must not cause an error - it should just mean no cardinality estimate is available")
+
+			if testCase.expectInverted {
+				require.Greater(t, minT, maxT, "expected this subquery's step to be large enough relative to its 10m range to produce an inverted time range")
+				require.Empty(t, keys, "an inverted time range should yield no cache keys")
+			} else {
+				require.LessOrEqual(t, minT, maxT, "expected this subquery's step to be small enough relative to its 10m range to produce a valid time range")
+				require.NotEmpty(t, keys, "a valid time range should yield at least one cache key")
+			}
+		})
+	}
 }
 
 func TestCacheCardinalityEstimator(t *testing.T) {

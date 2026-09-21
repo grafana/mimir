@@ -1172,7 +1172,15 @@ func (s *sink) handleReqRespBatch(
 			return false, false
 		}
 		if s.cl.cfg.onDataLoss != nil {
-			s.cl.cfg.onDataLoss(topic, rp.Partition)
+			// Dispatch on a fresh goroutine: we hold this partition's
+			// recBuf.mu here, and the natural reaction to "data loss
+			// on (topic, partition)" is to produce to that partition
+			// -- which re-enters recBuf.mu on this goroutine and
+			// deadlocks it forever, wedging the partition and this
+			// sink's response processing. The callback is an
+			// informational notification with no ordering contract
+			// (same dispatch style as HookProduceBatchWritten).
+			go s.cl.cfg.onDataLoss(topic, rp.Partition)
 		}
 
 		// For OOOSN, and UnknownProducerID
@@ -2443,7 +2451,10 @@ func (p *produceRequest) IsFlexible() bool   { return p.version >= 9 }
 func (p *produceRequest) AppendTo(dst []byte) []byte {
 	flexible := p.IsFlexible()
 
-	p.metrics = make(map[string]map[int32]ProduceBatchMetrics)
+	// The metrics maps are rebuilt on every AppendTo and take one entry
+	// per topic and one per partition we actually write, so size them up
+	// front rather than growing our way there.
+	p.metrics = make(map[string]map[int32]ProduceBatchMetrics, len(p.batches.bs))
 
 	if p.version >= 3 {
 		if flexible {
@@ -2474,7 +2485,7 @@ func (p *produceRequest) AppendTo(dst []byte) []byte {
 			dst = kbin.AppendArrayLen(dst, len(partitions))
 		}
 
-		tmetrics := make(map[int32]ProduceBatchMetrics)
+		tmetrics := make(map[int32]ProduceBatchMetrics, len(partitions))
 		p.metrics[topic] = tmetrics
 
 		for partition, batch := range partitions {
@@ -2483,6 +2494,16 @@ func (p *produceRequest) AppendTo(dst []byte) []byte {
 			if batch.records == nil || batch.isFailingFromLoadErr { // concurrent failAllRecords OR concurrent bumpRepeatedLoadErr
 				if flexible {
 					dst = kbin.AppendCompactNullableBytes(dst, nil)
+					// Flexible versions terminate EVERY partition
+					// element with a tagged-field count; the healthy
+					// arm appends it after the batch bytes below.
+					// Skipping it here left the request one byte
+					// short per failed batch, desyncing the broker's
+					// parse of every following partition: the whole
+					// request was corrupt, the broker killed the
+					// connection, and every healthy batch in the
+					// request rode the connection-death path.
+					dst = append(dst, 0)
 				} else {
 					dst = kbin.AppendNullableBytes(dst, nil)
 				}

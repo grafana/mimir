@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
@@ -86,13 +87,18 @@ type BlocksGrouperFactory func(
 	reg prometheus.Registerer,
 ) Grouper
 
-// BlocksCompactorFactory builds and returns the compactor and planner for compacting a tenant's blocks.
+// BlocksCompactorFactory builds and returns the compactor provider and planner for compacting tenants' blocks.
 type BlocksCompactorFactory func(
 	ctx context.Context,
 	cfg Config,
+	cfgProvider ConfigProvider,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (Compactor, Planner, error)
+) (BlocksCompactorProvider, Planner, error)
+
+// BlocksCompactorProvider returns the Compactor to use for a given tenant's blocks. It must be safe
+// for concurrent use, because jobs belonging to different tenants can be compacted at the same time.
+type BlocksCompactorProvider func(userID string) Compactor
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
@@ -105,8 +111,8 @@ type Config struct {
 	CompactionRetries                int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency            int                     `yaml:"compaction_concurrency" category:"advanced"`
 	CompactionWaitPeriod             time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period" category:"experimental"`
-	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
+	CompactionOOOWaitPeriod          time.Duration           `yaml:"first_level_compaction_ooo_wait_period"`
+	CompactionSkipFutureMaxTime      bool                    `yaml:"first_level_compaction_skip_future_max_time"`
 	CleanupInterval                  time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency               int                     `yaml:"cleanup_concurrency" category:"advanced"`
 	DeletionDelay                    time.Duration           `yaml:"deletion_delay" category:"advanced"`
@@ -119,6 +125,8 @@ type Config struct {
 	SymbolsFlushersConcurrency          int `yaml:"symbols_flushers_concurrency" category:"advanced"`            // Number of symbols flushers used when doing split compaction.
 	MaxBlockUploadValidationConcurrency int `yaml:"max_block_upload_validation_concurrency" category:"advanced"` // Max number of uploaded blocks that can be validated concurrently.
 	UpdateBlocksConcurrency             int `yaml:"update_blocks_concurrency" category:"advanced"`               // Number of goroutines to use when updating blocks metadata during bucket index updates.
+
+	BlockSymbolTableSizeThreshold uint64 `yaml:"block_symbol_table_size_threshold" category:"experimental"` // Threshold (bytes) for just-compacted block symbol table, above which the block is preemptively marked as no-compact. This is to avoid hitting symbol-table-too-large on subsequent compaction cycles.
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -172,8 +180,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters or block-builders. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. Does not apply to out-of-order blocks.")
-	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 0, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0 (default), out-of-order blocks do not delay compaction.")
-	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", false, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
+	f.DurationVar(&cfg.CompactionOOOWaitPeriod, "compactor.first-level-compaction-ooo-wait-period", 5*time.Minute, "How long the compactor waits before compacting first-level blocks containing out-of-order samples. When set to 0, out-of-order blocks do not delay compaction.")
+	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", true, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
@@ -188,6 +196,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.SymbolsFlushersConcurrency, "compactor.symbols-flushers-concurrency", 1, "Number of symbols flushers used when doing split compaction.")
 	f.IntVar(&cfg.MaxBlockUploadValidationConcurrency, "compactor.max-block-upload-validation-concurrency", 1, "Max number of uploaded blocks that can be validated concurrently. 0 = no limit.")
 	f.IntVar(&cfg.UpdateBlocksConcurrency, "compactor.update-blocks-concurrency", defaultUpdateBlocksConcurrency, "Number of goroutines to use when updating blocks metadata during bucket index updates.")
+
+	f.Uint64Var(&cfg.BlockSymbolTableSizeThreshold, "compactor.block-symbol-table-size-threshold", 0, "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
@@ -286,6 +296,10 @@ type ConfigProvider interface {
 
 	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
+
+	// FloatChunkEncoding returns the encoding to use for float chunks written for a given user.
+	// An encoding that no -blocks-storage.tsdb.float-chunk-encoding value selects is treated as the default.
+	FloatChunkEncoding(userID string) chunkenc.Encoding
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -308,9 +322,9 @@ type MultitenantCompactor struct {
 	// Blocks cleaner is responsible for hard deletion of blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
 
-	// Underlying compactor and planner for compacting TSDB blocks.
-	blocksCompactor Compactor
-	blocksPlanner   Planner
+	// Underlying compactor provider and planner for compacting TSDB blocks.
+	blocksCompactorProvider BlocksCompactorProvider
+	blocksPlanner           Planner
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
@@ -553,6 +567,13 @@ func (c *MultitenantCompactor) cacheBucketID() string {
 	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
 }
 
+// ringBasedCleanupDisabled reports whether this compactor skips the ring-sharded background blocks
+// cleaner. In scheduler mode the ring's only remaining purpose is sharding that cleaner, so the ring
+// is not created either and this compactor only executes jobs leased from the scheduler.
+func (c *MultitenantCompactor) ringBasedCleanupDisabled() bool {
+	return c.compactorCfg.SchedulerClientConfig.Enabled && !c.compactorCfg.SchedulerClientConfig.EnableRingBasedCleanup
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -564,25 +585,13 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Create blocks compactor dependencies.
-	c.blocksCompactor, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.logger, c.registerer)
+	c.blocksCompactorProvider, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.cfgProvider, c.logger, c.registerer)
 	if err != nil {
 		return fmt.Errorf("failed to initialize compactor dependencies: %w", err)
 	}
 
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
-
-	// Initialize the compactors ring if sharding is enabled. With compartments enabled the compactor
-	// registers into its read compartment's own ring.
-	name, key := ringName, ringKey
-	if c.compactorCfg.Compartments.Enabled {
-		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
-		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
-	}
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
-	if err != nil {
-		return err
-	}
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
@@ -593,6 +602,55 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	} else {
 		// Uses the ring to shard jobs between compactor instances
 		c.executor = &standaloneExecutor{}
+	}
+
+	if c.ringBasedCleanupDisabled() {
+		level.Warn(c.logger).Log("msg", "compactor will not run the blocks cleaner and will not join the ring, because -compactor.scheduler-client.enable-ring-based-cleanup is disabled.")
+	} else {
+		if err := c.startRing(ctx); err != nil {
+			return err
+		}
+
+		// Create the blocks cleaner (service).
+		c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
+			DeletionDelay:                 c.compactorCfg.DeletionDelay,
+			CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+			CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
+			TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
+			DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
+			GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
+			UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
+			CompactionBlockRanges:         c.compactorCfg.BlockRanges,
+			EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
+		}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
+
+		// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
+		if err := c.blocksCleaner.StartAsync(ctx); err != nil {
+			c.ringSubservices.StopAsync()
+			return fmt.Errorf("failed to start the blocks cleaner: %w", err)
+		}
+	}
+
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
+
+	return nil
+}
+
+// startRing initializes the compactor ring, starts its subservices, waits until this instance is ACTIVE,
+// and builds the ring-backed sharding strategy.
+func (c *MultitenantCompactor) startRing(ctx context.Context) error {
+	var err error
+
+	// With compartments enabled the compactor registers into its read compartment's own ring.
+	name, key := ringName, ringKey
+	if c.compactorCfg.Compartments.Enabled {
+		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
+		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
+	}
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
+	if err != nil {
+		return err
 	}
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -640,29 +698,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
-
-	// Create the blocks cleaner (service).
-	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:                 c.compactorCfg.DeletionDelay,
-		CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
-		DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
-		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
-		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
-		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
-		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
-	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
-
-	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
-	if err := c.blocksCleaner.StartAsync(ctx); err != nil {
-		c.ringSubservices.StopAsync()
-		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
-	}
-
-	// Remove validation directories possibly left behind by block upload
-	c.cleanupLeftoverValidationDirectories()
-
 	return nil
 }
 
@@ -708,7 +743,9 @@ func (c *MultitenantCompactor) stopping(_ error) error {
 		}
 	}
 
-	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
+	if c.blocksCleaner != nil {
+		services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
+	}
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
@@ -911,16 +948,23 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 }
 
 func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
+	// ring sharding may be disabled
+	var ownJob ownCompactionJobFunc
+	if c.shardingStrategy != nil {
+		ownJob = c.shardingStrategy.ownJob
+	}
+
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
-		c.blocksCompactor,
+		c.blocksCompactorProvider(userID),
 		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
-		c.shardingStrategy.ownJob,
+		c.compactorCfg.BlockSymbolTableSizeThreshold,
+		ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.CompactionOOOWaitPeriod,
