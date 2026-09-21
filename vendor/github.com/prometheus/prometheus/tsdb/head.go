@@ -2082,6 +2082,12 @@ func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
 }
 
+// LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
+// values currently held in the head. See index.MemPostings.LabelValuesBytes.
+func (h *Head) LabelValuesBytes() map[string]uint64 {
+	return h.postings.LabelValuesBytes()
+}
+
 // NumStaleSeries returns the number of stale series in the head.
 func (h *Head) NumStaleSeries() uint64 {
 	return h.numStaleSeries.Load()

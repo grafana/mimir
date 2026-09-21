@@ -26,6 +26,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -44,6 +45,7 @@ const (
 	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
+	MaxLabelValueBytesPerLabelNameFlag          = "ingester.max-global-label-value-bytes-per-label-name"
 	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
@@ -210,6 +212,8 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	// Label values
+	MaxGlobalLabelValueBytesPerLabelName int `yaml:"max_global_label_value_bytes_per_label_name" json:"max_global_label_value_bytes_per_label_name" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -438,6 +442,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalLabelValueBytesPerLabelName, MaxLabelValueBytesPerLabelNameFlag, 0, fmt.Sprintf("The maximum total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication. Only values longer than %d bytes are counted, and each distinct value is counted once however many series carry it. 0 to disable.", index.LabelValueBytesMinLength))
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -1066,6 +1071,12 @@ func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
+}
+
+// MaxGlobalLabelValueBytesPerLabelName returns the maximum total size in bytes of the distinct
+// values of a single label name, per tenant, across the cluster.
+func (o *Overrides) MaxGlobalLabelValueBytesPerLabelName(userID string) int {
+	return o.getOverridesForUser(userID).MaxGlobalLabelValueBytesPerLabelName
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.

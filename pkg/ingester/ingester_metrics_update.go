@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
@@ -228,6 +229,8 @@ func (i *Ingester) updateUsageStats() {
 }
 
 func (i *Ingester) updateLimitMetrics() {
+	overLimit := 0
+
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -246,5 +249,46 @@ func (i *Ingester) updateLimitMetrics() {
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
+
+		overLimit += i.updateLabelValueBytesMetrics(userID, db)
 	}
+
+	i.metrics.labelNamesOverValueBytesLimit.Set(float64(overLimit))
+}
+
+// labelValueBytesReportingThresholdPercentage is the share of the local limit at which a label
+// name starts being reported. Reporting below the limit keeps the metric useful for calibrating
+// the limit and for spotting tenants trending towards it, while reporting only a handful of
+// label names keeps this metric's cardinality near zero in steady state.
+const labelValueBytesReportingThresholdPercentage = 50
+
+// updateLabelValueBytesMetrics reports the label names whose distinct values take up a
+// significant share of the tenant's local per-label-name bytes limit, and returns how many of
+// them are over that limit.
+func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) (overLimit int) {
+	// Drop the previously reported label names, as the set changes over time and stale entries
+	// would otherwise linger. This is cheap because only reported label names are held.
+	i.metrics.labelValueBytesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
+	i.metrics.labelValueBytesOverLimit.DeletePartialMatch(prometheus.Labels{"user": userID})
+
+	// Reporting is driven by the limit, so there is nothing to report while it is disabled.
+	if i.limits.MaxGlobalLabelValueBytesPerLabelName(userID) <= 0 {
+		return 0
+	}
+
+	localLimit := i.limiter.maxLabelValueBytesPerLabelName(userID)
+	reportingThreshold := uint64(localLimit) / 100 * labelValueBytesReportingThresholdPercentage
+
+	for labelName, bytes := range db.Head().LabelValuesBytes() {
+		if bytes < reportingThreshold {
+			continue
+		}
+		i.metrics.labelValueBytesPerUser.WithLabelValues(userID, labelName).Set(float64(bytes))
+		if !i.limiter.IsWithinMaxLabelValueBytesPerLabelName(userID, bytes) {
+			overLimit++
+			i.metrics.labelValueBytesOverLimit.WithLabelValues(userID, labelName).Set(1)
+		}
+	}
+
+	return overLimit
 }

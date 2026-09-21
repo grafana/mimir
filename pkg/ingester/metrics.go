@@ -51,6 +51,16 @@ type ingesterMetrics struct {
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
 
+	// Only exported for label names at or above the reporting threshold, so this stays
+	// empty for tenants behaving normally.
+	labelValueBytesPerUser        *prometheus.GaugeVec
+	labelNamesOverValueBytesLimit prometheus.Gauge
+	// Only exported for (user, label name) pairs currently over their local limit, so this
+	// stays empty for tenants behaving normally. Carries the identity that
+	// labelNamesOverValueBytesLimit deliberately omits to stay cardinality-free for alerting;
+	// this one exists so automation can find out which pairs to act on.
+	labelValueBytesOverLimit *prometheus.GaugeVec
+
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
 	maxSeriesGauge               prometheus.GaugeFunc
@@ -218,6 +228,18 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
+		labelValueBytesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_label_value_bytes",
+			Help: "Total size in bytes of the distinct values held in memory for a label name, counting each distinct value once. Only reported for label names approaching or exceeding the per-label-name limit.",
+		}, []string{"user", "label"}),
+		labelNamesOverValueBytesLimit: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_label_names_over_value_bytes_limit",
+			Help: "Number of (user, label name) pairs whose distinct label values exceed the local per-label-name bytes limit on this ingester.",
+		}),
+		labelValueBytesOverLimit: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_label_value_bytes_over_limit",
+			Help: "Set to 1 for each (user, label name) pair whose distinct label values currently exceed the local per-label-name bytes limit on this ingester. Absent otherwise.",
+		}, []string{"user", "label"}),
 		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_attributed_active_series_failure",
 			Help: "The total number of failed active series decrement per user",

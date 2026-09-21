@@ -150,6 +150,7 @@ The following features are currently experimental:
     - `-ingester.early-compaction-non-owned-series-min-grace-period`
     - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
+  - Per-label-name limit on the total size of distinct label values (`-ingester.max-global-label-value-bytes-per-label-name`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
