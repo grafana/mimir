@@ -480,6 +480,7 @@ func (a *API) RegisterBackfill(b *backfill.API) {
 	a.RegisterRoute("/api/v1/backfill/{job}/block/{block}/finish", http.HandlerFunc(b.FinishBlockUpload), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/backfill/{job}/finish", http.HandlerFunc(b.Finish), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/backfill/{job}/cancel", http.HandlerFunc(b.Cancel), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/backfill/{job}/reset", http.HandlerFunc(b.Reset), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/backfill/{job}/status", http.HandlerFunc(b.Status), true, false, http.MethodGet)
 }
 

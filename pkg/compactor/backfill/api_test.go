@@ -119,6 +119,7 @@ func TestAPI_JobIDValidation(t *testing.T) {
 	handlers := map[string]handler{
 		"finish":       (*API).Finish,
 		"cancel":       (*API).Cancel,
+		"reset":        (*API).Reset,
 		"status":       (*API).Status,
 		"block/start":  (*API).StartBlockUpload,
 		"block/files":  (*API).UploadBlockFile,
@@ -149,6 +150,7 @@ func TestAPI_OperationStubs(t *testing.T) {
 	}{
 		"finish": {(*API).Finish, http.StatusOK},
 		"cancel": {(*API).Cancel, http.StatusOK},
+		"reset":  {(*API).Reset, http.StatusOK},
 		"status": {(*API).Status, http.StatusNotImplemented},
 	}
 

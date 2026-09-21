@@ -85,6 +85,11 @@ func (a *API) Cancel(w http.ResponseWriter, r *http.Request) {
 	a.logOperation(w, r, "cancel backfill", "backfill cancelled")
 }
 
+// TODO
+func (a *API) Reset(w http.ResponseWriter, r *http.Request) {
+	a.logOperation(w, r, "reset backfill", "backfill reset")
+}
+
 // TODO: report the operation state.
 func (a *API) Status(w http.ResponseWriter, r *http.Request) {
 	if _, err := parseJobID(r); err != nil {
