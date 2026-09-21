@@ -625,8 +625,8 @@ func (m *LabelPair) GetValue() []byte {
 type Sample struct {
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
-	// Per-sample start timestamp in milliseconds; RW2.0-rc.4 Sample field 3.
-	// Zero means unset; use 1 ms off the Unix epoch to represent it exactly.
+	// Per-sample start timestamp in milliseconds;
+	// Zero means unset; use 1 ms off the Unix epoch to represent actual 1970-era timestamps.
 	StartTimestamp int64 `protobuf:"varint,3,opt,name=start_timestamp,json=startTimestamp,proto3" json:"start_timestamp,omitempty"`
 }
 
@@ -882,9 +882,8 @@ type Histogram struct {
 	// Used only for converting from OpenTelemetry to Prometheus internally and
 	// to unmarshal Remote Write 2.0 messages.
 	CustomValues []float64 `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
-	// Per-sample start timestamp in milliseconds; RW2.0-rc.4 Histogram field 17.
-	// Same semantics and "not yet ingested" caveat as Sample.start_timestamp
-	// above.
+	// Per-sample start timestamp in milliseconds;
+	// Zero means unset; use 1 ms off the Unix epoch to represent actual 1970-era timestamps.
 	StartTimestamp int64 `protobuf:"varint,17,opt,name=start_timestamp,json=startTimestamp,proto3" json:"start_timestamp,omitempty"`
 }
 

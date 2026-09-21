@@ -41,18 +41,8 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
-	// Mimir's RW2 types now match upstream except for one deliberate divergence:
-	// we retain the series-level CreatedTimestamp on field 6, which upstream
-	// dropped and reserved. The rationale, and the precedence rule against the
-	// per-sample Sample.start_timestamp / Histogram.start_timestamp fields, is
-	// documented on created_timestamp in mimir.proto - read that before changing
-	// anything here.
-	//
-	// Sample.StartTimestamp (3) and Histogram.StartTimestamp (17) used to be
-	// trimmed from the expected tree, because we had frozen our API at
-	// RW2.0-rc.3 and did not carry them. They now match upstream, so the trims
-	// are gone and any future divergence will fail this test rather than being
-	// silently accepted.
+	// Mimir's RW2 types match upstream Prometheus, except we retain the series-level CreatedTimestamp.
+	// See mimir.proto for more details.
 	rootNode, _ = expectedTree.(*treeprint.Node)
 	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
 
