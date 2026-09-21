@@ -96,6 +96,10 @@ message LabelPair {
 message Sample {
   int64 timestamp_ms = 2;
   double value = 1;
+
+  // Per-sample start timestamp in milliseconds; RW2.0-rc.4 Sample field 3.
+  // Zero means unset; use 1 ms off the Unix epoch to represent it exactly.
+  int64 start_timestamp = 3;
 }
 
 message MetricMetadata {
@@ -189,6 +193,11 @@ message Histogram {
   // Used only for converting from OpenTelemetry to Prometheus internally and
   // to unmarshal Remote Write 2.0 messages.
   repeated double custom_values = 16;
+
+  // Per-sample start timestamp in milliseconds; RW2.0-rc.4 Histogram field 17.
+  // Same semantics and "not yet ingested" caveat as Sample.start_timestamp
+  // above.
+  int64 start_timestamp = 17;
 }
 
 //
