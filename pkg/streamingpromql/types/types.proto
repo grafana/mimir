@@ -14,6 +14,11 @@ message EncodedOperatorEvaluationStats {
   EncodedSubsetStats allSeries = 1 [(gogoproto.nullable) = false];
   repeated EncodedSubsetStats subsets = 2 [(gogoproto.nullable) = false];
   EncodedQueryTimeRange timeRange = 3 [(gogoproto.nullable) = false];
+  EncodedMultiNodeStats multiNode = 4 [(gogoproto.nullable) = false];
+}
+
+message EncodedMultiNodeStats {
+  map<int64, EncodedSubsetStats> subsets = 1;
 }
 
 message EncodedSubsetStats {
