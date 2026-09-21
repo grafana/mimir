@@ -1,9 +1,9 @@
 ---
 aliases:
-- ../operators-guide/configure/reference-configuration-parameters/
-- ../operators-guide/configuring/reference-configuration-parameters/
-- ../reference-configuration-parameters/
-- ../references/configuration-parameters/
+  - ../operators-guide/configure/reference-configuration-parameters/
+  - ../operators-guide/configuring/reference-configuration-parameters/
+  - ../reference-configuration-parameters/
+  - ../references/configuration-parameters/
 description: Describes parameters used to configure Grafana Mimir.
 menuTitle: Configuration parameters
 title: Grafana Mimir configuration parameters
@@ -1944,7 +1944,7 @@ store_gateway_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -1959,7 +1959,7 @@ store_gateway_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2776,7 +2776,7 @@ ruler_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2791,7 +2791,7 @@ ruler_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -2914,7 +2914,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -2929,7 +2929,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3469,7 +3469,7 @@ alertmanager_client:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3484,7 +3484,7 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3743,7 +3743,7 @@ backoff_config:
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-# 
+#
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -3758,7 +3758,7 @@ backoff_config:
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-# 
+#
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -3919,7 +3919,7 @@ grpc_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -3934,7 +3934,7 @@ grpc_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4064,7 +4064,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-# 
+#
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4079,7 +4079,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-# 
+#
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -4404,7 +4404,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-# 
+#
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -4419,7 +4419,7 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-# 
+#
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -5318,7 +5318,7 @@ ruler_alertmanager_client_config:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5333,7 +5333,7 @@ ruler_alertmanager_client_config:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -5868,7 +5868,7 @@ kafka:
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
-  # 
+  #
   # Secure Ciphers:
   # - TLS_AES_128_GCM_SHA256
   # - TLS_AES_256_GCM_SHA384
@@ -5883,7 +5883,7 @@ kafka:
   # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
   # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  # 
+  #
   # Insecure Ciphers:
   # - TLS_RSA_WITH_RC4_128_SHA
   # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
@@ -7327,7 +7327,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (advanced) Override the default cipher suite list (separated by commas).
 # Allowed values:
-# 
+#
 # Secure Ciphers:
 # - TLS_AES_128_GCM_SHA256
 # - TLS_AES_256_GCM_SHA384
@@ -7342,7 +7342,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-# 
+#
 # Insecure Ciphers:
 # - TLS_RSA_WITH_RC4_128_SHA
 # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
