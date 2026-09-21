@@ -216,7 +216,7 @@ func TestReadcacheRF2_MapChangeReachesSubscribersWithoutLeaseChange(t *testing.T
 	require.Len(t, h.r.readcacheStore.getReplicaMap()["readcache-0"], 1)
 	ownersBefore := h.ownersByInstance()
 
-	_, updates, unsubscribe := h.r.readcacheStore.subscribe(true)
+	_, updates, unsubscribe := h.r.readcacheStore.subscribe()
 	defer unsubscribe()
 	select {
 	case <-updates: // drain the priming snapshot

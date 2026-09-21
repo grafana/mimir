@@ -1317,7 +1317,6 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 
 	for ctx.Err() == nil {
 		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{
-			SupportsDeltas:                  true,
 			SupportsTenantScopedAssignments: true,
 		})
 		if err != nil {
@@ -1348,9 +1347,8 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 // message. Returns the error that ended the stream so the caller
 // can decide whether to reconnect.
 //
-// We subscribe with SupportsDeltas, so a message is either a full
-// snapshot (reset=true; always the first message on a stream) that
-// replaces the local log wholesale, or a delta (reset=false) whose
+// A message is either a full snapshot (reset=true; always the first message on
+// a stream) that replaces the local log wholesale, or a delta (reset=false) whose
 // entries are upserted into the previous log by lease identity. The
 // merged log is then pruned to the server's retention horizon. The
 // first message is treated as a snapshot regardless of the flag. The

@@ -62,10 +62,8 @@ type readcacheLogStore struct {
 }
 
 type readcacheSubscription struct {
-	ch chan readcacheUpdate
-	// wantsDeltas / primed mirror subscription; see there.
-	wantsDeltas bool
-	primed      bool
+	ch     chan readcacheUpdate
+	primed bool
 }
 
 func newReadcacheLogStore() *readcacheLogStore {
@@ -97,8 +95,8 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 	// Full retention-bounded state, history included: the
 	// distributor's read path needs expired leases to resolve which
 	// readcache holds a frozen slice from before a partition move.
-	// Delta subscribers get only this apply's mutations; see
-	// logStore.apply for the broadcast-under-mutex rationale.
+	// Subscribers get only this apply's mutations after their initial
+	// snapshot; see logStore.apply for the broadcast-under-mutex rationale.
 	full := s.log.Entries()
 	delta := diffReadcacheEntries(s.lastBroadcast, full)
 	s.lastBroadcast = full
@@ -112,12 +110,12 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 	}
 
 	for sub := range s.subscribers {
-		switch {
-		case !sub.wantsDeltas || !sub.primed:
+		if !sub.primed {
 			sub.primed = true
 			conflateSendReadcache(sub.ch, readcacheUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap})
-		case len(delta) == 0:
-		default:
+			continue
+		}
+		if len(delta) > 0 {
 			conflateSendReadcache(sub.ch, readcacheUpdate{entries: delta, pruneBefore: s.lastPruneBefore, replicaMap: s.replicaMap})
 		}
 	}
@@ -219,8 +217,8 @@ func (s *readcacheLogStore) snapshot() []readcacheassignment.LogEntry {
 // that prevents a freshly-restarted rebalancer from broadcasting a
 // stale-but-expired persisted log as the authoritative "you own
 // nothing" snapshot. See logStore.subscribe for the full rationale.
-func (s *readcacheLogStore) subscribe(wantsDeltas bool) (initial *readcacheUpdate, updates <-chan readcacheUpdate, unsubscribe func()) {
-	sub := &readcacheSubscription{ch: make(chan readcacheUpdate, 1), wantsDeltas: wantsDeltas}
+func (s *readcacheLogStore) subscribe() (initial *readcacheUpdate, updates <-chan readcacheUpdate, unsubscribe func()) {
+	sub := &readcacheSubscription{ch: make(chan readcacheUpdate, 1)}
 	s.mu.Lock()
 	if s.ready {
 		sub.primed = true

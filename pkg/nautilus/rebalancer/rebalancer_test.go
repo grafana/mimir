@@ -606,7 +606,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 	a1 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(time.Now(), a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	require.NotNil(t, initial)
@@ -626,7 +626,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 	s := newLogStore()
 
-	_, updates, unsubscribe := s.subscribe(false)
+	_, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	// Three back-to-back applies; a slow consumer should see exactly
@@ -653,7 +653,7 @@ func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 
 func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
 	s := newLogStore()
-	_, _, unsubscribe := s.subscribe(false)
+	_, _, unsubscribe := s.subscribe()
 	require.Equal(t, 1, s.numSubscribers())
 	unsubscribe()
 	require.Equal(t, 0, s.numSubscribers())
@@ -681,7 +681,7 @@ func TestLogStore_SubscribeBeforeFirstApplyReturnsNilInitial(t *testing.T) {
 	}
 	s.seedFromEntries(seeded)
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	assert.Nil(t, initial,
 		"subscribe must return nil initial before the first apply, even when the log has live entries, to prevent a freshly-restarted rebalancer from broadcasting stale state as authoritative")
@@ -696,7 +696,7 @@ func TestLogStore_FirstApplyPrimesSubscribersAttachedEarly(t *testing.T) {
 	s := newLogStore()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial")
 
@@ -740,7 +740,7 @@ func TestLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 	s.seedFromEntries(seedEntries)
 
 	// Subscriber connects before any apply.
-	initial, updates, unsubscribe := s.subscribe(false)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial even when log is non-empty")
 
@@ -773,7 +773,7 @@ func TestLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	assert.Len(t, initial.entries, len(a.Entries),
@@ -807,7 +807,7 @@ func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 	require.Greater(t, len(full), len(a.Entries),
 		"unfiltered snapshot must include both rounds")
 
-	initial, _, unsubscribe := s.subscribe(false)
+	initial, _, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	require.NotNil(t, initial)
@@ -815,59 +815,55 @@ func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 		"subscribe must return the full retained log, expired entries included")
 }
 
-// TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention
-// asserts the broadcast counterpart of the above, and that pruning by
-// EntryRetention still bounds what subscribers receive.
-func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing.T) {
+// TestLogStore_DeltasPreserveRetainedHistoryAndHonourRetention verifies that
+// applying incremental broadcasts to the priming snapshot preserves retained
+// history and observes the server's pruning horizon.
+func TestLogStore_DeltasPreserveRetainedHistoryAndHonourRetention(t *testing.T) {
 	s := newLogStore()
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Subscribe before any apply so we can observe the broadcasts.
-	_, updates, unsubscribe := s.subscribe(false)
+	_, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 
 	// Round 1.
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t1, a, time.Minute, 10*time.Second, time.Hour))
 	select {
-	case <-updates:
+	case u := <-updates:
+		require.True(t, u.reset)
+		client := assignment.NewLogFromEntries(u.entries)
+
+		// Round 2 past the round-1 lease horizon but within retention. The
+		// delta only carries mutations; the client retains round-1 history
+		// from its priming snapshot.
+		t2 := t1.Add(30 * time.Minute)
+		require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
+		select {
+		case delta := <-updates:
+			require.False(t, delta.reset)
+			client = client.MergedWithEntries(delta.entries)
+			client.Prune(delta.pruneBefore)
+			assert.Equal(t, s.snapshot(), client.Entries())
+		case <-time.After(time.Second):
+			t.Fatal("did not receive round-2 delta")
+		}
+
+		// Round 3 moves the retention horizon beyond round 1. Replaying the
+		// delta and prune marker must still exactly reproduce the server.
+		t3 := t1.Add(2 * time.Hour)
+		require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
+		select {
+		case delta := <-updates:
+			require.False(t, delta.reset)
+			client = client.MergedWithEntries(delta.entries)
+			client.Prune(delta.pruneBefore)
+			assert.Equal(t, s.snapshot(), client.Entries())
+		case <-time.After(time.Second):
+			t.Fatal("did not receive round-3 delta")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("did not receive round-1 broadcast")
-	}
-
-	// Round 2 past the round-1 lease horizon but within retention:
-	// the broadcast must still carry the expired round-1 entries.
-	t2 := t1.Add(30 * time.Minute)
-	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
-	expired := 0
-	select {
-	case u := <-updates:
-		require.NotEmpty(t, u.entries)
-		for _, e := range u.entries {
-			if !e.To.After(t2) {
-				expired++
-			}
-		}
-		require.NotZero(t, expired,
-			"round-2 broadcast must include the expired-but-retained round-1 entries")
-	case <-time.After(time.Second):
-		t.Fatal("did not receive round-2 broadcast")
-	}
-
-	// Round 3 beyond round 1's retention horizon: Prune drops the
-	// round-1 entries (To = t1+1m < t3-1h), so the broadcast may not
-	// grow without bound.
-	t3 := t1.Add(2 * time.Hour)
-	require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
-	select {
-	case u := <-updates:
-		require.NotEmpty(t, u.entries)
-		for _, e := range u.entries {
-			assert.False(t, e.To.Before(t3.Add(-time.Hour)),
-				"broadcast included an entry past the retention horizon: %+v", e)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("did not receive round-3 broadcast")
 	}
 }
 
@@ -883,7 +879,7 @@ func TestLogStore_DeltaSubscriberReceivesOnlyMutations(t *testing.T) {
 	a2 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t0, a2, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	require.True(t, initial.reset, "delta subscriber must be primed with a snapshot")
@@ -941,7 +937,7 @@ func TestLogStore_DeltaCoalescingLosesNothing(t *testing.T) {
 
 	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0}), testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	client := assignment.NewLogFromEntries(initial.entries)
@@ -970,30 +966,6 @@ func TestLogStore_DeltaCoalescingLosesNothing(t *testing.T) {
 
 	assert.Equal(t, s.snapshot(), client.Entries(),
 		"coalesced delta replay must reproduce the server log exactly")
-}
-
-// TestLogStore_LegacySubscriberStillGetsSnapshots pins backwards
-// compatibility: a subscriber that did not opt into deltas receives
-// a full snapshot on every mutating apply.
-func TestLogStore_LegacySubscriberStillGetsSnapshots(t *testing.T) {
-	s := newLogStore()
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
-
-	_, updates, unsubscribe := s.subscribe(false)
-	defer unsubscribe()
-
-	require.True(t, s.apply(t0.Add(time.Minute), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour))
-
-	select {
-	case u := <-updates:
-		assert.True(t, u.reset, "legacy subscriber broadcasts must be snapshots")
-		assert.Equal(t, s.snapshot(), u.entries,
-			"legacy subscriber must receive the full log on every broadcast")
-	case <-time.After(time.Second):
-		t.Fatal("did not receive broadcast")
-	}
 }
 
 func TestLogStore_ApplyOutsideLookaheadIsNoOp(t *testing.T) {
@@ -1117,7 +1089,7 @@ func TestLogStore_TenantScopedDeltaIdentityAndGenerationHeartbeat(t *testing.T) 
 	}}
 	require.True(t, s.apply(t0, initialAssignment, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(true)
+	initial, updates, unsubscribe := s.subscribe()
 	defer unsubscribe()
 	require.NotNil(t, initial)
 	assert.Equal(t, uint64(1), initial.generation)
@@ -1178,7 +1150,6 @@ func TestRebalancer_WatchAssignmentsSendsEmptyTenantBootstrapHeartbeat(t *testin
 	done := make(chan error, 1)
 	go func() {
 		done <- r.WatchAssignments(&WatchAssignmentsRequest{
-			SupportsDeltas:                  true,
 			SupportsTenantScopedAssignments: true,
 		}, stream)
 	}()
@@ -1216,7 +1187,7 @@ func TestRebalancer_WatchAssignmentsRejectsIncapableClientOverGRPC(t *testing.T)
 		require.NoError(t, conn.Close())
 	})
 
-	stream, err := NewNautilusRebalancerClient(conn).WatchAssignments(t.Context(), &WatchAssignmentsRequest{SupportsDeltas: true})
+	stream, err := NewNautilusRebalancerClient(conn).WatchAssignments(t.Context(), &WatchAssignmentsRequest{})
 	require.NoError(t, err)
 	_, err = stream.Recv()
 	require.Error(t, err)
@@ -1399,7 +1370,6 @@ func TestRebalancer_WatchAssignments_StreamObservability(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- r.WatchAssignments(&WatchAssignmentsRequest{
-			SupportsDeltas:                  true,
 			SupportsTenantScopedAssignments: true,
 		}, stream)
 	}()
@@ -1421,7 +1391,7 @@ func TestRebalancer_WatchAssignments_StreamObservability(t *testing.T) {
 		t.Fatal("did not receive delta")
 	}
 
-	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsStarted.WithLabelValues("hash", "delta")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsStarted.WithLabelValues("hash")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsActive.WithLabelValues("hash")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "snapshot")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "delta")))

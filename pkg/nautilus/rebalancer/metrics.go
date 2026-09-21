@@ -79,7 +79,7 @@ type metrics struct {
 	// healthy delta subscriber receives exactly one snapshot per
 	// stream lifetime.
 	watchStreamsActive  *prometheus.GaugeVec   // stream
-	watchStreamsStarted *prometheus.CounterVec // stream, protocol
+	watchStreamsStarted *prometheus.CounterVec // stream
 	watchSentMessages   *prometheus.CounterVec // stream, kind
 	watchSentEntries    *prometheus.CounterVec // stream, kind
 	watchSentBytes      *prometheus.CounterVec // stream, kind
@@ -128,8 +128,8 @@ func newMetrics(r prometheus.Registerer) *metrics {
 		}, []string{"stream"}),
 		watchStreamsStarted: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_streams_started_total",
-			Help: "Total assignment watch streams accepted, by stream type and subscriber protocol (delta vs legacy). A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
-		}, []string{"stream", "protocol"}),
+			Help: "Total assignment watch streams accepted, by stream type. A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
+		}, []string{"stream"}),
 		watchSentMessages: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_sent_messages_total",
 			Help: "Watch messages sent, by stream type and kind (snapshot carries the full retention-bounded log; delta carries only the entries one round mutated).",
@@ -148,11 +148,11 @@ func newMetrics(r prometheus.Registerer) *metrics {
 
 // watchStreamStarted records a new watch stream and returns a done
 // func for the disconnect. Safe on a nil receiver (test wiring).
-func (m *metrics) watchStreamStarted(stream, protocol string) (done func()) {
+func (m *metrics) watchStreamStarted(stream string) (done func()) {
 	if m == nil {
 		return func() {}
 	}
-	m.watchStreamsStarted.WithLabelValues(stream, protocol).Inc()
+	m.watchStreamsStarted.WithLabelValues(stream).Inc()
 	m.watchStreamsActive.WithLabelValues(stream).Inc()
 	return func() { m.watchStreamsActive.WithLabelValues(stream).Dec() }
 }

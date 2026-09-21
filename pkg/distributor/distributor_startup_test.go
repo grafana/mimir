@@ -142,7 +142,6 @@ func TestDistributor_StartingWaitsForInitialAssignmentSync(t *testing.T) {
 
 			select {
 			case req := <-requests:
-				require.True(t, req.SupportsDeltas)
 				require.True(t, req.SupportsTenantScopedAssignments)
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "distributor did not open WatchAssignments")

@@ -604,11 +604,8 @@ func (r *Rebalancer) readcacheLeaseLookahead() time.Duration {
 // WatchAssignments implements NautilusRebalancerServer. It sends
 // a full snapshot of the retention-bounded assignment log (expired
 // entries, active leases, and pre-issued successors; reset=true)
-// immediately on connect. Subsequent messages depend on the
-// request's supports_deltas flag: subscribers that set it receive
-// only the entries each rebalance round created or mutated
-// (reset=false, upserts by lease identity), while legacy subscribers
-// receive a fresh full snapshot per mutating round.
+// immediately on connect. Subsequent messages contain only the entries each
+// rebalance round created or mutated (reset=false, upserts by lease identity).
 // Expired-but-retained entries are load-bearing for the
 // distributor's read path, which resolves partition ownership over a
 // query's wall-clock window rather than at `now`; the state size is
@@ -629,14 +626,14 @@ func (r *Rebalancer) readcacheLeaseLookahead() time.Duration {
 // state (whose leases have all expired during the restart window).
 func (r *Rebalancer) WatchAssignments(req *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
 	ctx := stream.Context()
-	obs := newWatchStreamObserver(r, "hash", req.GetSupportsDeltas(), ctx)
+	obs := newWatchStreamObserver(r, "hash", ctx)
 	defer obs.finish()
 
 	if !req.GetSupportsTenantScopedAssignments() {
 		return obs.fail(status.Error(codes.FailedPrecondition, "WatchAssignments client must support tenant-scoped assignments"))
 	}
 
-	initial, updates, unsubscribe := r.store.subscribe(req.GetSupportsDeltas())
+	initial, updates, unsubscribe := r.store.subscribe()
 	defer unsubscribe()
 
 	send := func(u assignmentUpdate) error {
@@ -687,20 +684,19 @@ func assignmentUpdateToProto(u assignmentUpdate) *WatchAssignmentsResponse {
 
 // WatchReadcacheAssignments is the readcache-side analogue of
 // WatchAssignments: instead of (hash range -> ingester partition) it
-// streams (Kafka partition -> readcache instance) leases. The wire
-// contract is identical (full snapshot on connect, deltas or
-// snapshots after depending on supports_deltas). The same
+// streams (Kafka partition -> readcache instance) leases. The wire contract is
+// identical (full snapshot on connect, deltas after). The same
 // first-apply gate applies: the initial Send is skipped until the
 // readcache log has been touched by apply() at least once (cold
 // start, regular slicer round, or admin reset), so a rebalancer
 // restart never broadcasts an empty/expired view that would tell
 // every readcache to drop all partitions.
-func (r *Rebalancer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
 	ctx := stream.Context()
-	obs := newWatchStreamObserver(r, "readcache", req.GetSupportsDeltas(), ctx)
+	obs := newWatchStreamObserver(r, "readcache", ctx)
 	defer obs.finish()
 
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(req.GetSupportsDeltas())
+	initial, updates, unsubscribe := r.readcacheStore.subscribe()
 	defer unsubscribe()
 
 	send := func(u readcacheUpdate) error {

@@ -15,7 +15,7 @@ import (
 // assignmentUpdate is one message bound for a watch subscriber:
 // either a full snapshot of the retention-bounded log (reset=true)
 // or the entries created/mutated since the subscriber's previous
-// message (reset=false, delta subscribers only).
+// message (reset=false).
 type assignmentUpdate struct {
 	entries     []assignment.LogEntry
 	reset       bool
@@ -23,8 +23,8 @@ type assignmentUpdate struct {
 	validUntil  time.Time
 	tenantAware bool
 	// pruneBefore is the server's retention horizon at broadcast
-	// time. Delta subscribers prune their local log with it; zero
-	// means retention is disabled.
+	// time. Subscribers prune their local log with it; zero means
+	// retention is disabled.
 	pruneBefore time.Time
 }
 
@@ -35,10 +35,10 @@ type assignmentUpdate struct {
 // callers can iterate without holding the mutex. Apply mutates the
 // log under the mutex and broadcasts to all subscribers via
 // 1-buffered conflated channels. Conflation never loses state: for
-// snapshot subscribers a newer snapshot replaces the pending one;
-// for delta subscribers a new delta is merged (upsert by lease
-// identity) into the pending update, so a slow subscriber receives
-// the coalesced equivalent of every broadcast it missed.
+// an unprimed subscriber a newer snapshot replaces the pending one;
+// otherwise a new delta is merged (upsert by lease identity) into the
+// pending update, so a slow subscriber receives the coalesced equivalent
+// of every broadcast it missed.
 type logStore struct {
 	mu          sync.Mutex
 	log         *assignment.Log
@@ -84,14 +84,10 @@ type logStore struct {
 // subscription holds a single watcher's conflated update channel.
 type subscription struct {
 	ch chan assignmentUpdate
-	// wantsDeltas records whether the subscriber understands
-	// incremental updates (WatchAssignmentsRequest.supports_deltas).
-	// Legacy subscribers get a full snapshot on every broadcast.
-	wantsDeltas bool
 	// primed flips to true once the subscriber has been handed a
-	// full snapshot (either as subscribe()'s initial or as a
-	// reset broadcast); only primed delta subscribers may receive
-	// deltas. Guarded by logStore.mu.
+	// full snapshot (either as subscribe()'s initial or as a reset
+	// broadcast); only primed subscribers may receive deltas.
+	// Guarded by logStore.mu.
 	primed bool
 }
 
@@ -132,12 +128,11 @@ func newLogStore() *logStore {
 // querier's lookback (QueryIngestersWithin), which the flag
 // documents.
 //
-// Delta subscribers receive only the entries this apply created or
-// mutated; legacy subscribers receive the full snapshot. Sends
-// happen while holding the mutex — conflateSendUpdate never blocks,
-// and in-lock sending guarantees subscribers observe deltas in
-// apply order and keeps the per-subscriber primed transition atomic
-// with its first snapshot.
+// Subscribers receive only the entries this apply created or mutated after
+// their initial full snapshot. Sends happen while holding the mutex —
+// conflateSendUpdate never blocks, and in-lock sending guarantees subscribers
+// observe deltas in apply order and keeps the per-subscriber primed transition
+// atomic with its first snapshot.
 func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,8 +186,7 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 	}
 
 	for sub := range s.subscribers {
-		switch {
-		case !sub.wantsDeltas || !sub.primed:
+		if !sub.primed {
 			sub.primed = true
 			conflateSendUpdate(sub.ch, assignmentUpdate{
 				entries:     full,
@@ -202,16 +196,16 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 				validUntil:  s.validUntil,
 				tenantAware: tenantAware,
 			})
-		default:
-			// An empty delta is still a validity heartbeat.
-			conflateSendUpdate(sub.ch, assignmentUpdate{
-				entries:     delta,
-				pruneBefore: s.lastPruneBefore,
-				generation:  s.generation,
-				validUntil:  s.validUntil,
-				tenantAware: tenantAware,
-			})
+			continue
 		}
+		// An empty delta is still a validity heartbeat.
+		conflateSendUpdate(sub.ch, assignmentUpdate{
+			entries:     delta,
+			pruneBefore: s.lastPruneBefore,
+			generation:  s.generation,
+			validUntil:  s.validUntil,
+			tenantAware: tenantAware,
+		})
 	}
 	return changed
 }
@@ -257,8 +251,7 @@ func (s *logStore) bootstrapTenants(at time.Time, placements []tenantBootstrapPl
 		}
 	}
 	for sub := range s.subscribers {
-		switch {
-		case !sub.wantsDeltas || !sub.primed:
+		if !sub.primed {
 			sub.primed = true
 			conflateSendUpdate(sub.ch, assignmentUpdate{
 				entries:     full,
@@ -268,15 +261,15 @@ func (s *logStore) bootstrapTenants(at time.Time, placements []tenantBootstrapPl
 				validUntil:  s.validUntil,
 				tenantAware: tenantAware,
 			})
-		default:
-			conflateSendUpdate(sub.ch, assignmentUpdate{
-				entries:     delta,
-				pruneBefore: s.lastPruneBefore,
-				generation:  s.generation,
-				validUntil:  s.validUntil,
-				tenantAware: tenantAware,
-			})
+			continue
 		}
+		conflateSendUpdate(sub.ch, assignmentUpdate{
+			entries:     delta,
+			pruneBefore: s.lastPruneBefore,
+			generation:  s.generation,
+			validUntil:  s.validUntil,
+			tenantAware: tenantAware,
+		})
 	}
 	return seeded, nil
 }
@@ -387,12 +380,9 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 // the history, not just the leases covering `now`. See the apply()
 // comment.
 //
-// wantsDeltas opts the subscriber into incremental broadcasts after
-// its priming snapshot; see assignmentUpdate.
-//
 // The caller MUST invoke unsubscribe when finished.
-func (s *logStore) subscribe(wantsDeltas bool) (initial *assignmentUpdate, updates <-chan assignmentUpdate, unsubscribe func()) {
-	sub := &subscription{ch: make(chan assignmentUpdate, 1), wantsDeltas: wantsDeltas}
+func (s *logStore) subscribe() (initial *assignmentUpdate, updates <-chan assignmentUpdate, unsubscribe func()) {
+	sub := &subscription{ch: make(chan assignmentUpdate, 1)}
 	s.mu.Lock()
 	if s.ready {
 		sub.primed = true

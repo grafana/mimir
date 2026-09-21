@@ -1170,7 +1170,7 @@ func (r *Readcache) watchReadcacheAssignments(ctx context.Context) {
 	cli := rebalancer.NewNautilusRebalancerClient(r.rebalancerConn)
 
 	for ctx.Err() == nil {
-		stream, err := cli.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{SupportsDeltas: true})
+		stream, err := cli.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{})
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "failed to open WatchReadcacheAssignments stream", "err", err, "backoff", backoff)
 			sleepWithCtx(ctx, backoff)

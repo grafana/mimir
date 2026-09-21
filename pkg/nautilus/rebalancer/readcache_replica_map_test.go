@@ -258,7 +258,7 @@ func TestReadcacheLogStore_SetReplicaMapRebroadcasts(t *testing.T) {
 
 	t.Run("a map change re-primes delta subscribers with a full snapshot", func(t *testing.T) {
 		s, _ := newStoreWithLease(t)
-		initial, updates, unsubscribe := s.subscribe(true)
+		initial, updates, unsubscribe := s.subscribe()
 		defer unsubscribe()
 		require.NotNil(t, initial)
 		assert.Empty(t, initial.replicaMap)
@@ -278,7 +278,7 @@ func TestReadcacheLogStore_SetReplicaMapRebroadcasts(t *testing.T) {
 	t.Run("an unchanged map broadcasts nothing", func(t *testing.T) {
 		s, _ := newStoreWithLease(t)
 		s.setReplicaMap(m)
-		_, updates, unsubscribe := s.subscribe(true)
+		_, updates, unsubscribe := s.subscribe()
 		defer unsubscribe()
 
 		s.setReplicaMap(m.Clone())
@@ -292,7 +292,7 @@ func TestReadcacheLogStore_SetReplicaMapRebroadcasts(t *testing.T) {
 	t.Run("subsequent lease applies carry the current map", func(t *testing.T) {
 		s, now := newStoreWithLease(t)
 		s.setReplicaMap(m)
-		_, updates, unsubscribe := s.subscribe(true)
+		_, updates, unsubscribe := s.subscribe()
 		defer unsubscribe()
 		// Drain the initial snapshot the subscribe primed.
 		select {
@@ -314,7 +314,7 @@ func TestReadcacheLogStore_SetReplicaMapRebroadcasts(t *testing.T) {
 
 	t.Run("the map is withheld until the store is ready", func(t *testing.T) {
 		s := newReadcacheLogStore()
-		_, updates, unsubscribe := s.subscribe(true)
+		_, updates, unsubscribe := s.subscribe()
 		defer unsubscribe()
 
 		s.setReplicaMap(m)
