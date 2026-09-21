@@ -32,6 +32,7 @@ type OperatorEvaluationStats struct {
 
 	allSeries *subsetStats
 	subsets   []*subsetStats
+	multiNode *multiNodeStats
 
 	// finalizedSamplesRead is the slice returned as the QueryStats.SamplesRead slice by FinalizeAndComputePrometheusStats.
 	// It is retained so that it can be returned to a pool in Close.
@@ -56,6 +57,7 @@ func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryCo
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		queryStats:               queryStats,
+		multiNode:                newMultiNodeStats(timeRange, memoryConsumptionTracker),
 
 		allSeries: allSeries,
 	}
@@ -102,6 +104,15 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 		if matchesSubsets[subsetIdx] {
 			subset.Add(pointIdx, sampleCount, sampleCount, sampleCount)
 		}
+	}
+
+	if nodeId != 0 {
+		subset, _, err := s.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return err
+		}
+
+		subset.Add(pointIdx, sampleCount, sampleCount, sampleCount)
 	}
 
 	return nil
@@ -154,6 +165,15 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 		}
 	}
 
+	if nodeId != 0 {
+		subset, _, err := s.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return err
+		}
+
+		subset.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
+	}
+
 	return nil
 }
 
@@ -184,6 +204,21 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 		}
 	}
 
+	for nodeId, otherSubset := range other.multiNode.subsets {
+		subset, created, err := s.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return err
+		}
+
+		if created {
+			subset.CopyFrom(otherSubset)
+		} else {
+			for i := range otherSubset.samplesProcessedPerStep {
+				subset.Add(int64(i), otherSubset.samplesProcessedPerStep[i], otherSubset.samplesReadIfSubsequentStep[i], otherSubset.samplesReadIfFirstStep[i])
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -211,6 +246,15 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 
 	for subsetIdx, subset := range s.subsets {
 		otherSubset := other.subsets[subsetIdx]
+		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
+	}
+
+	for nodeId, otherSubset := range other.multiNode.subsets {
+		subset, _, err := s.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return err
+		}
+
 		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
 	}
 
@@ -257,6 +301,15 @@ func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) er
 			subset.Add(nextIndexInThisInstance, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
 		}
 
+		for nodeId, otherSubset := range other.multiNode.subsets {
+			subset, _, err := s.multiNode.GetOrCreate(nodeId)
+			if err != nil {
+				return err
+			}
+
+			subset.Add(nextIndexInThisInstance, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
+		}
+
 		nextIndexInThisInstance++
 	}
 
@@ -278,6 +331,15 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 
 	for i, subset := range s.subsets {
 		clone.subsets[i].CopyFrom(subset)
+	}
+
+	for nodeId, subset := range s.multiNode.subsets {
+		cloneSubset, _, err := clone.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return nil, err
+		}
+
+		cloneSubset.CopyFrom(subset)
 	}
 
 	return clone, nil
@@ -311,6 +373,15 @@ func (s *OperatorEvaluationStats) CloneSingleStep(timeRange QueryTimeRange) (*Op
 
 	for i, subset := range s.subsets {
 		singleStepStats.subsets[i].CopySingleStepFrom(subset, stepIdx)
+	}
+
+	for nodeId, subset := range s.multiNode.subsets {
+		singleStepSubset, _, err := singleStepStats.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return nil, err
+		}
+
+		singleStepSubset.CopySingleStepFrom(subset, stepIdx)
 	}
 
 	return singleStepStats, nil
@@ -363,6 +434,15 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		expanded.subsets[i].SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.samplesReadIfSubsequentStep[0], subset.samplesReadIfFirstStep[0])
 	}
 
+	for nodeId, subset := range s.multiNode.subsets {
+		expandedSubset, _, err := expanded.multiNode.GetOrCreate(nodeId)
+		if err != nil {
+			return nil, err
+		}
+
+		expandedSubset.SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.samplesReadIfSubsequentStep[0], subset.samplesReadIfFirstStep[0])
+	}
+
 	return expanded, nil
 }
 
@@ -411,6 +491,15 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 
 		for i, subset := range result.subsets {
 			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
+		}
+
+		for nodeId, subset := range s.multiNode.subsets {
+			resultSubset, _, err := result.multiNode.GetOrCreate(nodeId)
+			if err != nil {
+				return nil, err
+			}
+
+			resultSubset.SetFromSubquery(subset, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
 		}
 
 		lastNewSamplesIdxUsed = lastInnerIdx + 1
@@ -487,6 +576,7 @@ func (s *OperatorEvaluationStats) Encode() EncodedOperatorEvaluationStats {
 	encoded := EncodedOperatorEvaluationStats{
 		TimeRange: s.timeRange.Encode(),
 		AllSeries: s.allSeries.Encode(),
+		MultiNode: s.multiNode.Encode(),
 	}
 
 	if len(s.subsets) > 0 {
@@ -512,6 +602,7 @@ func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, memoryConsu
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		queryStats:               stats.FromContext(ctx),
 		allSeries:                allSeries,
+		multiNode:                newMultiNodeStats(timeRange, memoryConsumptionTracker),
 	}
 
 	if len(e.Subsets) > 0 {
@@ -528,17 +619,90 @@ func (e *EncodedOperatorEvaluationStats) Decode(ctx context.Context, memoryConsu
 		}
 	}
 
+	for nodeId, encodedSubset := range e.MultiNode.Subsets {
+		decodedSubset, err := encodedSubset.decode(timeRange, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		decoded.multiNode.Set(nodeId, decodedSubset)
+	}
+
 	return decoded, nil
 }
 
 func (s *OperatorEvaluationStats) Close() {
 	s.allSeries.Close()
+	s.multiNode.Close()
 
 	for _, subset := range s.subsets {
 		subset.Close()
 	}
 
 	Int64SlicePool.Put(&s.finalizedSamplesRead, s.memoryConsumptionTracker)
+}
+
+// multiNodeStats maintains a subsetStats instance per node ID (assigned to planning nodes)
+// for more granular information about the cost of each selector in a query. This will be empty
+// if IDs were not assigned to nodes in the planning phase.
+type multiNodeStats struct {
+	subsets                  map[int64]*subsetStats
+	timeRange                QueryTimeRange
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func newMultiNodeStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *multiNodeStats {
+	return &multiNodeStats{
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (n *multiNodeStats) Set(nodeId int64, subset *subsetStats) {
+	if n.subsets == nil {
+		n.subsets = make(map[int64]*subsetStats)
+	}
+
+	n.subsets[nodeId] = subset
+}
+
+func (n *multiNodeStats) GetOrCreate(nodeId int64) (*subsetStats, bool, error) {
+	if n.subsets == nil {
+		n.subsets = make(map[int64]*subsetStats)
+	}
+
+	var err error
+	existing, ok := n.subsets[nodeId]
+	if !ok {
+		existing, err = newSubsetStats(n.timeRange, n.memoryConsumptionTracker)
+		if err != nil {
+			return nil, false, err
+		}
+
+		n.subsets[nodeId] = existing
+	}
+
+	return existing, !ok, nil
+}
+
+func (n *multiNodeStats) Encode() EncodedMultiNodeStats {
+	if len(n.subsets) == 0 {
+		return EncodedMultiNodeStats{}
+	}
+
+	subsets := make(map[int64]*EncodedSubsetStats)
+	for nodeId, subset := range n.subsets {
+		encoded := subset.Encode()
+		subsets[nodeId] = &encoded
+	}
+
+	return EncodedMultiNodeStats{Subsets: subsets}
+}
+
+func (n *multiNodeStats) Close() {
+	for _, subset := range n.subsets {
+		subset.Close()
+	}
 }
 
 type subsetStats struct {

@@ -7,6 +7,7 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -51,6 +52,7 @@ type EncodedOperatorEvaluationStats struct {
 	AllSeries EncodedSubsetStats    `protobuf:"bytes,1,opt,name=allSeries,proto3" json:"allSeries"`
 	Subsets   []EncodedSubsetStats  `protobuf:"bytes,2,rep,name=subsets,proto3" json:"subsets"`
 	TimeRange EncodedQueryTimeRange `protobuf:"bytes,3,opt,name=timeRange,proto3" json:"timeRange"`
+	MultiNode EncodedMultiNodeStats `protobuf:"bytes,4,opt,name=multiNode,proto3" json:"multiNode"`
 }
 
 func (m *EncodedOperatorEvaluationStats) Reset()      { *m = EncodedOperatorEvaluationStats{} }
@@ -106,6 +108,56 @@ func (m *EncodedOperatorEvaluationStats) GetTimeRange() EncodedQueryTimeRange {
 	return EncodedQueryTimeRange{}
 }
 
+func (m *EncodedOperatorEvaluationStats) GetMultiNode() EncodedMultiNodeStats {
+	if m != nil {
+		return m.MultiNode
+	}
+	return EncodedMultiNodeStats{}
+}
+
+type EncodedMultiNodeStats struct {
+	Subsets map[int64]*EncodedSubsetStats `protobuf:"bytes,1,rep,name=subsets,proto3" json:"subsets,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *EncodedMultiNodeStats) Reset()      { *m = EncodedMultiNodeStats{} }
+func (*EncodedMultiNodeStats) ProtoMessage() {}
+func (*EncodedMultiNodeStats) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{1}
+}
+func (m *EncodedMultiNodeStats) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EncodedMultiNodeStats) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EncodedMultiNodeStats.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EncodedMultiNodeStats) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EncodedMultiNodeStats.Merge(m, src)
+}
+func (m *EncodedMultiNodeStats) XXX_Size() int {
+	return m.Size()
+}
+func (m *EncodedMultiNodeStats) XXX_DiscardUnknown() {
+	xxx_messageInfo_EncodedMultiNodeStats.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EncodedMultiNodeStats proto.InternalMessageInfo
+
+func (m *EncodedMultiNodeStats) GetSubsets() map[int64]*EncodedSubsetStats {
+	if m != nil {
+		return m.Subsets
+	}
+	return nil
+}
+
 type EncodedSubsetStats struct {
 	SamplesProcessedPerStep     []int64 `protobuf:"varint,1,rep,packed,name=samplesProcessedPerStep,proto3" json:"samplesProcessedPerStep,omitempty"`
 	SamplesReadIfSubsequentStep []int64 `protobuf:"varint,2,rep,packed,name=samplesReadIfSubsequentStep,proto3" json:"samplesReadIfSubsequentStep,omitempty"`
@@ -115,7 +167,7 @@ type EncodedSubsetStats struct {
 func (m *EncodedSubsetStats) Reset()      { *m = EncodedSubsetStats{} }
 func (*EncodedSubsetStats) ProtoMessage() {}
 func (*EncodedSubsetStats) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{1}
+	return fileDescriptor_d938547f84707355, []int{2}
 }
 func (m *EncodedSubsetStats) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -175,7 +227,7 @@ type EncodedQueryTimeRange struct {
 func (m *EncodedQueryTimeRange) Reset()      { *m = EncodedQueryTimeRange{} }
 func (*EncodedQueryTimeRange) ProtoMessage() {}
 func (*EncodedQueryTimeRange) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{2}
+	return fileDescriptor_d938547f84707355, []int{3}
 }
 func (m *EncodedQueryTimeRange) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -235,6 +287,8 @@ func (m *EncodedQueryTimeRange) GetIsInstant() bool {
 func init() {
 	proto.RegisterEnum("types.ExplainValue", ExplainValue_name, ExplainValue_value)
 	proto.RegisterType((*EncodedOperatorEvaluationStats)(nil), "types.EncodedOperatorEvaluationStats")
+	proto.RegisterType((*EncodedMultiNodeStats)(nil), "types.EncodedMultiNodeStats")
+	proto.RegisterMapType((map[int64]*EncodedSubsetStats)(nil), "types.EncodedMultiNodeStats.SubsetsEntry")
 	proto.RegisterType((*EncodedSubsetStats)(nil), "types.EncodedSubsetStats")
 	proto.RegisterType((*EncodedQueryTimeRange)(nil), "types.EncodedQueryTimeRange")
 }
@@ -242,36 +296,41 @@ func init() {
 func init() { proto.RegisterFile("types.proto", fileDescriptor_d938547f84707355) }
 
 var fileDescriptor_d938547f84707355 = []byte{
-	// 458 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x92, 0xc1, 0x6a, 0x13, 0x41,
-	0x18, 0xc7, 0x77, 0xb2, 0xb1, 0x9a, 0xaf, 0x1e, 0xca, 0xd0, 0xc6, 0xad, 0x96, 0x31, 0xe4, 0x14,
-	0x3c, 0x54, 0xa8, 0x20, 0x8a, 0x08, 0x4d, 0x65, 0x85, 0x60, 0x4d, 0xe2, 0x6e, 0x5a, 0xc5, 0x4b,
-	0x99, 0x66, 0x3f, 0xc3, 0xc2, 0x74, 0x66, 0x9d, 0x99, 0x2d, 0xf6, 0xe6, 0x23, 0x78, 0xf1, 0x1d,
-	0x7c, 0x94, 0x1c, 0x73, 0xec, 0x41, 0xc4, 0x6c, 0x2e, 0x1e, 0xfb, 0x08, 0xe2, 0x24, 0xb1, 0x04,
-	0x1b, 0xe9, 0x6d, 0xe6, 0xfb, 0xfd, 0x7f, 0xfb, 0x67, 0x77, 0x3f, 0x58, 0xb5, 0x67, 0x19, 0x9a,
-	0xed, 0x4c, 0x2b, 0xab, 0xe8, 0x0d, 0x77, 0xb9, 0xbb, 0x3e, 0x50, 0x03, 0xe5, 0x26, 0x0f, 0xff,
-	0x9c, 0xa6, 0xb0, 0xfe, 0x9d, 0x00, 0x0b, 0x65, 0x5f, 0x25, 0x98, 0x74, 0x32, 0xd4, 0xdc, 0x2a,
-	0x1d, 0x9e, 0x72, 0x91, 0x73, 0x9b, 0x2a, 0x19, 0x5b, 0x6e, 0x0d, 0x7d, 0x0e, 0x15, 0x2e, 0x44,
-	0x8c, 0x3a, 0x45, 0x13, 0x90, 0x1a, 0x69, 0xac, 0xee, 0x6c, 0x6e, 0x4f, 0x0b, 0x66, 0x66, 0x9c,
-	0x1f, 0x1b, 0xb4, 0x2e, 0xbd, 0x57, 0x1e, 0xfe, 0xb8, 0xef, 0x45, 0x97, 0x06, 0x7d, 0x0a, 0x37,
-	0x8d, 0xe3, 0x26, 0x28, 0xd5, 0xfc, 0xeb, 0xc8, 0xf3, 0x3c, 0xdd, 0x85, 0x8a, 0x4d, 0x4f, 0x30,
-	0xe2, 0x72, 0x80, 0x81, 0xef, 0x9a, 0xb7, 0x16, 0xe5, 0x37, 0x39, 0xea, 0xb3, 0xde, 0x3c, 0x33,
-	0x2f, 0xff, 0x2b, 0xd5, 0x87, 0x04, 0xe8, 0xbf, 0x3d, 0xf4, 0x09, 0xdc, 0x31, 0xfc, 0x24, 0x13,
-	0x68, 0xba, 0x5a, 0xf5, 0xd1, 0x18, 0x4c, 0xba, 0xa8, 0x63, 0x8b, 0x59, 0x40, 0x6a, 0x7e, 0xc3,
-	0x8f, 0x96, 0x61, 0xba, 0x0b, 0xf7, 0x66, 0x28, 0x42, 0x9e, 0xb4, 0x3e, 0xb8, 0xa7, 0x7e, 0xcc,
-	0x51, 0x5a, 0x67, 0x97, 0x9c, 0xfd, 0xbf, 0x08, 0x7d, 0x0c, 0xd5, 0x05, 0xfc, 0x32, 0xd5, 0x66,
-	0x2a, 0xfb, 0x4e, 0x5e, 0x42, 0xeb, 0x5f, 0x09, 0x6c, 0x5c, 0xf9, 0xd6, 0xb4, 0x0a, 0x2b, 0xc6,
-	0x72, 0x6d, 0x7b, 0xee, 0xef, 0xf8, 0xd1, 0xec, 0x46, 0x29, 0x94, 0x51, 0x26, 0xbd, 0xa0, 0xe4,
-	0xa6, 0xee, 0x4c, 0x77, 0x60, 0x3d, 0x95, 0x16, 0xf5, 0x29, 0x17, 0xaf, 0x53, 0x21, 0x52, 0x83,
-	0x7d, 0x25, 0x13, 0xe3, 0xbe, 0xae, 0x1f, 0x5d, 0xc9, 0xe8, 0x16, 0x54, 0x52, 0xd3, 0x92, 0xc6,
-	0x72, 0x69, 0x83, 0x72, 0x8d, 0x34, 0x6e, 0x45, 0x97, 0x83, 0x07, 0x4d, 0xb8, 0x1d, 0x7e, 0xca,
-	0x04, 0x4f, 0xe5, 0x21, 0x17, 0x39, 0xd2, 0x4d, 0xd8, 0x08, 0xdf, 0x75, 0xf7, 0x9b, 0xad, 0xf6,
-	0xd1, 0x61, 0x73, 0xff, 0x20, 0x3c, 0x3a, 0x68, 0xbf, 0x6a, 0x77, 0xde, 0xb6, 0xd7, 0x3c, 0x5a,
-	0x05, 0xba, 0x88, 0x5e, 0x74, 0xe2, 0xde, 0x1a, 0xd9, 0x7b, 0x36, 0x1a, 0x33, 0xef, 0x7c, 0xcc,
-	0xbc, 0x8b, 0x31, 0x23, 0x9f, 0x0b, 0x46, 0xbe, 0x15, 0x8c, 0x0c, 0x0b, 0x46, 0x46, 0x05, 0x23,
-	0x3f, 0x0b, 0x46, 0x7e, 0x15, 0xcc, 0xbb, 0x28, 0x18, 0xf9, 0x32, 0x61, 0xde, 0x68, 0xc2, 0xbc,
-	0xf3, 0x09, 0xf3, 0xde, 0x4f, 0xf7, 0xfa, 0x78, 0xc5, 0x2d, 0xf2, 0xa3, 0xdf, 0x01, 0x00, 0x00,
-	0xff, 0xff, 0x62, 0xe0, 0xf3, 0x78, 0xf4, 0x02, 0x00, 0x00,
+	// 534 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0xbf, 0x6e, 0x13, 0x41,
+	0x10, 0xc6, 0x6f, 0x7d, 0x49, 0xc0, 0x93, 0x14, 0xd6, 0x2a, 0x31, 0x4e, 0x88, 0x96, 0xc8, 0x15,
+	0x50, 0x38, 0x52, 0x90, 0x50, 0x00, 0x21, 0xc5, 0x89, 0x0e, 0xc9, 0x22, 0xb1, 0xcd, 0xd9, 0x0e,
+	0x88, 0x26, 0xda, 0xf8, 0x06, 0xeb, 0xc4, 0x79, 0xef, 0xd8, 0x5d, 0x47, 0xb8, 0xe3, 0x11, 0x68,
+	0x68, 0xa9, 0xe9, 0x79, 0x09, 0x97, 0x2e, 0x53, 0x21, 0x7c, 0x6e, 0x28, 0xf3, 0x08, 0xc8, 0x7b,
+	0xfe, 0x83, 0x85, 0x13, 0xe8, 0xe6, 0xf6, 0xfb, 0x7e, 0x33, 0x37, 0x33, 0xbb, 0xb0, 0xaa, 0xbb,
+	0x11, 0xaa, 0x42, 0x24, 0x43, 0x1d, 0xd2, 0x65, 0xf3, 0xb1, 0xb5, 0xde, 0x0a, 0x5b, 0xa1, 0x39,
+	0xd9, 0x1d, 0x45, 0x89, 0x98, 0xff, 0x9a, 0x02, 0xe6, 0x88, 0x66, 0xe8, 0xa1, 0x57, 0x89, 0x50,
+	0x72, 0x1d, 0x4a, 0xe7, 0x82, 0x07, 0x1d, 0xae, 0xfd, 0x50, 0xd4, 0x34, 0xd7, 0x8a, 0x3e, 0x87,
+	0x34, 0x0f, 0x82, 0x1a, 0x4a, 0x1f, 0x55, 0x8e, 0xec, 0x90, 0xfb, 0xab, 0x7b, 0x9b, 0x85, 0xa4,
+	0xc0, 0x98, 0xac, 0x75, 0xce, 0x15, 0x6a, 0xe3, 0x3e, 0x5c, 0xea, 0xfd, 0xb8, 0x67, 0xb9, 0x33,
+	0x82, 0x3e, 0x81, 0x5b, 0xca, 0xe8, 0x2a, 0x97, 0xda, 0xb1, 0xff, 0x07, 0x9e, 0xf8, 0xe9, 0x01,
+	0xa4, 0xb5, 0xdf, 0x46, 0x97, 0x8b, 0x16, 0xe6, 0x6c, 0x53, 0x79, 0x7b, 0x1e, 0x7e, 0xd5, 0x41,
+	0xd9, 0xad, 0x4f, 0x3c, 0x93, 0xe2, 0x53, 0x68, 0x94, 0xa1, 0xdd, 0x09, 0xb4, 0x5f, 0x0e, 0x3d,
+	0xcc, 0x2d, 0x2d, 0xca, 0x70, 0x32, 0x91, 0xe7, 0x7e, 0x7f, 0x0a, 0xe5, 0xbf, 0x13, 0xd8, 0x58,
+	0x68, 0xa5, 0x47, 0xb3, 0xc6, 0x88, 0x69, 0xec, 0xc1, 0x4d, 0x99, 0x0b, 0x49, 0x9f, 0xca, 0x11,
+	0x5a, 0x76, 0xa7, 0x2d, 0x6e, 0x35, 0x60, 0xed, 0x4f, 0x81, 0x66, 0xc0, 0x7e, 0x8f, 0x5d, 0x33,
+	0x66, 0xdb, 0x1d, 0x85, 0x74, 0x17, 0x96, 0x47, 0x0b, 0xc1, 0x5c, 0xea, 0x1f, 0xa3, 0x77, 0x13,
+	0xdf, 0xd3, 0xd4, 0x3e, 0xc9, 0xf7, 0x08, 0xd0, 0xbf, 0x1d, 0x74, 0x1f, 0xee, 0x28, 0xde, 0x8e,
+	0x02, 0x54, 0x55, 0x19, 0x36, 0x51, 0x29, 0xf4, 0xaa, 0x28, 0x6b, 0x1a, 0x23, 0xd3, 0x82, 0xed,
+	0x5e, 0x27, 0xd3, 0x03, 0xb8, 0x3b, 0x96, 0x5c, 0xe4, 0x5e, 0xe9, 0x9d, 0xc9, 0xfa, 0xa1, 0x83,
+	0x42, 0x1b, 0x3a, 0x65, 0xe8, 0x9b, 0x2c, 0xf4, 0x31, 0x64, 0xe7, 0xe4, 0x17, 0xbe, 0x54, 0x09,
+	0x6c, 0x1b, 0xf8, 0x1a, 0x35, 0xff, 0x65, 0xb6, 0x80, 0xf9, 0x6d, 0xd3, 0x2c, 0xac, 0x28, 0xcd,
+	0xa5, 0xae, 0x8f, 0xc7, 0x35, 0xfe, 0xa2, 0x14, 0x96, 0x50, 0x78, 0x75, 0x33, 0x30, 0xdb, 0x35,
+	0x31, 0xdd, 0x83, 0x75, 0x5f, 0x68, 0x94, 0x17, 0x3c, 0x38, 0xf1, 0x83, 0xc0, 0x57, 0xd8, 0x0c,
+	0x85, 0xa7, 0xcc, 0xad, 0xb2, 0xdd, 0x85, 0x1a, 0xdd, 0x86, 0xb4, 0xaf, 0x4a, 0x42, 0x69, 0x2e,
+	0xb4, 0xb9, 0x3c, 0xb7, 0xdd, 0xd9, 0xc1, 0xc3, 0x22, 0xac, 0x39, 0x1f, 0xa3, 0x80, 0xfb, 0xe2,
+	0x74, 0x34, 0x76, 0xba, 0x09, 0x1b, 0xce, 0x9b, 0xea, 0x71, 0xb1, 0x54, 0x3e, 0x3b, 0x2d, 0x1e,
+	0x37, 0x9c, 0xb3, 0x46, 0xf9, 0x65, 0xb9, 0xf2, 0xba, 0x9c, 0xb1, 0x68, 0x16, 0xe8, 0xbc, 0x74,
+	0x54, 0xa9, 0xd5, 0x33, 0xe4, 0xf0, 0x59, 0x7f, 0xc0, 0xac, 0xcb, 0x01, 0xb3, 0xae, 0x06, 0x8c,
+	0x7c, 0x8a, 0x19, 0xf9, 0x16, 0x33, 0xd2, 0x8b, 0x19, 0xe9, 0xc7, 0x8c, 0xfc, 0x8c, 0x19, 0xf9,
+	0x15, 0x33, 0xeb, 0x2a, 0x66, 0xe4, 0xf3, 0x90, 0x59, 0xfd, 0x21, 0xb3, 0x2e, 0x87, 0xcc, 0x7a,
+	0x9b, 0xbc, 0xe7, 0xf3, 0x15, 0xf3, 0x80, 0x1f, 0xfd, 0x0e, 0x00, 0x00, 0xff, 0xff, 0x4f, 0x5d,
+	0x8a, 0x74, 0xec, 0x03, 0x00, 0x00,
 }
 
 func (x ExplainValue) String() string {
@@ -313,6 +372,38 @@ func (this *EncodedOperatorEvaluationStats) Equal(that interface{}) bool {
 	}
 	if !this.TimeRange.Equal(&that1.TimeRange) {
 		return false
+	}
+	if !this.MultiNode.Equal(&that1.MultiNode) {
+		return false
+	}
+	return true
+}
+func (this *EncodedMultiNodeStats) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedMultiNodeStats)
+	if !ok {
+		that2, ok := that.(EncodedMultiNodeStats)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Subsets) != len(that1.Subsets) {
+		return false
+	}
+	for i := range this.Subsets {
+		if !this.Subsets[i].Equal(that1.Subsets[i]) {
+			return false
+		}
 	}
 	return true
 }
@@ -398,7 +489,7 @@ func (this *EncodedOperatorEvaluationStats) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&types.EncodedOperatorEvaluationStats{")
 	s = append(s, "AllSeries: "+strings.Replace(this.AllSeries.GoString(), `&`, ``, 1)+",\n")
 	if this.Subsets != nil {
@@ -409,6 +500,29 @@ func (this *EncodedOperatorEvaluationStats) GoString() string {
 		s = append(s, "Subsets: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "TimeRange: "+strings.Replace(this.TimeRange.GoString(), `&`, ``, 1)+",\n")
+	s = append(s, "MultiNode: "+strings.Replace(this.MultiNode.GoString(), `&`, ``, 1)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *EncodedMultiNodeStats) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&types.EncodedMultiNodeStats{")
+	keysForSubsets := make([]int64, 0, len(this.Subsets))
+	for k, _ := range this.Subsets {
+		keysForSubsets = append(keysForSubsets, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForSubsets)
+	mapStringForSubsets := "map[int64]*EncodedSubsetStats{"
+	for _, k := range keysForSubsets {
+		mapStringForSubsets += fmt.Sprintf("%#v: %#v,", k, this.Subsets[k])
+	}
+	mapStringForSubsets += "}"
+	if this.Subsets != nil {
+		s = append(s, "Subsets: "+mapStringForSubsets+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -466,6 +580,16 @@ func (m *EncodedOperatorEvaluationStats) MarshalToSizedBuffer(dAtA []byte) (int,
 	var l int
 	_ = l
 	{
+		size, err := m.MultiNode.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypes(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x22
+	{
 		size, err := m.TimeRange.MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
 			return 0, err
@@ -502,6 +626,53 @@ func (m *EncodedOperatorEvaluationStats) MarshalToSizedBuffer(dAtA []byte) (int,
 	return len(dAtA) - i, nil
 }
 
+func (m *EncodedMultiNodeStats) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EncodedMultiNodeStats) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EncodedMultiNodeStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Subsets) > 0 {
+		for k := range m.Subsets {
+			v := m.Subsets[k]
+			baseI := i
+			if v != nil {
+				{
+					size, err := v.MarshalToSizedBuffer(dAtA[:i])
+					if err != nil {
+						return 0, err
+					}
+					i -= size
+					i = encodeVarintTypes(dAtA, i, uint64(size))
+				}
+				i--
+				dAtA[i] = 0x12
+			}
+			i = encodeVarintTypes(dAtA, i, uint64(k))
+			i--
+			dAtA[i] = 0x8
+			i = encodeVarintTypes(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *EncodedSubsetStats) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -523,28 +694,9 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	var l int
 	_ = l
 	if len(m.SamplesReadIfFirstStep) > 0 {
-		dAtA4 := make([]byte, len(m.SamplesReadIfFirstStep)*10)
-		var j3 int
-		for _, num1 := range m.SamplesReadIfFirstStep {
-			num := uint64(num1)
-			for num >= 1<<7 {
-				dAtA4[j3] = uint8(uint64(num)&0x7f | 0x80)
-				num >>= 7
-				j3++
-			}
-			dAtA4[j3] = uint8(num)
-			j3++
-		}
-		i -= j3
-		copy(dAtA[i:], dAtA4[:j3])
-		i = encodeVarintTypes(dAtA, i, uint64(j3))
-		i--
-		dAtA[i] = 0x1a
-	}
-	if len(m.SamplesReadIfSubsequentStep) > 0 {
-		dAtA6 := make([]byte, len(m.SamplesReadIfSubsequentStep)*10)
+		dAtA6 := make([]byte, len(m.SamplesReadIfFirstStep)*10)
 		var j5 int
-		for _, num1 := range m.SamplesReadIfSubsequentStep {
+		for _, num1 := range m.SamplesReadIfFirstStep {
 			num := uint64(num1)
 			for num >= 1<<7 {
 				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
@@ -558,12 +710,12 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], dAtA6[:j5])
 		i = encodeVarintTypes(dAtA, i, uint64(j5))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x1a
 	}
-	if len(m.SamplesProcessedPerStep) > 0 {
-		dAtA8 := make([]byte, len(m.SamplesProcessedPerStep)*10)
+	if len(m.SamplesReadIfSubsequentStep) > 0 {
+		dAtA8 := make([]byte, len(m.SamplesReadIfSubsequentStep)*10)
 		var j7 int
-		for _, num1 := range m.SamplesProcessedPerStep {
+		for _, num1 := range m.SamplesReadIfSubsequentStep {
 			num := uint64(num1)
 			for num >= 1<<7 {
 				dAtA8[j7] = uint8(uint64(num)&0x7f | 0x80)
@@ -576,6 +728,25 @@ func (m *EncodedSubsetStats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= j7
 		copy(dAtA[i:], dAtA8[:j7])
 		i = encodeVarintTypes(dAtA, i, uint64(j7))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.SamplesProcessedPerStep) > 0 {
+		dAtA10 := make([]byte, len(m.SamplesProcessedPerStep)*10)
+		var j9 int
+		for _, num1 := range m.SamplesProcessedPerStep {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA10[j9] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j9++
+			}
+			dAtA10[j9] = uint8(num)
+			j9++
+		}
+		i -= j9
+		copy(dAtA[i:], dAtA10[:j9])
+		i = encodeVarintTypes(dAtA, i, uint64(j9))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -657,6 +828,30 @@ func (m *EncodedOperatorEvaluationStats) Size() (n int) {
 	}
 	l = m.TimeRange.Size()
 	n += 1 + l + sovTypes(uint64(l))
+	l = m.MultiNode.Size()
+	n += 1 + l + sovTypes(uint64(l))
+	return n
+}
+
+func (m *EncodedMultiNodeStats) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Subsets) > 0 {
+		for k, v := range m.Subsets {
+			_ = k
+			_ = v
+			l = 0
+			if v != nil {
+				l = v.Size()
+				l += 1 + sovTypes(uint64(l))
+			}
+			mapEntrySize := 1 + sovTypes(uint64(k)) + l
+			n += mapEntrySize + 1 + sovTypes(uint64(mapEntrySize))
+		}
+	}
 	return n
 }
 
@@ -730,6 +925,27 @@ func (this *EncodedOperatorEvaluationStats) String() string {
 		`AllSeries:` + strings.Replace(strings.Replace(this.AllSeries.String(), "EncodedSubsetStats", "EncodedSubsetStats", 1), `&`, ``, 1) + `,`,
 		`Subsets:` + repeatedStringForSubsets + `,`,
 		`TimeRange:` + strings.Replace(strings.Replace(this.TimeRange.String(), "EncodedQueryTimeRange", "EncodedQueryTimeRange", 1), `&`, ``, 1) + `,`,
+		`MultiNode:` + strings.Replace(strings.Replace(this.MultiNode.String(), "EncodedMultiNodeStats", "EncodedMultiNodeStats", 1), `&`, ``, 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *EncodedMultiNodeStats) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForSubsets := make([]int64, 0, len(this.Subsets))
+	for k, _ := range this.Subsets {
+		keysForSubsets = append(keysForSubsets, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Int64s(keysForSubsets)
+	mapStringForSubsets := "map[int64]*EncodedSubsetStats{"
+	for _, k := range keysForSubsets {
+		mapStringForSubsets += fmt.Sprintf("%v: %v,", k, this.Subsets[k])
+	}
+	mapStringForSubsets += "}"
+	s := strings.Join([]string{`&EncodedMultiNodeStats{`,
+		`Subsets:` + mapStringForSubsets + `,`,
 		`}`,
 	}, "")
 	return s
@@ -895,6 +1111,204 @@ func (m *EncodedOperatorEvaluationStats) Unmarshal(dAtA []byte) error {
 			if err := m.TimeRange.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MultiNode", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.MultiNode.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EncodedMultiNodeStats) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EncodedMultiNodeStats: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EncodedMultiNodeStats: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Subsets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Subsets == nil {
+				m.Subsets = make(map[int64]*EncodedSubsetStats)
+			}
+			var mapkey int64
+			var mapvalue *EncodedSubsetStats
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowTypes
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowTypes
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapkey |= int64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+				} else if fieldNum == 2 {
+					var mapmsglen int
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowTypes
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapmsglen |= int(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					if mapmsglen < 0 {
+						return ErrInvalidLengthTypes
+					}
+					postmsgIndex := iNdEx + mapmsglen
+					if postmsgIndex < 0 {
+						return ErrInvalidLengthTypes
+					}
+					if postmsgIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = &EncodedSubsetStats{}
+					if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
+						return err
+					}
+					iNdEx = postmsgIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipTypes(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthTypes
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Subsets[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
