@@ -44,6 +44,7 @@ var (
 	reasonInvalidLabelValue            = globalerror.SeriesInvalidLabelValue.LabelValue()
 	reasonLabelNameTooLong             = globalerror.SeriesLabelNameTooLong.LabelValue()
 	reasonLabelValueTooLong            = globalerror.SeriesLabelValueTooLong.LabelValue()
+	reasonLabelValueBytesBlocked       = globalerror.SeriesBlockedLabelValueBytes.LabelValue()
 	reasonMaxNativeHistogramBuckets    = globalerror.MaxNativeHistogramBuckets.LabelValue()
 	reasonInvalidNativeHistogramSchema = globalerror.InvalidSchemaNativeHistogram.LabelValue()
 	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
@@ -86,6 +87,10 @@ var (
 	truncatedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
 		"received some series whose label value lengths exceed the limit; label values were truncated and appended their hash value",
 		validation.MaxLabelValueLengthFlag,
+	)
+	blockedLabelValueBytesMsgFormat = globalerror.SeriesBlockedLabelValueBytes.MessageWithPerTenantLimitConfig(
+		"received a series with a value for label '%s', which is blocked because its distinct label values have exceeded the per-label-name byte limit, series: '%.200s'",
+		validation.BlockedLabelNamesForLabelValueBytesFlag,
 	)
 	droppedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
 		"received some series whose label value lengths exceed the limit; label values were replaced by their hash value",
@@ -155,6 +160,15 @@ func (e labelValueTooLongError) Error() string {
 	return fmt.Sprintf(labelValueTooLongMsgFormat, len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series)
 }
 
+type blockedLabelValueBytesError struct {
+	LabelName string
+	Series    string
+}
+
+func (e blockedLabelValueBytesError) Error() string {
+	return fmt.Sprintf(blockedLabelValueBytesMsgFormat, e.LabelName, e.Series)
+}
+
 // labelValueTooLongSummaries holds a summary for each metric and label processed
 // in a write request that have values exceeding the limit.
 type labelValueTooLongSummaries struct {
@@ -219,12 +233,13 @@ func newValidationConfig(userID, limitsKey string, overrides *validation.Overrid
 			outOfOrderTimeWindow:                overrides.OutOfOrderTimeWindow(userID),
 		},
 		labels: labelValidationConfig{
-			maxLabelNamesPerSeries:            overrides.MaxLabelNamesPerSeries(userID),
-			maxLabelNamesPerInfoSeries:        overrides.MaxLabelNamesPerInfoSeries(userID),
-			maxLabelNameLength:                overrides.MaxLabelNameLength(userID),
-			maxLabelValueLength:               overrides.MaxLabelValueLength(userID),
-			labelValueLengthOverLimitStrategy: overrides.LabelValueLengthOverLimitStrategy(userID),
-			nameValidationScheme:              overrides.NameValidationScheme(limitsKey),
+			maxLabelNamesPerSeries:              overrides.MaxLabelNamesPerSeries(userID),
+			maxLabelNamesPerInfoSeries:          overrides.MaxLabelNamesPerInfoSeries(userID),
+			maxLabelNameLength:                  overrides.MaxLabelNameLength(userID),
+			maxLabelValueLength:                 overrides.MaxLabelValueLength(userID),
+			labelValueLengthOverLimitStrategy:   overrides.LabelValueLengthOverLimitStrategy(userID),
+			nameValidationScheme:                overrides.NameValidationScheme(limitsKey),
+			blockedLabelNamesForLabelValueBytes: newBlockedLabelNames(overrides.BlockedLabelNamesForLabelValueBytes(userID)),
 		},
 		metadata: metadataValidationConfig{
 			enforceMetadataMetricName: overrides.EnforceMetadataMetricName(userID),
@@ -245,12 +260,37 @@ type sampleValidationConfig struct {
 
 // labelValidationConfig helps with getting required config to validate labels.
 type labelValidationConfig struct {
-	maxLabelNamesPerSeries            int
-	maxLabelNamesPerInfoSeries        int
-	maxLabelNameLength                int
-	maxLabelValueLength               int
-	labelValueLengthOverLimitStrategy validation.LabelValueLengthOverLimitStrategy
-	nameValidationScheme              model.ValidationScheme
+	maxLabelNamesPerSeries              int
+	maxLabelNamesPerInfoSeries          int
+	maxLabelNameLength                  int
+	maxLabelValueLength                 int
+	labelValueLengthOverLimitStrategy   validation.LabelValueLengthOverLimitStrategy
+	nameValidationScheme                model.ValidationScheme
+	blockedLabelNamesForLabelValueBytes blockedLabelNames
+}
+
+// blockedLabelNames is the set of label names for which series should be rejected, built once
+// per push request from the tenant's override. The __name__ label is never blocked: blocking it
+// would reject all of a tenant's data, which is never the intent of this per-label-name control.
+type blockedLabelNames map[string]struct{}
+
+func newBlockedLabelNames(names []string) blockedLabelNames {
+	if len(names) == 0 {
+		return nil
+	}
+	set := make(blockedLabelNames, len(names))
+	for _, name := range names {
+		if name == model.MetricNameLabel {
+			continue
+		}
+		set[name] = struct{}{}
+	}
+	return set
+}
+
+func (b blockedLabelNames) contains(name string) bool {
+	_, ok := b[name]
+	return ok
 }
 
 // metadataValidationConfig helps with getting required config to validate metadata.
@@ -269,6 +309,7 @@ type sampleValidationMetrics struct {
 	invalidLabelValue            *prometheus.CounterVec
 	labelNameTooLong             *prometheus.CounterVec
 	labelValueTooLong            *prometheus.CounterVec
+	labelValueBytesBlocked       *prometheus.CounterVec
 	maxNativeHistogramBuckets    *prometheus.CounterVec
 	invalidNativeHistogramSchema *prometheus.CounterVec
 	duplicateLabelNames          *prometheus.CounterVec
@@ -288,6 +329,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.invalidLabelValue.DeletePartialMatch(filter)
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
+	m.labelValueBytesBlocked.DeletePartialMatch(filter)
 	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
 	m.invalidNativeHistogramSchema.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
@@ -306,6 +348,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.invalidLabelValue.DeleteLabelValues(userID, group)
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
+	m.labelValueBytesBlocked.DeleteLabelValues(userID, group)
 	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
 	m.invalidNativeHistogramSchema.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
@@ -325,6 +368,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		invalidLabelValue:            validation.DiscardedSamplesCounter(r, reasonInvalidLabelValue),
 		labelNameTooLong:             validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
 		labelValueTooLong:            validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		labelValueBytesBlocked:       validation.DiscardedSamplesCounter(r, reasonLabelValueBytesBlocked),
 		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
 		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogramSchema),
 		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
@@ -591,6 +635,13 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabelValue, ts)
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
+		} else if cfg.blockedLabelNamesForLabelValueBytes.contains(l.Name) {
+			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueBytesBlocked, ts)
+			m.labelValueBytesBlocked.WithLabelValues(userID, group).Inc()
+			return blockedLabelValueBytesError{
+				LabelName: strings.Clone(l.Name),
+				Series:    mimirpb.FromLabelAdaptersToString(ls),
+			}
 		} else if len(l.Value) > maxLabelValueLength {
 			switch labelValueLengthOverLimitStrategy {
 			case validation.LabelValueLengthOverLimitStrategyError:

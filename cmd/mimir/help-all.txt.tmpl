@@ -1929,6 +1929,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
+  -ingester.max-global-label-value-bytes-per-label-name int
+    	[experimental] The maximum total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication. Only values longer than 128 bytes are counted, and each distinct value is counted once however many series carry it. 0 to disable.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -4013,6 +4015,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.blocked-label-names-for-label-value-bytes comma-separated-list-of-strings
+    	[experimental] Label names for which the distinct label value bytes tracked by -ingester.max-global-label-value-bytes-per-label-name have exceeded the limit. Series carrying a value for one of these label names are rejected. This is a decision that is expected to be populated by an operator or automation reacting to that limit being breached, not derived automatically from it. The __name__ label is never blocked, regardless of this setting.
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
   -validation.cost-attribution-trackers value

@@ -125,6 +125,8 @@ The following features are currently experimental:
   - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Reject series carrying a value for a label name whose distinct label value bytes have exceeded `-ingester.max-global-label-value-bytes-per-label-name`
+    - `-validation.blocked-label-names-for-label-value-bytes`
   - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
     - `-validation.enforce-out-of-order-window-on-distributor`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)

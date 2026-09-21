@@ -58,6 +58,7 @@ const (
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                     = "validation.max-length-label-value"
 	LabelValueLengthOverLimitStrategyFlag       = "validation.label-value-length-over-limit-strategy"
+	BlockedLabelNamesForLabelValueBytesFlag     = "validation.blocked-label-names-for-label-value-bytes"
 	MaxMetadataLengthFlag                       = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag               = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
@@ -193,6 +194,7 @@ type Limits struct {
 	MaxLabelNameLength                  int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                 int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
 	LabelValueLengthOverLimitStrategy   LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	BlockedLabelNamesForLabelValueBytes flagext.StringSliceCSV            `yaml:"blocked_label_names_for_label_value_bytes" json:"blocked_label_names_for_label_value_bytes" category:"experimental"`
 	MaxLabelNamesPerSeries              int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries          int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                   int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -412,6 +414,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
+	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+MaxLabelValueBytesPerLabelNameFlag+" have exceeded the limit. Series carrying a value for one of these label names are rejected. This is a decision that is expected to be populated by an operator or automation reacting to that limit being breached, not derived automatically from it. The __name__ label is never blocked, regardless of this setting.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -997,6 +1000,12 @@ func (o *Overrides) MaxLabelValueLength(userID string) int {
 // LabelValueLengthOverLimitStrategy returns the strategy for when label values exceed the limit.
 func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueLengthOverLimitStrategy {
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
+}
+
+// BlockedLabelNamesForLabelValueBytes returns the label names for which series are rejected
+// because their distinct label value bytes have exceeded the limit.
+func (o *Overrides) BlockedLabelNamesForLabelValueBytes(userID string) []string {
+	return o.getOverridesForUser(userID).BlockedLabelNamesForLabelValueBytes
 }
 
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
