@@ -94,6 +94,7 @@
 * [BUGFIX] Querier: Resolve metric family metadata for suffixed metric names in experimental search API `/api/v1/search/metric_names` when `include_metadata=true` is set. For example, `http_request_duration_seconds_bucket` now gets the metadata of the `http_request_duration_seconds` histogram. #16759
 * [BUGFIX] Usage-tracker: Fix startup waiting for the whole snapshot loading timeout (half of `-usage-tracker.idle-timeout`) before becoming ready when retention deleted all records from the snapshots metadata topic. #16786
 * [BUGFIX] Query-frontend: Return HTTP 422 instead of HTTP 500 when a query exceeds `-querier.max-estimated-memory-consumption-per-query`. The limit error was returned unclassified, so it fell through to the generic HTTP 500 handling. #16716
+* [BUGFIX] Ruler: Store a rule group listing in the cache synchronously, instead of asynchronously, when the listing was fetched with the cache lookup disabled (e.g. right after a rule group is created or updated through the config API). Previously, a periodic sync reading from the cache could race with the asynchronous write and observe a stale listing that didn't include the just-applied change, reverting the rule group in the ruler's in-memory manager until the next sync picked up the change. #16664
 
 ### Mixin
 
