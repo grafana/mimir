@@ -13,6 +13,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -28,6 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2602,4 +2606,60 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestMultitenantCompactor_BlockUploadHandlers_Rejections(t *testing.T) {
+	const tenantID = "user-1"
+
+	handlers := map[string]func(*MultitenantCompactor, http.ResponseWriter, *http.Request){
+		"start":  (*MultitenantCompactor).StartBlockUpload,
+		"files":  (*MultitenantCompactor).UploadBlockFile,
+		"finish": (*MultitenantCompactor).FinishBlockUpload,
+		"check":  (*MultitenantCompactor).GetBlockUploadStateHandler,
+	}
+
+	testCases := map[string]struct {
+		compactor          *MultitenantCompactor
+		injectTenant       bool
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		"compactor not yet running": {
+			compactor:          &MultitenantCompactor{Service: services.NewIdleService(nil, nil)},
+			injectTenant:       true,
+			expectedStatusCode: http.StatusServiceUnavailable,
+			expectedBody:       "compactor not ready\n",
+		},
+		"missing tenant": {
+			compactor:          &MultitenantCompactor{cfgProvider: newMockConfigProvider()},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       "invalid tenant ID\n",
+		},
+		"block upload disabled for the tenant": {
+			compactor:          &MultitenantCompactor{cfgProvider: newMockConfigProvider()},
+			injectTenant:       true,
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       "block upload is disabled\n",
+		},
+	}
+
+	for name, tc := range testCases {
+		for handlerName, handler := range handlers {
+			t.Run(fmt.Sprintf("%s/%s", name, handlerName), func(t *testing.T) {
+				r := httptest.NewRequest(http.MethodPost, "/api/v1/upload/block/start", nil)
+				if tc.injectTenant {
+					r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
+				}
+
+				w := httptest.NewRecorder()
+				handler(tc.compactor, w, r)
+
+				resp := w.Result()
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedStatusCode, resp.StatusCode)
+				assert.Equal(t, tc.expectedBody, string(body))
+			})
+		}
+	}
 }

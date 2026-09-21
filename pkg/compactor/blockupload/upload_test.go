@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package compactor
+package blockupload
 
 import (
 	"bytes"
@@ -22,13 +22,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
@@ -38,9 +37,9 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block/blockvalidation"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta) {
@@ -58,8 +57,7 @@ func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta
 	assert.Equal(t, expMeta, gotMeta)
 }
 
-// Test MultitenantCompactor.StartBlockUpload
-func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
+func TestBlockUploader_StartBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	bULID := ulid.MustParse(blockID)
@@ -140,7 +138,6 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 		body                    string
 		meta                    *block.Meta
 		retention               time.Duration
-		disableBlockUpload      bool
 		expBadRequest           string
 		expConflict             string
 		expUnprocessableEntity  string
@@ -461,13 +458,6 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expEntityTooLarge: fmt.Sprintf("The block metadata was too large (maximum size allowed is %d bytes)", maximumMetaSizeBytes),
 		},
 		{
-			name:               "block upload disabled",
-			tenantID:           tenantID,
-			blockID:            blockID,
-			disableBlockUpload: true,
-			expBadRequest:      "block upload is disabled",
-		},
-		{
 			name:                    "max block size exceeded",
 			tenantID:                tenantID,
 			blockID:                 blockID,
@@ -623,18 +613,11 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				tc.setUpBucketMock(&bkt)
 			}
 
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.userRetentionPeriods[tenantID] = tc.retention
-			cfgProvider.blockUploadEnabled[tenantID] = !tc.disableBlockUpload
-			cfgProvider.blockUploadMaxBlockSizeBytes[tenantID] = tc.maxBlockUploadSizeBytes
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: &bkt,
-				cfgProvider:  cfgProvider,
-				compactorCfg: Config{
-					BlockRanges: mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-				},
-			}
+			cfgProvider := testLimits(func(l *validation.Limits) {
+				l.CompactorBlocksRetentionPeriod = model.Duration(tc.retention)
+				l.CompactorBlockUploadMaxBlockSizeBytes = tc.maxBlockUploadSizeBytes
+			})
+			c := newTestBlockUploader(&bkt, cfgProvider)
 			var rdr io.Reader
 			if tc.body != "" {
 				rdr = strings.NewReader(tc.body)
@@ -775,16 +758,8 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			metaJSON, err := json.Marshal(meta)
 			require.NoError(t, err)
 
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadEnabled[tenantID] = true
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: bkt,
-				cfgProvider:  cfgProvider,
-				compactorCfg: Config{
-					BlockRanges: mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-				},
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(bkt, cfgProvider)
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/start", blockID), bytes.NewReader(metaJSON))
 			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 			r = mux.SetURLVars(r, map[string]string{"block": blockID})
@@ -809,8 +784,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 	}
 }
 
-// Test MultitenantCompactor.UploadBlockFile
-func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
+func TestBlockUploader_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	uploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
@@ -871,7 +845,6 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		path                   string
 		body                   string
 		unknownContentLength   bool
-		disableBlockUpload     bool
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
@@ -933,14 +906,6 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			path:          uploadingMetaFilename,
 			body:          "content",
 			expBadRequest: fmt.Sprintf("invalid path: %q", uploadingMetaFilename),
-		},
-		{
-			name:               "block upload disabled",
-			tenantID:           tenantID,
-			blockID:            blockID,
-			disableBlockUpload: true,
-			path:               "chunks/000001",
-			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",
@@ -1062,13 +1027,8 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				tc.setUpBucketMock(&bkt)
 			}
 
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: &bkt,
-				cfgProvider:  cfgProvider,
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(&bkt, cfgProvider)
 			var rdr io.Reader
 			if tc.body != "" {
 				rdr = strings.NewReader(tc.body)
@@ -1166,13 +1126,8 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			tc.setUpBucket(t, bkt)
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadEnabled[tenantID] = true
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: bkt,
-				cfgProvider:  cfgProvider,
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(bkt, cfgProvider)
 
 			for _, f := range tc.files {
 				rdr := strings.NewReader(f.content)
@@ -1203,8 +1158,7 @@ func setUpGet(bkt *bucket.ClientMock, pth string, content []byte, err error) {
 	})
 }
 
-// Test MultitenantCompactor.FinishBlockUpload
-func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
+func TestBlockUploader_FinishBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
@@ -1248,16 +1202,13 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		blockID                string
 		setUpBucket            func(*testing.T, objstore.Bucket)
 		errorInjector          func(op bucket.Operation, name string) error
-		disableBlockUpload     bool
 		enableValidation       bool // should only be set to true for tests that fail before validation is started
-		notStarted             bool
 		maxConcurrency         int
 		setConcurrency         int64
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
 		expTooManyRequests     bool
-		expServiceUnavailable  bool
 		expInternalServerError bool
 	}{
 		{
@@ -1275,13 +1226,6 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			tenantID:      tenantID,
 			blockID:       "1234",
 			expBadRequest: "invalid block ID",
-		},
-		{
-			name:               "block upload disabled",
-			tenantID:           tenantID,
-			blockID:            blockID,
-			disableBlockUpload: true,
-			expBadRequest:      "block upload is disabled",
 		},
 		{
 			name:     "complete block already exists",
@@ -1345,13 +1289,6 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			setConcurrency:     2,
 			expTooManyRequests: true,
 		},
-		{
-			name:                  "compactor not yet started",
-			tenantID:              tenantID,
-			blockID:               blockID,
-			notStarted:            true,
-			expServiceUnavailable: true,
-		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1364,23 +1301,15 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				tc.setUpBucket(t, bkt)
 			}
 
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadEnabled[tc.tenantID] = !tc.disableBlockUpload
-			cfgProvider.blockUploadValidationEnabled[tc.tenantID] = tc.enableValidation
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: &injectedBkt,
-				cfgProvider:  cfgProvider,
-			}
-			c.compactorCfg.MaxBlockUploadValidationConcurrency = tc.maxConcurrency
+			cfgProvider := testLimits(func(l *validation.Limits) {
+				l.CompactorBlockUploadValidationEnabled = tc.enableValidation
+			})
+			c := newTestBlockUploader(&injectedBkt, cfgProvider)
+			c.cfg.MaxValidationConcurrency = tc.maxConcurrency
 			if tc.setConcurrency > 0 {
 				c.blockUploadValidations.Add(tc.setConcurrency)
 			}
-			if tc.notStarted {
-				c.Service = services.NewIdleService(nil, nil)
-			}
-
-			c.compactorCfg.DataDir = t.TempDir()
+			c.cfg.ValidationDir = t.TempDir()
 
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
@@ -1412,9 +1341,6 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			case tc.expTooManyRequests:
 				assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 				assert.Equal(t, "too many block upload validations in progress, limit is 2\n", string(body))
-			case tc.expServiceUnavailable:
-				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-				assert.Equal(t, "compactor not ready\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))
@@ -1426,7 +1352,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 	}
 }
 
-func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
+func TestBlockUploader_ValidateAndComplete(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
@@ -1522,15 +1448,8 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 					Injector: tc.errorInjector,
 				}
 			}
-			cfgProvider := newMockConfigProvider()
-			c := &MultitenantCompactor{
-				logger:            log.NewNopLogger(),
-				bucketClient:      injectedBkt,
-				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-				blockUploadBytes:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-				blockUploadFiles:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(injectedBkt, cfgProvider)
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
 			meta := block.Meta{}
@@ -1570,7 +1489,7 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 	}
 }
 
-func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
+func TestBlockUploader_ValidateBlock(t *testing.T) {
 	const tenantID = "test"
 	ctx := context.Background()
 	tmpDir := t.TempDir()
@@ -1744,15 +1663,12 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// create a compactor
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadValidationEnabled[tenantID] = true
-			cfgProvider.verifyChunks[tenantID] = tc.verifyChunks
-			cfgProvider.blockUploadMaxBlockSizeBytes[tenantID] = tc.maximumBlockSize
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: bkt,
-				cfgProvider:  cfgProvider,
-			}
+			cfgProvider := testLimits(func(l *validation.Limits) {
+				l.CompactorBlockUploadValidationEnabled = true
+				l.CompactorBlockUploadVerifyChunks = tc.verifyChunks
+				l.CompactorBlockUploadMaxBlockSizeBytes = tc.maximumBlockSize
+			})
+			c := newTestBlockUploader(bkt, cfgProvider)
 
 			// upload the block
 			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil)
@@ -1806,7 +1722,8 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// validate the block
-			err = c.validateBlock(ctx, c.logger, blockID, meta, bkt, tenantID)
+			c.cfg.ValidationDir = t.TempDir()
+			err = c.validateBlock(ctx, log.NewNopLogger(), blockID, meta, bkt, tenantID)
 			if tc.expectError {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expectedMsg)
@@ -1817,7 +1734,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 	}
 }
 
-func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
+func TestBlockUploader_PeriodicValidationUpdater(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
@@ -1883,12 +1800,8 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 				}
 			}
 
-			cfgProvider := newMockConfigProvider()
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: injectedBkt,
-				cfgProvider:  cfgProvider,
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(injectedBkt, cfgProvider)
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 			ctx, cancel := context.WithCancelCause(context.Background())
 
@@ -1917,7 +1830,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 	}
 }
 
-func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
+func TestBlockUploader_GetBlockUploadStateHandler(t *testing.T) {
 	const (
 		tenantID = "tenant"
 		blockID  = "01G8X9GA8R6N8F75FW1J18G83N"
@@ -1925,7 +1838,6 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 	type testcase struct {
 		setupBucket        func(t *testing.T, bkt objstore.Bucket)
-		disableBlockUpload bool
 		expectedStatusCode int
 		expectedBody       string
 	}
@@ -1985,14 +1897,9 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 				tc.setupBucket(t, bkt)
 			}
 
-			cfgProvider := newMockConfigProvider()
-			cfgProvider.blockUploadEnabled[tenantID] = !tc.disableBlockUpload
+			cfgProvider := testLimits(nil)
 
-			c := &MultitenantCompactor{
-				logger:       log.NewNopLogger(),
-				bucketClient: bkt,
-				cfgProvider:  cfgProvider,
-			}
+			c := newTestBlockUploader(bkt, cfgProvider)
 
 			r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/upload/block/%s/check", blockID), nil)
 			urlVars := map[string]string{"block": blockID}
@@ -2012,7 +1919,7 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 	}
 }
 
-func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
+func TestBlockUploader_MarkBlockComplete(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	injectedError := fmt.Errorf("injected error")
@@ -2048,15 +1955,8 @@ func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
 					Injector: tc.errorInjector,
 				}
 			}
-			cfgProvider := newMockConfigProvider()
-			c := &MultitenantCompactor{
-				logger:            log.NewNopLogger(),
-				bucketClient:      injectedBkt,
-				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-				blockUploadBytes:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-				blockUploadFiles:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
-			}
+			cfgProvider := testLimits(nil)
+			c := newTestBlockUploader(injectedBkt, cfgProvider)
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
 			meta := block.Meta{
@@ -2137,4 +2037,54 @@ func TestHexTimeNowNano(t *testing.T) {
 	require.NotEqual(t, strings.Repeat("0", 16), v, "Should not be all zeros")
 	time.Sleep(time.Nanosecond)
 	require.NotEqual(t, v, hexTimeNowNano(), "Should generate a different one.")
+}
+
+// testUploader binds a BlockUploader to one bucket and exposes HTTP handlers for testing.
+type testUploader struct {
+	*BlockUploader
+	bkt    objstore.Bucket
+	limits *validation.Overrides
+}
+
+func (t testUploader) StartBlockUpload(w http.ResponseWriter, r *http.Request) {
+	t.BlockUploader.StartBlockUpload(w, r, t.userBucket(r), log.NewNopLogger())
+}
+
+func (t testUploader) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
+	t.BlockUploader.UploadBlockFile(w, r, t.userBucket(r), log.NewNopLogger())
+}
+
+func (t testUploader) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
+	t.BlockUploader.FinishBlockUpload(w, r, t.userBucket(r), log.NewNopLogger())
+}
+
+func (t testUploader) GetBlockUploadStateHandler(w http.ResponseWriter, r *http.Request) {
+	t.BlockUploader.GetBlockUploadStateHandler(w, r, t.userBucket(r), log.NewNopLogger())
+}
+
+// userBucket scopes the bucket to the request's tenant, the way the compactor's own handlers do.
+func (t testUploader) userBucket(r *http.Request) objstore.Bucket {
+	tenantID, _ := tenant.TenantID(r.Context())
+	return bucket.NewUserBucketClient(tenantID, t.bkt, t.limits)
+}
+
+func newTestBlockUploader(bkt objstore.Bucket, limits *validation.Overrides) testUploader {
+	return testUploader{
+		BlockUploader: New(Config{MaxBlockRange: 24 * time.Hour}, limits, nil),
+		bkt:           bkt,
+		limits:        limits,
+	}
+}
+
+// testLimits builds the per-tenant limits the block upload API reads. Validation and chunk
+// verification are off unless a test asks for them, unlike in production, because most of these
+// tests cover the upload rather than the validation that follows it.
+func testLimits(customize func(*validation.Limits)) *validation.Overrides {
+	return validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.CompactorBlockUploadValidationEnabled = false
+		defaults.CompactorBlockUploadVerifyChunks = false
+		if customize != nil {
+			customize(defaults)
+		}
+	})
 }
