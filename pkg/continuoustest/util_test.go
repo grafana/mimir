@@ -309,6 +309,87 @@ func TestCompareSampleValues(t *testing.T) {
 	}
 }
 
+func TestCompareHistogramValues(t *testing.T) {
+	newHistogram := func() *model.SampleHistogram {
+		return &model.SampleHistogram{
+			Count: 10,
+			Sum:   20,
+			Buckets: model.HistogramBuckets{
+				{Boundaries: 0, Lower: 1, Upper: 2, Count: 4},
+				{Boundaries: 0, Lower: 2, Upper: 4, Count: 6},
+			},
+		}
+	}
+
+	tests := map[string]struct {
+		mutate      func(*model.SampleHistogram)
+		expectedErr string
+	}{
+		"should return no error if the histograms match": {
+			mutate:      func(*model.SampleHistogram) {},
+			expectedErr: "",
+		},
+		"should name the count if the count diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Count = 11 },
+			expectedErr: "has count 11.000000 while was expecting 10.000000",
+		},
+		"should name the sum if the sum diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Sum = 21 },
+			expectedErr: "has sum 21.000000 while was expecting 20.000000",
+		},
+		"should name every field that diverges": {
+			mutate: func(h *model.SampleHistogram) {
+				h.Count = 11
+				h.Sum = 21
+			},
+			expectedErr: "has count 11.000000 while was expecting 10.000000\nhas sum 21.000000 while was expecting 20.000000",
+		},
+		"should name the count, the sum and the buckets if a whole series is absent": {
+			mutate: func(h *model.SampleHistogram) {
+				h.Count = 8
+				h.Sum = 16
+				h.Buckets[0].Count = 3
+				h.Buckets[1].Count = 5
+			},
+			expectedErr: "has count 8.000000 while was expecting 10.000000\nhas sum 16.000000 while was expecting 20.000000\nbucket 0 has count 3.000000 while was expecting 4.000000, buckets are [(1,2]:3 (2,4]:5] while was expecting [(1,2]:4 (2,4]:6]",
+		},
+		"should print both bucket layouts if the number of buckets diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Buckets = h.Buckets[:1] },
+			expectedErr: "has 1 buckets [(1,2]:4] while was expecting 2 buckets [(1,2]:4 (2,4]:6]",
+		},
+		"should name the bucket boundaries if the boundaries diverge": {
+			mutate:      func(h *model.SampleHistogram) { h.Buckets[1].Boundaries = 1 },
+			expectedErr: "bucket 1 has boundaries 1 while was expecting 0, buckets are [(1,2]:4 [2,4):6] while was expecting [(1,2]:4 (2,4]:6]",
+		},
+		"should name the bucket lower bound if the lower bound diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Buckets[1].Lower = 3 },
+			expectedErr: "bucket 1 has lower bound 3.000000 while was expecting 2.000000, buckets are [(1,2]:4 (3,4]:6] while was expecting [(1,2]:4 (2,4]:6]",
+		},
+		"should name the bucket upper bound if the upper bound diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Buckets[1].Upper = 5 },
+			expectedErr: "bucket 1 has upper bound 5.000000 while was expecting 4.000000, buckets are [(1,2]:4 (2,5]:6] while was expecting [(1,2]:4 (2,4]:6]",
+		},
+		"should name the bucket count if a bucket count diverges": {
+			mutate:      func(h *model.SampleHistogram) { h.Buckets[1].Count = 7 },
+			expectedErr: "bucket 1 has count 7.000000 while was expecting 6.000000, buckets are [(1,2]:4 (2,4]:7] while was expecting [(1,2]:4 (2,4]:6]",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actual := newHistogram()
+			testData.mutate(actual)
+
+			err := compareHistogramValues(actual, newHistogram(), maxComparisonDeltaHistogram)
+			if testData.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testData.expectedErr)
+			}
+		})
+	}
+}
+
 func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	return model.SamplePair{
 		Timestamp: model.Time(ts.UnixMilli()),

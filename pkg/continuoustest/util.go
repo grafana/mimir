@@ -3,6 +3,7 @@
 package continuoustest
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -408,8 +409,8 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
-			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
+			if err := compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram); err != nil {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) %w", histogram.Timestamp, ts.String(), err)
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
@@ -465,26 +466,51 @@ func compareFloatValues(actual, expected, tolerance float64) bool {
 	return delta < tolerance
 }
 
-func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) bool {
-	return compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
+// compareHistogramValues returns an error naming every field that doesn't match the expectation,
+// or nil if the histograms match. An absent series moves the count, the sum and the buckets
+// together, so reporting all of them tells that case apart from a divergence in one field.
+func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) error {
+	var errs []error
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		errs = append(errs, fmt.Errorf("has count %f while was expecting %f", actual.Count, expected.Count))
+	}
+	if !compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) {
+		errs = append(errs, fmt.Errorf("has sum %f while was expecting %f", actual.Sum, expected.Sum))
+	}
+	errs = append(errs, compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance))
+
+	return errors.Join(errs...)
 }
 
-func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) bool {
+func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) error {
 	if len(actual) != len(expected) {
-		return false
+		return fmt.Errorf("has %d buckets %v while was expecting %d buckets %v", len(actual), actual, len(expected), expected)
 	}
 
 	for i, bucket := range actual {
-		if !compareHistogramBucketValues(bucket, expected[i], tolerance) {
-			return false
+		if err := compareHistogramBucketValues(bucket, expected[i], tolerance); err != nil {
+			// Print both layouts because a schema reduction or a re-span moves more than one boundary.
+			return fmt.Errorf("bucket %d %w, buckets are %v while was expecting %v", i, err, actual, expected)
 		}
 	}
-	return true
+	return nil
 }
 
-func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) bool {
+func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) error {
 	// the precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count
-	return actual.Boundaries == expected.Boundaries && compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
+	if actual.Boundaries != expected.Boundaries {
+		return fmt.Errorf("has boundaries %d while was expecting %d", actual.Boundaries, expected.Boundaries)
+	}
+	if !compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) {
+		return fmt.Errorf("has lower bound %f while was expecting %f", actual.Lower, expected.Lower)
+	}
+	if !compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) {
+		return fmt.Errorf("has upper bound %f while was expecting %f", actual.Upper, expected.Upper)
+	}
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		return fmt.Errorf("has count %f while was expecting %f", actual.Count, expected.Count)
+	}
+	return nil
 }
 
 func minTime(first, second time.Time) time.Time {
