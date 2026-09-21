@@ -153,6 +153,10 @@ type Config struct {
 	OutboundSyncQueuePollInterval time.Duration `yaml:"outbound_sync_queue_poll_interval" category:"experimental"`
 	InboundSyncQueuePollInterval  time.Duration `yaml:"inbound_sync_queue_poll_interval" category:"experimental"`
 
+	// How long to wait for the ring to stop changing before syncing rules in response to a ring change.
+	// Zero (the default) preserves the historical behaviour of syncing immediately on every detected change.
+	RingChangeDebounce time.Duration `yaml:"ring_change_debounce" category:"experimental"`
+
 	// Allow to override timers for testing purposes.
 	RingCheckPeriod time.Duration `yaml:"-"`
 
@@ -237,6 +241,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
+
+	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -580,6 +586,15 @@ func (r *Ruler) run(ctx context.Context) error {
 	ringTicker := time.NewTicker(util.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
 	defer ringTicker.Stop()
 
+	// ringChangeDebounceTimer fires a debounced ring-change sync once the ring has stopped
+	// changing for RingChangeDebounce. It's created idle (stopped, empty channel) and only
+	// armed via Reset() below when debouncing is enabled and a change is detected, so it
+	// never fires on its own when RingChangeDebounce is 0 (the default).
+	ringChangeDebounceTimer := time.NewTimer(24 * time.Hour)
+	ringChangeDebounceTimer.Stop()
+	defer ringChangeDebounceTimer.Stop()
+	ringChangeSyncPending := false
+
 	for {
 		var syncErr error
 		select {
@@ -595,6 +610,21 @@ func (r *Ruler) run(ctx context.Context) error {
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState
+
+				if r.cfg.RingChangeDebounce <= 0 {
+					// Debouncing disabled (the default): preserve the historical behaviour of
+					// syncing immediately on every detected ring change.
+					syncErr = r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
+				} else {
+					// Debouncing enabled: (re)arm the timer so the sync only happens once the
+					// ring has been quiet for RingChangeDebounce, instead of on every change.
+					ringChangeSyncPending = true
+					ringChangeDebounceTimer.Reset(r.cfg.RingChangeDebounce)
+				}
+			}
+		case <-ringChangeDebounceTimer.C:
+			if ringChangeSyncPending {
+				ringChangeSyncPending = false
 				syncErr = r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
 			}
 		case userIDs := <-r.inboundSyncQueue.poll():

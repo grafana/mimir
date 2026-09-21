@@ -1853,6 +1853,84 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 	})
 }
 
+func TestRuler_RunRingChangeDebounce(t *testing.T) {
+	const ringCheckPeriod = 20 * time.Millisecond
+
+	testCases := map[string]struct {
+		ringChangeDebounce time.Duration
+	}{
+		"disabled (the default) syncs immediately on every detected ring change": {
+			ringChangeDebounce: 0,
+		},
+		"enabled coalesces ring changes that occur within the debounce window into a single sync": {
+			ringChangeDebounce: 200 * time.Millisecond,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := context.Background()
+				storage := newMockRuleStore(map[string]rulespb.RuleGroupList{})
+
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.NumTokens = 128
+				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
+				cfg.RingCheckPeriod = ringCheckPeriod
+				cfg.RingChangeDebounce = tc.ringChangeDebounce
+
+				reg := prometheus.NewPedanticRegistry()
+				r := prepareRuler(t, cfg, storage, withStart(), withPrometheusRegisterer(reg))
+
+				ringChangeSyncs := func() float64 {
+					return prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonRingChange)))
+				}
+
+				// Pre-condition: only the initial sync has happened so far.
+				synctest.Wait()
+				require.Equal(t, float64(0), ringChangeSyncs())
+
+				addFakeRingMember := func(id string) {
+					require.NoError(t, cfg.Ring.Common.KVStore.Mock.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+						d, _ := in.(*ring.Desc)
+						if d == nil {
+							d = ring.NewDesc()
+						}
+						d.AddIngester(id, id, "", []uint32{uint32(len(d.Ingesters) + 1)}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+						return d, true, nil
+					}))
+				}
+
+				addFakeRingMember("fake-1")
+
+				// Give the ring-check ticker a chance to observe the change.
+				time.Sleep(2 * ringCheckPeriod)
+				synctest.Wait()
+
+				if tc.ringChangeDebounce == 0 {
+					require.Equal(t, float64(1), ringChangeSyncs(), "sync should have happened immediately, debouncing is disabled")
+					return
+				}
+
+				// Debouncing enabled: the sync must not have happened yet.
+				require.Equal(t, float64(0), ringChangeSyncs(), "sync should be pending, not yet fired, while debouncing")
+
+				// A second change shortly after the first, still within the debounce window, should
+				// be coalesced into the same pending sync rather than triggering a second one.
+				addFakeRingMember("fake-2")
+				time.Sleep(2 * ringCheckPeriod)
+				synctest.Wait()
+				require.Equal(t, float64(0), ringChangeSyncs(), "sync should still be pending, the ring kept changing within the debounce window")
+
+				// Let the debounce window fully elapse with no further ring changes.
+				time.Sleep(tc.ringChangeDebounce)
+				synctest.Wait()
+				require.Equal(t, float64(1), ringChangeSyncs(), "exactly one debounced sync should fire for the two coalesced changes")
+			})
+		})
+	}
+}
+
 // User shuffle shard token.
 func userToken(user string, skip int) uint32 {
 	r := rand.New(rand.NewSource(util.ShuffleShardSeed(user, "")))
