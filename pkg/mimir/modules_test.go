@@ -447,6 +447,18 @@ func TestRulerDistributorClientModuleDependencies(t *testing.T) {
 	require.Contains(t, deps, Vault)
 }
 
+func TestNautilusRebalancerModuleDoesNotStartDistributor(t *testing.T) {
+	cfg := newDefaultConfig()
+	mimir := &Mimir{Cfg: *cfg}
+	require.NoError(t, mimir.setupModuleManager())
+
+	deps := mimir.ModuleManager.DependenciesForModule(NautilusRebalancer)
+	require.Contains(t, deps, API)
+	require.Contains(t, deps, ReadcacheInstanceRing)
+	require.NotContains(t, deps, Distributor)
+	require.NotContains(t, deps, DistributorService)
+}
+
 func TestMimir_InitQuerierRing(t *testing.T) {
 	tests := map[string]struct {
 		remoteExecutionEnabled bool

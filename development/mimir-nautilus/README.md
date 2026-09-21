@@ -5,15 +5,14 @@ nautilus rebalancer pipeline. The plan that scopes this is at
 `/Users/davidgrant/.cursor/plans/readcache_phase_2_7a953324.plan.md`
 in the editor; the canonical contract this stack exercises is:
 
-- writes for `nautilus-tenant` land on the `nautilus_ingest` Kafka
+- writes for two Nautilus tenants land on the `nautilus_ingest` Kafka
   topic instead of `mimir-ingest`;
 - the `readcache-1` and `readcache-2` pods consume from
   `nautilus_ingest` (no ingester involvement);
-- reads for `nautilus-tenant` are routed to the readcache pod
+- reads for each Nautilus tenant are routed to the readcache pod
   currently owning the queried partition;
-- the same end-to-end path works _without_ the rebalancer running
-  long-running rebalances; static partition ownership is configured
-  via `-readcache.owned-partitions=`.
+- each tenant receives an independent full uint32 hash-space assignment
+  that the rebalancer spreads across physical Kafka partitions.
 
 ## Topology
 
@@ -21,8 +20,8 @@ in the editor; the canonical contract this stack exercises is:
 | --------------------- | --------------------------------------------- |
 | `distributor-1`       | accepts writes, routes per tenant             |
 | `ingester-1`          | vanilla ingester for the production tenant    |
-| `readcache-1`         | owns partitions `0..3`                        |
-| `readcache-2`         | owns partitions `4..7`                        |
+| `readcache-1`         | consumes partitions assigned by the rebalancer |
+| `readcache-2`         | consumes partitions assigned by the rebalancer |
 | `nautilus-rebalancer` | rebalances readcache ownership, persists logs |
 | `block-builder-*`     | converts Kafka segments to TSDB blocks        |
 | `query-frontend`      | PromQL entrypoint                             |
@@ -35,9 +34,9 @@ in the editor; the canonical contract this stack exercises is:
 | `tempo`               | OTel traces                                   |
 | `redpanda_console`    | Kafka UI on http://localhost:8090             |
 
-The rebalancer mounts a named volume at `/data/nautilus-rebalancer`
-so its assignment logs survive container restarts; without that the
-stack would re-bootstrap every routing decision on each Mimir update.
+Stateful services use named volumes, so ordinary container restarts retain
+their state while `compose-down.sh` (`docker compose down -v`) provides a
+genuinely clean bootstrap environment.
 
 ## Iteration loop (for the agent)
 
@@ -60,17 +59,24 @@ docker volume inspect mimir-nautilus_nautilus-rebalancer-data
 ```
 PASS: distributor is ready (http://localhost:8000)
 PASS: nautilus-tenant query returned the expected sample
+PASS: nautilus-tenant-b query returned the expected sample
+PASS: both nautilus tenants have valid multi-partition assignments
+PASS: post-rebalance writes remained tenant-isolated
 PASS: default-tenant query returned the expected sample
 PASS: all verify steps succeeded
 ```
 
-The smoke test pushes a single sample to each tenant and reads it
-back through the query-frontend, asserting:
+The smoke test pushes tenant-distinct samples through two Nautilus tenants,
+drives both tenants with multi-series load, and reads the rebalancer's durable
+assignment log to assert:
 
-- `nautilus-tenant` (per `config/runtime.yaml`,
+- `nautilus-tenant` and `nautilus-tenant-b` (per `config/runtime.yaml`,
   `nautilus_ingest_routing=nautilus-only` +
   `readcache_read_routing=nautilus-only`) flows entirely through
-  readcache; the ingester never sees the data.
+  readcache; the ingester never sees the data;
+- each tenant independently tiles `[0, MaxUint32]` and uses at least two
+  physical Kafka partitions after rebalancing;
+- writes issued after that rebalance remain queryable and tenant-isolated.
 - `default-tenant` (both routing knobs `disabled`) flows through the
   production ingester path.
 
@@ -86,13 +92,9 @@ config on reload.
 
 - Readcache takes a per-partition TSDB mutex around Kafka-driven appends,
   `ApplyConfig`, and head compaction so parallel ingest (`ingest_storage.kafka.ingestion-concurrency-max` > 0) cannot race the Prometheus head the way the ingester avoids with `acquireAppendLock`.
-- The static `-readcache.owned-partitions` flag means the
-  rebalancer's actual slicer round is exercised only after Phase 2D
-  wires the readcache ring lifecycler. Until then, the rebalancer's
-  logs persist what it _would_ assign, but ownership is fixed.
-- `verify.sh` uses Python's `prometheus_client` + `python-snappy` to
-  build the remote-write payload. If your environment lacks them,
-  `pip install prometheus_client python-snappy` first.
+- Verification waits up to three minutes for bootstrap discovery and a
+  subsequent load-bearing slicer round. Override this with
+  `REBALANCE_RETRY_BUDGET` on slower machines.
 - Tempo trace assertions are intentionally omitted; the dev stack is
   hermetic enough without depending on Tempo's reliability for the
   smoke test.

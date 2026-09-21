@@ -1935,7 +1935,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		MemberlistKV:                     {API, Vault},
-		NautilusRebalancer:               {Distributor, ReadcacheInstanceRing},
+		NautilusRebalancer:               {API, ReadcacheInstanceRing},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
