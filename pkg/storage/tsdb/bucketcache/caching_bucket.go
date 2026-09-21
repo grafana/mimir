@@ -258,7 +258,14 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.SetAsync(key, data, remainingTTL)
+			if isCacheLookupEnabled(ctx) {
+				cfg.cache.SetAsync(key, data, remainingTTL)
+			} else if setErr := cfg.cache.Set(ctx, key, data, remainingTTL); setErr != nil {
+				// The caller explicitly disabled the cache lookup to get a fresh listing (e.g. because
+				// something just changed), so make sure the fresh result is visible to any other Iter()
+				// call reading from the cache before we return, instead of racing with an async write.
+				level.Warn(cb.logger).Log("msg", "failed to synchronously store Iter result in the cache", "key", key, "err", setErr)
+			}
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)

@@ -65,6 +65,7 @@
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
+* [BUGFIX] Ruler: Store a rule group listing in the cache synchronously, instead of asynchronously, when the listing was fetched with the cache lookup disabled (e.g. right after a rule group is created or updated through the config API). Previously, a periodic sync reading from the cache could race with the asynchronous write and observe a stale listing that didn't include the just-applied change, reverting the rule group in the ruler's in-memory manager until the next sync picked up the change. #16664
 
 ### Mixin
 
