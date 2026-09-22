@@ -124,12 +124,15 @@ func TestBootstrapUnknownTenant_PreservesAssignmentsAndHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, seeded)
 	require.NoError(t, got.Validate())
-	require.Len(t, got.Entries, 1+initialSlicesPerPartition)
+	require.Len(t, got.Entries, 1+bootstrapHashRanges)
 	assert.Equal(t, existing.Entries[0], got.Entries[0])
+	partitionCounts := map[int32]int{}
 	for _, entry := range got.Entries[1:] {
 		assert.Equal(t, "tenant-new", entry.TenantID)
-		assert.Equal(t, int32(0), entry.PartitionID)
+		partitionCounts[entry.PartitionID]++
 	}
+	assert.Len(t, partitionCounts, 3)
+	assert.Equal(t, bootstrapHashRanges, partitionCounts[0]+partitionCounts[1]+partitionCounts[2])
 
 	var existingFrom, newFrom []time.Time
 	for _, entry := range h.r.store.snapshot() {
@@ -141,7 +144,7 @@ func TestBootstrapUnknownTenant_PreservesAssignmentsAndHistory(t *testing.T) {
 		}
 	}
 	require.Equal(t, []time.Time{now}, existingFrom, "bootstrap must not backdate existing tenants")
-	require.Len(t, newFrom, initialSlicesPerPartition)
+	require.Len(t, newFrom, bootstrapHashRanges)
 	for _, from := range newFrom {
 		assert.True(t, firstSeen.Equal(from))
 	}
@@ -149,7 +152,7 @@ func TestBootstrapUnknownTenant_PreservesAssignmentsAndHistory(t *testing.T) {
 	got, seeded, err = h.r.bootstrapUnknownTenants(now, got, []unknownTenant{{tenantID: "tenant-new", firstSeen: firstSeen}}, []int32{0, 1, 2})
 	require.NoError(t, err)
 	assert.Zero(t, seeded)
-	assert.Len(t, h.r.store.snapshot(), 1+initialSlicesPerPartition, "duplicate reports must not seed duplicate history")
+	assert.Len(t, h.r.store.snapshot(), 1+bootstrapHashRanges, "duplicate reports must not seed duplicate history")
 }
 
 func TestBootstrapUnknownTenant_RejectsInactivePartitionZero(t *testing.T) {
@@ -162,6 +165,27 @@ func TestBootstrapUnknownTenant_RejectsInactivePartitionZero(t *testing.T) {
 	require.EqualError(t, err, "cannot bootstrap 1 unknown tenant(s): Kafka partition 0 is not in the active partition set")
 	assert.Zero(t, seeded)
 	assert.Empty(t, h.r.store.snapshot())
+}
+
+func TestInitialBootstrapAssignment_Uses64RangesAcrossFourDeterministicPartitions(t *testing.T) {
+	activePartitions := []int32{9, 2, 7, 1, 8, 3, 6, 4, 5, 0}
+
+	got := initialBootstrapAssignment("tenant-new", activePartitions)
+	again := initialBootstrapAssignment("tenant-new", []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
+
+	require.NoError(t, got.Validate())
+	require.Len(t, got.Entries, bootstrapHashRanges)
+	assert.Equal(t, got.Entries, again.Entries, "partition selection must not depend on active-partition order")
+
+	counts := map[int32]int{}
+	for _, entry := range got.Entries {
+		counts[entry.PartitionID]++
+		assert.Contains(t, activePartitions, entry.PartitionID)
+	}
+	require.Len(t, counts, bootstrapPartitionCount)
+	for _, count := range counts {
+		assert.Equal(t, bootstrapHashRanges/bootstrapPartitionCount, count)
+	}
 }
 
 func TestRebalance_UnknownTenantSeedsAndPushesInSameRound(t *testing.T) {
@@ -185,19 +209,28 @@ func TestRebalance_UnknownTenantSeedsAndPushesInSameRound(t *testing.T) {
 	active := h.tier1Active()
 	require.NotNil(t, active)
 	require.NoError(t, active.Validate())
-	require.Len(t, active.Entries, initialSlicesPerPartition)
+	require.Len(t, active.Entries, bootstrapHashRanges)
+	activeCounts := map[int32]int{}
 	for _, entry := range active.Entries {
 		assert.Equal(t, "tenant-new", entry.TenantID)
-		assert.Equal(t, int32(0), entry.PartitionID)
+		activeCounts[entry.PartitionID]++
 	}
-	require.Len(t, rc.scopedOwned[0]["tenant-new"], initialSlicesPerPartition, "bootstrap must reach partition 0's concrete owner immediately")
-	require.Len(t, h.r.store.snapshot(), initialSlicesPerPartition)
-	for _, entry := range h.r.store.snapshot() {
-		assert.True(t, firstSeen.Equal(entry.From))
+	assert.Equal(t, map[int32]int{0: 32, 1: 32}, activeCounts)
+	require.Len(t, rc.scopedOwned[0]["tenant-new"], 32)
+	require.Len(t, rc.scopedOwned[1]["tenant-new"], 32)
+
+	history := h.r.store.snapshot()
+	require.Len(t, history, bootstrapHashRanges+32)
+	bootstrapEntries := 0
+	for _, entry := range history {
+		if entry.PartitionID == 0 && firstSeen.Equal(entry.From) {
+			bootstrapEntries++
+		}
 	}
+	assert.Equal(t, bootstrapHashRanges, bootstrapEntries, "partition 0 bootstrap history must be retained")
 
 	require.NoError(t, h.runRound())
-	assert.Len(t, h.r.store.snapshot(), initialSlicesPerPartition, "repeated unknown reports must not duplicate placement history")
+	assert.Len(t, h.r.store.snapshot(), bootstrapHashRanges+32, "repeated unknown reports must not duplicate placement history")
 }
 
 func TestPushAndReconstruct_PreserveTenantIDs(t *testing.T) {

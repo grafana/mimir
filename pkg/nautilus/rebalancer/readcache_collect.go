@@ -4,10 +4,12 @@ package rebalancer
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sort"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
@@ -76,6 +78,7 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 	}
 
 	placements := make([]tenantBootstrapPlacement, 0, len(candidates))
+	initialAssignments := make(map[string]*assignment.Assignment, len(candidates))
 	for _, candidate := range candidates {
 		firstSeen := candidate.firstSeen
 		if firstSeen.UnixMilli() <= 0 || firstSeen.After(now) {
@@ -83,13 +86,16 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 		}
 		placements = append(placements, tenantBootstrapPlacement{
 			firstSeen: firstSeen,
-			// A single full-space tile cannot move under the default 9%
-			// movement budget and does not exceed Phase 4's split
-			// threshold when it is the tenant's only loaded tile. Seed
-			// the existing fine granularity, entirely on partition 0,
-			// so the next measured round can actually rebalance it.
-			initial: assignment.FineEvenSplitForTenant(candidate.tenantID, []int32{0}, initialSlicesPerPartition),
+			// Preserve partition 0 as the historical bootstrap placement:
+			// distributors wrote there before the readcache discovered the
+			// tenant, so queries must retain that ownership interval.
+			initial: assignment.FineEvenSplitForTenant(candidate.tenantID, []int32{0}, bootstrapHashRanges),
 		})
+		// Do not wait for partition 0 to report load before spreading a
+		// newly discovered tenant. Publish a small, deterministic random
+		// placement in this same round; normal measured rebalancing can
+		// refine it later.
+		initialAssignments[candidate.tenantID] = initialBootstrapAssignment(candidate.tenantID, activePartitions)
 	}
 
 	seeded, err := r.store.bootstrapTenants(now, placements, r.cfg.LeaseDuration, r.cfg.EntryRetention)
@@ -108,10 +114,9 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 	if current != nil {
 		entries = append(entries, current.Entries...)
 	}
-	for _, placement := range placements {
-		tenantID := placement.initial.Entries[0].TenantID
+	for tenantID, initial := range initialAssignments {
 		if _, ok := seededSet[tenantID]; ok {
-			entries = append(entries, placement.initial.Entries...)
+			entries = append(entries, initial.Entries...)
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -125,6 +130,55 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 		return current, 0, fmt.Errorf("validate bootstrapped assignment: %w", err)
 	}
 	return combined, len(seeded), nil
+}
+
+const (
+	bootstrapHashRanges     = 64
+	bootstrapPartitionCount = 4
+)
+
+// initialBootstrapAssignment divides a tenant's hash space into 64 equal
+// ranges and places them evenly over four tenant-specific active partitions.
+// Rendezvous-style scoring makes the choice random-looking but deterministic,
+// so retries and rebalancer restarts produce the same initial placement.
+func initialBootstrapAssignment(tenantID string, activePartitions []int32) *assignment.Assignment {
+	type scoredPartition struct {
+		id    int32
+		score uint64
+	}
+
+	scored := make([]scoredPartition, 0, len(activePartitions))
+	for _, partitionID := range activePartitions {
+		scored = append(scored, scoredPartition{
+			id:    partitionID,
+			score: bootstrapPartitionScore(tenantID, partitionID),
+		})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].id < scored[j].id
+	})
+
+	n := min(bootstrapPartitionCount, len(scored))
+	if n == 0 {
+		return &assignment.Assignment{}
+	}
+	destinations := make([]int32, bootstrapHashRanges)
+	for i := range destinations {
+		destinations[i] = scored[i%n].id
+	}
+	return assignment.EvenSplitForTenant(tenantID, destinations)
+}
+
+func bootstrapPartitionScore(tenantID string, partitionID int32) uint64 {
+	h := xxhash.New()
+	_, _ = h.WriteString(tenantID)
+	var partitionBytes [4]byte
+	binary.LittleEndian.PutUint32(partitionBytes[:], uint32(partitionID))
+	_, _ = h.Write(partitionBytes[:])
+	return h.Sum64()
 }
 
 // partitionLByPID returns per-partition head-series load from
