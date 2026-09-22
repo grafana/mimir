@@ -222,7 +222,7 @@ type Distributor struct {
 	doBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
-	ingestStorageWriter *ingest.Writer
+	ingestStorageWriter ingestStorageWriter
 
 	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
 	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
@@ -313,8 +313,8 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	// This allows downstream projects to wrap the distributor push function
-	// and access the deserialized write requests before/after they are pushed.
+	// PushWrappers allows downstream projects to wrap the distributor push function.
+	// Decoded data is valid only before calling next; copy any values needed afterwards.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
@@ -344,6 +344,8 @@ type Config struct {
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
+// Decoded request data may be released during next(). Copy any data needed after
+// next() returns, including strings backed by request buffers, before calling it.
 type PushWrapper func(next PushFunc) PushFunc
 
 // WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
@@ -1218,6 +1220,11 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	}
 
 	return nil
+}
+
+type ingestStorageWriter interface {
+	services.Service
+	MultiWriteSyncWithRequestRelease(context.Context, string, string, []ingest.PartitionWriteRequest, func()) error
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -2354,7 +2361,7 @@ func (d *Distributor) handlePushError(pushErr error) error {
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
-// Decoded data may be released before this call returns; middleware must not read it after next().
+// Wrappers must finish using decoded data before next(); backend writes may release it.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
