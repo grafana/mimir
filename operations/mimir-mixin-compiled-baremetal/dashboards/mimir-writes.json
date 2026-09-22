@@ -1964,25 +1964,49 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null
@@ -2033,7 +2057,14 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(1.0, sum by(instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    count(count by(namespace, instance) (cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by(instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n        > 0\n    )\n  )\n  * 2\n)\n",
+                        "expr": "(histogram_quantile(1.0, sum by (le,instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (le,instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     },
+                     {
+                        "exemplar": true,
+                        "expr": "(histogram_quantile(1.0, sum by (instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, instance) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -2082,25 +2113,49 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                        "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                        "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99.9th percentile",
                         "legendLink": null
                      },
                      {
-                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                        "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "100th percentile",
                         "legendLink": null

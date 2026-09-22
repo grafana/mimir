@@ -34,6 +34,7 @@ import (
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zstd"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -380,7 +381,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				timeout:              targetTimeout,
 				bodySizeLimit:        int64(sp.config.BodySizeLimit),
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+				acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+				enableZstd:           sp.options.EnableZstdScrape,
+				logger:               sp.logger,
 				metrics:              sp.metrics,
 			},
 			cache:    cache,
@@ -512,7 +515,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 					timeout:              targetTimeout,
 					bodySizeLimit:        int64(sp.config.BodySizeLimit),
 					acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
-					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression),
+					acceptEncodingHeader: acceptEncodingHeader(sp.config.EnableCompression, sp.options.EnableZstdScrape),
+					enableZstd:           sp.options.EnableZstdScrape,
+					logger:               sp.logger,
 					metrics:              sp.metrics,
 				},
 				cache:    newScrapeCache(sp.metrics),
@@ -756,11 +761,32 @@ type targetScraper struct {
 	bodySizeLimit        int64
 	acceptHeader         string
 	acceptEncodingHeader string
+	enableZstd           bool
+	logger               *slog.Logger
 
 	metrics *scrapeMetrics
 }
 
-var errBodySizeLimit = errors.New("body size limit exceeded")
+var (
+	errBodySizeLimit  = errors.New("body size limit exceeded")
+	errZstdNotEnabled = errors.New(`received a zstd-compressed response, but the "zstd-scrape" feature flag is not enabled`)
+)
+
+const zstdMaxWindowSize = 8 << 20
+
+var zstdDecoderPool = sync.Pool{
+	New: func() any {
+		decoder, err := zstd.NewReader(
+			nil,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(zstdMaxWindowSize),
+		)
+		if err != nil {
+			panic(err)
+		}
+		return decoder
+	},
+}
 
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
@@ -783,8 +809,11 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	return strings.Join(vals, ",")
 }
 
-func acceptEncodingHeader(enableCompression bool) string {
+func acceptEncodingHeader(enableCompression, enableZstd bool) string {
 	if enableCompression {
+		if enableZstd {
+			return "zstd,gzip"
+		}
 		return "gzip"
 	}
 	return "identity"
@@ -825,34 +854,49 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 	if s.bodySizeLimit <= 0 {
 		s.bodySizeLimit = math.MaxInt64
 	}
-	if resp.Header.Get("Content-Encoding") != "gzip" {
-		n, err := io.Copy(w, io.LimitReader(resp.Body, s.bodySizeLimit))
-		if err != nil {
+	var reader io.Reader = resp.Body
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
+		if s.gzipr == nil {
+			s.buf = bufio.NewReader(resp.Body)
+			var err error
+			s.gzipr, err = gzip.NewReader(s.buf)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			s.buf.Reset(resp.Body)
+			if err := s.gzipr.Reset(s.buf); err != nil {
+				return "", err
+			}
+		}
+		defer s.gzipr.Close()
+		reader = s.gzipr
+	case "zstd":
+		if !s.enableZstd {
+			// Nothing here can decode the body, and passing the raw frame on
+			// would hand a zstd stream to the metrics parser.
+			return "", errZstdNotEnabled
+		}
+		if s.Target == nil {
+			s.logger.Debug("Using zstd-compressed scrape response")
+		} else {
+			s.logger.Debug("Using zstd-compressed scrape response", "target", s.URL().Redacted())
+		}
+		zstdr := zstdDecoderPool.Get().(*zstd.Decoder)
+		if err := zstdr.Reset(resp.Body); err != nil {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
 			return "", err
 		}
-		if n >= s.bodySizeLimit {
-			s.metrics.targetScrapeExceededBodySizeLimit.Inc()
-			return "", errBodySizeLimit
-		}
-		return resp.Header.Get("Content-Type"), nil
+		defer func() {
+			_ = zstdr.Reset(nil)
+			zstdDecoderPool.Put(zstdr)
+		}()
+		reader = zstdr
 	}
 
-	if s.gzipr == nil {
-		s.buf = bufio.NewReader(resp.Body)
-		var err error
-		s.gzipr, err = gzip.NewReader(s.buf)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		s.buf.Reset(resp.Body)
-		if err := s.gzipr.Reset(s.buf); err != nil {
-			return "", err
-		}
-	}
-
-	n, err := io.Copy(w, io.LimitReader(s.gzipr, s.bodySizeLimit))
-	s.gzipr.Close()
+	n, err := io.Copy(w, io.LimitReader(reader, s.bodySizeLimit))
 	if err != nil {
 		return "", err
 	}
@@ -876,7 +920,6 @@ type loop interface {
 type cacheEntry struct {
 	ref      storage.SeriesRef
 	lastIter uint64
-	hash     uint64
 	lset     labels.Labels
 
 	// st is an optional state for ST synthesis.
@@ -1072,8 +1115,8 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 	return e, true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels) (ce *cacheEntry) {
+	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
 	c.series[string(met)] = ce
 	return ce
 }
@@ -1283,7 +1326,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		stopped:     make(chan struct{}),
 		parentCtx:   opts.sp.ctx,
 		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target.String()),
+		l:           opts.sp.logger.With("target", opts.target),
 		cache:       opts.cache,
 
 		interval: opts.interval,
@@ -1847,21 +1890,15 @@ loop:
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
-		var (
-			ref  storage.SeriesRef
-			hash uint64
-		)
+		var ref storage.SeriesRef
 
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
-			hash = ce.hash
 		} else {
 			p.Labels(&lset)
-			hash = lset.Hash()
 
-			// Hash label set as it is seen local to the target. Then add target labels
-			// and relabeling and store the final label set.
+			// Add target labels and apply relabeling before storing the final label set.
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
@@ -1942,7 +1979,7 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
+			ce = sl.cache.addRef(met, ref, lset)
 			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
@@ -2352,7 +2389,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(s.name, ref, lset)
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {

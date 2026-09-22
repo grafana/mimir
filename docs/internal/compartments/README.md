@@ -68,8 +68,8 @@ flowchart LR
         D0["distributor-wc-0"]
         subgraph K0["kafka-wc-0"]
             direction TB
-            K0T0["&quot;ingest-rc-0&quot; topic"]
-            K0T1["&quot;ingest-rc-1&quot; topic"]
+            K0T0["#quot;ingest-rc-0#quot; topic"]
+            K0T1["#quot;ingest-rc-1#quot; topic"]
         end
         D0 --> K0T0
         D0 --> K0T1
@@ -80,8 +80,8 @@ flowchart LR
         D1["distributor-wc-1"]
         subgraph K1["kafka-wc-1"]
             direction TB
-            K1T0["&quot;ingest-rc-0&quot; topic"]
-            K1T1["&quot;ingest-rc-1&quot; topic"]
+            K1T0["#quot;ingest-rc-0#quot; topic"]
+            K1T1["#quot;ingest-rc-1#quot; topic"]
         end
         D1 --> K1T0
         D1 --> K1T1

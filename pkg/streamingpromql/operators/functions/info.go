@@ -127,7 +127,7 @@ func NewInfoFunction(
 }
 
 func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
+	innerMetadata, err := f.Inner.SeriesMetadata(ctx, filterInfoInnerMatchers(matchers, f.Info.Selector.Matchers))
 	if err != nil {
 		return nil, err
 	}
@@ -153,14 +153,38 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 		defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 	}
 
-	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
-		return nil, err
-	}
 	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
 	if err != nil {
 		return nil, err
 	}
+	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata, innerMetadata, ignoreSeries); err != nil {
+		return nil, err
+	}
 	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
+}
+
+// filterInfoInnerMatchers removes matchers for labels that info() can add.
+func filterInfoInnerMatchers(matchers, dataLabelMatchers types.Matchers) types.Matchers {
+	dataLabelNames := make(map[string]struct{}, len(dataLabelMatchers))
+	for _, matcher := range dataLabelMatchers {
+		if matcher.Name != model.MetricNameLabel {
+			dataLabelNames[matcher.Name] = struct{}{}
+		}
+	}
+
+	// An unconstrained data selector can add any label from an info series.
+	if len(dataLabelNames) == 0 {
+		return nil
+	}
+
+	innerMatchers := make(types.Matchers, 0, len(matchers))
+	for _, matcher := range matchers {
+		if _, addedByInfo := dataLabelNames[matcher.Name]; !addedByInfo {
+			innerMatchers = append(innerMatchers, matcher)
+		}
+	}
+
+	return innerMatchers
 }
 
 // generateInfoMatchers creates matchers based on job and instance labels from inner series
@@ -171,6 +195,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	identifyingLabelValues := make(map[string]map[string]struct{})
+	identifyingLabelPresent := make(map[string]int)
 	for _, labelName := range identifyingLabels {
 		identifyingLabelValues[labelName] = make(map[string]struct{})
 	}
@@ -179,6 +204,7 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		for _, labelName := range identifyingLabels {
 			if value := metadata.Labels.Get(labelName); value != "" {
 				identifyingLabelValues[labelName][value] = struct{}{}
+				identifyingLabelPresent[labelName]++
 			}
 		}
 	}
@@ -187,13 +213,19 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 
 	for _, labelName := range identifyingLabels {
 		values := identifyingLabelValues[labelName]
-		switch len(values) {
-		case 0:
+		if len(values) == 0 {
 			// No inner series have this identifying label; skip generating a matcher
 			// for it but continue processing other labels. Only skip querying info
 			// entirely if no identifying labels have any values at all.
 			continue
-		case 1:
+		}
+
+		// When a label is present on only some inner series, info series that lack it (matching an
+		// inner series on the other identifying label) must still be fetched, so the matcher also
+		// accepts the empty value. Extra cross-pairs are removed by the signature join below.
+		mixed := identifyingLabelPresent[labelName] < len(innerMetadata)
+
+		if len(values) == 1 && !mixed {
 			for value := range values {
 				matchers = append(matchers, types.Matcher{
 					Type:  labels.MatchEqual,
@@ -202,18 +234,23 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 				})
 				break
 			}
-		default:
-			valueSlice := make([]string, 0, len(values))
-			for value := range values {
-				valueSlice = append(valueSlice, regexp.QuoteMeta(value))
-			}
-			regexPattern := "(" + strings.Join(valueSlice, "|") + ")"
-			matchers = append(matchers, types.Matcher{
-				Type:  labels.MatchRegexp,
-				Name:  labelName,
-				Value: regexPattern,
-			})
+			continue
 		}
+
+		valueSlice := make([]string, 0, len(values)+1)
+		for value := range values {
+			valueSlice = append(valueSlice, regexp.QuoteMeta(value))
+		}
+		if mixed {
+			// Empty alternative: also select info series without this label.
+			valueSlice = append(valueSlice, "")
+		}
+		regexPattern := "(" + strings.Join(valueSlice, "|") + ")"
+		matchers = append(matchers, types.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  labelName,
+			Value: regexPattern,
+		})
 	}
 
 	if len(matchers) == 0 {
@@ -221,6 +258,11 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	return matchers, false
+}
+
+// hasAnyIdentifyingLabel reports whether lset carries at least one identifying label.
+func hasAnyIdentifyingLabel(lset labels.Labels) bool {
+	return slices.ContainsFunc(identifyingLabels, lset.Has)
 }
 
 // signature generates signature from labels without metric name
@@ -235,11 +277,26 @@ func (f *InfoFunction) signature(lset labels.Labels) []byte {
 	return f.sigLb.Labels().Bytes(f.sigBuf)
 }
 
-func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
+func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata, innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}) error {
 	// Initialize dedicated buffer and scratch builder for signature,
 	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
 	f.sigLb = labels.NewScratchBuilder(0)
+
+	// Signatures of inner series that can be enriched: not ignored, with at least one identifying
+	// label. An info series whose signature is absent here enriches nothing, so it is dropped below,
+	// matching Prometheus (which fetches info series per inner-series presence pattern). This avoids
+	// both enriching label-less series and spurious "duplicate series for info metric" errors from
+	// over-fetched cross-signature series.
+	enrichableSignatures := make(map[string]struct{}, len(innerMetadata))
+	for i, metadata := range innerMetadata {
+		if _, ignore := ignoreSeries[i]; ignore {
+			continue
+		}
+		if hasAnyIdentifyingLabel(metadata.Labels) {
+			enrichableSignatures[string(f.signature(metadata.Labels))] = struct{}{}
+		}
+	}
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))
 	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
@@ -254,6 +311,13 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
 			return err
+		}
+
+		// Drop info series that match no enrichable inner series. Samples were read above to keep
+		// the info series stream aligned with infoMetadata.
+		if _, ok := enrichableSignatures[string(sig)]; !ok {
+			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
+			continue
 		}
 
 		// Error out if we get histograms for an info metric.

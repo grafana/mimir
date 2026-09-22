@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
@@ -86,13 +87,18 @@ type BlocksGrouperFactory func(
 	reg prometheus.Registerer,
 ) Grouper
 
-// BlocksCompactorFactory builds and returns the compactor and planner for compacting a tenant's blocks.
+// BlocksCompactorFactory builds and returns the compactor provider and planner for compacting tenants' blocks.
 type BlocksCompactorFactory func(
 	ctx context.Context,
 	cfg Config,
+	cfgProvider ConfigProvider,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (Compactor, Planner, error)
+) (BlocksCompactorProvider, Planner, error)
+
+// BlocksCompactorProvider returns the Compactor to use for a given tenant's blocks. It must be safe
+// for concurrent use, because jobs belonging to different tenants can be compacted at the same time.
+type BlocksCompactorProvider func(userID string) Compactor
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
@@ -119,6 +125,8 @@ type Config struct {
 	SymbolsFlushersConcurrency          int `yaml:"symbols_flushers_concurrency" category:"advanced"`            // Number of symbols flushers used when doing split compaction.
 	MaxBlockUploadValidationConcurrency int `yaml:"max_block_upload_validation_concurrency" category:"advanced"` // Max number of uploaded blocks that can be validated concurrently.
 	UpdateBlocksConcurrency             int `yaml:"update_blocks_concurrency" category:"advanced"`               // Number of goroutines to use when updating blocks metadata during bucket index updates.
+
+	BlockSymbolTableSizeThreshold uint64 `yaml:"block_symbol_table_size_threshold" category:"experimental"` // Threshold (bytes) for just-compacted block symbol table, above which the block is preemptively marked as no-compact. This is to avoid hitting symbol-table-too-large on subsequent compaction cycles.
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -188,6 +196,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.SymbolsFlushersConcurrency, "compactor.symbols-flushers-concurrency", 1, "Number of symbols flushers used when doing split compaction.")
 	f.IntVar(&cfg.MaxBlockUploadValidationConcurrency, "compactor.max-block-upload-validation-concurrency", 1, "Max number of uploaded blocks that can be validated concurrently. 0 = no limit.")
 	f.IntVar(&cfg.UpdateBlocksConcurrency, "compactor.update-blocks-concurrency", defaultUpdateBlocksConcurrency, "Number of goroutines to use when updating blocks metadata during bucket index updates.")
+
+	f.Uint64Var(&cfg.BlockSymbolTableSizeThreshold, "compactor.block-symbol-table-size-threshold", 0, "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
@@ -286,6 +296,10 @@ type ConfigProvider interface {
 
 	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
 	CompactorMaxPerBlockUploadConcurrency(userID string) int
+
+	// FloatChunkEncoding returns the encoding to use for float chunks written for a given user.
+	// An encoding that no -blocks-storage.tsdb.float-chunk-encoding value selects is treated as the default.
+	FloatChunkEncoding(userID string) chunkenc.Encoding
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -308,9 +322,9 @@ type MultitenantCompactor struct {
 	// Blocks cleaner is responsible for hard deletion of blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
 
-	// Underlying compactor and planner for compacting TSDB blocks.
-	blocksCompactor Compactor
-	blocksPlanner   Planner
+	// Underlying compactor provider and planner for compacting TSDB blocks.
+	blocksCompactorProvider BlocksCompactorProvider
+	blocksPlanner           Planner
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
@@ -571,7 +585,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Create blocks compactor dependencies.
-	c.blocksCompactor, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.logger, c.registerer)
+	c.blocksCompactorProvider, c.blocksPlanner, err = c.blocksCompactorFactory(ctx, c.compactorCfg, c.cfgProvider, c.logger, c.registerer)
 	if err != nil {
 		return fmt.Errorf("failed to initialize compactor dependencies: %w", err)
 	}
@@ -944,11 +958,12 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
-		c.blocksCompactor,
+		c.blocksCompactorProvider(userID),
 		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
+		c.compactorCfg.BlockSymbolTableSizeThreshold,
 		ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,

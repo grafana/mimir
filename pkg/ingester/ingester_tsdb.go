@@ -25,7 +25,6 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -62,7 +61,10 @@ func (i *Ingester) applyTSDBSettings() {
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
 					ChunkEncoding: promcfg.ChunkEncodingConfig{
-						Floats: floatChunkEncodingConfig(i.limits.FloatChunkEncoding(userID)),
+						// ApplyConfig() reads the empty string as "keep the encoding resolved at
+						// startup", so a tenant clearing the limit needs an explicit value here to
+						// fall back to the default rather than keep its old encoding.
+						Floats: i.limits.FloatChunkEncodingValue(userID),
 					},
 				},
 			},
@@ -75,15 +77,6 @@ func (i *Ingester) applyTSDBSettings() {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
-}
-
-// floatChunkEncodingConfig normalizes a per-tenant encoding into a value accepted
-// by chunk_encoding.floats, defaulting to XOR for unknown values.
-func floatChunkEncodingConfig(enc chunkenc.Encoding) string {
-	if enc == chunkenc.EncXOR2 {
-		return promcfg.FloatChunkEncodingXOR2
-	}
-	return promcfg.FloatChunkEncodingXOR
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {

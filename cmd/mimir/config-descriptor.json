@@ -915,6 +915,16 @@
           "fieldDefaultValue": false,
           "fieldFlag": "server.create-new-traces",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "enable_open_metrics_text_created_samples",
+          "required": false,
+          "desc": "Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and \"_created\" suffix. Only applies if -server.register-instrumentation is set to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.enable-open-metrics-text-created-samples",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
@@ -2986,6 +2996,17 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_subquery_splitting",
+                  "required": false,
+                  "desc": "Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -5624,6 +5645,17 @@
         },
         {
           "kind": "field",
+          "name": "merge_duplicate_timeseries",
+          "required": false,
+          "desc": "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.merge-duplicate-timeseries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ha_cluster_label",
           "required": false,
           "desc": "Prometheus label to look for in samples to identify a Prometheus HA cluster.",
@@ -5962,10 +5994,10 @@
           "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
-          "desc": "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.",
+          "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",
           "fieldValue": null,
           "fieldDefaultValue": "xor",
-          "fieldFlag": "ingester.float-chunk-encoding",
+          "fieldFlag": "blocks-storage.tsdb.float-chunk-encoding",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -6634,7 +6666,7 @@
           "kind": "field",
           "name": "enabled_promql_extended_range_selectors",
           "required": false,
-          "desc": "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.",
+          "desc": "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-extended-range-selectors",
@@ -8396,11 +8428,12 @@
           "kind": "field",
           "name": "log_queries_longer_than",
           "required": false,
-          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
+          "desc": "(use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.log-queries-longer-than",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -9340,6 +9373,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_inflight_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-metrics-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -13567,6 +13611,17 @@
         },
         {
           "kind": "field",
+          "name": "block_symbol_table_size_threshold",
+          "required": false,
+          "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-symbol-table-size-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enabled_tenants",
           "required": false,
           "desc": "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.",
@@ -17725,6 +17780,28 @@
         },
         {
           "kind": "field",
+          "name": "ring_change_debounce",
+          "required": false,
+          "desc": "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.ring-change-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ring_change_max_debounce",
+          "required": false,
+          "desc": "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ruler.ring-change-max-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_independent_rule_evaluation_concurrency",
           "required": false,
           "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
@@ -21253,7 +21330,7 @@
           "kind": "field",
           "name": "file",
           "required": false,
-          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
+          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-keep-last-value-on-failure\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "runtime-config.file",
@@ -21301,6 +21378,17 @@
           "fieldFlag": "runtime-config.http-client-disable-keep-alives",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "loader",
+          "required": false,
+          "desc": "Method used to decode the runtime configuration files. Supported values are: \"map\" (decode directly using mapstructure) and \"yaml\" (decode by round-tripping through YAML).",
+          "fieldValue": null,
+          "fieldDefaultValue": "yaml",
+          "fieldFlag": "runtime-config.loader",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

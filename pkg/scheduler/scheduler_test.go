@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -81,6 +82,10 @@ func TestMain(m *testing.M) {
 }
 
 func setupScheduler(t *testing.T, reg prometheus.Registerer, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
+	return setupSchedulerWithLogger(t, reg, log.NewNopLogger(), opts...)
+}
+
+func setupSchedulerWithLogger(t *testing.T, reg prometheus.Registerer, logger log.Logger, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
@@ -88,7 +93,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer, opts ...func(*Confi
 		opt(&cfg)
 	}
 
-	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
+	s, err := NewScheduler(cfg, &limits{queriers: 2}, logger, reg)
 	require.NoError(t, err)
 
 	server := grpc.NewServer()
@@ -245,6 +250,133 @@ func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 
 	verifyNoPendingRequestsLeft(t, scheduler)
 	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerRootQueryIDPropagatedToQuerier(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	testCases := map[string]struct {
+		rootQueryID         string
+		expectedRootQueryID string
+		expectedLogFields   []any
+	}{
+		"frontend reports a root query ID": {
+			rootQueryID:         rootQueryID,
+			expectedRootQueryID: rootQueryID,
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1), "root_query_id", rootQueryID},
+		},
+		"frontend reports no root query ID": {
+			rootQueryID:         "",
+			expectedRootQueryID: "",
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1)},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+			frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+			frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     1,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+			})
+
+			querierLoop, err := querierClient.QuerierLoop(t.Context())
+			require.NoError(t, err)
+			require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+			msg, err := querierLoop.Recv()
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), msg.QueryID)
+			require.Equal(t, testCase.expectedRootQueryID, msg.RootQueryID)
+
+			// An empty root query ID means unknown, so it must be left out of the log fields
+			// rather than reported as a real query.
+			schedulerReq := &SchedulerRequest{UserID: "test", QueryID: 1, RootQueryID: testCase.rootQueryID}
+			require.Equal(t, testCase.expectedLogFields, schedulerReq.LogFields())
+
+			require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
+
+			verifyNoPendingRequestsLeft(t, scheduler)
+			verifyQueryComponentUtilizationLeft(t, scheduler)
+		})
+	}
+}
+
+func TestSchedulerLogsRejectedSubRequestWithRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	testCases := map[string]struct {
+		rootQueryID string
+		// expectRootQueryIDLogged is false when the frontend reported no root query ID, in which
+		// case the field must be absent rather than reported as an empty value.
+		expectRootQueryIDLogged bool
+	}{
+		"frontend reports a root query ID":  {rootQueryID: rootQueryID, expectRootQueryIDLogged: true},
+		"frontend reports no root query ID": {rootQueryID: "", expectRootQueryIDLogged: false},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			scheduler, frontendClient, _ := setupSchedulerWithLogger(t, nil, log.NewLogfmtLogger(logs))
+
+			t.Cleanup(func() {
+				drainScheduler(t, scheduler)
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+			})
+
+			// Fill the tenant's queue up to the limit. These are admitted, so they must not log.
+			for i := 0; i < testMaxOutstandingPerTenant; i++ {
+				fl := initFrontendLoop(t, frontendClient, fmt.Sprintf("frontend-%d", i))
+				require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+					Type:        schedulerpb.ENQUEUE,
+					QueryID:     uint64(i),
+					RootQueryID: testCase.rootQueryID,
+					UserID:      "test",
+					Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
+				}))
+
+				msg, err := fl.Recv()
+				require.NoError(t, err)
+				require.Equal(t, schedulerpb.OK, msg.Status)
+			}
+
+			require.NotContains(t, logs.String(), "too many outstanding requests", "admitted requests must not log a rejection")
+
+			// One more for the same tenant is rejected, and that rejection must be logged.
+			fl := initFrontendLoop(t, frontendClient, "extra-frontend")
+			require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     9999,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+			}))
+
+			msg, err := fl.Recv()
+			require.NoError(t, err)
+			require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
+
+			require.Eventually(t, func() bool {
+				return strings.Contains(logs.String(), "rejected request because the tenant has too many outstanding requests")
+			}, time.Second, 10*time.Millisecond, "expected the rejection to be logged, got: %s", logs.String())
+
+			rejection := logs.String()
+			require.Contains(t, rejection, "query_id=9999")
+			require.Contains(t, rejection, "user=test")
+
+			if testCase.expectRootQueryIDLogged {
+				require.Contains(t, rejection, "root_query_id="+rootQueryID)
+			} else {
+				require.NotContains(t, rejection, "root_query_id")
+			}
+		})
+	}
 }
 
 func TestSchedulerEnqueueWithCancel(t *testing.T) {
@@ -593,11 +725,14 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 
+	const rejectedRootQueryID = "b81d4fae-7dec-41d1-b2fb-00a0c91e6bf6"
+
 	req := schedulerpb.FrontendToScheduler{
-		Type:    schedulerpb.ENQUEUE,
-		QueryID: 0,
-		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Type:        schedulerpb.ENQUEUE,
+		QueryID:     0,
+		RootQueryID: rejectedRootQueryID,
+		UserID:      "test",
+		Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
@@ -614,6 +749,22 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	spans := spanExporter.GetSpans()
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
+
+	// The "queued" span is never ended for a rejected request, so it is never exported. The
+	// "enqueue" span is, which is why the root query ID has to be on that one.
+	var enqueueSpanRootQueryIDs []string
+	for _, span := range spans {
+		if span.Name != "enqueue" {
+			continue
+		}
+		for _, attr := range span.Attributes {
+			if attr.Key == "root_query_id" {
+				enqueueSpanRootQueryIDs = append(enqueueSpanRootQueryIDs, attr.Value.AsString())
+			}
+		}
+	}
+	require.Equal(t, []string{rejectedRootQueryID}, enqueueSpanRootQueryIDs,
+		"the rejected request's enqueue span must carry the root query ID")
 }
 
 func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {

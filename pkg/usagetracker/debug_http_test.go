@@ -21,7 +21,7 @@ func TestTrackerStore_ShardStats(t *testing.T) {
 	limits := limiterMock{"user-a": 100, "user-b": 100}
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	store := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	store := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
 	_, err := store.trackSeries(context.Background(), "user-b", []uint64{1, 2, 3, 4, 5}, now)
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 		InstanceID: "usage-tracker-zone-a-0",
 		Partition:  7,
 		Shards: []ShardStats{
-			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
+			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Spilled: 1, Limit: 32, Length: 8, Rehashes: 2}},
 		},
 	}))
 	out := buf.String()
@@ -97,7 +97,7 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 		Partition:  7,
 		Tenant:     "user-a",
 		Shards: []ShardStats{
-			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
+			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Spilled: 1, Limit: 32, Length: 8, Rehashes: 2}},
 		},
 	}))
 	out = buf.String()

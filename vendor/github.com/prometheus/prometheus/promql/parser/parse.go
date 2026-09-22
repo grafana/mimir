@@ -42,10 +42,8 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
-	EnableExperimentalFunctions  bool
-	ExperimentalDurationExpr     bool
-	EnableExtendedRangeSelectors bool
-	EnableBinopFillModifiers     bool
+	EnableExperimentalFunctions bool
+	EnableBinopFillModifiers    bool
 }
 
 // Parser provides PromQL parsing methods. Create one with NewParser.
@@ -1076,10 +1074,6 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 }
 
 func (p *parser) setAnchored(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Anchored = true
@@ -1103,10 +1097,6 @@ func (p *parser) setAnchored(e Node) {
 }
 
 func (p *parser) setSmoothed(e Node) {
-	if !p.options.EnableExtendedRangeSelectors {
-		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
-		return
-	}
 	switch s := e.(type) {
 	case *VectorSelector:
 		s.Smoothed = true
@@ -1206,12 +1196,6 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 // overflow a time.Duration (int64 nanoseconds).
 func durationLiteralOutOfRange(val float64) bool {
 	return val > 1<<63/1e9 || val < -(1<<63)/1e9
-}
-
-func (p *parser) experimentalDurationExpr(e Expr) {
-	if !p.options.ExperimentalDurationExpr {
-		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
-	}
 }
 
 // wrapParenDurationExpr marks a duration expression as parenthesised so

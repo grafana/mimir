@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -122,7 +123,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
+		if opts.RangeVectorSplitting.EnableSubquerySplitting && !opts.EnableCommonSubexpressionElimination {
+			return nil, errors.New("cannot enable subquery splitting in range vector splitting without common subexpression elimination")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -314,6 +319,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
+		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)

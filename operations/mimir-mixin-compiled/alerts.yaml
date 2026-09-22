@@ -1295,7 +1295,7 @@ groups:
             )
           for: 5m
           labels:
-            severity: critical
+            severity: warning
         - alert: MimirCompactorBuildingSparseIndexFailed
           annotations:
             message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to build sparse index headers

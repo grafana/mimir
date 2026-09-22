@@ -137,7 +137,8 @@ func (h *Head) initTime(t int64) {
 				h.logger.Warn("initTime timeout waiting for minTime initialization")
 				return
 			default:
-				runtime.Gosched() // Yield to allow the initializing goroutine to complete
+				// Yield to allow the initializing goroutine to complete.
+				runtime.Gosched()
 			}
 		}
 		return

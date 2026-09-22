@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -162,8 +164,11 @@ func newTestSchedulerExecutor(t *testing.T, cfg Config, client compactorschedule
 
 func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Bucket, cfgProvider ConfigProvider) *MultitenantCompactor {
 	t.Helper()
-	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
+	c, tsdbCompactor, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, cfgProvider)
 	c.bucketClient = bkt
+	// These tests don't start the service, so the dependencies normally built by starting() have to
+	// be installed by hand.
+	c.blocksCompactorProvider = func(string) Compactor { return tsdbCompactor }
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 	return c
 }
@@ -911,9 +916,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
 			c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
 
-			compactor, planner, err := splitAndMergeCompactorFactory(context.Background(), cfg, log.NewNopLogger(), prometheus.NewRegistry())
+			compactor, planner, err := splitAndMergeCompactorFactory(t.Context(), cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
 			require.NoError(t, err)
-			c.blocksCompactor = compactor
+			c.blocksCompactorProvider = compactor
 			c.blocksPlanner = planner
 
 			blockIDBytes := make([][]byte, len(setup.blockIDsToCompact))
@@ -958,6 +963,54 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 		})
 	}
+}
+
+func TestSchedulerExecutor_ExecuteCompactionJob_AbandonsWhenBlockDeletedAfterMetadataCached(t *testing.T) {
+	tenant := "test-tenant"
+	splitShards := 2
+
+	ctx := t.Context()
+	cfg := makeTestCompactorConfig(t)
+	bkt := objstore.NewInMemBucket()
+	blockID := createTSDBBlock(t, bkt, tenant, 10, 20, 2, nil)
+
+	metaCache := cache.NewMockCache()
+	r, err := bkt.Get(ctx, path.Join(tenant, blockID.String(), block.MetaFilename))
+	require.NoError(t, err)
+	metaContent, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.NoError(t, metaCache.Set(ctx, tenantMetaCacheKey(tenant, blockID), metaContent, time.Hour))
+	require.NoError(t, block.Delete(ctx, log.NewNopLogger(), bucket.NewUserBucketClient(tenant, bkt, nil), blockID))
+
+	mockCfg := newMockConfigProvider()
+	mockCfg.splitAndMergeShards = map[string]int{tenant: splitShards}
+	schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+	schedulerExec.metadataCache = metaCache
+	c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
+
+	compactor, planner, err := splitAndMergeCompactorFactory(ctx, cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	c.blocksCompactorProvider = compactor
+	c.blocksPlanner = planner
+
+	spec := &compactorschedulerpb.JobSpec{
+		Tenant: tenant,
+		Job: &compactorschedulerpb.CompactionJob{
+			BlockIds: [][]byte{blockID.Bytes()},
+			Split:    true,
+		},
+		JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+	}
+
+	key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
+	status, err := schedulerExec.executeCompactionJob(ctx, c, t.TempDir(), key, spec)
+
+	require.Error(t, err)
+	ok, notFoundErr := isBlockFileNotFoundError(err)
+	require.True(t, ok, "expected a blockFileNotFoundError, got: %v", err)
+	require.Equal(t, blockID, notFoundErr.id)
+	require.Equal(t, compactorschedulerpb.UPDATE_TYPE_ABANDON, status)
 }
 
 func countBlocksInBucket(t *testing.T, bkt objstore.Bucket, userID string) int {
