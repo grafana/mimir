@@ -612,9 +612,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Remove validation directories possibly left behind by block upload
-	if err := os.RemoveAll(blockUploadValidationDir(c.compactorCfg.DataDir)); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to clean up the block upload validation directory", "err", err)
-	}
+	c.cleanupLeftoverValidationDirectories()
 
 	return nil
 }
@@ -1135,7 +1133,10 @@ func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (
 	return rs.Instances[0].Addr == instanceAddr, nil
 }
 
-const compactorMetaPrefix = "compactor-meta-"
+const (
+	compactorMetaPrefix = "compactor-meta-"
+	validationDirPrefix = "upload"
+)
 
 // metaSyncDirForUser returns directory to store cached meta files.
 // The fetcher stores cached metas in the "meta-syncer/" sub directory,
@@ -1146,7 +1147,31 @@ func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 }
 
 func blockUploadValidationDir(dataDir string) string {
-	return filepath.Join(dataDir, "upload")
+	return filepath.Join(dataDir, validationDirPrefix)
+}
+
+// cleanupLeftoverValidationDirectories removes temporary block validation directories left over in
+// the data directory by a previous run that crashed mid-validation. It matches on the prefix
+// because previous versions put them in sibling directories named upload<random>, rather than
+// under blockUploadValidationDir.
+func (c *MultitenantCompactor) cleanupLeftoverValidationDirectories() {
+	entries, err := os.ReadDir(c.compactorCfg.DataDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			level.Warn(c.logger).Log("msg", "failed to read data directory while cleaning up temporary block validation directories", "dir", c.compactorCfg.DataDir, "err", err)
+		}
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), validationDirPrefix) {
+			continue
+		}
+		dir := filepath.Join(c.compactorCfg.DataDir, entry.Name())
+		if err := os.RemoveAll(dir); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to remove temporary block directory", "path", dir, "err", err)
+		}
+	}
 }
 
 // baseCompactDir is the base directory that contains subdirectories for compaction jobs
