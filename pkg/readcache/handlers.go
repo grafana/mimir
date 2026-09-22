@@ -844,23 +844,21 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 				TenantId:     hrc.TenantID,
 			})
 		}
-		if p.partitionID == 0 {
-			p.tenantsMu.RLock()
-			liveTenantIDs := make([]string, 0, len(p.tenants))
-			for tenantID := range p.tenants {
-				if _, configured := configuredTenants[tenantID]; configured {
-					continue
-				}
-				liveTenantIDs = append(liveTenantIDs, tenantID)
+		p.tenantsMu.RLock()
+		liveTenantIDs := make([]string, 0, len(p.tenants))
+		for tenantID := range p.tenants {
+			if _, configured := configuredTenants[tenantID]; configured {
+				continue
 			}
-			p.tenantsMu.RUnlock()
-			for _, unknown := range p.ranges.unknownTenants(liveTenantIDs, p.partitionID, observedAt) {
-				resp.UnknownTenants = append(resp.UnknownTenants, client.UnknownTenant{
-					TenantId:        unknown.TenantID,
-					PartitionId:     unknown.PartitionID,
-					FirstSeenUnixMs: unknown.FirstSeenUnixMs,
-				})
-			}
+			liveTenantIDs = append(liveTenantIDs, tenantID)
+		}
+		p.tenantsMu.RUnlock()
+		for _, unknown := range p.ranges.unknownTenants(liveTenantIDs, p.partitionID, observedAt) {
+			resp.UnknownTenants = append(resp.UnknownTenants, client.UnknownTenant{
+				TenantId:        unknown.TenantID,
+				PartitionId:     unknown.PartitionID,
+				FirstSeenUnixMs: unknown.FirstSeenUnixMs,
+			})
 		}
 	}
 

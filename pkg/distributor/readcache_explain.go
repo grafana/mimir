@@ -129,7 +129,7 @@ func (d *Distributor) ExplainReadcacheQuery(_ context.Context, userID string, fr
 		plan.MetricName = metricNames[0]
 		plan.HashLo, plan.HashHi = mimirpb.MetricNameHashRange(userID, metricNames[0])
 	}
-	partitionIDs := partitionsForNautilusQuery(snapshot, userID, w0, w1, metricNames, metricScoped)
+	partitionIDs := partitionsForNautilusQuery(snapshot, userID, w0, w1, metricNames, metricScoped, liveReadcachePartitionIDs(rcLog, d.now()))
 	if len(partitionIDs) == 0 {
 		plan.Unavailable = "assignment log resolved no partitions for the query"
 		return plan

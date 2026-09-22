@@ -3,11 +3,14 @@
 package assignment
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"sort"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // HashRange represents a contiguous range [Lo, Hi] in the 32-bit hash space.
@@ -190,6 +193,77 @@ func FineEvenSplitForTenant(tenantID string, partitionIDs []int32, slicesPerPart
 	}
 
 	return &Assignment{Entries: entries}
+}
+
+const (
+	BootstrapHashRanges     = 64
+	BootstrapPartitionCount = 6
+)
+
+// BootstrapAssignmentForTenant returns the deterministic placement used before
+// a tenant has assignment-log history: 64 equal hash ranges spread evenly over
+// six tenant-specific active partitions.
+func BootstrapAssignmentForTenant(tenantID string, activePartitionIDs []int32) *Assignment {
+	return DeterministicAssignmentForTenant(tenantID, activePartitionIDs, BootstrapHashRanges, BootstrapPartitionCount)
+}
+
+// DeterministicAssignmentForTenant splits a tenant's hash space into
+// hashRangeCount equal ranges spread evenly over partitionCount
+// tenant-specific active partitions.
+func DeterministicAssignmentForTenant(tenantID string, activePartitionIDs []int32, hashRangeCount, partitionCount int) *Assignment {
+	if hashRangeCount < 1 {
+		return &Assignment{}
+	}
+	selected := DeterministicPartitionsForTenant(tenantID, activePartitionIDs, partitionCount)
+	if len(selected) == 0 {
+		return &Assignment{}
+	}
+	destinations := make([]int32, hashRangeCount)
+	for i := range destinations {
+		destinations[i] = selected[i%len(selected)]
+	}
+	return EvenSplitForTenant(tenantID, destinations)
+}
+
+// DeterministicPartitionsForTenant selects up to partitionCount distinct active
+// partitions using tenant-scoped rendezvous hashing. Selection is independent
+// of activePartitionIDs order and stable across process restarts.
+func DeterministicPartitionsForTenant(tenantID string, activePartitionIDs []int32, partitionCount int) []int32 {
+	if partitionCount < 1 {
+		return nil
+	}
+	type scoredPartition struct {
+		id    int32
+		score uint64
+	}
+
+	seen := make(map[int32]struct{}, len(activePartitionIDs))
+	scored := make([]scoredPartition, 0, len(activePartitionIDs))
+	for _, partitionID := range activePartitionIDs {
+		if _, exists := seen[partitionID]; exists {
+			continue
+		}
+		seen[partitionID] = struct{}{}
+		h := xxhash.New()
+		_, _ = h.WriteString(tenantID)
+		var partitionBytes [4]byte
+		binary.LittleEndian.PutUint32(partitionBytes[:], uint32(partitionID))
+		_, _ = h.Write(partitionBytes[:])
+		scored = append(scored, scoredPartition{id: partitionID, score: h.Sum64()})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].id < scored[j].id
+	})
+
+	n := min(partitionCount, len(scored))
+	selected := make([]int32, n)
+	for i := range selected {
+		selected[i] = scored[i].id
+	}
+	return selected
 }
 
 // Load reads a JSON-encoded assignment from r. This function signature

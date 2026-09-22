@@ -58,7 +58,7 @@ type partitionRanges struct {
 	byTenant map[string]*tenantRangeState
 
 	// unknownFirstSeen records the earliest wall clock at which a live
-	// partition-0 tenant was observed without configured current
+	// tenant was observed on this partition without configured current
 	// ranges. Entries are removed when the tenant becomes configured or
 	// no longer has a live TSDB.
 	unknownFirstSeen map[string]int64
@@ -514,10 +514,6 @@ type unknownTenant struct {
 }
 
 func (pr *partitionRanges) unknownTenants(liveTenantIDs []string, partitionID int32, observedAt time.Time) []unknownTenant {
-	if partitionID != 0 {
-		return nil
-	}
-
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 

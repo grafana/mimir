@@ -962,7 +962,11 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return err
 	}
 	if bootstrapped > 0 {
-		level.Info(r.logger).Log("msg", "bootstrapped unknown tenants", "tenants", bootstrapped, "partition", 0)
+		level.Info(r.logger).Log(
+			"msg", "bootstrapped unknown tenants",
+			"tenants", bootstrapped,
+			"bootstrap_partitions", min(assignment.BootstrapPartitionCount, len(activePartitions)),
+		)
 		// bootstrapUnknownTenants publishes placement history first.
 		r.pushRanges(ctx, current, now)
 	}

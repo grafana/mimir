@@ -2660,8 +2660,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	}
 
 	var (
-		ingestersSubring  ring.DoBatchRing
-		partitionSubrings []*ring.ActivePartitionBatchRing
+		ingestersSubring    ring.DoBatchRing
+		partitionSubrings   []*ring.ActivePartitionBatchRing
+		partitionSubringIDs [][]int32
 	)
 
 	// Shuffle-shard each read compartment's partition ring (a single ring at index 0 when compartments
@@ -2669,12 +2670,18 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	if d.cfg.IngestStorageConfig.Enabled {
 		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
 		partitionSubrings = make([]*ring.ActivePartitionBatchRing, d.ingesterPartitionRings.Count())
+		partitionSubringIDs = make([][]int32, d.ingesterPartitionRings.Count())
 		for c := range partitionSubrings {
-			subring, err := d.ingesterPartitionRings.PartitionRing(c).ShuffleShard(userID, shardSize)
+			partitionRing := d.ingesterPartitionRings.PartitionRing(c)
+			subring, err := partitionRing.ShuffleShard(userID, shardSize)
 			if err != nil {
 				return err
 			}
 			partitionSubrings[c] = ring.NewActivePartitionBatchRing(subring)
+			// Nautilus bootstrap routing uses the full active partition
+			// universe, matching the rebalancer. It must not inherit the
+			// production ingest tenant's shuffle shard.
+			partitionSubringIDs[c] = partitionRing.ActivePartitionIDs()
 		}
 	}
 
@@ -2687,7 +2694,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, partitionSubringIDs, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
@@ -2695,7 +2702,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, partitionSubringIDs [][]int32, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2771,7 +2778,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 		// When compartments are disabled, New() guarantees there is exactly one partition ring.
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], partitionSubringIDs[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}
 
 	// Dual-write to ingesters and partitions. Compartments are never enabled here: config validation
@@ -2798,7 +2805,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], partitionSubringIDs[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2857,7 +2864,7 @@ func writePartitionTopicsConcurrently(ctx context.Context, writes []partitionTop
 	return g.Wait()
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, activePartitionIDs []int32, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
 	// Each destination topic must be partitioned with the scheme its
@@ -2942,14 +2949,14 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		nautilusComputed = true
 		if routing.snapshotAvailable && !routing.tenantKnown {
 			// A tenant-aware snapshot with no history for this tenant is the
-			// bootstrap state. Keep all of the request together on P0,
-			// including metadata, until the rebalancer publishes the tenant's
-			// first explicit tiling.
-			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys())
+			// bootstrap state. Route by the shared deterministic six-partition
+			// bootstrap tiling until the rebalancer publishes the tenant's
+			// first explicit assignment.
+			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys(), activePartitionIDs)
 			return nautilusKeys, nil
 		}
 		if routing.snapshotAvailable {
-			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys())
+			nautilusKeys, nautilusErr = d.getKeysByTenantAssignment(ctx, tenantID, routing, nautilusRoutingKeys(), activePartitionIDs)
 			usedNautilus = nautilusErr == nil
 			return nautilusKeys, nautilusErr
 		}
@@ -3304,9 +3311,26 @@ func (d *Distributor) rebuildNautilusActiveTable(snapshot *nautilusAssignmentSna
 	return table
 }
 
-func (d *Distributor) getKeysByTenantAssignment(ctx context.Context, tenantID string, routing nautilusTenantRouting, keys []uint32) ([]ring.PartitionKeys, error) {
+func (d *Distributor) getKeysByTenantAssignment(ctx context.Context, tenantID string, routing nautilusTenantRouting, keys []uint32, activePartitionIDs []int32) ([]ring.PartitionKeys, error) {
 	if !routing.tenantKnown {
-		return keysForSinglePartition(0, len(keys)), nil
+		bootstrap := assignment.BootstrapAssignmentForTenant(tenantID, activePartitionIDs)
+		if len(bootstrap.Entries) == 0 {
+			return nil, newNautilusRoutingUnavailableError("unknown tenant cannot bootstrap without active partitions")
+		}
+		partitionIndexes := make(map[int32][]int, assignment.BootstrapPartitionCount)
+		for i, key := range keys {
+			if i%10e3 == 0 {
+				if err := context.Cause(ctx); err != nil {
+					return nil, err
+				}
+			}
+			partitionID, ok := bootstrap.LookupForTenant(tenantID, key)
+			if !ok {
+				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("bootstrap assignment for tenant %q does not cover key %d", tenantID, key))
+			}
+			partitionIndexes[partitionID] = append(partitionIndexes[partitionID], i)
+		}
+		return partitionKeysFromIndexes(partitionIndexes), nil
 	}
 	if routing.table == nil {
 		return nil, newNautilusRoutingUnavailableError("existing tenant has no active assignment tiling")
@@ -3316,9 +3340,9 @@ func (d *Distributor) getKeysByTenantAssignment(ctx context.Context, tenantID st
 
 // getKeysByAssignment groups keys by partition using one tenant's Nautilus
 // ActiveTable. A missing key in an existing tenant is always an invalid partial
-// tiling and returns a retryable error; only a wholly unknown tenant may use the
-// partition-0 bootstrap route, which the caller handles before invoking this
-// method.
+// tiling and returns a retryable error; only a wholly unknown tenant may use
+// the deterministic bootstrap route, which the caller handles before invoking
+// this method.
 func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID, lookupTenantID string, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
 	partitionIndexes := make(map[int32][]int)
 	for i, key := range keys {
@@ -3358,6 +3382,10 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID, lookupT
 		partitionIndexes[pid] = append(partitionIndexes[pid], i)
 	}
 
+	return partitionKeysFromIndexes(partitionIndexes), nil
+}
+
+func partitionKeysFromIndexes(partitionIndexes map[int32][]int) []ring.PartitionKeys {
 	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))
 	for pid, indexes := range partitionIndexes {
 		result = append(result, ring.PartitionKeys{
@@ -3365,15 +3393,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID, lookupT
 			Indexes:     indexes,
 		})
 	}
-	return result, nil
-}
-
-func keysForSinglePartition(partitionID int32, keyCount int) []ring.PartitionKeys {
-	indexes := make([]int, keyCount)
-	for i := range indexes {
-		indexes[i] = i
-	}
-	return []ring.PartitionKeys{{PartitionID: partitionID, Indexes: indexes}}
+	return result
 }
 
 func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {

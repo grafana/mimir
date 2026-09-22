@@ -4,12 +4,10 @@ package rebalancer
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"sort"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
@@ -66,15 +64,8 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 		return current, 0, nil
 	}
 
-	partitionZeroActive := false
-	for _, partitionID := range activePartitions {
-		if partitionID == 0 {
-			partitionZeroActive = true
-			break
-		}
-	}
-	if !partitionZeroActive {
-		return current, 0, fmt.Errorf("cannot bootstrap %d unknown tenant(s): Kafka partition 0 is not in the active partition set", len(candidates))
+	if len(activePartitions) == 0 {
+		return current, 0, fmt.Errorf("cannot bootstrap %d unknown tenant(s): no active Kafka partitions", len(candidates))
 	}
 
 	placements := make([]tenantBootstrapPlacement, 0, len(candidates))
@@ -86,10 +77,10 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 		}
 		placements = append(placements, tenantBootstrapPlacement{
 			firstSeen: firstSeen,
-			// Preserve partition 0 as the historical bootstrap placement:
-			// distributors wrote there before the readcache discovered the
+			// Preserve the deterministic six-partition bootstrap placement:
+			// distributors wrote there before a readcache discovered the
 			// tenant, so queries must retain that ownership interval.
-			initial: assignment.FineEvenSplitForTenant(candidate.tenantID, []int32{0}, bootstrapHashRanges),
+			initial: assignment.BootstrapAssignmentForTenant(candidate.tenantID, activePartitions),
 		})
 		// Do not wait for partition 0 to report load before spreading a
 		// newly discovered tenant. Publish a small, deterministic random
@@ -132,53 +123,19 @@ func (r *Rebalancer) bootstrapUnknownTenants(now time.Time, current *assignment.
 	return combined, len(seeded), nil
 }
 
-const (
-	bootstrapHashRanges     = 64
-	bootstrapPartitionCount = 4
-)
+const initialAssignmentPartitionCount = 4
 
 // initialBootstrapAssignment divides a tenant's hash space into 64 equal
 // ranges and places them evenly over four tenant-specific active partitions.
 // Rendezvous-style scoring makes the choice random-looking but deterministic,
 // so retries and rebalancer restarts produce the same initial placement.
 func initialBootstrapAssignment(tenantID string, activePartitions []int32) *assignment.Assignment {
-	type scoredPartition struct {
-		id    int32
-		score uint64
-	}
-
-	scored := make([]scoredPartition, 0, len(activePartitions))
-	for _, partitionID := range activePartitions {
-		scored = append(scored, scoredPartition{
-			id:    partitionID,
-			score: bootstrapPartitionScore(tenantID, partitionID),
-		})
-	}
-	sort.Slice(scored, func(i, j int) bool {
-		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
-		}
-		return scored[i].id < scored[j].id
-	})
-
-	n := min(bootstrapPartitionCount, len(scored))
-	if n == 0 {
-		return &assignment.Assignment{}
-	}
-	destinations := make([]int32, bootstrapHashRanges)
-	for i := range destinations {
-		destinations[i] = scored[i%n].id
-	}
-	return assignment.EvenSplitForTenant(tenantID, destinations)
-}
-
-func bootstrapPartitionScore(tenantID string, partitionID int32) uint64 {
-	h := xxhash.New()
-	_, _ = h.WriteString(tenantID)
-	var partitionBytes [4]byte
-	binary.LittleEndian.PutUint32(partitionBytes[:], uint32(partitionID))
-	_, _ = h.Write(partitionBytes[:])
-	return h.Sum64()
+	return assignment.DeterministicAssignmentForTenant(
+		tenantID,
+		activePartitions,
+		assignment.BootstrapHashRanges,
+		initialAssignmentPartitionCount,
+	)
 }
 
 // partitionLByPID returns per-partition head-series load from
@@ -563,7 +520,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 	unknownByTenant := make(map[string]time.Time)
 	for _, res := range results {
 		for _, unknown := range res.unknownTenants {
-			if unknown.PartitionId != 0 || unknown.TenantId == "" {
+			if unknown.TenantId == "" {
 				continue
 			}
 			var firstSeen time.Time

@@ -83,18 +83,18 @@ func TestRunSlicer_HotTenantSplitLeavesColocatedTenantUnchanged(t *testing.T) {
 	assert.Positive(t, countActions(actions).splits)
 }
 
-func TestCollectUnknownTenants_DeduplicatesAndAcceptsOnlyPartitionZero(t *testing.T) {
+func TestCollectUnknownTenants_DeduplicatesAcrossBootstrapPartitions(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	firstSeen := h.clock.Now().Add(-2 * time.Minute)
 	rc0 := h.addReadcache("readcache-0")
 	rc0.unknownTenants = []ingester_client.UnknownTenant{
 		{TenantId: "tenant-new", PartitionId: 0, FirstSeenUnixMs: firstSeen.Add(time.Minute).UnixMilli()},
-		{TenantId: "tenant-new", PartitionId: 0, FirstSeenUnixMs: firstSeen.UnixMilli()},
-		{TenantId: "ignored", PartitionId: 3, FirstSeenUnixMs: firstSeen.UnixMilli()},
+		{TenantId: "tenant-new", PartitionId: 3, FirstSeenUnixMs: firstSeen.UnixMilli()},
+		{TenantId: "", PartitionId: 3, FirstSeenUnixMs: firstSeen.UnixMilli()},
 	}
 	rc1 := h.addReadcache("readcache-1")
 	rc1.unknownTenants = []ingester_client.UnknownTenant{
-		{TenantId: "tenant-new", PartitionId: 0, FirstSeenUnixMs: firstSeen.Add(30 * time.Second).UnixMilli()},
+		{TenantId: "tenant-new", PartitionId: 7, FirstSeenUnixMs: firstSeen.Add(30 * time.Second).UnixMilli()},
 	}
 
 	_, _, _, _, _, unknowns, _, err := h.r.collectRatesFromReadcaches(h.ctx)
@@ -116,53 +116,76 @@ func TestBootstrapUnknownTenant_PreservesAssignmentsAndHistory(t *testing.T) {
 	require.True(t, h.r.store.apply(now, existing, h.cfg.LeaseDuration, h.r.hashLeaseLookahead(), h.cfg.EntryRetention))
 	firstSeen := now.Add(-3 * time.Minute)
 
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 	got, seeded, err := h.r.bootstrapUnknownTenants(now, existing, []unknownTenant{
 		{tenantID: "tenant-new", firstSeen: firstSeen},
 		{tenantID: "tenant-new", firstSeen: firstSeen.Add(time.Minute)},
-	}, []int32{0, 1, 2})
+	}, activePartitions)
 
 	require.NoError(t, err)
 	require.Equal(t, 1, seeded)
 	require.NoError(t, got.Validate())
-	require.Len(t, got.Entries, 1+bootstrapHashRanges)
+	require.Len(t, got.Entries, 1+assignment.BootstrapHashRanges)
 	assert.Equal(t, existing.Entries[0], got.Entries[0])
 	partitionCounts := map[int32]int{}
 	for _, entry := range got.Entries[1:] {
 		assert.Equal(t, "tenant-new", entry.TenantID)
 		partitionCounts[entry.PartitionID]++
 	}
-	assert.Len(t, partitionCounts, 3)
-	assert.Equal(t, bootstrapHashRanges, partitionCounts[0]+partitionCounts[1]+partitionCounts[2])
+	assert.Len(t, partitionCounts, initialAssignmentPartitionCount)
+	totalRanges := 0
+	for _, count := range partitionCounts {
+		totalRanges += count
+	}
+	assert.Equal(t, assignment.BootstrapHashRanges, totalRanges)
 
 	var existingFrom, newFrom []time.Time
+	historyPartitions := map[int32]struct{}{}
 	for _, entry := range h.r.store.snapshot() {
 		switch entry.TenantID {
 		case "tenant-existing":
 			existingFrom = append(existingFrom, entry.From)
 		case "tenant-new":
 			newFrom = append(newFrom, entry.From)
+			historyPartitions[entry.PartitionID] = struct{}{}
 		}
 	}
 	require.Equal(t, []time.Time{now}, existingFrom, "bootstrap must not backdate existing tenants")
-	require.Len(t, newFrom, bootstrapHashRanges)
+	require.Len(t, newFrom, assignment.BootstrapHashRanges)
+	require.Len(t, historyPartitions, assignment.BootstrapPartitionCount)
 	for _, from := range newFrom {
 		assert.True(t, firstSeen.Equal(from))
 	}
 
-	got, seeded, err = h.r.bootstrapUnknownTenants(now, got, []unknownTenant{{tenantID: "tenant-new", firstSeen: firstSeen}}, []int32{0, 1, 2})
+	got, seeded, err = h.r.bootstrapUnknownTenants(now, got, []unknownTenant{{tenantID: "tenant-new", firstSeen: firstSeen}}, activePartitions)
 	require.NoError(t, err)
 	assert.Zero(t, seeded)
-	assert.Len(t, h.r.store.snapshot(), 1+bootstrapHashRanges, "duplicate reports must not seed duplicate history")
+	assert.Len(t, h.r.store.snapshot(), 1+assignment.BootstrapHashRanges, "duplicate reports must not seed duplicate history")
 }
 
-func TestBootstrapUnknownTenant_RejectsInactivePartitionZero(t *testing.T) {
+func TestBootstrapUnknownTenant_DoesNotRequirePartitionZero(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
-	_, seeded, err := h.r.bootstrapUnknownTenants(h.clock.Now(), nil, []unknownTenant{{
+	got, seeded, err := h.r.bootstrapUnknownTenants(h.clock.Now(), nil, []unknownTenant{{
 		tenantID:  "tenant-new",
 		firstSeen: h.clock.Now(),
 	}}, []int32{1, 2})
 
-	require.EqualError(t, err, "cannot bootstrap 1 unknown tenant(s): Kafka partition 0 is not in the active partition set")
+	require.NoError(t, err)
+	assert.Equal(t, 1, seeded)
+	require.Len(t, got.Entries, assignment.BootstrapHashRanges)
+	for _, entry := range got.Entries {
+		assert.Contains(t, []int32{1, 2}, entry.PartitionID)
+	}
+}
+
+func TestBootstrapUnknownTenant_RejectsNoActivePartitions(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, seeded, err := h.r.bootstrapUnknownTenants(h.clock.Now(), nil, []unknownTenant{{
+		tenantID:  "tenant-new",
+		firstSeen: h.clock.Now(),
+	}}, nil)
+
+	require.EqualError(t, err, "cannot bootstrap 1 unknown tenant(s): no active Kafka partitions")
 	assert.Zero(t, seeded)
 	assert.Empty(t, h.r.store.snapshot())
 }
@@ -174,7 +197,7 @@ func TestInitialBootstrapAssignment_Uses64RangesAcrossFourDeterministicPartition
 	again := initialBootstrapAssignment("tenant-new", []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
 
 	require.NoError(t, got.Validate())
-	require.Len(t, got.Entries, bootstrapHashRanges)
+	require.Len(t, got.Entries, assignment.BootstrapHashRanges)
 	assert.Equal(t, got.Entries, again.Entries, "partition selection must not depend on active-partition order")
 
 	counts := map[int32]int{}
@@ -182,9 +205,9 @@ func TestInitialBootstrapAssignment_Uses64RangesAcrossFourDeterministicPartition
 		counts[entry.PartitionID]++
 		assert.Contains(t, activePartitions, entry.PartitionID)
 	}
-	require.Len(t, counts, bootstrapPartitionCount)
+	require.Len(t, counts, initialAssignmentPartitionCount)
 	for _, count := range counts {
-		assert.Equal(t, bootstrapHashRanges/bootstrapPartitionCount, count)
+		assert.Equal(t, assignment.BootstrapHashRanges/initialAssignmentPartitionCount, count)
 	}
 }
 
@@ -209,7 +232,7 @@ func TestRebalance_UnknownTenantSeedsAndPushesInSameRound(t *testing.T) {
 	active := h.tier1Active()
 	require.NotNil(t, active)
 	require.NoError(t, active.Validate())
-	require.Len(t, active.Entries, bootstrapHashRanges)
+	require.Len(t, active.Entries, assignment.BootstrapHashRanges)
 	activeCounts := map[int32]int{}
 	for _, entry := range active.Entries {
 		assert.Equal(t, "tenant-new", entry.TenantID)
@@ -220,17 +243,17 @@ func TestRebalance_UnknownTenantSeedsAndPushesInSameRound(t *testing.T) {
 	require.Len(t, rc.scopedOwned[1]["tenant-new"], 32)
 
 	history := h.r.store.snapshot()
-	require.Len(t, history, bootstrapHashRanges+32)
+	require.Len(t, history, assignment.BootstrapHashRanges)
 	bootstrapEntries := 0
 	for _, entry := range history {
-		if entry.PartitionID == 0 && firstSeen.Equal(entry.From) {
+		if firstSeen.Equal(entry.From) {
 			bootstrapEntries++
 		}
 	}
-	assert.Equal(t, bootstrapHashRanges, bootstrapEntries, "partition 0 bootstrap history must be retained")
+	assert.Equal(t, assignment.BootstrapHashRanges, bootstrapEntries, "bootstrap history must be retained")
 
 	require.NoError(t, h.runRound())
-	assert.Len(t, h.r.store.snapshot(), bootstrapHashRanges+32, "repeated unknown reports must not duplicate placement history")
+	assert.Len(t, h.r.store.snapshot(), assignment.BootstrapHashRanges, "repeated unknown reports must not duplicate placement history")
 }
 
 func TestPushAndReconstruct_PreserveTenantIDs(t *testing.T) {

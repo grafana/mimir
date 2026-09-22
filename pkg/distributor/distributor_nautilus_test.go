@@ -207,7 +207,7 @@ func TestTenantScopedWriteRouting(t *testing.T) {
 		"tenant-b": {3, 4},
 	} {
 		routing := d.nautilusRoutingForTenant(tenantID, now)
-		got, err := d.getKeysByTenantAssignment(t.Context(), tenantID, routing, []uint32{1, math.MaxUint32})
+		got, err := d.getKeysByTenantAssignment(t.Context(), tenantID, routing, []uint32{1, math.MaxUint32}, nil)
 		require.NoError(t, err)
 		var partitions []int32
 		for _, keys := range got {
@@ -217,7 +217,7 @@ func TestTenantScopedWriteRouting(t *testing.T) {
 	}
 }
 
-func TestTenantScopedUnknownWriteBootstrapsOnPartitionZero(t *testing.T) {
+func TestTenantScopedUnknownWriteBootstrapsAcrossSixTenantPartitions(t *testing.T) {
 	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
 	d := minimalDistributorForRouting(t, true)
 	d.now = func() time.Time { return now }
@@ -228,9 +228,25 @@ func TestTenantScopedUnknownWriteBootstrapsOnPartitionZero(t *testing.T) {
 	routing := d.nautilusRoutingForTenant("new-tenant", now)
 	require.True(t, routing.snapshotAvailable)
 	require.False(t, routing.tenantKnown)
-	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, []uint32{10, 20, 30})
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	keys := make([]uint32, assignment.BootstrapHashRanges)
+	rangeSize := (uint64(math.MaxUint32) + 1) / assignment.BootstrapHashRanges
+	for i := range keys {
+		keys[i] = uint32(uint64(i) * rangeSize)
+	}
+	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, keys, activePartitions)
 	require.NoError(t, err)
-	require.Equal(t, []ring.PartitionKeys{{PartitionID: 0, Indexes: []int{0, 1, 2}}}, got)
+	var gotPartitions []int32
+	totalIndexes := 0
+	for _, partitionKeys := range got {
+		gotPartitions = append(gotPartitions, partitionKeys.PartitionID)
+		totalIndexes += len(partitionKeys.Indexes)
+	}
+	assert.ElementsMatch(t,
+		assignment.DeterministicPartitionsForTenant("new-tenant", activePartitions, assignment.BootstrapPartitionCount),
+		gotPartitions,
+	)
+	assert.Equal(t, len(keys), totalIndexes)
 }
 
 func TestTenantScopedHandoffWriteAndBootstrapQuery(t *testing.T) {
@@ -245,14 +261,32 @@ func TestTenantScopedHandoffWriteAndBootstrapQuery(t *testing.T) {
 	})
 
 	routing := d.nautilusRoutingForTenant("tenant-a", now)
-	got, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{42})
+	got, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{42}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []ring.PartitionKeys{{PartitionID: 10, Indexes: []int{0}}}, got)
 
 	snapshot := d.nautilusSnapshotAt(now)
-	assert.Equal(t, []int32{0, 9, 10}, partitionsForNautilusQuery(snapshot, "tenant-a", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false))
-	assert.Equal(t, []int32{9, 10}, partitionsForNautilusQuery(snapshot, "tenant-a", handoff, now.Add(time.Minute), nil, false))
-	assert.Equal(t, []int32{0}, partitionsForNautilusQuery(snapshot, "tenant-b", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false))
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	withPartitions := func(base []int32, extras ...int32) []int32 {
+		set := make(map[int32]struct{}, len(base)+len(extras))
+		for _, partitionID := range append(base, extras...) {
+			set[partitionID] = struct{}{}
+		}
+		out := make([]int32, 0, len(set))
+		for partitionID := range set {
+			out = append(out, partitionID)
+		}
+		return out
+	}
+	assert.ElementsMatch(t,
+		withPartitions(assignment.DeterministicPartitionsForTenant("tenant-a", activePartitions, assignment.BootstrapPartitionCount), 9, 10),
+		partitionsForNautilusQuery(snapshot, "tenant-a", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false, activePartitions),
+	)
+	assert.Equal(t, []int32{9, 10}, partitionsForNautilusQuery(snapshot, "tenant-a", handoff, now.Add(time.Minute), nil, false, activePartitions))
+	assert.ElementsMatch(t,
+		assignment.DeterministicPartitionsForTenant("tenant-b", activePartitions, assignment.BootstrapPartitionCount),
+		partitionsForNautilusQuery(snapshot, "tenant-b", handoff.Add(-time.Hour), now.Add(time.Minute), nil, false, activePartitions),
+	)
 }
 
 func TestTenantScopedExpiredGenerationIsRejected(t *testing.T) {
@@ -301,7 +335,7 @@ func TestExistingTenantPartialTilingNeverBootstraps(t *testing.T) {
 
 	routing := d.nautilusRoutingForTenant("tenant-a", now)
 	require.True(t, routing.tenantKnown)
-	_, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{100})
+	_, err := d.getKeysByTenantAssignment(t.Context(), "tenant-a", routing, []uint32{100}, nil)
 	require.Error(t, err)
 }
 
@@ -374,10 +408,15 @@ func TestApplyNautilusAssignmentResponse_EmptySnapshotIsTenantScopedBootstrap(t 
 	routing := d.nautilusRoutingForTenant("new-tenant", now)
 	require.True(t, routing.snapshotAvailable)
 	require.False(t, routing.tenantKnown)
-	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, []uint32{10, 20, 30, 40})
+	activePartitions := []int32{0, 1, 2, 3, 4, 5, 6, 7}
+	keys := []uint32{10, 20, 30, 40}
+	got, err := d.getKeysByTenantAssignment(t.Context(), "new-tenant", routing, keys, activePartitions)
 	require.NoError(t, err)
-	assert.Equal(t, []ring.PartitionKeys{{PartitionID: 0, Indexes: []int{0, 1, 2, 3}}}, got,
-		"every write item, including metadata indexes, must stay together on partition 0")
+	bootstrap := assignment.BootstrapAssignmentForTenant("new-tenant", activePartitions)
+	expectedPartition, ok := bootstrap.LookupForTenant("new-tenant", keys[0])
+	require.True(t, ok)
+	assert.Equal(t, []ring.PartitionKeys{{PartitionID: expectedPartition, Indexes: []int{0, 1, 2, 3}}}, got,
+		"items in the same bootstrap hash range, including metadata indexes, must stay together")
 }
 
 func TestSendWriteRequestToPartitions_RequiredRejectsWhenTableUnavailable(t *testing.T) {
@@ -388,6 +427,7 @@ func TestSendWriteRequestToPartitions_RequiredRejectsWhenTableUnavailable(t *tes
 		context.Background(),
 		"tenant",
 		nil, // tenantRing — unused on this code path because we exit early
+		nil, // activePartitionIDs — unused on this code path because we exit early
 		nil, // req — unused
 		[]uint32{42},
 		0,

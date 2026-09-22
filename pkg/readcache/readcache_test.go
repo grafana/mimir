@@ -326,7 +326,7 @@ func TestReadcache_HashRangeStats_UnknownTenantBootstrap(t *testing.T) {
 	p0 := newPartitionState(0)
 	p0.tenants["tenant-unknown"] = nil
 	p1 := newPartitionState(1)
-	p1.tenants["tenant-nonzero-only"] = nil
+	p1.tenants["tenant-unknown"] = nil
 
 	r := &Readcache{
 		cfg:                         Config{InstanceID: "test"},
@@ -339,17 +339,24 @@ func TestReadcache_HashRangeStats_UnknownTenantBootstrap(t *testing.T) {
 
 	first, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
 	require.NoError(t, err)
-	require.Len(t, first.UnknownTenants, 1)
-	assert.Equal(t, "tenant-unknown", first.UnknownTenants[0].TenantId)
-	assert.Equal(t, int32(0), first.UnknownTenants[0].PartitionId)
-	require.Positive(t, first.UnknownTenants[0].FirstSeenUnixMs)
+	require.Len(t, first.UnknownTenants, 2)
+	firstSeenByPartition := map[int32]int64{}
+	for _, unknown := range first.UnknownTenants {
+		assert.Equal(t, "tenant-unknown", unknown.TenantId)
+		require.Positive(t, unknown.FirstSeenUnixMs)
+		firstSeenByPartition[unknown.PartitionId] = unknown.FirstSeenUnixMs
+	}
+	assert.Contains(t, firstSeenByPartition, int32(0))
+	assert.Contains(t, firstSeenByPartition, int32(1))
 
 	time.Sleep(2 * time.Millisecond)
 	second, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
 	require.NoError(t, err)
-	require.Len(t, second.UnknownTenants, 1)
-	assert.Equal(t, first.UnknownTenants[0].FirstSeenUnixMs, second.UnknownTenants[0].FirstSeenUnixMs,
-		"first_seen must remain stable while the tenant stays unknown")
+	require.Len(t, second.UnknownTenants, 2)
+	for _, unknown := range second.UnknownTenants {
+		assert.Equal(t, firstSeenByPartition[unknown.PartitionId], unknown.FirstSeenUnixMs,
+			"first_seen must remain stable while the tenant stays unknown")
+	}
 
 	_, err = r.setHashRanges(t.Context(), &ingester_client.SetHashRangesRequest{
 		Ranges: []ingester_client.HashRangeEntry{{
@@ -368,7 +375,7 @@ func TestReadcache_HashRangeStats_UnknownTenantBootstrap(t *testing.T) {
 	assert.Equal(t, "tenant-unknown", configured.Rates[0].TenantId)
 	assert.Equal(t, int32(1), configured.Rates[0].PartitionId)
 
-	// Unknown tracking is bounded to currently-live partition-0 TSDBs.
+	// Unknown tracking is bounded to currently-live TSDBs on each partition.
 	p0.tenants["tenant-gone"] = nil
 	withGone, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
 	require.NoError(t, err)

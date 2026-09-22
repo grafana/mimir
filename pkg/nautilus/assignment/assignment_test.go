@@ -191,3 +191,33 @@ func TestEvenSplit_ManyPartitions(t *testing.T) {
 		assert.True(t, ok, "key %d should be found", key)
 	}
 }
+
+func TestBootstrapAssignmentForTenant_UsesSixDeterministicPartitions(t *testing.T) {
+	active := []int32{9, 2, 7, 1, 8, 3, 6, 4, 5, 0}
+
+	got := BootstrapAssignmentForTenant("tenant-a", active)
+	again := BootstrapAssignmentForTenant("tenant-a", []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
+
+	require.NoError(t, got.Validate())
+	require.Len(t, got.Entries, BootstrapHashRanges)
+	assert.Equal(t, got.Entries, again.Entries)
+
+	counts := map[int32]int{}
+	for _, entry := range got.Entries {
+		counts[entry.PartitionID]++
+		assert.Contains(t, active, entry.PartitionID)
+	}
+	require.Len(t, counts, BootstrapPartitionCount)
+	for _, count := range counts {
+		assert.Contains(t, []int{10, 11}, count)
+	}
+
+	other := DeterministicPartitionsForTenant("tenant-b", active, BootstrapPartitionCount)
+	assert.NotEqual(t, DeterministicPartitionsForTenant("tenant-a", active, BootstrapPartitionCount), other,
+		"different tenants should generally select different bootstrap partitions")
+}
+
+func TestDeterministicPartitionsForTenant_DeduplicatesAndUsesAvailablePartitions(t *testing.T) {
+	got := DeterministicPartitionsForTenant("tenant-a", []int32{3, 1, 3, 2}, BootstrapPartitionCount)
+	assert.ElementsMatch(t, []int32{1, 2, 3}, got)
+}

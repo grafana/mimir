@@ -260,9 +260,9 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_TenantBootstrapIsolatio
 		return partitions
 	}
 
-	assert.Equal(t, []int32{0, 9, 10}, partitionsFor("tenant-a"))
+	assert.Equal(t, []int32{0, 9, 10, 11}, partitionsFor("tenant-a"))
 	assert.Equal(t, []int32{11}, partitionsFor("tenant-b"))
-	assert.Equal(t, []int32{0}, partitionsFor("tenant-with-no-history"))
+	assert.Equal(t, []int32{0, 9, 10, 11}, partitionsFor("tenant-with-no-history"))
 
 	plan := d.ExplainReadcacheQuery(t.Context(), "tenant-a", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
 	require.Empty(t, plan.Unavailable)
@@ -270,12 +270,11 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_TenantBootstrapIsolatio
 	for _, partition := range plan.Partitions {
 		explained = append(explained, partition.PartitionID)
 	}
-	assert.Equal(t, []int32{0, 9, 10}, explained)
+	assert.Equal(t, []int32{0, 9, 10, 11}, explained)
 
 	noHistoryPlan := d.ExplainReadcacheQuery(t.Context(), "tenant-with-no-history", from, to, []*labels.Matcher{mustEqualMatcher("job", "api")})
 	require.Empty(t, noHistoryPlan.Unavailable)
-	require.Len(t, noHistoryPlan.Partitions, 1)
-	assert.Equal(t, int32(0), noHistoryPlan.Partitions[0].PartitionID)
+	require.Len(t, noHistoryPlan.Partitions, 4)
 }
 
 func TestDistributor_GetReadcacheReplicationSetsForQuery_RejectsExpiredGeneration(t *testing.T) {

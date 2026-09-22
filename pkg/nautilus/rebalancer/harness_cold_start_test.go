@@ -72,7 +72,7 @@ func TestHarness_FirstRoundSeedsTier2WithoutInventingTenant(t *testing.T) {
 	assert.Empty(t, h.r.store.snapshot())
 	tier2 := h.tier2Active()
 	require.Len(t, tier2, 4, "tier-2 must have an owner for every partition")
-	assert.Contains(t, tier2, int32(0), "partition 0 must have an owner so unknown tenants can bootstrap")
+	assert.Contains(t, tier2, int32(0))
 }
 
 func TestHarness_TenantlessColdStartDoesNotPushRanges(t *testing.T) {
@@ -96,7 +96,7 @@ func TestHarness_TenantlessColdStartDoesNotPushRanges(t *testing.T) {
 	assert.Empty(t, pushed, "there are no tenant ranges to push before a tenant is observed")
 
 	require.Len(t, h.tier2Active(), 4,
-		"tier-2 should still be populated for partition-0 bootstrap")
+		"tier-2 should still be populated for deterministic bootstrap routing")
 }
 
 func TestHarness_TenantlessSecondRoundStillPushesNoRanges(t *testing.T) {
