@@ -1863,7 +1863,7 @@ func TestRuler_RunRingChangeDebounce(t *testing.T) {
 			ringChangeDebounce: 0,
 		},
 		"enabled coalesces ring changes that occur within the debounce window into a single sync": {
-			ringChangeDebounce: 200 * time.Millisecond,
+			ringChangeDebounce: time.Second,
 		},
 	}
 
@@ -1915,12 +1915,19 @@ func TestRuler_RunRingChangeDebounce(t *testing.T) {
 				// Debouncing enabled: the sync must not have happened yet.
 				require.Equal(t, float64(0), ringChangeSyncs(), "sync should be pending, not yet fired, while debouncing")
 
-				// A second change shortly after the first, still within the debounce window, should
-				// be coalesced into the same pending sync rather than triggering a second one.
+				// A second change halfway through the debounce window should be coalesced into the
+				// same pending sync rather than triggering a second one.
+				time.Sleep(tc.ringChangeDebounce/2 - 2*ringCheckPeriod)
 				addFakeRingMember("fake-2")
 				time.Sleep(2 * ringCheckPeriod)
 				synctest.Wait()
 				require.Equal(t, float64(0), ringChangeSyncs(), "sync should still be pending, the ring kept changing within the debounce window")
+
+				// Sleep past the deadline armed by the first change, but not past the deadline armed
+				// by the second. A sync here means the second change did not restart the window.
+				time.Sleep(tc.ringChangeDebounce * 3 / 4)
+				synctest.Wait()
+				require.Equal(t, float64(0), ringChangeSyncs(), "the second change should have restarted the debounce window")
 
 				// Let the debounce window fully elapse with no further ring changes.
 				time.Sleep(tc.ringChangeDebounce)
