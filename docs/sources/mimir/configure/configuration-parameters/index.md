@@ -3157,7 +3157,8 @@ tenant_federation:
 # rules in response to a ring change. This can reduce duplicate rule evaluation
 # when multiple ring changes happen in quick succession, such as during a
 # rollout. 0 disables debouncing and syncs immediately on every detected ring
-# change, which is the default and historical behaviour.
+# change, which is the default and historical behaviour. Must be less than or
+# equal to 30s.
 # CLI flag: -ruler.ring-change-debounce
 [ring_change_debounce: <duration> | default = 0s]
 

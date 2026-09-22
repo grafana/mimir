@@ -58,6 +58,7 @@ import (
 var (
 	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
+	errInvalidRingChangeDebounce                              = errors.New("invalid ring change debounce, the value must be less than or equal to 30s")
 )
 
 const (
@@ -81,6 +82,11 @@ const (
 
 	// rulerPeriodicSyncJitter is the jitter applied to the interval used by the periodic sync.
 	rulerPeriodicSyncJitter = 0.1
+
+	// maxRingChangeDebounce is the maximum value allowed for RingChangeDebounce, so that debouncing
+	// can't delay a ring-change-triggered sync (e.g. picking up rule groups orphaned by a crashed
+	// replica) by an unreasonable amount of time.
+	maxRingChangeDebounce = 30 * time.Second
 
 	// Limit errors
 	errRulesEvaluationDisabled                  = "rules evaluation is disabled for user"
@@ -195,6 +201,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
 
+	if cfg.RingChangeDebounce > maxRingChangeDebounce {
+		return errInvalidRingChangeDebounce
+	}
+
 	return nil
 }
 
@@ -242,7 +252,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
 
-	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour.")
+	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than or equal to 30s.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }

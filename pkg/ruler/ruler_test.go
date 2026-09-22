@@ -2988,4 +2988,21 @@ func TestConfig_Validate(t *testing.T) {
 		err := cfg.Validate(*limits)
 		require.ErrorIs(t, err, errInnvalidRuleEvaluationConcurrencyMinDurationPercentage)
 	})
+
+	t.Run("invalid ring change debounce", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RingChangeDebounce = 30*time.Second + time.Millisecond
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInvalidRingChangeDebounce)
+	})
+
+	t.Run("ring change debounce at the maximum allowed value", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RingChangeDebounce = 30 * time.Second
+		limits := validation.MockDefaultLimits()
+
+		require.NoError(t, cfg.Validate(*limits))
+	})
 }
