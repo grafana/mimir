@@ -58,7 +58,7 @@ import (
 var (
 	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
-	errInvalidRingChangeDebounce                              = errors.New("invalid ring change debounce, the value must be less than or equal to 30s")
+	errInvalidRingChangeMaxDebounce                           = errors.New("invalid ring change debounce, the value must be less than the ring change max debounce")
 )
 
 const (
@@ -82,11 +82,6 @@ const (
 
 	// rulerPeriodicSyncJitter is the jitter applied to the interval used by the periodic sync.
 	rulerPeriodicSyncJitter = 0.1
-
-	// maxRingChangeDebounce is the maximum value allowed for RingChangeDebounce, so that debouncing
-	// can't delay a ring-change-triggered sync (e.g. picking up rule groups orphaned by a crashed
-	// replica) by an unreasonable amount of time.
-	maxRingChangeDebounce = 30 * time.Second
 
 	// Limit errors
 	errRulesEvaluationDisabled                  = "rules evaluation is disabled for user"
@@ -163,6 +158,10 @@ type Config struct {
 	// Zero (the default) preserves the historical behaviour of syncing immediately on every detected change.
 	RingChangeDebounce time.Duration `yaml:"ring_change_debounce" category:"experimental"`
 
+	// The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing,
+	// so that continuous ring churn can't indefinitely delay picking up a ring change.
+	RingChangeMaxDebounce time.Duration `yaml:"ring_change_max_debounce" category:"experimental"`
+
 	// Allow to override timers for testing purposes.
 	RingCheckPeriod time.Duration `yaml:"-"`
 
@@ -201,8 +200,8 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
 
-	if cfg.RingChangeDebounce > maxRingChangeDebounce {
-		return errInvalidRingChangeDebounce
+	if cfg.RingChangeDebounce >= cfg.RingChangeMaxDebounce {
+		return errInvalidRingChangeMaxDebounce
 	}
 
 	return nil
@@ -252,7 +251,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
 
-	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than or equal to 30s.")
+	f.DurationVar(&cfg.RingChangeDebounce, "ruler.ring-change-debounce", 0, "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.")
+	f.DurationVar(&cfg.RingChangeMaxDebounce, "ruler.ring-change-max-debounce", 15*time.Second, "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -604,6 +604,9 @@ func (r *Ruler) run(ctx context.Context) error {
 	ringChangeDebounceTimer.Stop()
 	defer ringChangeDebounceTimer.Stop()
 	ringChangeSyncPending := false
+	// ringChangeFirstPendingAt is when the current run of ring changes started being debounced.
+	// It's used to cap how long continuous ring churn can keep postponing the sync, via RingChangeMaxDebounce.
+	var ringChangeFirstPendingAt time.Time
 
 	for {
 		var syncErr error
@@ -628,8 +631,20 @@ func (r *Ruler) run(ctx context.Context) error {
 				} else {
 					// Debouncing enabled: (re)arm the timer so the sync only happens once the
 					// ring has been quiet for RingChangeDebounce, instead of on every change.
-					ringChangeSyncPending = true
-					ringChangeDebounceTimer.Reset(r.cfg.RingChangeDebounce)
+					now := time.Now()
+					if !ringChangeSyncPending {
+						ringChangeSyncPending = true
+						ringChangeFirstPendingAt = now
+					}
+
+					// Cap the delay so continuous ring churn can't keep postponing the sync
+					// past RingChangeMaxDebounce, measured from the first change in this run.
+					delay := r.cfg.RingChangeDebounce
+					if maxDelay := ringChangeFirstPendingAt.Add(r.cfg.RingChangeMaxDebounce).Sub(now); maxDelay < delay {
+						delay = max(maxDelay, 0)
+					}
+
+					ringChangeDebounceTimer.Reset(delay)
 				}
 			}
 		case <-ringChangeDebounceTimer.C:

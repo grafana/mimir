@@ -1230,6 +1230,7 @@
   "ruler.outbound-sync-queue-poll-interval": 10000000000,
   "ruler.inbound-sync-queue-poll-interval": 10000000000,
   "ruler.ring-change-debounce": 0,
+  "ruler.ring-change-max-debounce": 15000000000,
   "ruler.max-independent-rule-evaluation-concurrency": 0,
   "ruler.independent-rule-evaluation-concurrency-min-duration-percentage": 50,
   "ruler.rule-evaluation-write-enabled": true,

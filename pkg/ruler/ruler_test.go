@@ -1878,6 +1878,7 @@ func TestRuler_RunRingChangeDebounce(t *testing.T) {
 				cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
 				cfg.RingCheckPeriod = ringCheckPeriod
 				cfg.RingChangeDebounce = tc.ringChangeDebounce
+				cfg.RingChangeMaxDebounce = time.Hour // Isolate debounce from max-debounce; see TestRuler_RunRingChangeMaxDebounce.
 
 				reg := prometheus.NewPedanticRegistry()
 				r := prepareRuler(t, cfg, storage, withStart(), withPrometheusRegisterer(reg))
@@ -1936,6 +1937,78 @@ func TestRuler_RunRingChangeDebounce(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestRuler_RunRingChangeMaxDebounce(t *testing.T) {
+	const (
+		ringCheckPeriod       = 20 * time.Millisecond
+		ringChangeDebounce    = 120 * time.Millisecond
+		ringChangeMaxDebounce = 300 * time.Millisecond
+		// churnInterval is well below ringChangeDebounce, so plain debouncing would keep resetting
+		// the timer forever if RingChangeMaxDebounce didn't cap the total delay.
+		churnInterval = 45 * time.Millisecond
+	)
+
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		storage := newMockRuleStore(map[string]rulespb.RuleGroupList{})
+
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.NumTokens = 128
+		cfg.PollInterval = time.Hour // Isolate ring-change syncing from periodic syncing.
+		cfg.RingCheckPeriod = ringCheckPeriod
+		cfg.RingChangeDebounce = ringChangeDebounce
+		cfg.RingChangeMaxDebounce = ringChangeMaxDebounce
+
+		reg := prometheus.NewPedanticRegistry()
+		r := prepareRuler(t, cfg, storage, withStart(), withPrometheusRegisterer(reg))
+
+		ringChangeSyncs := func() float64 {
+			return prom_testutil.ToFloat64(r.metrics.rulerSync.WithLabelValues(string(rulerSyncReasonRingChange)))
+		}
+
+		// Pre-condition: only the initial sync has happened so far.
+		synctest.Wait()
+		require.Equal(t, float64(0), ringChangeSyncs())
+
+		addFakeRingMember := func(id string) {
+			require.NoError(t, cfg.Ring.Common.KVStore.Mock.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+				d, _ := in.(*ring.Desc)
+				if d == nil {
+					d = ring.NewDesc()
+				}
+				d.AddIngester(id, id, "", []uint32{uint32(len(d.Ingesters) + 1)}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
+				return d, true, nil
+			}))
+		}
+
+		// Continuously churn the ring in the background, faster than the debounce period, so plain
+		// debouncing would never let the timer complete on its own — only the max debounce can.
+		// The goroutine is joined below before this function returns, so it's not leaked and doesn't
+		// outlive the synctest bubble.
+		stopChurn := make(chan struct{})
+		churnDone := make(chan struct{})
+		go func() {
+			defer close(churnDone)
+			ticker := time.NewTicker(churnInterval)
+			defer ticker.Stop()
+			for i := 0; ; i++ {
+				select {
+				case <-stopChurn:
+					return
+				case <-ticker.C:
+					addFakeRingMember(fmt.Sprintf("fake-%d", i))
+				}
+			}
+		}()
+
+		require.Eventually(t, func() bool {
+			return ringChangeSyncs() == 1
+		}, 2*ringChangeMaxDebounce, ringCheckPeriod, "the max debounce should have forced a sync despite continuous ring churn")
+
+		close(stopChurn)
+		<-churnDone
+	})
 }
 
 // User shuffle shard token.
@@ -2989,18 +3062,30 @@ func TestConfig_Validate(t *testing.T) {
 		require.ErrorIs(t, err, errInnvalidRuleEvaluationConcurrencyMinDurationPercentage)
 	})
 
-	t.Run("invalid ring change debounce", func(t *testing.T) {
+	t.Run("ring change debounce equal to ring change max debounce", func(t *testing.T) {
 		cfg := defaultRulerConfig(t)
-		cfg.RingChangeDebounce = 30*time.Second + time.Millisecond
+		cfg.RingChangeDebounce = 10 * time.Second
+		cfg.RingChangeMaxDebounce = 10 * time.Second
 		limits := validation.MockDefaultLimits()
 
 		err := cfg.Validate(*limits)
-		require.ErrorIs(t, err, errInvalidRingChangeDebounce)
+		require.ErrorIs(t, err, errInvalidRingChangeMaxDebounce)
 	})
 
-	t.Run("ring change debounce at the maximum allowed value", func(t *testing.T) {
+	t.Run("ring change debounce greater than ring change max debounce", func(t *testing.T) {
 		cfg := defaultRulerConfig(t)
-		cfg.RingChangeDebounce = 30 * time.Second
+		cfg.RingChangeDebounce = 10 * time.Second
+		cfg.RingChangeMaxDebounce = 5 * time.Second
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInvalidRingChangeMaxDebounce)
+	})
+
+	t.Run("ring change debounce less than ring change max debounce", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RingChangeDebounce = 5 * time.Second
+		cfg.RingChangeMaxDebounce = 10 * time.Second
 		limits := validation.MockDefaultLimits()
 
 		require.NoError(t, cfg.Validate(*limits))

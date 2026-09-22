@@ -17781,10 +17781,21 @@
           "kind": "field",
           "name": "ring_change_debounce",
           "required": false,
-          "desc": "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than or equal to 30s.",
+          "desc": "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ruler.ring-change-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ring_change_max_debounce",
+          "required": false,
+          "desc": "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ruler.ring-change-max-debounce",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
