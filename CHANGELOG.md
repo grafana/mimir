@@ -66,6 +66,7 @@
 * [BUGFIX] MQE: Fix binary operations returning empty results when selector narrowing uses labels removed by an outer aggregation as a result of parsing specific PromQL syntax nodes. #16521
 * [BUGFIX] Query-scheduler: Fix a data race that could crash the query-scheduler when gRPC client cluster validation is enabled. The scheduler builds gRPC dial options per request from concurrent querier loops, and the shared client configuration wrote the cluster validation interceptor back onto itself, so those requests raced on the same field. #16531
 * [BUGFIX] Query-frontend: Abort the connection when the response body can't be fully written, so clients detect truncated responses instead of treating them as complete. #16565
+* [BUGFIX] Blocks Storage: Fix MetaFetcher caching returning shared references across goroutines and singleflight key collision when excludeMarkedForDeletion varies; ensure `Meta.Clone` deep-copies compaction `parents` and `hints` so concurrent callers cannot mutate cached metadata. #14829
 
 ### Mixin
 
