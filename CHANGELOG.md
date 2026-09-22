@@ -51,6 +51,7 @@
 * [BUGFIX] Ingest storage: Avoid retaining redundant partition shuffle-shard cache entries for equivalent out-of-range shard sizes. #16615
 * [BUGFIX] Memcached: Don't close connections to caches on well-formed server errors. #16303
 * [BUGFIX] MQE: Propagate an `@` modifier or offset from the `info` function's first argument to its info series matchers, matching Prometheus. #16220 #16497
+* [BUGFIX] MQE: Fix the `info` function not enriching series when the input series have a mix of identifying labels present (for example some with only `job`, some with only `instance`, and some with both), matching Prometheus. #16649
 * [BUGFIX] MQE: Fix an issue where series were joined in binary operations using the wrong labels when `group_left()`/`group_right()` were used in combination with `ignoring()`. This bug manifested as valid queries returning an error `grouping labels must ensure unique matches`. #16387
 * [BUGFIX] MQE: Fix queries and rules containing a subquery whose range is shorter than its step (e.g. `foo[10m:3d]`) failing with `last bucket must not be before first bucket`. #16442
 * [BUGFIX] MQE: Fix `avg_over_time()` over native histograms losing precision when experimental range vector splitting is enabled. The Kahan compensation of each split range was discarded instead of being carried over to the other split ranges. #16472
