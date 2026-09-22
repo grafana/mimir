@@ -14,6 +14,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
@@ -41,6 +42,8 @@ type JobTracker struct {
 	maxLeases                      int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
 	metrics                        *trackerMetrics
+
+	backfillPhase atomic.String
 
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
@@ -74,6 +77,15 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
 	return jt
+}
+
+// BackfillPhase returns the phase of a tenan's backfill. This is only meaningful when the scheduler is in backfill mode.
+func (jt *JobTracker) BackfillPhase() backfillPhase {
+	return backfillPhase(jt.backfillPhase.Load())
+}
+
+func (jt *JobTracker) SetBackfillPhase(phase backfillPhase) {
+	jt.backfillPhase.Store(string(phase))
 }
 
 // toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.

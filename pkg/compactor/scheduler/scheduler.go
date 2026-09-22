@@ -39,7 +39,24 @@ var (
 	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
 )
 
+// schedulerMode determines the work a compactor scheduler discovers and schedules.
+type schedulerMode string
+
+const (
+	// modeCell schedules compaction of the blocks of the tenants in a cell.
+	modeCell schedulerMode = "cell"
+	// modeBackfill schedules work related to backfills.
+	modeBackfill schedulerMode = "backfill"
+)
+
+type recoverableService interface {
+	services.Service
+
+	RecoverFrom(jobTrackers map[string]*JobTracker)
+}
+
 type Config struct {
+	Mode                                        string           `yaml:"mode" category:"experimental"`
 	MaxLeases                                   int              `yaml:"max_leases" category:"experimental"`
 	LeaseDuration                               time.Duration    `yaml:"lease_duration" category:"experimental"`
 	PlanningInterval                            time.Duration    `yaml:"planning_interval" category:"experimental"`
@@ -48,6 +65,8 @@ type Config struct {
 	MaintenanceIntervalsBeforeColdStartPlanning int              `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
 	TenantDiscoveryInterval                     time.Duration    `yaml:"tenant_discovery_interval" category:"experimental"`
 	TenantDiscoveryBackoff                      backoff.Config   `yaml:"tenant_discovery_backoff"`
+	BackfillDiscoveryInterval                   time.Duration    `yaml:"backfill_discovery_interval" category:"experimental"`
+	BackfillDiscoveryBackoff                    backoff.Config   `yaml:"backfill_discovery_backoff"`
 	PersistenceType                             string           `yaml:"persistence_type" category:"experimental"`
 	RepeatedFailureReportThreshold              int              `yaml:"repeated_failure_report_threshold" category:"experimental"`
 	Bbolt                                       BboltConfig      `yaml:"bbolt"`
@@ -55,6 +74,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.Mode, "compactor-scheduler.mode", string(modeCell), fmt.Sprintf("The mode the compactor scheduler is in which determines what work is scheduled. Valid values: %s, %s", modeCell, modeBackfill))
 	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
@@ -63,6 +83,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 5, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	cfg.TenantDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler.tenant-discovery-backoff", f)
+	f.DurationVar(&cfg.BackfillDiscoveryInterval, "compactor-scheduler.backfill-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new backfill jobs.")
+	cfg.BackfillDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler.backfill-discovery-backoff", f)
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit.")
 	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
@@ -70,6 +92,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
+	if schedulerMode(cfg.Mode) != modeCell && schedulerMode(cfg.Mode) != modeBackfill {
+		return fmt.Errorf("compactor-scheduler.mode must be one of %s, %s", modeCell, modeBackfill)
+	}
 	if cfg.MaxLeases < 0 {
 		return errors.New("compactor-scheduler.max-leases must be non-negative")
 	}
@@ -84,6 +109,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.TenantDiscoveryInterval <= 0 {
 		return errors.New("compactor-scheduler.tenant-discovery-interval must be positive")
+	}
+	if cfg.BackfillDiscoveryInterval <= 0 {
+		return errors.New("compactor-scheduler.backfill-discovery-interval must be positive")
 	}
 	if cfg.RepeatedFailureReportThreshold < 0 {
 		return errors.New("compactor-scheduler.repeated-failure-report-threshold must be non-negative")
@@ -105,7 +133,7 @@ type Scheduler struct {
 	allowList          *util.AllowList
 	jpm                JobPersistenceManager
 	rotator            *Rotator
-	tenantDiscoverer   *TenantDiscoverer
+	discoverer         recoverableService
 	subservicesManager *services.Manager
 	metrics            *schedulerMetrics
 	logger             log.Logger
@@ -157,6 +185,7 @@ func newCompactorScheduler(
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
+		schedulerMode(cfg.Mode) == modeBackfill,
 		lanePolicy,
 		metrics.pendingJobsLastEmpty,
 		metrics.lanePendingJobsLastEmpty,
@@ -164,19 +193,23 @@ func newCompactorScheduler(
 	)
 
 	scheduler := &Scheduler{
-		running:          atomic.NewBool(false),
-		cfg:              cfg,
-		lanePolicy:       lanePolicy,
-		allowList:        allowList,
-		jpm:              jpm,
-		rotator:          rotator,
-		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkt, jpm, metrics, logger),
-		metrics:          metrics,
-		logger:           logger,
-		clock:            clock.New(),
+		running:    atomic.NewBool(false),
+		cfg:        cfg,
+		lanePolicy: lanePolicy,
+		allowList:  allowList,
+		jpm:        jpm,
+		rotator:    rotator,
+		metrics:    metrics,
+		logger:     logger,
+		clock:      clock.New(),
 	}
 
-	subservicesManager, err := services.NewManager(scheduler.rotator, scheduler.tenantDiscoverer)
+	scheduler.discoverer, err = scheduler.newDiscoverer(bkt)
+	if err != nil {
+		return nil, err
+	}
+
+	subservicesManager, err := services.NewManager(scheduler.rotator, scheduler.discoverer)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +219,18 @@ func newCompactorScheduler(
 	scheduler.Service = svc
 
 	return scheduler, nil
+}
+
+// newDiscoverer creates the discoverer matching the scheduler's mode
+func (s *Scheduler) newDiscoverer(bkt objstore.Bucket) (recoverableService, error) {
+	switch schedulerMode(s.cfg.Mode) {
+	case modeCell:
+		return NewTenantDiscoverer(s.cfg, s.lanePolicy, s.allowList, s.rotator, bkt, s.jpm, s.metrics, s.logger), nil
+	case modeBackfill:
+		return NewBackfillDiscoverer(s.cfg, s.lanePolicy, s.rotator, bkt, s.jpm, s.metrics, s.logger), nil
+	default:
+		return nil, fmt.Errorf("unrecognized compactor scheduler mode: %s", s.cfg.Mode)
+	}
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
@@ -198,7 +243,7 @@ func (s *Scheduler) start(ctx context.Context) error {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
 	s.rotator.RecoverFrom(jobTrackers, s.jpm.CreationTime())
-	s.tenantDiscoverer.RecoverFrom(jobTrackers)
+	s.discoverer.RecoverFrom(jobTrackers)
 
 	if err := s.subservicesManager.StartAsync(ctx); err != nil {
 		return fmt.Errorf("unable to start compactor scheduler subservices: %w", err)

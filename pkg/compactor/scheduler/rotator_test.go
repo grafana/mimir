@@ -74,7 +74,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			lanePolicy := newSimpleLanePolicy()
 			metrics := newSchedulerMetrics(reg, lanePolicy)
-			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, false, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clock
 
 			r.RecoverFrom(tc.jobTrackers, tc.creationTime)
@@ -87,7 +87,7 @@ func newRotatorForTest() *Rotator {
 	reg := prometheus.NewPedanticRegistry()
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(reg, lanePolicy)
-	return NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+	return NewRotator(0, 0, 0, time.Minute, 0, 0, false, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 }
 
 // newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
@@ -232,7 +232,7 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	clk := clock.New()
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry(), lanePolicy)
-	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+	r := NewRotator(0, 0, 0, time.Minute, 0, 0, false, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
 	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
@@ -358,7 +358,7 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			lanePolicy := newSimpleLanePolicy()
 			metrics := newSchedulerMetrics(reg, lanePolicy)
-			r := NewRotator(0, 0, 0, 0, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, 0, 0, 0, false, lanePolicy, metrics.pendingJobsLastEmpty, metrics.lanePendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clk
 
 			tc.action(r, clk)

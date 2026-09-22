@@ -210,6 +210,11 @@ api:
 [compactor: <compactor>]
 
 compactor_scheduler:
+  # (experimental) The mode the compactor scheduler is in which determines what
+  # work is scheduled. Valid values: cell, backfill
+  # CLI flag: -compactor-scheduler.mode
+  [mode: <string> | default = "cell"]
+
   # (experimental) The maximum number of times a compaction job can be retried
   # before it is removed. Leases that are reassigned due to an interrupted
   # worker do not count against this limit. 0 for no limit.
@@ -260,6 +265,24 @@ compactor_scheduler:
 
     # (advanced) Number of times to backoff and retry before failing.
     # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) The duration of time between bucket listings to discover new
+  # backfill jobs.
+  # CLI flag: -compactor-scheduler.backfill-discovery-interval
+  [backfill_discovery_interval: <duration> | default = 10m]
+
+  backfill_discovery_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -compactor-scheduler.backfill-discovery-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -compactor-scheduler.backfill-discovery-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -compactor-scheduler.backfill-discovery-backoff.backoff-retries
     [max_retries: <int> | default = 10]
 
   # (experimental) The type of persistence the compactor scheduler should use.

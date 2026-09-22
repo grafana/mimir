@@ -14799,6 +14799,17 @@
       "blockEntries": [
         {
           "kind": "field",
+          "name": "mode",
+          "required": false,
+          "desc": "The mode the compactor scheduler is in which determines what work is scheduled. Valid values: cell, backfill",
+          "fieldValue": null,
+          "fieldDefaultValue": "cell",
+          "fieldFlag": "compactor-scheduler.mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_leases",
           "required": false,
           "desc": "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.",
@@ -14910,6 +14921,60 @@
               "fieldValue": null,
               "fieldDefaultValue": 10,
               "fieldFlag": "compactor-scheduler.tenant-discovery-backoff.backoff-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "backfill_discovery_interval",
+          "required": false,
+          "desc": "The duration of time between bucket listings to discover new backfill jobs.",
+          "fieldValue": null,
+          "fieldDefaultValue": 600000000000,
+          "fieldFlag": "compactor-scheduler.backfill-discovery-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "backfill_discovery_backoff",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "min_period",
+              "required": false,
+              "desc": "Minimum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "compactor-scheduler.backfill-discovery-backoff.backoff-min-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_period",
+              "required": false,
+              "desc": "Maximum delay when backing off.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "compactor-scheduler.backfill-discovery-backoff.backoff-max-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Number of times to backoff and retry before failing.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "compactor-scheduler.backfill-discovery-backoff.backoff-retries",
               "fieldType": "int",
               "fieldCategory": "advanced"
             }

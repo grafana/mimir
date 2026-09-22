@@ -43,6 +43,7 @@ type Rotator struct {
 	maintenanceInterval              time.Duration
 	intervalsBeforeLeaseExpiration   int
 	intervalsBeforeColdStartPlanning int
+	backfillMode                     bool
 	clock                            clock.Clock
 	pendingJobsLastEmpty             prometheus.Gauge
 	lanePendingJobsLastEmpty         map[lane]prometheus.Gauge
@@ -64,7 +65,7 @@ type tenantRotationState struct {
 	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, lanePendingJobsLastEmpty map[lane]prometheus.Gauge, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, backfillMode bool, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, lanePendingJobsLastEmpty map[lane]prometheus.Gauge, logger log.Logger) *Rotator {
 	laneRotations := make(map[lane]*laneRotation)
 	for _, lane := range lanePolicy.AllLanes() {
 		laneRotations[lane] = &laneRotation{rotation: list.New()}
@@ -77,6 +78,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		maintenanceInterval:              maintenanceInterval,
 		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
+		backfillMode:                     backfillMode,
 		clock:                            clock.New(),
 		pendingJobsLastEmpty:             pendingJobsLastEmpty,
 		lanePendingJobsLastEmpty:         lanePendingJobsLastEmpty,
@@ -390,7 +392,8 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			r.mtx.RUnlock()
 			return
 		}
-		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
+		tenantPlan := plan && (!r.backfillMode || tenantState.tracker.BackfillPhase() == phaseCompaction)
+		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, tenantPlan, r.planningInterval, r.compactionWaitPeriod)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)
 			continue

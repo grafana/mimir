@@ -1119,6 +1119,14 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -common.storage.swift.username string
     	OpenStack Swift username.
+  -compactor-scheduler.backfill-discovery-backoff.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -compactor-scheduler.backfill-discovery-backoff.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -compactor-scheduler.backfill-discovery-backoff.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -compactor-scheduler.backfill-discovery-interval duration
+    	[experimental] The duration of time between bucket listings to discover new backfill jobs. (default 10m0s)
   -compactor-scheduler.bbolt.dir string
     	[experimental] The directory where bbolt shard database files are stored for the compactor scheduler. (default "./data-compactor-scheduler")
   -compactor-scheduler.bbolt.shard-count int
@@ -1135,6 +1143,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero. (default 3)
   -compactor-scheduler.max-leases int
     	[experimental] The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit. (default 3)
+  -compactor-scheduler.mode string
+    	[experimental] The mode the compactor scheduler is in which determines what work is scheduled. Valid values: cell, backfill (default "cell")
   -compactor-scheduler.persistence-type string
     	[experimental] The type of persistence the compactor scheduler should use. Valid values: none, bbolt (default "bbolt")
   -compactor-scheduler.planning-interval duration
