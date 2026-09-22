@@ -26,7 +26,7 @@ type staticEvaluator struct {
 	result evalResult
 }
 
-func (e staticEvaluator) evaluate(string, *[]float64) evalResult {
+func (e staticEvaluator) evaluate(string) evalResult {
 	return e.result
 }
 
@@ -104,28 +104,10 @@ func TestCompileCombinesPositiveScores(t *testing.T) {
 	assert.InDelta(t, 0.8, score, 1e-9)
 }
 
-// TestCompileReusesScoreBufferAcrossCalls pins that the pooled score buffer
-// is correctly reset between Accept calls: a call that claims two buffer
-// slots must not leak a stale score into a later call that claims only one.
-func TestCompileReusesScoreBufferAcrossCalls(t *testing.T) {
-	filter := compileContains(t, "foo OR bar", map[string]float64{"foo": 0.9, "bar": 0.3})
-
-	accepted, score := filter.Accept("foo_bar")
-	require.True(t, accepted)
-	assert.InDelta(t, 0.9, score, 1e-9)
-
-	accepted, score = filter.Accept("bar_only")
-	require.True(t, accepted)
-	assert.InDelta(t, 0.3, score, 1e-9)
-
-	accepted, score = filter.Accept("neither")
-	assert.False(t, accepted)
-	assert.Zero(t, score)
-}
-
 // TestCompileAcceptIsSafeForConcurrentUse pins that concurrent Accept calls
-// on the same compiled filter each get their own pooled buffer and never
-// observe another goroutine's in-flight scores.
+// on the same compiled filter never observe another goroutine's state: each
+// call's evalResult tree is built entirely from local sum/count values, with
+// no state shared across calls.
 func TestCompileAcceptIsSafeForConcurrentUse(t *testing.T) {
 	filter := compileContains(t, "foo OR bar", map[string]float64{"foo": 0.9, "bar": 0.3})
 
@@ -353,15 +335,7 @@ func TestCompileReportsEffectiveTermPolarity(t *testing.T) {
 }
 
 func TestCompiledFilterAcceptsUnscoredInternalResult(t *testing.T) {
-	filter := &compiledFilter{
-		root: staticEvaluator{result: evalResult{accepted: true}},
-		scorePool: sync.Pool{
-			New: func() any {
-				buf := make([]float64, 0)
-				return &buf
-			},
-		},
-	}
+	filter := &compiledFilter{root: staticEvaluator{result: evalResult{accepted: true}}}
 	accepted, score := filter.Accept("anything")
 	assert.True(t, accepted)
 	assert.Zero(t, score)
