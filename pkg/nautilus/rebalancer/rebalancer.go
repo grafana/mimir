@@ -845,6 +845,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"total_entries", len(current.Entries))
 		}
 		r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
+		r.metrics.updateTenantHashRanges(current)
 		level.Info(r.logger).Log(
 			"msg", "cold start hash assignment log seeded",
 			"entries", len(current.Entries),
@@ -1100,6 +1101,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	hashLogChanged := r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
+	r.metrics.updateTenantHashRanges(newAssignment)
 	if hashLogChanged {
 		level.Info(r.logger).Log(
 			"msg", "hash assignment log updated",

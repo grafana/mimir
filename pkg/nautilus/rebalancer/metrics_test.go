@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
 func TestMetrics_UpdateRound_AddsAndDeletesGauges(t *testing.T) {
@@ -41,7 +43,35 @@ func TestMetrics_UpdateRound_AddsAndDeletesGauges(t *testing.T) {
 func TestMetrics_UpdateRound_NilSafe(t *testing.T) {
 	var m *metrics
 	m.updateRound(map[int32]float64{0: 1.0}, map[string]float64{"a": 1.0}) // must not panic
+	m.updateTenantHashRanges(&assignment.Assignment{})                     // must not panic
 	m.recordRoundActions(actionCounts{moves: 1})                           // must not panic
+}
+
+func TestMetrics_UpdateTenantHashRanges_AddsUpdatesAndDeletesGauges(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := newMetrics(reg)
+
+	m.updateTenantHashRanges(&assignment.Assignment{Entries: []assignment.Entry{
+		{TenantID: "tenant-a"},
+		{TenantID: "tenant-a"},
+		{TenantID: "tenant-b"},
+	}})
+
+	got := mustGather(t, reg)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_tenant_hash_ranges{tenant="tenant-a"} 2`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_tenant_hash_ranges{tenant="tenant-b"} 1`)
+
+	m.updateTenantHashRanges(&assignment.Assignment{Entries: []assignment.Entry{
+		{TenantID: "tenant-a"},
+		{TenantID: "tenant-c"},
+		{TenantID: "tenant-c"},
+		{TenantID: "tenant-c"},
+	}})
+
+	got = mustGather(t, reg)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_tenant_hash_ranges{tenant="tenant-a"} 1`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_tenant_hash_ranges{tenant="tenant-c"} 3`)
+	assert.NotContains(t, got, `tenant="tenant-b"`, "tenant-b no longer has an assignment; its gauge must be deleted")
 }
 
 func TestMetrics_RecordRoundActions(t *testing.T) {
