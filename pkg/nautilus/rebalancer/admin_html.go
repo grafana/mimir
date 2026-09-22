@@ -61,6 +61,9 @@ h2{font-size:14px;font-weight:600;margin:16px 0 8px;color:#333;border-bottom:1px
 .action-pill.act-reassign{border-color:#ff8787;background:#fff5f5;border:1px solid #ff8787}
 .no-data{text-align:center;padding:40px;color:#888;font-size:14px}
 .generated{font-size:11px;color:#888;margin-top:12px;text-align:right}
+.tenant-section{margin:16px 0 8px}
+.tenant-section>summary{font-size:14px;font-weight:600;color:#333;border-bottom:1px solid #ddd;padding-bottom:4px}
+.tenant-section[open]>summary{margin-bottom:8px}
 .tenant-inspector{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:12px}
 .tenant-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .tenant-controls select{min-width:220px;padding:5px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:12px}
@@ -152,6 +155,55 @@ details>summary::-webkit-details-marker{display:none}
 	<button type="submit" style="background:#e7f5ff;color:#1971c2;border:1px solid #1971c2;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">Resolve</button>
 	<span style="font-size:11px;color:#666">Shows the metric's locality hash range, the assignment-log tiles it overlaps over the window, and the partitions + readcache owners a query would fan out to. Append &amp;format=json for machine output.</span>
 </form>
+
+<details class="tenant-section"{{if .SelectedTenantID}} open{{end}}>
+<summary>Tenant hash ranges</summary>
+<div class="tenant-inspector">
+	<form class="tenant-controls" method="GET" action="{{.AdminPathPrefix}}">
+		<label for="tenantSelect">Tenant</label>
+		<select id="tenantSelect" name="tenant" onchange="this.form.submit()"{{if eq (len .TenantIDs) 0}} disabled{{end}}>
+			<option value="">Select a tenant…</option>
+			{{range .TenantIDs}}<option value="{{.}}"{{if eq . $.SelectedTenantID}} selected{{end}}>{{.}}</option>{{end}}
+		</select>
+		<noscript><button type="submit">Show</button></noscript>
+		<span class="tenant-status">
+			{{if eq (len .TenantIDs) 0}}No tenant assignments available.
+			{{else if .SelectedTenantID}}{{len .SelectedTenantRanges}} current hash range{{if ne (len .SelectedTenantRanges) 1}}s{{end}}.
+			{{else}}Choose a tenant to inspect its current assignment.{{end}}
+		</span>
+	</form>
+	{{if .SelectedTenantID}}
+	{{if .SelectedTenantRanges}}
+	<div class="tenant-table-wrap">
+		<table class="tenant-table">
+			<thead>
+				<tr>
+					<th>Lo</th>
+					<th>Hi</th>
+					<th class="numeric">Partition</th>
+					<th class="numeric">Head series</th>
+					<th class="numeric">Samples/s</th>
+				</tr>
+			</thead>
+			<tbody>
+			{{range .SelectedTenantRanges}}
+				<tr>
+					<td class="hash-bound">0x{{printf "%08x" .Lo}}</td>
+					<td class="hash-bound">0x{{printf "%08x" .Hi}}</td>
+					<td class="numeric">P{{.PartitionID}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtSeries .HeadSeries}}{{else}}—{{end}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtRate .SampleRate}}{{else}}—{{end}}</td>
+				</tr>
+			{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<div class="no-data" style="padding:12px">No current hash ranges for this tenant.</div>
+	{{end}}
+	{{end}}
+</div>
+</details>
 
 <h2>Partitions (click to expand ranges)</h2>
 <div class="partitions">
@@ -341,53 +393,6 @@ details>summary::-webkit-details-marker{display:none}
 {{end}}
 </div>
 {{end}}
-
-<h2>Tenant hash ranges</h2>
-<div class="tenant-inspector">
-	<form class="tenant-controls" method="GET" action="{{.AdminPathPrefix}}">
-		<label for="tenantSelect">Tenant</label>
-		<select id="tenantSelect" name="tenant" onchange="this.form.submit()"{{if eq (len .TenantIDs) 0}} disabled{{end}}>
-			<option value="">Select a tenant…</option>
-			{{range .TenantIDs}}<option value="{{.}}"{{if eq . $.SelectedTenantID}} selected{{end}}>{{.}}</option>{{end}}
-		</select>
-		<noscript><button type="submit">Show</button></noscript>
-		<span class="tenant-status">
-			{{if eq (len .TenantIDs) 0}}No tenant assignments available.
-			{{else if .SelectedTenantID}}{{len .SelectedTenantRanges}} current hash range{{if ne (len .SelectedTenantRanges) 1}}s{{end}}.
-			{{else}}Choose a tenant to inspect its current assignment.{{end}}
-		</span>
-	</form>
-	{{if .SelectedTenantID}}
-	{{if .SelectedTenantRanges}}
-	<div class="tenant-table-wrap">
-		<table class="tenant-table">
-			<thead>
-				<tr>
-					<th>Lo</th>
-					<th>Hi</th>
-					<th class="numeric">Partition</th>
-					<th class="numeric">Head series</th>
-					<th class="numeric">Samples/s</th>
-				</tr>
-			</thead>
-			<tbody>
-			{{range .SelectedTenantRanges}}
-				<tr>
-					<td class="hash-bound">0x{{printf "%08x" .Lo}}</td>
-					<td class="hash-bound">0x{{printf "%08x" .Hi}}</td>
-					<td class="numeric">P{{.PartitionID}}</td>
-					<td class="numeric">{{if .LoadAvailable}}{{fmtSeries .HeadSeries}}{{else}}—{{end}}</td>
-					<td class="numeric">{{if .LoadAvailable}}{{fmtRate .SampleRate}}{{else}}—{{end}}</td>
-				</tr>
-			{{end}}
-			</tbody>
-		</table>
-	</div>
-	{{else}}
-	<div class="no-data" style="padding:12px">No current hash ranges for this tenant.</div>
-	{{end}}
-	{{end}}
-</div>
 
 <div class="generated">Generated {{.GeneratedAt}} · Auto-refresh: <a href="" onclick="setTimeout(function(){location.reload()},0);return false">now</a></div>
 

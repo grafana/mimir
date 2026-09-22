@@ -27,9 +27,12 @@ func TestAdminHTML_RendersTenantRangeSelector(t *testing.T) {
 	assert.Contains(t, body, `method="GET" action="`+adminPathPrefix+`"`)
 	assert.Contains(t, body, `name="tenant" onchange="this.form.submit()"`)
 	assert.NotContains(t, body, "fetch(", "tenant selection must use a normal page reload, not AJAX")
+	assert.Contains(t, body, `<details class="tenant-section">`, "tenant section must be collapsed without a selection")
+	assert.NotContains(t, body, `<details class="tenant-section" open>`)
 	assert.Contains(t, body, `<option value="tenant-a">tenant-a</option>`)
 	assert.Contains(t, body, `<option value="tenant-b">tenant-b</option>`)
 	assert.Less(t, strings.Index(body, `value="tenant-a"`), strings.Index(body, `value="tenant-b"`))
+	assert.Less(t, strings.Index(body, "Tenant hash ranges"), strings.Index(body, "Partitions (click to expand ranges)"))
 	assert.Contains(t, body, "Choose a tenant to inspect its current assignment.")
 }
 
@@ -64,6 +67,7 @@ func TestAdminHTML_TenantQueryRendersSelectedRanges(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
+	assert.Contains(t, body, `<details class="tenant-section" open>`, "tenant section must open when a tenant is selected")
 	assert.Contains(t, body, `<option value="tenant-a" selected>tenant-a</option>`)
 	assert.Contains(t, body, "<th>Lo</th>")
 	assert.Contains(t, body, "<th>Hi</th>")
