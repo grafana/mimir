@@ -4,7 +4,6 @@ package searchexpr
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/prometheus/prometheus/storage"
 )
@@ -56,15 +55,7 @@ func CompileValidated(expr Expr, newTermFilter TermFilterFactory) (storage.Filte
 	if err != nil {
 		return nil, err
 	}
-	return &compiledFilter{
-		root: root,
-		scorePool: sync.Pool{
-			New: func() any {
-				buf := make([]float64, 0)
-				return &buf
-			},
-		},
-	}, nil
+	return &compiledFilter{root: root}, nil
 }
 
 // Validate checks that an expression is safe to use for search. Every
@@ -86,78 +77,54 @@ func Validate(expr Expr) error {
 }
 
 // evalResult is the outcome of evaluating one AST node against a candidate
-// value. scores holds every scored leaf's contribution collected under this
-// node, backed by the caller's pooled buffer; the relevance score reported to
-// the caller is the mean of the leaves an accepted match actually depended
-// on, computed once at the root in compiledFilter.Accept.
+// value. sum and count together represent the mean-of-leaves relevance score
+// of every scored leaf an accepted match actually depended on, without
+// materializing the individual leaf scores: concatenating two leaf-sets
+// (an AND) is just adding their sums and counts, and the OR-side "is this
+// branch a perfect match" check is just sum >= count, since no individual
+// leaf score ever exceeds 1.0 by construction (see the Filter implementations
+// in filters.go). The mean itself is computed once at the root in
+// compiledFilter.Accept.
 type evalResult struct {
 	accepted bool
 	scored   bool
-	scores   []float64
+	sum      float64
+	count    int
+}
+
+// mean returns the relevance score this result represents. Called only when
+// r.scored is true, so count is always > 0.
+func (r evalResult) mean() float64 {
+	return r.sum / float64(r.count)
+}
+
+// perfect reports whether every leaf this result depends on scored the
+// maximum (1.0), so an OR can short-circuit without evaluating its other
+// branch. Equivalent to checking every individual leaf score == 1.0, given
+// that no leaf score ever exceeds 1.0.
+func (r evalResult) perfect() bool {
+	return r.sum >= float64(r.count)
 }
 
 type evaluator interface {
-	evaluate(value string, buf *[]float64) evalResult
+	evaluate(value string) evalResult
 }
 
 type compiledFilter struct {
 	root evaluator
-	// scorePool holds the []float64 backing arrays that leaf evaluations
-	// write scores into. One buffer serves an entire Accept call, so the
-	// aliasing between evalResults produced by the same call (see
-	// combineScores) never crosses buffers.
-	scorePool sync.Pool
 }
 
 var _ storage.Filter = (*compiledFilter)(nil)
 
 func (f *compiledFilter) Accept(value string) (bool, float64) {
-	// Reset and reuse the pool's own pointer rather than taking the address
-	// of a fresh local: passing &buf through the evaluator interface would
-	// force that slice header itself onto the heap every call.
-	bufPtr := f.scorePool.Get().(*[]float64)
-	*bufPtr = (*bufPtr)[:0]
-	result := f.root.evaluate(value, bufPtr)
-
-	accepted, scored := result.accepted, result.scored
-	var score float64
-	if scored {
-		score = mean(result.scores)
-	}
-
-	// Read result.scores before returning the buffer: Put makes it
-	// available to another concurrent Accept call immediately.
-	f.scorePool.Put(bufPtr)
-
-	if !accepted {
+	result := f.root.evaluate(value)
+	if !result.accepted {
 		return false, 0
 	}
-	if !scored {
+	if !result.scored {
 		return true, 0
 	}
-	return true, score
-}
-
-func mean(xs []float64) float64 {
-	if len(xs) == 0 {
-		return 0
-	}
-	var sum float64
-	for _, x := range xs {
-		sum += x
-	}
-	return sum / float64(len(xs))
-}
-
-// perfect reports whether every score is already at the maximum (1.0), so an
-// OR can short-circuit without evaluating its other branch.
-func perfect(xs []float64) bool {
-	for _, x := range xs {
-		if x < 1 {
-			return false
-		}
-	}
-	return true
+	return true, result.mean()
 }
 
 type termEvaluator struct {
@@ -165,7 +132,7 @@ type termEvaluator struct {
 	negated bool
 }
 
-func (e *termEvaluator) evaluate(value string, buf *[]float64) evalResult {
+func (e *termEvaluator) evaluate(value string) evalResult {
 	accepted, score := e.filter.Accept(value)
 	if e.negated {
 		return evalResult{accepted: !accepted}
@@ -173,9 +140,7 @@ func (e *termEvaluator) evaluate(value string, buf *[]float64) evalResult {
 	if !accepted {
 		return evalResult{}
 	}
-	*buf = append(*buf, score)
-	claimed := *buf
-	return evalResult{accepted: true, scored: true, scores: claimed[len(claimed)-1:]}
+	return evalResult{accepted: true, scored: true, sum: score, count: 1}
 }
 
 type andEvaluator struct {
@@ -183,12 +148,12 @@ type andEvaluator struct {
 	right evaluator
 }
 
-func (e *andEvaluator) evaluate(value string, buf *[]float64) evalResult {
-	left := e.left.evaluate(value, buf)
+func (e *andEvaluator) evaluate(value string) evalResult {
+	left := e.left.evaluate(value)
 	if !left.accepted {
 		return evalResult{}
 	}
-	right := e.right.evaluate(value, buf)
+	right := e.right.evaluate(value)
 	if !right.accepted {
 		return evalResult{}
 	}
@@ -200,12 +165,12 @@ type orEvaluator struct {
 	right evaluator
 }
 
-func (e *orEvaluator) evaluate(value string, buf *[]float64) evalResult {
-	left := e.left.evaluate(value, buf)
-	if left.accepted && left.scored && perfect(left.scores) {
+func (e *orEvaluator) evaluate(value string) evalResult {
+	left := e.left.evaluate(value)
+	if left.accepted && left.scored && left.perfect() {
 		return left
 	}
-	right := e.right.evaluate(value, buf)
+	right := e.right.evaluate(value)
 
 	switch {
 	case !left.accepted:
@@ -217,20 +182,18 @@ func (e *orEvaluator) evaluate(value string, buf *[]float64) evalResult {
 	}
 }
 
-// bestScore picks whichever branch's own mean relevance is higher, keeping
-// that branch's underlying scores slice so a further-up AND can still fold
-// it into a wider mean.
+// bestScore picks whichever branch's own mean relevance is higher.
 func bestScore(left, right evalResult) evalResult {
 	switch {
 	case left.scored && right.scored:
-		if mean(left.scores) > mean(right.scores) {
-			return evalResult{accepted: true, scored: true, scores: left.scores}
+		if left.mean() > right.mean() {
+			return left
 		}
-		return evalResult{accepted: true, scored: true, scores: right.scores}
+		return right
 	case left.scored:
-		return evalResult{accepted: true, scored: true, scores: left.scores}
+		return left
 	case right.scored:
-		return evalResult{accepted: true, scored: true, scores: right.scores}
+		return right
 	default:
 		return evalResult{accepted: true}
 	}
@@ -238,16 +201,17 @@ func bestScore(left, right evalResult) evalResult {
 
 // combineScores folds an AND's two children into one result. An unscored
 // child (a NOT branch) contributes no leaves; when both children are scored,
-// their leaves are concatenated so the root's final mean spans every scored
-// leaf visited under this AND, per the reconciled mean-of-leaves design.
+// their sums and counts add, which is equivalent to concatenating their leaf
+// scores and is what makes the root's final mean span every scored leaf
+// visited under this AND, per the mean-of-leaves design.
 func combineScores(left, right evalResult) evalResult {
 	switch {
 	case left.scored && right.scored:
-		return evalResult{accepted: true, scored: true, scores: append(left.scores, right.scores...)}
+		return evalResult{accepted: true, scored: true, sum: left.sum + right.sum, count: left.count + right.count}
 	case left.scored:
-		return evalResult{accepted: true, scored: true, scores: left.scores}
+		return left
 	case right.scored:
-		return evalResult{accepted: true, scored: true, scores: right.scores}
+		return right
 	default:
 		return evalResult{accepted: true}
 	}
