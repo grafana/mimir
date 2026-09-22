@@ -1485,7 +1485,6 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 
