@@ -81,7 +81,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
-	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
@@ -1111,15 +1110,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
 	defer util_log.Flush()
-
-	// Register custom process metrics.
-	if c, err := process.NewProcessCollector(); err == nil {
-		if t.Registerer != nil {
-			t.Registerer.MustRegister(c)
-		}
-	} else {
-		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
-	}
 
 	// Update the usage stats before we initialize modules.
 	usagestats.SetTarget(t.Cfg.Target.String())

@@ -230,15 +230,6 @@ groups:
           labels:
             histogram: native
             severity: critical
-        - alert: MimirMemoryMapAreasTooHigh
-          annotations:
-            message: '{{ $labels.job }}/{{ $labels.pod }} has a number of mmap-ed areas close to the limit.'
-            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirmemorymapareastoohigh
-          expr: |
-            process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} > 0.8
-          for: 5m
-          labels:
-            severity: critical
         - alert: MimirIngesterInstanceHasNoTenants
           annotations:
             message: Mimir ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has no tenants assigned.

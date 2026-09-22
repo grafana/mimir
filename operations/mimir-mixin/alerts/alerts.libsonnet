@@ -371,19 +371,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         kvStoreFailure('classic'),
         kvStoreFailure('native'),
         {
-          alert: $.alertName('MemoryMapAreasTooHigh'),
-          expr: |||
-            process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
-          ||| % { job_regex: $.jobMatcher($._config.job_names.ingester + $._config.job_names.store_gateway) },
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
-          },
-        },
-        {
           // Alert if an ingester instance has no tenants assigned while other instances in the same cell do.
           alert: $.alertName('IngesterInstanceHasNoTenants'),
           'for': '1h',
