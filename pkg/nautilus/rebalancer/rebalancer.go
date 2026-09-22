@@ -1443,9 +1443,16 @@ const (
 	// the move step enough granularity on the first round.
 	initialSlicesPerPartition = 64
 
-	// minSlicesPerPartition is the floor below which merging stops.
-	// Matches Slicer paper's "50 slices per task" guideline.
-	minSlicesPerPartition = 50
+	// minRangesPerTenant is the floor below which merging stops for an
+	// individual tenant. Tenant hash spaces are independent, so applying
+	// the Slicer paper's fleet-wide "slices per task" floor to every
+	// tenant prevents small tenants from ever compacting.
+	minRangesPerTenant = 4
+
+	// minRangesPerPartition prevents cross-partition merges from draining
+	// an active Kafka partition completely. This is an ownership safety
+	// guard, not a fleet-wide granularity target.
+	minRangesPerPartition = 1
 
 	// maxSlicesPerPartition is the ceiling above which splitting
 	// stops. Matches Slicer paper's "150 slices per task" guideline.
@@ -1501,7 +1508,7 @@ type rangeLoad struct {
 //
 //  1. Reassign slices from inactive partitions.
 //  2. Merge adjacent cold slices to defragment (cap: 1% churn, floor:
-//     minSlicesPerPartition).
+//     minRangesPerTenant for each tenant).
 //  3. Weighted-move: greedily move slices from the hottest partition
 //     (highest sample rate, minus moves already booked this round)
 //     to the coldest (lowest sample rate plus moves already booked
@@ -1628,14 +1635,11 @@ func (r *Rebalancer) runSlicer(
 	structurallyBlocked := func(tenantID string, hr assignment.HashRange) bool {
 		return structuralIdx.overlaps(tenantID, hr)
 	}
-	minTotalEntries := minSlicesPerPartition * numPartitions * numTenants
-	if structuralRebalanceNeeded && len(entries) > minTotalEntries {
-		meanSliceLoad := totalLoad / float64(len(entries))
-		mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1) * float64(numTenants)
-		var mergeActions []Action
-		entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minTotalEntries, minSlicesPerPartition, structurallyBlocked)
-		actions = append(actions, mergeActions...)
-	}
+	meanSliceLoad := totalLoad / float64(len(entries))
+	mergeMoveBudget := mergeChurnBudget * float64(uint64(math.MaxUint32)+1) * float64(numTenants)
+	var mergeActions []Action
+	entries, mergeActions = mergeAdjacentCold(entries, meanSliceLoad, mergeMoveBudget, targetLoad, minRangesPerTenant, minRangesPerPartition, structurallyBlocked)
+	actions = append(actions, mergeActions...)
 	if err := validateSlicerPhaseEntries(entries); err != nil {
 		logSlicerPhaseError(r.logger, entries, "phase2-merge", err)
 		entries = pre2Entries
@@ -2663,15 +2667,15 @@ func hashRangesOverlap(a, b assignment.HashRange) bool {
 //   - merged load < meanSliceLoad
 //   - receiving partition load stays below maxPartitionLoad (target * 1.5)
 //   - total churn stays within churnBudget
-//   - total entries don't drop below minEntries
+//   - each tenant retains at least perTenantFloor entries
 //   - cross-partition merges never push the donor partition below
 //     perPartitionFloor entries. Without this floor the merge phase
 //     can drain a lightly-loaded partition completely (every range is
 //     "cold" relative to meanSliceLoad and gets absorbed by neighbours
 //     over a few rounds), at which point traffic to that partition's
 //     keyspace flips to other ingesters until Phase 3 floods it back.
-func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, minEntries, perPartitionFloor int, structurallyBlocked func(string, assignment.HashRange) bool) ([]rangeLoad, []Action) {
-	if len(entries) <= 1 || len(entries) <= minEntries {
+func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLoad float64, perTenantFloor, perPartitionFloor int, structurallyBlocked func(string, assignment.HashRange) bool) ([]rangeLoad, []Action) {
+	if len(entries) <= 1 {
 		return entries, nil
 	}
 
@@ -2684,7 +2688,6 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 		tenantEntries[rl.entry.TenantID]++
 	}
 	tenantFloors := make(map[string]int, len(tenantEntries))
-	perTenantFloor := minEntries / len(tenantEntries)
 	for tenantID, count := range tenantEntries {
 		tenantFloors[tenantID] = min(count, perTenantFloor)
 	}
@@ -2693,10 +2696,6 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 
 	result := []rangeLoad{entries[0]}
 	for i := 1; i < len(entries); i++ {
-		if len(result)+len(entries)-i <= minEntries {
-			result = append(result, entries[i:]...)
-			break
-		}
 		prev := &result[len(result)-1]
 		curr := entries[i]
 
@@ -2706,7 +2705,7 @@ func mergeAdjacentCold(entries []rangeLoad, meanSliceLoad, churnBudget, targetLo
 		}
 
 		mergedLoad := prev.load + curr.load
-		if mergedLoad >= meanSliceLoad {
+		if meanSliceLoad > 0 && mergedLoad >= meanSliceLoad {
 			result = append(result, curr)
 			continue
 		}

@@ -44,6 +44,53 @@ func TestMergeAdjacentCold_DoesNotMergeAcrossTenants(t *testing.T) {
 	assert.Empty(t, actions)
 }
 
+func TestMergeAdjacentCold_StopsAtPerTenantFloor(t *testing.T) {
+	var entries []rangeLoad
+	for tenantIndex, tenantID := range []string{"tenant-a", "tenant-b"} {
+		for i := 0; i < 8; i++ {
+			lo := uint32(i * 100)
+			hi := lo + 99
+			if i == 7 {
+				hi = math.MaxUint32
+			}
+			entries = append(entries, rangeLoad{
+				entry: assignment.Entry{
+					TenantID:    tenantID,
+					Range:       assignment.HashRange{Lo: lo, Hi: hi},
+					PartitionID: int32(tenantIndex),
+				},
+			})
+		}
+	}
+
+	got, actions := mergeAdjacentCold(entries, 0, math.MaxFloat64, 0, minRangesPerTenant, 0, nil)
+
+	require.NotEmpty(t, actions)
+	counts := map[string]int{}
+	for _, entry := range got {
+		counts[entry.entry.TenantID]++
+	}
+	assert.Equal(t, map[string]int{"tenant-a": 4, "tenant-b": 4}, counts)
+}
+
+func TestRunSlicer_MergesWithoutFleetWideEntryFloor(t *testing.T) {
+	current := &assignment.Assignment{Entries: []assignment.Entry{
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: 0, Hi: math.MaxUint32 - 4}, PartitionID: 0},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: math.MaxUint32 - 3, Hi: math.MaxUint32 - 3}, PartitionID: 0},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: math.MaxUint32 - 2, Hi: math.MaxUint32 - 2}, PartitionID: 0},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: math.MaxUint32 - 1, Hi: math.MaxUint32 - 1}, PartitionID: 0},
+		{TenantID: "tenant-a", Range: assignment.HashRange{Lo: math.MaxUint32, Hi: math.MaxUint32}, PartitionID: 0},
+	}}
+	require.NoError(t, current.Validate())
+
+	r := &Rebalancer{}
+	got, actions := r.runSlicer(current, nil, nil, []int32{0}, nil, time.Time{})
+
+	require.NoError(t, got.Validate())
+	assert.Len(t, got.Entries, minRangesPerTenant)
+	assert.Equal(t, 1, countActions(actions).merges)
+}
+
 func TestRunSlicer_HotTenantSplitLeavesColocatedTenantUnchanged(t *testing.T) {
 	ranges := []assignment.HashRange{
 		{Lo: 0, Hi: 999},
