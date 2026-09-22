@@ -69,12 +69,12 @@ func avgOverTimeGenerate(step *types.RangeVectorStepData, emitAnnotation types.E
 		}
 
 		if h != nil {
-			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+			protoH := mimirpb.FromFloatHistogramToHistogramProto(0, 0, h)
 			result.AvgH = &protoH
 			result.CountH = int64(len(hHead)) + int64(len(hTail))
 
 			if comp != nil {
-				compProto := mimirpb.FromFloatHistogramToHistogramProto(0, comp)
+				compProto := mimirpb.FromFloatHistogramToHistogramProto(0, 0, comp)
 				result.CompH = &compProto
 			}
 		}

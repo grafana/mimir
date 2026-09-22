@@ -65,7 +65,7 @@ func floatSample(ts int64, val float64) []mimirpb.Sample {
 
 func histogramSample(ts int64) []mimirpb.Histogram {
 	return []mimirpb.Histogram{
-		mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts))),
+		mimirpb.FromHistogramToHistogramProto(ts, 0, test.GenerateTestHistogram(int(ts))),
 	}
 }
 
@@ -553,7 +553,7 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 				actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram(nil)
-				hp := mimirpb.FromHistogramToHistogramProto(ts, h)
+				hp := mimirpb.FromHistogramToHistogramProto(ts, 0, h)
 				hp.ResetHint = 0
 				actHistograms = append(actHistograms, hp)
 			default:
@@ -782,12 +782,13 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	lastEnd := 2 * processingRange
 	currEnd := 3 * processingRange
 
-	simpleTestHistogram := func(ts int64, count uint64) mimirpb.Histogram {
+	simpleTestHistogram := func(ts, st int64, count uint64) mimirpb.Histogram {
 		return mimirpb.Histogram{
-			Count:         &mimirpb.Histogram_CountInt{CountInt: count},
-			ZeroThreshold: 1e-128,
-			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: count},
-			Timestamp:     ts,
+			Count:          &mimirpb.Histogram_CountInt{CountInt: count},
+			ZeroThreshold:  1e-128,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: count},
+			Timestamp:      ts,
+			StartTimestamp: st,
 		}
 	}
 	expectedHistogram := func(ts int64, count uint64) test.Sample {
@@ -800,12 +801,13 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			},
 		}
 	}
-	simpleTestFloatHistogram := func(ts int64, count float64) mimirpb.Histogram {
+	simpleTestFloatHistogram := func(ts, st int64, count float64) mimirpb.Histogram {
 		return mimirpb.Histogram{
-			Count:         &mimirpb.Histogram_CountFloat{CountFloat: count},
-			ZeroThreshold: 1e-128,
-			ZeroCount:     &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: count},
-			Timestamp:     ts,
+			Count:          &mimirpb.Histogram_CountFloat{CountFloat: count},
+			ZeroThreshold:  1e-128,
+			ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: count},
+			Timestamp:      ts,
+			StartTimestamp: st,
 		}
 	}
 	expectedFloatHistogram := func(ts int64, count float64) test.Sample {
@@ -817,13 +819,6 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				ZeroCount:     count,
 			},
 		}
-	}
-	// histogramWithStartTimestamp sets the start timestamp (ST) on a mimirpb.Histogram
-	// returned by one of the constructors above, since the field can't be set inline
-	// on a function call result inside a slice literal.
-	histogramWithStartTimestamp := func(h mimirpb.Histogram, st int64) mimirpb.Histogram {
-		h.StartTimestamp = st
-		return h
 	}
 
 	testCases := map[string]struct {
@@ -896,47 +891,47 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				{
 					// Histograms and start timestamp (ST) outside the current block.
 					Histograms: []mimirpb.Histogram{
-						simpleTestHistogram(lastEnd-50000+100, 1),
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd-50000+300, 2), lastEnd-50000+200),
+						simpleTestHistogram(lastEnd-50000+100, 0, 1),
+						simpleTestHistogram(lastEnd-50000+300, lastEnd-50000+200, 2),
 					},
 				},
 				{
 					// Histogram inside the current block, but ST outside.
 					Histograms: []mimirpb.Histogram{
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd+100, 3), lastEnd-50000+200),
+						simpleTestHistogram(lastEnd+100, lastEnd-50000+200, 3),
 					},
 				},
 				{
 					// Histograms and ST inside the current block.
 					Histograms: []mimirpb.Histogram{
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd+300, 4), lastEnd+200),
-						simpleTestHistogram(lastEnd+400, 5),
+						simpleTestHistogram(lastEnd+300, lastEnd+200, 4),
+						simpleTestHistogram(lastEnd+400, 0, 5),
 					},
 				},
 				{
 					// Repeated ST.
 					Histograms: []mimirpb.Histogram{
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd+500, 6), lastEnd+200),
+						simpleTestHistogram(lastEnd+500, lastEnd+200, 6),
 					},
 				},
 				{
 					// Histograms and ST mixed in in the current block.
 					Histograms: []mimirpb.Histogram{
-						simpleTestHistogram(lastEnd+600, 7),
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd+800, 8), lastEnd+700),
+						simpleTestHistogram(lastEnd+600, 0, 7),
+						simpleTestHistogram(lastEnd+800, lastEnd+700, 8),
 					},
 				},
 				{
 					// Test float histogram produces the correct zero sample.
 					Histograms: []mimirpb.Histogram{
-						histogramWithStartTimestamp(simpleTestFloatHistogram(lastEnd+1100, 8.5), lastEnd+1000),
+						simpleTestFloatHistogram(lastEnd+1100, lastEnd+1000, 8.5),
 					},
 				},
 				{
 					// ST inside current block but some samples in the next block.
 					Histograms: []mimirpb.Histogram{
-						simpleTestHistogram(currEnd-200, 9),
-						histogramWithStartTimestamp(simpleTestHistogram(currEnd+200, 10), currEnd-100),
+						simpleTestHistogram(currEnd-200, 0, 9),
+						simpleTestHistogram(currEnd+200, currEnd-100, 10),
 					},
 				},
 			},
@@ -981,13 +976,13 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			input: []mimirpb.TimeSeries{
 				{
 					Histograms: []mimirpb.Histogram{
-						simpleTestHistogram(lastEnd+100, 7),
+						simpleTestHistogram(lastEnd+100, 0, 7),
 					},
 				},
 				{
 					Histograms: []mimirpb.Histogram{
 						// Duplicate the previous sample.
-						histogramWithStartTimestamp(simpleTestHistogram(lastEnd+200, 8), lastEnd+100),
+						simpleTestHistogram(lastEnd+200, lastEnd+100, 8),
 					},
 				},
 			},

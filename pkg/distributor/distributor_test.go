@@ -6089,7 +6089,7 @@ func mockWriteRequest(la []mimirpb.LabelAdapter, value float64, timestampMs int6
 }
 
 func mockWriteHistogramRequest(lbls []mimirpb.LabelAdapter, value float64, timestampMs int64) *mimirpb.WriteRequest {
-	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, util_test.GenerateTestHistogram(int(value)))}
+	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, 0, util_test.GenerateTestHistogram(int(value)))}
 
 	req := mimirpb.NewWriteRequest(nil, mimirpb.API)
 	return req.AddHistogramSeries([][]mimirpb.LabelAdapter{lbls}, histograms, nil)
@@ -6757,11 +6757,11 @@ func makeExemplars(exemplarLabels []string, ts int64, value float64) []mimirpb.E
 }
 
 func makeHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 func makeFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
@@ -8279,17 +8279,17 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
 				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
 	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
-				"cortex_distributor_requests_in_total",
-				"cortex_distributor_samples_in_total",
-				"cortex_distributor_exemplars_in_total",
-				"cortex_distributor_metadata_in_total",
-				"cortex_distributor_received_requests_total",
-				"cortex_distributor_received_samples_total",
-				"cortex_distributor_received_exemplars_total",
-				"cortex_distributor_received_metadata_total",
-				"cortex_distributor_received_native_histogram_samples_total",
-				"cortex_distributor_received_native_histogram_buckets_total",
-			}
+			"cortex_distributor_requests_in_total",
+			"cortex_distributor_samples_in_total",
+			"cortex_distributor_exemplars_in_total",
+			"cortex_distributor_metadata_in_total",
+			"cortex_distributor_received_requests_total",
+			"cortex_distributor_received_samples_total",
+			"cortex_distributor_received_exemplars_total",
+			"cortex_distributor_received_metadata_total",
+			"cortex_distributor_received_native_histogram_samples_total",
+			"cortex_distributor_received_native_histogram_buckets_total",
+		}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}

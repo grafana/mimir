@@ -509,7 +509,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	h := test.GenerateTestHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
-	p := FromHistogramToHistogramProto(ts, h)
+	p := FromHistogramToHistogramProto(ts, 0, h)
 
 	expected := Histogram{
 		Count:          &Histogram_CountInt{21},
@@ -546,7 +546,7 @@ func BenchmarkFromHistogramToHistogramProto(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, h := range input {
-			p := FromHistogramToHistogramProto(int64(i), h)
+			p := FromHistogramToHistogramProto(int64(i), 0, h)
 			FromHistogramProtoToHistogram(&p)
 		}
 	}
@@ -557,7 +557,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	h := test.GenerateTestFloatHistogram(int(ts))
 	h.CounterResetHint = histogram.NotCounterReset
 
-	p := FromFloatHistogramToHistogramProto(ts, h)
+	p := FromFloatHistogramToHistogramProto(ts, 0, h)
 
 	expected := Histogram{
 		Count:          &Histogram_CountFloat{21},
@@ -594,7 +594,7 @@ func BenchmarkFromFloatHistogramToHistogramProto(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, h := range input {
-			p := FromFloatHistogramToHistogramProto(int64(i), h)
+			p := FromFloatHistogramToHistogramProto(int64(i), 0, h)
 			FromFloatHistogramProtoToFloatHistogram(&p)
 		}
 	}

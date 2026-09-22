@@ -71,12 +71,10 @@ func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int6
 
 	switch {
 	case fh != nil:
-		hp := mimirpb.FromFloatHistogramToHistogramProto(t, fh)
-		hp.StartTimestamp = ct
+		hp := mimirpb.FromFloatHistogramToHistogramProto(t, ct, fh)
 		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, hp)
 	case h != nil:
-		hp := mimirpb.FromHistogramToHistogramProto(t, h)
-		hp.StartTimestamp = ct
+		hp := mimirpb.FromHistogramToHistogramProto(t, ct, h)
 		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, hp)
 	default:
 		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v, StartTimestamp: ct})

@@ -82,7 +82,7 @@ func newMockShardedQueryable(
 	}
 	histograms := make([]mimirpb.Histogram, 0, nHistograms)
 	for i := 0; i < nHistograms; i++ {
-		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(int64(i*1000), test.GenerateTestHistogram(i)))
+		histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(int64(i*1000), 0, test.GenerateTestHistogram(i)))
 	}
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))

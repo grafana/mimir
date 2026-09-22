@@ -39,12 +39,6 @@ func appendHistogram(t *testing.T, ca *MimirAppender, ls labels.Labels, meta met
 	require.NoError(t, err)
 }
 
-// histogramProtoWithStartTimestamp returns a copy of h with StartTimestamp set, to inline into test fixtures.
-func histogramProtoWithStartTimestamp(h mimirpb.Histogram, st int64) mimirpb.Histogram {
-	h.StartTimestamp = st
-	return h
-}
-
 func TestMimirAppender(t *testing.T) {
 	collidingLabels1, collidingLabels2 := labelsWithHashCollision()
 
@@ -396,7 +390,7 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Histograms: []mimirpb.Histogram{
-							histogramProtoWithStartTimestamp(mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)), 1000),
+							mimirpb.FromHistogramToHistogramProto(2000, 1000, test.GenerateTestHistogram(1)),
 						},
 						Exemplars: []mimirpb.Exemplar{
 							{
@@ -441,7 +435,7 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
 						},
 						Histograms: []mimirpb.Histogram{
-							histogramProtoWithStartTimestamp(mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)), 1000),
+							mimirpb.FromHistogramToHistogramProto(3000, 1000, test.GenerateTestHistogram(2)),
 						},
 						Exemplars: []mimirpb.Exemplar{
 							{

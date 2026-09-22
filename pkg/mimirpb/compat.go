@@ -299,7 +299,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 }
 
 // FromHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+func FromHistogramToHistogramProto(timestamp, startTimestamp int64, h *histogram.Histogram) Histogram {
 	if h == nil {
 		panic("FromHistogramToHistogramProto called on nil histogram")
 	}
@@ -315,14 +315,15 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
 		// PositiveCounts: nil,  not relevant for integer Histogram
-		ResetHint:    Histogram_ResetHint(h.CounterResetHint),
-		Timestamp:    timestamp,
-		CustomValues: h.CustomValues,
+		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
+		Timestamp:      timestamp,
+		StartTimestamp: startTimestamp,
+		CustomValues:   h.CustomValues,
 	}
 }
 
 // FromFloatHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+func FromFloatHistogramToHistogramProto(timestamp, startTimestamp int64, fh *histogram.FloatHistogram) Histogram {
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
@@ -344,6 +345,7 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		StartTimestamp: startTimestamp,
 		CustomValues:   fh.CustomValues,
 	}
 }
