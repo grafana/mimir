@@ -3154,6 +3154,22 @@ tenant_federation:
 # CLI flag: -ruler.inbound-sync-queue-poll-interval
 [inbound_sync_queue_poll_interval: <duration> | default = 10s]
 
+# (experimental) How long to wait for the ring to stop changing before syncing
+# rules in response to a ring change. This can reduce duplicate rule evaluation
+# when multiple ring changes happen in quick succession, such as during a
+# rollout. 0 disables debouncing and syncs immediately on every detected ring
+# change, which is the default and historical behaviour. Must be less than
+# -ruler.ring-change-max-debounce.
+# CLI flag: -ruler.ring-change-debounce
+[ring_change_debounce: <duration> | default = 0s]
+
+# (experimental) The maximum time to keep postponing a ring-change-triggered
+# sync while the ring keeps changing, so continuous ring churn can't
+# indefinitely delay picking up a ring change. Only used when
+# -ruler.ring-change-debounce is greater than 0.
+# CLI flag: -ruler.ring-change-max-debounce
+[ring_change_max_debounce: <duration> | default = 15s]
+
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency

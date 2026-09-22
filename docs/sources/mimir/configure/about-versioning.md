@@ -89,6 +89,9 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
+  - Debounce ring-change-triggered rule syncs.
+    - `-ruler.ring-change-debounce`
+    - `-ruler.ring-change-max-debounce`
   - `-ruler.min-rule-evaluation-interval`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
