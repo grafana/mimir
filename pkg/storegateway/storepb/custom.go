@@ -160,6 +160,10 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 		return chunk.PrometheusFloatHistogramChunk, true
 	case Chunk_XOR2:
 		return chunk.PrometheusXor2Chunk, true
+	case Chunk_HistogramST:
+		return chunk.PrometheusHistogramSTChunk, true
+	case Chunk_FloatHistogramST:
+		return chunk.PrometheusFloatHistogramSTChunk, true
 	default:
 		return 0, false
 	}
