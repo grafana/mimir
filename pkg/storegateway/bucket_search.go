@@ -273,8 +273,13 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 		return nil, streaminglabelvalues.ErrTermsAndExpression
 	}
 	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
+	switch wf.FuzzAlg {
+	case storepb.FUZZ_ALG_JARO_WINKLER:
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case storepb.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case storepb.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
 	}
 	if wf.Expression != "" {
 		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))

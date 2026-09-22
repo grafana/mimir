@@ -148,8 +148,13 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 		return nil, streaminglabelvalues.ErrTermsAndExpression
 	}
 	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == client.FUZZ_ALG_JARO_WINKLER {
+	switch wf.FuzzAlg {
+	case client.FUZZ_ALG_JARO_WINKLER:
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case client.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case client.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
 	}
 	if wf.Expression != "" {
 		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))

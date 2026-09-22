@@ -386,6 +386,20 @@ func TestStorepbToParams(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "search expression:")
 	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING_LEFT", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING_LEFT})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstringLeft, params.FuzzAlg)
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+	})
 }
 
 // prepareBenchmarkSearchStore builds a BucketStore backed by the same series

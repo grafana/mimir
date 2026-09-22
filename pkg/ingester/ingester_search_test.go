@@ -376,6 +376,20 @@ func TestProtoToParams(t *testing.T) {
 		assert.Equal(t, streaminglabelvalues.FuzzAlgJaroWinkler, params.FuzzAlg)
 		assert.Equal(t, 50, params.FuzzThreshold)
 	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING_LEFT", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstringLeft, params.FuzzAlg)
+	})
+
+	t.Run("maps FUZZ_ALG_SUBSTRING", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.FUZZ_ALG_SUBSTRING})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+	})
 }
 
 // TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument

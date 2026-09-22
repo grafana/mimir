@@ -4,6 +4,7 @@ package searchexpr
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/prometheus/storage"
 )
@@ -55,7 +56,15 @@ func CompileValidated(expr Expr, newTermFilter TermFilterFactory) (storage.Filte
 	if err != nil {
 		return nil, err
 	}
-	return &compiledFilter{root: root}, nil
+	return &compiledFilter{
+		root: root,
+		scorePool: sync.Pool{
+			New: func() any {
+				buf := make([]float64, 0)
+				return &buf
+			},
+		},
+	}, nil
 }
 
 // Validate checks that an expression is safe to use for search. Every
@@ -76,31 +85,79 @@ func Validate(expr Expr) error {
 	return nil
 }
 
+// evalResult is the outcome of evaluating one AST node against a candidate
+// value. scores holds every scored leaf's contribution collected under this
+// node, backed by the caller's pooled buffer; the relevance score reported to
+// the caller is the mean of the leaves an accepted match actually depended
+// on, computed once at the root in compiledFilter.Accept.
 type evalResult struct {
 	accepted bool
-	score    float64
 	scored   bool
+	scores   []float64
 }
 
 type evaluator interface {
-	evaluate(value string) evalResult
+	evaluate(value string, buf *[]float64) evalResult
 }
 
 type compiledFilter struct {
 	root evaluator
+	// scorePool holds the []float64 backing arrays that leaf evaluations
+	// write scores into. One buffer serves an entire Accept call, so the
+	// aliasing between evalResults produced by the same call (see
+	// combineScores) never crosses buffers.
+	scorePool sync.Pool
 }
 
 var _ storage.Filter = (*compiledFilter)(nil)
 
 func (f *compiledFilter) Accept(value string) (bool, float64) {
-	result := f.root.evaluate(value)
-	if !result.accepted {
+	// Reset and reuse the pool's own pointer rather than taking the address
+	// of a fresh local: passing &buf through the evaluator interface would
+	// force that slice header itself onto the heap every call.
+	bufPtr := f.scorePool.Get().(*[]float64)
+	*bufPtr = (*bufPtr)[:0]
+	result := f.root.evaluate(value, bufPtr)
+
+	accepted, scored := result.accepted, result.scored
+	var score float64
+	if scored {
+		score = mean(result.scores)
+	}
+
+	// Read result.scores before returning the buffer: Put makes it
+	// available to another concurrent Accept call immediately.
+	f.scorePool.Put(bufPtr)
+
+	if !accepted {
 		return false, 0
 	}
-	if !result.scored {
+	if !scored {
 		return true, 0
 	}
-	return true, result.score
+	return true, score
+}
+
+func mean(xs []float64) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, x := range xs {
+		sum += x
+	}
+	return sum / float64(len(xs))
+}
+
+// perfect reports whether every score is already at the maximum (1.0), so an
+// OR can short-circuit without evaluating its other branch.
+func perfect(xs []float64) bool {
+	for _, x := range xs {
+		if x < 1 {
+			return false
+		}
+	}
+	return true
 }
 
 type termEvaluator struct {
@@ -108,7 +165,7 @@ type termEvaluator struct {
 	negated bool
 }
 
-func (e *termEvaluator) evaluate(value string) evalResult {
+func (e *termEvaluator) evaluate(value string, buf *[]float64) evalResult {
 	accepted, score := e.filter.Accept(value)
 	if e.negated {
 		return evalResult{accepted: !accepted}
@@ -116,7 +173,9 @@ func (e *termEvaluator) evaluate(value string) evalResult {
 	if !accepted {
 		return evalResult{}
 	}
-	return evalResult{accepted: true, score: score, scored: true}
+	*buf = append(*buf, score)
+	claimed := *buf
+	return evalResult{accepted: true, scored: true, scores: claimed[len(claimed)-1:]}
 }
 
 type andEvaluator struct {
@@ -124,18 +183,16 @@ type andEvaluator struct {
 	right evaluator
 }
 
-func (e *andEvaluator) evaluate(value string) evalResult {
-	left := e.left.evaluate(value)
+func (e *andEvaluator) evaluate(value string, buf *[]float64) evalResult {
+	left := e.left.evaluate(value, buf)
 	if !left.accepted {
 		return evalResult{}
 	}
-	right := e.right.evaluate(value)
+	right := e.right.evaluate(value, buf)
 	if !right.accepted {
 		return evalResult{}
 	}
-	// An AND is only as relevant as its weakest required positive term. Using
-	// the lower score prevents a partial match from ranking above that term.
-	return combineScores(left, right, lowerScore)
+	return combineScores(left, right)
 }
 
 type orEvaluator struct {
@@ -143,12 +200,12 @@ type orEvaluator struct {
 	right evaluator
 }
 
-func (e *orEvaluator) evaluate(value string) evalResult {
-	left := e.left.evaluate(value)
-	if left.accepted && left.scored && left.score >= 1 {
+func (e *orEvaluator) evaluate(value string, buf *[]float64) evalResult {
+	left := e.left.evaluate(value, buf)
+	if left.accepted && left.scored && perfect(left.scores) {
 		return left
 	}
-	right := e.right.evaluate(value)
+	right := e.right.evaluate(value, buf)
 
 	switch {
 	case !left.accepted:
@@ -156,32 +213,41 @@ func (e *orEvaluator) evaluate(value string) evalResult {
 	case !right.accepted:
 		return left
 	default:
-		return combineScores(left, right, higherScore)
+		return bestScore(left, right)
 	}
 }
 
-func lowerScore(left, right float64) float64 {
-	if left < right {
-		return left
-	}
-	return right
-}
-
-func higherScore(left, right float64) float64 {
-	if left > right {
-		return left
-	}
-	return right
-}
-
-func combineScores(left, right evalResult, combine func(float64, float64) float64) evalResult {
+// bestScore picks whichever branch's own mean relevance is higher, keeping
+// that branch's underlying scores slice so a further-up AND can still fold
+// it into a wider mean.
+func bestScore(left, right evalResult) evalResult {
 	switch {
 	case left.scored && right.scored:
-		return evalResult{accepted: true, score: combine(left.score, right.score), scored: true}
+		if mean(left.scores) > mean(right.scores) {
+			return evalResult{accepted: true, scored: true, scores: left.scores}
+		}
+		return evalResult{accepted: true, scored: true, scores: right.scores}
 	case left.scored:
-		return evalResult{accepted: true, score: left.score, scored: true}
+		return evalResult{accepted: true, scored: true, scores: left.scores}
 	case right.scored:
-		return evalResult{accepted: true, score: right.score, scored: true}
+		return evalResult{accepted: true, scored: true, scores: right.scores}
+	default:
+		return evalResult{accepted: true}
+	}
+}
+
+// combineScores folds an AND's two children into one result. An unscored
+// child (a NOT branch) contributes no leaves; when both children are scored,
+// their leaves are concatenated so the root's final mean spans every scored
+// leaf visited under this AND, per the reconciled mean-of-leaves design.
+func combineScores(left, right evalResult) evalResult {
+	switch {
+	case left.scored && right.scored:
+		return evalResult{accepted: true, scored: true, scores: append(left.scores, right.scores...)}
+	case left.scored:
+		return evalResult{accepted: true, scored: true, scores: left.scores}
+	case right.scored:
+		return evalResult{accepted: true, scored: true, scores: right.scores}
 	default:
 		return evalResult{accepted: true}
 	}

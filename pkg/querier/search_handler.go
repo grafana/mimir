@@ -231,12 +231,22 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		// keep default
 	case "jarowinkler":
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case "substring_left":
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case "substring":
+		alg = streaminglabelvalues.FuzzAlgSubstring
 	default:
-		return nil, fmt.Errorf("invalid fuzz_alg %q (allowed: subsequence, jarowinkler)", q.Get("fuzz_alg"))
+		return nil, fmt.Errorf("invalid fuzz_alg %q (allowed: subsequence, jarowinkler, substring_left, substring)", q.Get("fuzz_alg"))
 	}
 
-	// Fuzz threshold (int 0-100, default 0).
+	// Fuzz threshold (int 0-100, default 0). fuzz_alg=substring ignores the
+	// fuzzy threshold entirely (containsScorerAny always scores 1.0 on a
+	// match), so 100 is the only value that makes sense; default to it and
+	// reject any other explicit value rather than silently ignoring it.
 	threshold := 0
+	if alg == streaminglabelvalues.FuzzAlgSubstring {
+		threshold = 100
+	}
 	if v := q.Get("fuzz_threshold"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil {
@@ -244,6 +254,9 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		}
 		if parsed < 0 || parsed > 100 {
 			return nil, fmt.Errorf("invalid fuzz_threshold: got %v but must be between 0 and 100", parsed)
+		}
+		if alg == streaminglabelvalues.FuzzAlgSubstring && parsed != 100 {
+			return nil, fmt.Errorf("invalid fuzz_threshold: fuzz_alg=substring only supports fuzz_threshold=100, got %d", parsed)
 		}
 		threshold = parsed
 	}
@@ -258,6 +271,12 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 	// produce the scores. Matches Prometheus PR #18573.
 	if sortBy == "score" && len(terms) == 0 && expr == "" {
 		return nil, errors.New("sort_by=score requires search[] or search_expr to be set")
+	}
+	// fuzz_alg=substring scores every match 1.0 (containsScorerAny), so
+	// sorting by score carries no information; only alpha ordering makes
+	// sense.
+	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgSubstring {
+		return nil, errors.New("sort_by=score is not supported with fuzz_alg=substring; every match scores 1.0, use sort_by=alpha")
 	}
 	sortDir := q.Get("sort_dir")
 	if sortDir == "" {
