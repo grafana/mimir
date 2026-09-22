@@ -6089,7 +6089,7 @@ func mockWriteRequest(la []mimirpb.LabelAdapter, value float64, timestampMs int6
 }
 
 func mockWriteHistogramRequest(lbls []mimirpb.LabelAdapter, value float64, timestampMs int64) *mimirpb.WriteRequest {
-	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, util_test.GenerateTestHistogram(int(value)))}
+	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, 0, util_test.GenerateTestHistogram(int(value)))}
 
 	req := mimirpb.NewWriteRequest(nil, mimirpb.API)
 	return req.AddHistogramSeries([][]mimirpb.LabelAdapter{lbls}, histograms, nil)
@@ -6757,11 +6757,11 @@ func makeExemplars(exemplarLabels []string, ts int64, value float64) []mimirpb.E
 }
 
 func makeHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 func makeFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirpb.Histogram {
-	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, histogram)}
+	return []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(ts, 0, histogram)}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,

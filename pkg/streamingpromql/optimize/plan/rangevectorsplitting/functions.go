@@ -84,11 +84,11 @@ func sumOverTimeGenerate(
 			}
 			return SumOverTimeIntermediate{}, false, err
 		}
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, 0, h)
 		result.SumH = &histProto
 
 		if comp != nil {
-			compProto := mimirpb.FromFloatHistogramToHistogramProto(0, comp)
+			compProto := mimirpb.FromFloatHistogramToHistogramProto(0, 0, comp)
 			result.CompH = &compProto
 		}
 	}
@@ -396,7 +396,7 @@ func firstOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotati
 	}
 
 	if !hasFloat && h != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, 0, h)
 		result.H = &histProto
 	}
 
@@ -436,7 +436,7 @@ func lastOverTimeGenerate(step *types.RangeVectorStepData, _ types.EmitAnnotatio
 	}
 
 	if !hasFloat && h != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, 0, h)
 		result.H = &histProto
 	}
 

@@ -130,12 +130,11 @@ func TestRW2Unmarshal(t *testing.T) {
 						{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
 					},
 					Histograms: []Histogram{
-						FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+						FromHistogramToHistogramProto(2000, 1500, test.GenerateTestHistogram(1)),
 					},
 				},
 			},
 		}
-		writeRequest.TimeseriesRW2[0].Histograms[0].StartTimestamp = 1500
 		writeRequest.SymbolsRW2 = syms.GetSymbols()
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
@@ -162,13 +161,12 @@ func TestRW2Unmarshal(t *testing.T) {
 							{Value: 123.456, TimestampMs: 1000, StartTimestamp: 500},
 						},
 						Histograms: []Histogram{
-							FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+							FromHistogramToHistogramProto(2000, 1500, test.GenerateTestHistogram(1)),
 						},
 					},
 				},
 			},
 		}
-		writeRequest.Timeseries[0].Histograms[0].StartTimestamp = 1500
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -196,7 +194,7 @@ func TestRW2Unmarshal(t *testing.T) {
 				{Value: 2, TimestampMs: 2000},
 			},
 			Histograms: []Histogram{
-				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+				FromHistogramToHistogramProto(3000, 0, test.GenerateTestHistogram(1)),
 			},
 		}
 		tsData, err := ts.Marshal()
@@ -263,7 +261,7 @@ func TestRW2Unmarshal(t *testing.T) {
 				{Value: 2, TimestampMs: 2000},
 			},
 			Histograms: []Histogram{
-				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+				FromHistogramToHistogramProto(3000, 0, test.GenerateTestHistogram(1)),
 			},
 		}
 		data, err := ts.Marshal()
@@ -1069,10 +1067,9 @@ func TestMarshalLegacyCreatedTimestamp(t *testing.T) {
 		ts := TimeSeries{
 			Labels: []LabelAdapter{{Name: "__name__", Value: "test_metric_total"}},
 			Histograms: []Histogram{
-				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+				FromHistogramToHistogramProto(3000, 700, test.GenerateTestHistogram(1)),
 			},
 		}
-		ts.Histograms[0].StartTimestamp = 700
 		data, err := ts.Marshal()
 		require.NoError(t, err)
 
@@ -1114,10 +1111,9 @@ func TestMarshalLegacyCreatedTimestamp(t *testing.T) {
 		ts := TimeSeriesRW2{
 			LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
 			Histograms: []Histogram{
-				FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(1)),
+				FromHistogramToHistogramProto(3000, 700, test.GenerateTestHistogram(1)),
 			},
 		}
-		ts.Histograms[0].StartTimestamp = 700
 		data, err := ts.Marshal()
 		require.NoError(t, err)
 
