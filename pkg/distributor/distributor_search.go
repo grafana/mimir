@@ -325,6 +325,10 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 	switch p.FuzzAlg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_JARO_WINKLER
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING_LEFT
+	case streaminglabelvalues.FuzzAlgSubstring:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING
 	default:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSEQUENCE
 	}

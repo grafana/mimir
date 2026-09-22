@@ -808,6 +808,8 @@ func TestSearchLabelNamesHandler_BadParams_Return400(t *testing.T) {
 		{name: "invalid match selector", query: "match[]=foo%7Bbar"},
 		{name: "search[] and search_expr together", query: "search[]=foo&search_expr=bar"},
 		{name: "invalid search_expr syntax", query: "search_expr=foo+AND"},
+		{name: "fuzz_alg=substring rejects a non-100 explicit threshold", query: "search[]=foo&fuzz_alg=substring&fuzz_threshold=50"},
+		{name: "fuzz_alg=substring rejects sort_by=score", query: "search[]=foo&fuzz_alg=substring&sort_by=score"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -940,6 +942,72 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	require.Len(t, req.matchers[0], 1)
 	assert.Equal(t, "job", req.matchers[0][0].Name)
 	assert.Equal(t, "prom", req.matchers[0][0].Value)
+}
+
+func TestParseSearchRequest_FuzzAlgSubstringVariants(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  streaminglabelvalues.FuzzAlg
+	}{
+		{query: "fuzz_alg=substring_left", want: streaminglabelvalues.FuzzAlgSubstringLeft},
+		{query: "fuzz_alg=substring", want: streaminglabelvalues.FuzzAlgSubstring},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&"+tc.query)
+			req, err := parseSearchRequest(r, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, req.params.FuzzAlg)
+		})
+	}
+}
+
+// TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering pins the
+// fuzz_alg=substring constraints: fuzz_threshold defaults to 100 (the only
+// value that means anything once containsScorerAny always scores 1.0), an
+// explicit non-100 threshold is rejected rather than silently ignored, and
+// sort_by=score is rejected since every match scores identically.
+func TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering(t *testing.T) {
+	t.Run("defaults fuzz_threshold to 100", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring")
+		req, err := parseSearchRequest(r, false)
+		require.NoError(t, err)
+		assert.Equal(t, 100, req.params.FuzzThreshold)
+	})
+
+	t.Run("accepts an explicit fuzz_threshold=100", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&fuzz_threshold=100")
+		req, err := parseSearchRequest(r, false)
+		require.NoError(t, err)
+		assert.Equal(t, 100, req.params.FuzzThreshold)
+	})
+
+	t.Run("rejects an explicit non-100 fuzz_threshold", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&fuzz_threshold=50")
+		_, err := parseSearchRequest(r, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "fuzz_alg=substring only supports fuzz_threshold=100")
+	})
+
+	t.Run("rejects sort_by=score", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring&sort_by=score")
+		_, err := parseSearchRequest(r, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sort_by=score is not supported with fuzz_alg=substring")
+	})
+
+	t.Run("fuzz_threshold default 100 does not apply to substring_left", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring_left")
+		req, err := parseSearchRequest(r, false)
+		require.NoError(t, err)
+		assert.Equal(t, 0, req.params.FuzzThreshold, "substring_left keeps the ordinary default of 0")
+	})
+
+	t.Run("sort_by=score is still allowed for substring_left", func(t *testing.T) {
+		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring_left&sort_by=score")
+		req, err := parseSearchRequest(r, false)
+		require.NoError(t, err)
+		assert.Equal(t, storage.OrderByScoreDesc, req.hints.OrderBy)
+	})
 }
 
 func TestParseSearchRequest_SearchExprRoundTrip(t *testing.T) {

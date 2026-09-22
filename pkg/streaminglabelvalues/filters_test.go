@@ -44,7 +44,7 @@ func TestFilterContains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := NewFilterContains(tt.term, tt.caseSensitive)
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, containsScorerLeft)
 			require.NoError(t, err)
 			gotAccepted, gotScore := f.Accept(tt.value)
 			assert.Equal(t, tt.wantAccepted, gotAccepted)
@@ -54,7 +54,7 @@ func TestFilterContains(t *testing.T) {
 }
 
 func TestFilterContainsRejectsEmptyTerm(t *testing.T) {
-	_, err := NewFilterContains("", true)
+	_, err := NewFilterContains("", true, containsScorerLeft)
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "empty")
 }
@@ -225,6 +225,111 @@ func TestBuildFilterExpressionSupportsNestedGroupsWithGCXCorpusCandidates(t *tes
 					accepted, _ := filter.Accept(value)
 					assert.Equal(t, want, accepted)
 				})
+			}
+		})
+	}
+}
+
+// TestExpressionScoring pins the mean-of-leaves relevance scoring for
+// expression-based filters against a small realistic metric-name corpus: an
+// AND's score is the mean of the scores of the leaves the match actually
+// depended on (not just its weakest term), NOT contributes no score, and an
+// OR reports whichever branch scored higher.
+func TestExpressionScoring(t *testing.T) {
+	corpus := []string{
+		"cortex_frontend_query_result_cache_attempted_total",
+		"cortex_query_frontend_result_cache_requests_total",
+		"cortex_frontend_query_result_cache_skipped_total",
+		"cortex_frontend_query_result_cache_hits_total",
+		"cortex_frontend_query_resul_cache_hits_total",
+	}
+
+	runFilter := func(t *testing.T, params *Params, matches map[string]float64) {
+		filter, err := BuildFilter(params)
+		require.NoError(t, err)
+		for _, metric := range corpus {
+			accepted, score := filter.Accept(metric)
+			if accepted {
+				matches[metric] = score
+			}
+		}
+	}
+
+	newExprParams := func(t *testing.T, expression string) *Params {
+		t.Helper()
+		params, err := NewExpressionParams(expression, false, FuzzAlgJaroWinkler, 70)
+		require.NoError(t, err)
+		return params
+	}
+
+	for _, test := range []struct {
+		name       string
+		expression string
+		want       map[string]float64
+	}{
+		{
+			name:       "cortex",
+			expression: "cortex",
+			// Both metrics have cortex in the same position.
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 1,
+				"cortex_query_frontend_result_cache_requests_total":  1,
+			},
+		},
+		{
+			name:       "ctx",
+			expression: "ctx",
+			// Both metrics have the same spelling mistake in the same position.
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 0.718,
+				"cortex_query_frontend_result_cache_requests_total":  0.718,
+			},
+		},
+		{
+			name:       "query",
+			expression: "query",
+			// Both metrics have query, but in different positions so the one
+			// with query further to the left scores better.
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 0.680,
+				"cortex_query_frontend_result_cache_requests_total":  0.857,
+			},
+		},
+		{
+			name:       "cortex and query",
+			expression: "cortex and query",
+			// Mean of the two single-term cases above: mean(1, 0.680) and
+			// mean(1, 0.857).
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 0.840,
+				"cortex_query_frontend_result_cache_requests_total":  0.928,
+			},
+		},
+		{
+			name:       "cortex and query and not hits",
+			expression: "cortex and query and not hits",
+			// Adding an unscored NOT branch must not change the mean.
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 0.840,
+				"cortex_query_frontend_result_cache_requests_total":  0.928,
+			},
+		},
+		{
+			name:       "ctx or hits",
+			expression: "ctx or hits",
+			// OR reports the higher-scoring branch per metric.
+			want: map[string]float64{
+				"cortex_frontend_query_result_cache_attempted_total": 0.718,
+				"cortex_frontend_query_result_cache_hits_total":      0.720,
+				"cortex_frontend_query_resul_cache_hits_total":       0.720,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			matches := map[string]float64{}
+			runFilter(t, newExprParams(t, test.expression), matches)
+			for metric, score := range test.want {
+				assert.Equal(t, fmt.Sprintf("%.3f", score), fmt.Sprintf("%.3f", matches[metric]), metric)
 			}
 		})
 	}

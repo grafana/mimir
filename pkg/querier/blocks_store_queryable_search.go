@@ -572,6 +572,10 @@ func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 	switch p.FuzzAlg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
 		wf.FuzzAlg = storepb.FUZZ_ALG_JARO_WINKLER
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING_LEFT
+	case streaminglabelvalues.FuzzAlgSubstring:
+		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING
 	default:
 		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSEQUENCE
 	}

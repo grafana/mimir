@@ -250,6 +250,12 @@ message SearchFilter {
   enum FuzzAlg {
     FUZZ_ALG_SUBSEQUENCE = 0;
     FUZZ_ALG_JARO_WINKLER = 1;
+    // FUZZ_ALG_SUBSTRING_LEFT applies no fuzzy matching: a plain substring
+    // match, scoring higher for matches further left in the value.
+    FUZZ_ALG_SUBSTRING_LEFT = 2;
+    // FUZZ_ALG_SUBSTRING applies no fuzzy matching: a plain substring match,
+    // scoring 1.0 regardless of match position.
+    FUZZ_ALG_SUBSTRING = 3;
   }
   FuzzAlg fuzz_alg = 3;
   // FuzzThreshold is the minimum fuzzy score expressed as int 0-100,

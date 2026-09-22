@@ -28,6 +28,10 @@ const (
 	FuzzAlgSubsequence FuzzAlg = iota
 	// FuzzAlgJaroWinkler uses the Jaro-Winkler similarity score.
 	FuzzAlgJaroWinkler
+	// FuzzAlgSubstringLeft applies no fuzzy matching. It simply applies a substring match, scoring higher to left matches.
+	FuzzAlgSubstringLeft FuzzAlg = 2
+	// FuzzAlgSubstring applies no fuzzy matching. It simply applies a substring match.
+	FuzzAlgSubstring FuzzAlg = 4
 )
 
 // Params is the wire-decoupled input to the search call. Each gRPC
@@ -114,7 +118,7 @@ func (p *Params) validate() error {
 		return nil
 	}
 	switch p.FuzzAlg {
-	case FuzzAlgSubsequence, FuzzAlgJaroWinkler:
+	case FuzzAlgSubsequence, FuzzAlgJaroWinkler, FuzzAlgSubstringLeft, FuzzAlgSubstring:
 	default:
 		return fmt.Errorf("unknown fuzz algorithm %d", p.FuzzAlg)
 	}

@@ -16,6 +16,27 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues/internal/searchexpr"
 )
 
+type containsScorer func(value string, term string) (bool, float64)
+
+var containsScorerLeft containsScorer = func(value string, term string) (bool, float64) {
+	idx := strings.Index(value, term)
+	if idx < 0 {
+		return false, 0
+	}
+	if idx == 0 {
+		return true, 1.0
+	}
+	maxIdx := len(value) - len(term)
+	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
+}
+
+var containsScorerAny containsScorer = func(value string, term string) (bool, float64) {
+	if strings.Contains(value, term) {
+		return true, 1.0
+	}
+	return false, 0
+}
+
 // FilterContains accepts values that contain a fixed substring. Score is
 // 1.0 on prefix match; for non-prefix substrings the score decays linearly
 // with the match position from 1.0 (early match) to 0.1 (latest match).
@@ -28,19 +49,20 @@ import (
 type FilterContains struct {
 	term          string
 	caseSensitive bool
+	scorer        containsScorer
 }
 
 // NewFilterContains returns a substring-containment filter. Term must be
 // non-empty. When caseSensitive is false the term is lowercased once at
 // construction time.
-func NewFilterContains(term string, caseSensitive bool) (*FilterContains, error) {
+func NewFilterContains(term string, caseSensitive bool, scorer containsScorer) (*FilterContains, error) {
 	if term == "" {
 		return nil, errors.New("FilterContains: empty term")
 	}
 	if !caseSensitive {
 		term = strings.ToLower(term)
 	}
-	return &FilterContains{term: term, caseSensitive: caseSensitive}, nil
+	return &FilterContains{term: term, caseSensitive: caseSensitive, scorer: scorer}, nil
 }
 
 // Accept returns (true, 1.0) on prefix match; (true, score) for a non-prefix
@@ -50,15 +72,7 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 	if !f.caseSensitive {
 		value = strings.ToLower(value)
 	}
-	idx := strings.Index(value, f.term)
-	if idx < 0 {
-		return false, 0
-	}
-	if idx == 0 {
-		return true, 1.0
-	}
-	maxIdx := len(value) - len(f.term)
-	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
+	return f.scorer(value, f.term)
 }
 
 // FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
@@ -251,7 +265,7 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 			term = strings.ToLower(term)
 		}
 		if negated {
-			return NewFilterContains(term, true)
+			return NewFilterContains(term, p.CaseSensitive, containsScorerAny)
 		}
 		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
@@ -295,7 +309,7 @@ func buildLegacyTermsFilter(terms []string, newTermFilter searchexpr.TermFilterF
 func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresholdInt int, threshold float64) (storage.Filter, error) {
 	switch alg {
 	case FuzzAlgJaroWinkler:
-		substring, err := NewFilterContains(term, caseSensitive)
+		substring, err := NewFilterContains(term, caseSensitive, containsScorerLeft)
 		if err != nil {
 			return nil, err
 		}
@@ -307,6 +321,10 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 			return nil, err
 		}
 		return &filterFallback{substring: substring, fuzzy: fuzzy}, nil
+	case FuzzAlgSubstringLeft:
+		return NewFilterContains(term, caseSensitive, containsScorerLeft)
+	case FuzzAlgSubstring:
+		return NewFilterContains(term, caseSensitive, containsScorerAny)
 	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
 		return NewFilterSubsequence(term, threshold, caseSensitive)
 	}
