@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -318,6 +319,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
+		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
