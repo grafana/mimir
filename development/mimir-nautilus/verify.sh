@@ -164,21 +164,19 @@ if ! retry_until query_metric_expect "$NAUTILUS_TENANT_B" "verify_metric" "84"; 
 fi
 echo "$PASS_PREFIX nautilus-tenant-b query returned the expected sample"
 
-# 3. Wait for the bootstrap round to configure tenant ranges on partition 0
-# before generating load. Samples ingested before SetHashRanges cannot be
-# attributed to a range and therefore cannot drive the slicer.
-echo "waiting for both tenants to bootstrap on partition 0..."
-if ! RETRY_BUDGET="${REBALANCE_RETRY_BUDGET:-180}" retry_until multitenant_assignment_ready 1; then
+# 3. Wait for the bootstrap round to publish each tenant's deterministic
+# multi-partition assignment before generating load.
+echo "waiting for both tenants to acquire multi-partition bootstrap assignments..."
+if ! RETRY_BUDGET="${REBALANCE_RETRY_BUDGET:-180}" retry_until multitenant_assignment_ready 4; then
     echo "$FAIL_PREFIX tenants did not acquire valid bootstrap assignments"
     cat "$ASSIGNMENT_CHECK_OUTPUT" 2>/dev/null || true
     exit 1
 fi
 echo "$PASS_PREFIX both nautilus tenants acquired valid bootstrap assignments"
 
-# Generate enough tenant-local load for the slicer to move ranges off the
-# bootstrap partition. Then inspect the durable authoritative log and require
-# each tenant to independently tile the full uint32 space across at least two
-# partitions.
+# Generate enough tenant-local load for the slicer to refine the initial
+# placement. Then inspect the durable authoritative log and require each tenant
+# to independently tile the full uint32 space across multiple partitions.
 echo "pushing multi-tenant load to trigger rebalancing..."
 push_spike "$NAUTILUS_TENANT" "verify_spike_a" 6000 "$NOW_MS" || {
     echo "$FAIL_PREFIX first nautilus tenant spike failed"

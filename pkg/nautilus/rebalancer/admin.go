@@ -355,17 +355,19 @@ type adminPageData struct {
 	// values are surfaced separately so the UI can label units
 	// (samples/s) and apply human-readable formatting. Zero when
 	// no rate signal has been reported yet.
-	MeanRate      float64
-	MaxRate       float64
-	MinRate       float64
-	RateImbalance float64
-	NumPartitions int
-	NumEntries    int
-	MovedFraction float64
-	Partitions    []partitionView
-	Rounds        []RoundLog
-	HeatmapData   string
-	TenantIDs     []string
+	MeanRate             float64
+	MaxRate              float64
+	MinRate              float64
+	RateImbalance        float64
+	NumPartitions        int
+	NumEntries           int
+	MovedFraction        float64
+	Partitions           []partitionView
+	Rounds               []RoundLog
+	HeatmapData          string
+	TenantIDs            []string
+	SelectedTenantID     string
+	SelectedTenantRanges []tenantRangeView
 
 	ReadcacheConfigured bool
 	ReadcacheReplicas   []readcacheReplicaView
@@ -696,8 +698,6 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
 //	GET  /metric                 → metric-name hash range lookup tool
 //	                               (?user=&metric=[&window=][&format=json])
-//	GET  /tenant-ranges         → current ranges and load for one tenant
-//	                               (?tenant=)
 //	POST /readcache/reset        → force an even-split
 //	                               (partition -> readcache) assignment
 //
@@ -714,7 +714,7 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	sub := strings.TrimPrefix(req.URL.Path, adminPathPrefix)
 	switch {
 	case sub == "" || sub == "/":
-		r.serveAdminHTML(w)
+		r.serveAdminHTMLForTenant(w, req.URL.Query().Get("tenant"))
 	case sub == "/rounds.json":
 		r.serveRoundsList(w)
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
@@ -722,8 +722,6 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.serveRoundTrace(w, idxStr)
 	case sub == "/metric":
 		r.serveMetricLookup(w, req)
-	case sub == "/tenant-ranges":
-		r.serveTenantRanges(w, req)
 	case sub == "/readcache/reset":
 		r.serveReadcacheReset(w, req)
 	default:
@@ -731,15 +729,7 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Rebalancer) serveTenantRanges(w http.ResponseWriter, req *http.Request) {
-	tenantID := req.URL.Query().Get("tenant")
-	if tenantID == "" {
-		http.Error(w, "tenant is required", http.StatusBadRequest)
-		return
-	}
-
-	_, lastStats, _, _ := r.admin.snapshot()
-	current := r.store.latestActiveAssignment(r.now())
+func buildTenantRangeViews(current *assignment.Assignment, lastStats map[partitionRangeKey]rangeStatsView, tenantID string) []tenantRangeView {
 	ranges := make([]tenantRangeView, 0)
 	if current != nil {
 		for _, e := range current.Entries {
@@ -764,16 +754,24 @@ func (r *Rebalancer) serveTenantRanges(w http.ResponseWriter, req *http.Request)
 	sort.Slice(ranges, func(i, j int) bool {
 		return ranges[i].Lo < ranges[j].Lo
 	})
+	return ranges
+}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if err := json.NewEncoder(w).Encode(struct {
-		TenantID string            `json:"tenant_id"`
-		Ranges   []tenantRangeView `json:"ranges"`
-	}{
-		TenantID: tenantID,
-		Ranges:   ranges,
-	}); err != nil {
-		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
+func (r *Rebalancer) serveAdminHTML(w http.ResponseWriter) {
+	r.serveAdminHTMLForTenant(w, "")
+}
+
+func (r *Rebalancer) serveAdminHTMLForTenant(w http.ResponseWriter, tenantID string) {
+	data := r.buildAdminPageData()
+	data.SelectedTenantID = tenantID
+	if tenantID != "" {
+		_, lastStats, _, _ := r.admin.snapshot()
+		current := r.store.latestActiveAssignment(r.now())
+		data.SelectedTenantRanges = buildTenantRangeViews(current, lastStats, tenantID)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := adminTemplate.Execute(w, data); err != nil {
+		http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
 	}
 }
 
@@ -782,14 +780,6 @@ func (r *Rebalancer) serveTenantRanges(w http.ResponseWriter, req *http.Request)
 // dispatch in ServeHTTP and link generation in the HTML template
 // stay in sync.
 const adminPathPrefix = "/nautilus/rebalancer"
-
-func (r *Rebalancer) serveAdminHTML(w http.ResponseWriter) {
-	data := r.buildAdminPageData()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := adminTemplate.Execute(w, data); err != nil {
-		http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
-	}
-}
 
 func (r *Rebalancer) serveRoundsList(w http.ResponseWriter) {
 	traces := r.admin.traceSnapshot()

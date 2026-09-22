@@ -343,16 +343,23 @@ details>summary::-webkit-details-marker{display:none}
 {{end}}
 
 <h2>Tenant hash ranges</h2>
-<div class="tenant-inspector" id="tenantInspector" data-endpoint="{{.AdminPathPrefix}}/tenant-ranges">
-	<div class="tenant-controls">
+<div class="tenant-inspector">
+	<form class="tenant-controls" method="GET" action="{{.AdminPathPrefix}}">
 		<label for="tenantSelect">Tenant</label>
-		<select id="tenantSelect"{{if eq (len .TenantIDs) 0}} disabled{{end}}>
+		<select id="tenantSelect" name="tenant" onchange="this.form.submit()"{{if eq (len .TenantIDs) 0}} disabled{{end}}>
 			<option value="">Select a tenant…</option>
-			{{range .TenantIDs}}<option value="{{.}}">{{.}}</option>{{end}}
+			{{range .TenantIDs}}<option value="{{.}}"{{if eq . $.SelectedTenantID}} selected{{end}}>{{.}}</option>{{end}}
 		</select>
-		<span class="tenant-status" id="tenantRangeStatus">{{if eq (len .TenantIDs) 0}}No tenant assignments available.{{else}}Choose a tenant to inspect its current assignment.{{end}}</span>
-	</div>
-	<div class="tenant-table-wrap" id="tenantRangeTableWrap" hidden>
+		<noscript><button type="submit">Show</button></noscript>
+		<span class="tenant-status">
+			{{if eq (len .TenantIDs) 0}}No tenant assignments available.
+			{{else if .SelectedTenantID}}{{len .SelectedTenantRanges}} current hash range{{if ne (len .SelectedTenantRanges) 1}}s{{end}}.
+			{{else}}Choose a tenant to inspect its current assignment.{{end}}
+		</span>
+	</form>
+	{{if .SelectedTenantID}}
+	{{if .SelectedTenantRanges}}
+	<div class="tenant-table-wrap">
 		<table class="tenant-table">
 			<thead>
 				<tr>
@@ -363,9 +370,23 @@ details>summary::-webkit-details-marker{display:none}
 					<th class="numeric">Samples/s</th>
 				</tr>
 			</thead>
-			<tbody id="tenantRangeRows"></tbody>
+			<tbody>
+			{{range .SelectedTenantRanges}}
+				<tr>
+					<td class="hash-bound">0x{{printf "%08x" .Lo}}</td>
+					<td class="hash-bound">0x{{printf "%08x" .Hi}}</td>
+					<td class="numeric">P{{.PartitionID}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtSeries .HeadSeries}}{{else}}—{{end}}</td>
+					<td class="numeric">{{if .LoadAvailable}}{{fmtRate .SampleRate}}{{else}}—{{end}}</td>
+				</tr>
+			{{end}}
+			</tbody>
 		</table>
 	</div>
+	{{else}}
+	<div class="no-data" style="padding:12px">No current hash ranges for this tenant.</div>
+	{{end}}
+	{{end}}
 </div>
 
 <div class="generated">Generated {{.GeneratedAt}} · Auto-refresh: <a href="" onclick="setTimeout(function(){location.reload()},0);return false">now</a></div>
@@ -392,70 +413,6 @@ details>summary::-webkit-details-marker{display:none}
 		frag.appendChild(d);
 	}
 	el.appendChild(frag);
-})();
-
-(function(){
-	var inspector = document.getElementById('tenantInspector');
-	var select = document.getElementById('tenantSelect');
-	var status = document.getElementById('tenantRangeStatus');
-	var wrap = document.getElementById('tenantRangeTableWrap');
-	var rows = document.getElementById('tenantRangeRows');
-	if (!inspector || !select || !status || !wrap || !rows) return;
-
-	var requestSequence = 0;
-	function formatHex(value) {
-		return '0x' + Number(value).toString(16).padStart(8, '0');
-	}
-	function formatNumber(value, decimals) {
-		return Number(value).toLocaleString(undefined, {maximumFractionDigits: decimals});
-	}
-	function appendCell(row, text, className) {
-		var cell = document.createElement('td');
-		cell.textContent = text;
-		if (className) cell.className = className;
-		row.appendChild(cell);
-	}
-
-	select.addEventListener('change', function(){
-		var tenant = select.value;
-		var sequence = ++requestSequence;
-		rows.replaceChildren();
-		wrap.hidden = true;
-		if (!tenant) {
-			status.textContent = 'Choose a tenant to inspect its current assignment.';
-			return;
-		}
-
-		status.textContent = 'Loading…';
-		fetch(inspector.dataset.endpoint + '?tenant=' + encodeURIComponent(tenant), {
-			headers: {'Accept': 'application/json'}
-		}).then(function(response) {
-			if (!response.ok) throw new Error('HTTP ' + response.status);
-			return response.json();
-		}).then(function(data) {
-			if (sequence !== requestSequence) return;
-			var ranges = data.ranges || [];
-			var fragment = document.createDocumentFragment();
-			for (var i = 0; i < ranges.length; i++) {
-				var item = ranges[i];
-				var row = document.createElement('tr');
-				appendCell(row, formatHex(item.lo), 'hash-bound');
-				appendCell(row, formatHex(item.hi), 'hash-bound');
-				appendCell(row, 'P' + item.partition_id, 'numeric');
-				appendCell(row, item.load_available ? formatNumber(item.head_series, 0) : '—', 'numeric');
-				appendCell(row, item.load_available ? formatNumber(item.sample_rate, 2) : '—', 'numeric');
-				fragment.appendChild(row);
-			}
-			rows.replaceChildren(fragment);
-			wrap.hidden = ranges.length === 0;
-			status.textContent = ranges.length === 0
-				? 'No current hash ranges for this tenant.'
-				: ranges.length.toLocaleString() + ' current hash range' + (ranges.length === 1 ? '' : 's') + '.';
-		}).catch(function(error) {
-			if (sequence !== requestSequence) return;
-			status.textContent = 'Unable to load tenant ranges: ' + error.message;
-		});
-	});
 })();
 </script>
 </body>
