@@ -2002,9 +2002,17 @@ func TestRuler_RunRingChangeMaxDebounce(t *testing.T) {
 			}
 		}()
 
-		require.Eventually(t, func() bool {
-			return ringChangeSyncs() == 1
-		}, 2*ringChangeMaxDebounce, ringCheckPeriod, "the max debounce should have forced a sync despite continuous ring churn")
+		// The ring check ticker can't observe a change before the first churn tick, so the max
+		// debounce deadline can't be earlier than churnInterval+ringChangeMaxDebounce.
+		time.Sleep(churnInterval + ringChangeMaxDebounce)
+		synctest.Wait()
+		require.Equal(t, float64(0), ringChangeSyncs(), "churn should keep the debounced sync pending until the max debounce deadline")
+
+		// The ring check period carries up to 20% jitter, so allow two periods for the first change
+		// to be observed and the capped timer to fire.
+		time.Sleep(2 * ringCheckPeriod)
+		synctest.Wait()
+		require.Equal(t, float64(1), ringChangeSyncs(), "the max debounce should have forced exactly one sync despite continuous ring churn")
 
 		close(stopChurn)
 		<-churnDone
