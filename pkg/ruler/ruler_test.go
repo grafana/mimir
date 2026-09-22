@@ -1870,7 +1870,7 @@ func TestRuler_RunRingChangeDebounce(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 				storage := newMockRuleStore(map[string]rulespb.RuleGroupList{})
 
 				cfg := defaultRulerConfig(t)
