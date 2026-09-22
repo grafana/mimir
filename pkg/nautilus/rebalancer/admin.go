@@ -65,7 +65,8 @@ const maxRoundLogs = 20
 // to, so the admin page can attribute residue to the partition that
 // has it rather than to whichever partition currently owns the range.
 type rangeStatsView struct {
-	Series int64
+	Series     int64
+	SampleRate float64
 }
 
 // adminState stores the data needed to render the admin page and to
@@ -195,9 +196,16 @@ func (s *adminState) setLastStats(
 	partitionRateByPID map[int32]float64,
 	activePartitions []int32,
 ) {
-	stats := make(map[partitionRangeKey]rangeStatsView, len(lm.series))
+	stats := make(map[partitionRangeKey]rangeStatsView, max(len(lm.series), len(lm.sampleRate)))
 	for k, n := range lm.series {
-		stats[k] = rangeStatsView{Series: n}
+		stat := stats[k]
+		stat.Series = n
+		stats[k] = stat
+	}
+	for k, rate := range lm.sampleRate {
+		stat := stats[k]
+		stat.SampleRate = rate
+		stats[k] = stat
 	}
 
 	partitionLCopy := make(map[int32]int64, len(partitionLByPID))
@@ -306,6 +314,17 @@ type rangeView struct {
 	LastAction ActionKind
 }
 
+// tenantRangeView is the current assignment and latest available load
+// information for one tenant hash range.
+type tenantRangeView struct {
+	Lo            uint32  `json:"lo"`
+	Hi            uint32  `json:"hi"`
+	PartitionID   int32   `json:"partition_id"`
+	HeadSeries    int64   `json:"head_series"`
+	SampleRate    float64 `json:"sample_rate"`
+	LoadAvailable bool    `json:"load_available"`
+}
+
 // readcacheReplicaView is one readcache pod and the Kafka partitions
 // it currently owns according to the readcache assignment log.
 type readcacheReplicaView struct {
@@ -346,6 +365,7 @@ type adminPageData struct {
 	Partitions    []partitionView
 	Rounds        []RoundLog
 	HeatmapData   string
+	TenantIDs     []string
 
 	ReadcacheConfigured bool
 	ReadcacheReplicas   []readcacheReplicaView
@@ -383,6 +403,16 @@ func (r *Rebalancer) buildAdminPageData() adminPageData {
 	if current == nil {
 		return data
 	}
+
+	tenantSet := make(map[string]struct{})
+	for _, e := range current.Entries {
+		tenantSet[e.TenantID] = struct{}{}
+	}
+	data.TenantIDs = make([]string, 0, len(tenantSet))
+	for tenantID := range tenantSet {
+		data.TenantIDs = append(data.TenantIDs, tenantID)
+	}
+	sort.Strings(data.TenantIDs)
 
 	// Compute last-round action lookups.
 	lastActions := make(map[tenantRangeKey]ActionKind)
@@ -666,6 +696,8 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
 //	GET  /metric                 → metric-name hash range lookup tool
 //	                               (?user=&metric=[&window=][&format=json])
+//	GET  /tenant-ranges         → current ranges and load for one tenant
+//	                               (?tenant=)
 //	POST /readcache/reset        → force an even-split
 //	                               (partition -> readcache) assignment
 //
@@ -690,10 +722,58 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.serveRoundTrace(w, idxStr)
 	case sub == "/metric":
 		r.serveMetricLookup(w, req)
+	case sub == "/tenant-ranges":
+		r.serveTenantRanges(w, req)
 	case sub == "/readcache/reset":
 		r.serveReadcacheReset(w, req)
 	default:
 		http.NotFound(w, req)
+	}
+}
+
+func (r *Rebalancer) serveTenantRanges(w http.ResponseWriter, req *http.Request) {
+	tenantID := req.URL.Query().Get("tenant")
+	if tenantID == "" {
+		http.Error(w, "tenant is required", http.StatusBadRequest)
+		return
+	}
+
+	_, lastStats, _, _ := r.admin.snapshot()
+	current := r.store.latestActiveAssignment(r.now())
+	ranges := make([]tenantRangeView, 0)
+	if current != nil {
+		for _, e := range current.Entries {
+			if e.TenantID != tenantID {
+				continue
+			}
+			stat, available := lastStats[partitionRangeKey{
+				tenantID:    e.TenantID,
+				partitionID: e.PartitionID,
+				hr:          e.Range,
+			}]
+			ranges = append(ranges, tenantRangeView{
+				Lo:            e.Range.Lo,
+				Hi:            e.Range.Hi,
+				PartitionID:   e.PartitionID,
+				HeadSeries:    stat.Series,
+				SampleRate:    stat.SampleRate,
+				LoadAvailable: available,
+			})
+		}
+	}
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].Lo < ranges[j].Lo
+	})
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(struct {
+		TenantID string            `json:"tenant_id"`
+		Ranges   []tenantRangeView `json:"ranges"`
+	}{
+		TenantID: tenantID,
+		Ranges:   ranges,
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("encode error: %v", err), http.StatusInternalServerError)
 	}
 }
 
