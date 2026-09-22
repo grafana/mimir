@@ -801,7 +801,7 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 		buildOne := func(offset int) mimirpb.PreallocTimeseries {
 			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
 			for i := 0; i < histogramsPerSeries; i++ {
-				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), 0, generateTestHistogram(i))
 			}
 			return makeTimeseries(lbls, nil, histograms, nil)
 		}
@@ -821,7 +821,7 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 			}
 			histograms := make([]mimirpb.Histogram, histogramsPerSeries)
 			for i := 0; i < histogramsPerSeries; i++ {
-				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), generateTestHistogram(i))
+				histograms[i] = mimirpb.FromHistogramToHistogramProto(int64(offset+i), 0, generateTestHistogram(i))
 			}
 			return makeTimeseries(lbls, samples, histograms, nil)
 		}
@@ -869,10 +869,10 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 		buildOne := func(diffValueOffset int) mimirpb.PreallocTimeseries {
 			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
 			for i := 0; i < sameValueCount/2; i++ {
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(0)))
 			}
 			for i := 0; i < diffValueCount/2; i++ {
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(diffValueOffset+i+1)))
 			}
 			return makeTimeseries(lbls, nil, histograms, nil)
 		}
@@ -888,11 +888,11 @@ func BenchmarkDistributor_prePushMergeMiddleware_TwoSeries(b *testing.B) {
 			histograms := make([]mimirpb.Histogram, 0, perSeriesCount)
 			for i := 0; i < sameValueCount/2; i++ {
 				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: sharedValue})
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(0)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(0)))
 			}
 			for i := 0; i < diffValueCount/2; i++ {
 				samples = append(samples, mimirpb.Sample{TimestampMs: sharedTS, Value: float64(diffValueOffset + i + 1)})
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, generateTestHistogram(diffValueOffset+i+1)))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(sharedTS, 0, generateTestHistogram(diffValueOffset+i+1)))
 			}
 			return makeTimeseries(lbls, samples, histograms, nil)
 		}
