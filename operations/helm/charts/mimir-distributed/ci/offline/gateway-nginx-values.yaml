@@ -13,3 +13,7 @@ gateway:
     enabled: true
   route:
     enabled: true
+  lifecycle:
+    preStop:
+      exec:
+        command: ["/bin/sh", "-c", "sleep 5"]
