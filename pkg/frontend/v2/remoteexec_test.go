@@ -753,7 +753,7 @@ func TestExecutionResponses_FinishedReadingAndFinalize(t *testing.T) {
 				// If the query-frontend is talking to a querier that sends per-node stats, we expect to receive them.
 				// If the query-frontend is talking to a querier that is too old to send per-node stats, we expect to receive an empty set of stats for the node's time range.
 				if expectPerNodeStats {
-					require.NoError(t, expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil))
+					require.NoError(t, expectedOperatorStats.TrackSampleForInstantVectorSelector(timeRange.StartT, 123, nil, 0))
 				}
 
 				operatorStats, annos, err := response.Finalize(ctx)

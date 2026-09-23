@@ -81,6 +81,7 @@ func TestOperator_Finalize(t *testing.T) {
 		memoryConsumptionTracker,
 		false,
 		false,
+		0,
 	)
 
 	group := NewMultiAggregatorGroupEvaluator(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())

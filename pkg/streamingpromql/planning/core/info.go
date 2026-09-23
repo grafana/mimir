@@ -166,7 +166,8 @@ func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *pl
 		selector,
 		params.MemoryConsumptionTracker,
 		false, // returnSampleTimestamps
-		true,  // returnSampleTimestampsPreserveHistograms
+		true,  // returnSampleTimestampsPreserveHistograms,
+		t.GetPlanningId(),
 	)
 
 	return planning.NewSingleUseOperatorFactory(&functions.DataLabelSelector{InstantVectorSelector: vectorSelector}), nil
