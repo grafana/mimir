@@ -24,9 +24,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// errMatrixContainsMetricsWithSameLabelset matches the error Prometheus returns when a top-level range
-// vector result has two samples for the same labelset at the same timestamp after same-labelset series
-// are merged.
 var errMatrixContainsMetricsWithSameLabelset = errors.New("vector cannot contain metrics with the same labelset")
 
 // Query represents a top-level query.
@@ -151,8 +148,8 @@ func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
 	}
 
 	// Move each processed series out of q.matrix (leaving an empty Series) into merged, so every sample
-	// slice is owned in one place: q.matrix and merged never share a slice, so returnResultToPool
-	// (called by Exec on error) frees the not-yet-processed series without double freeing.
+	// slice is owned in one place; returnResultToPool (called by Exec on error) can then safely free
+	// whatever remains in q.matrix.
 	original := q.matrix
 	merged := types.GetMatrix(len(order))
 
@@ -181,23 +178,13 @@ func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
 			original[idx] = promql.Series{}
 		}
 
-		if err != nil || conflict != nil {
-			// MergeSeries returns no data on conflict, but free it defensively in case it ever does.
-			types.FPointSlicePool.Put(&mergedData.Floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(&mergedData.Histograms, q.memoryConsumptionTracker)
-			q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(outputMetric)
-
-			// Release the series merged so far; the remaining series are freed via original by the caller.
-			for _, s := range merged {
-				types.FPointSlicePool.Put(&s.Floats, q.memoryConsumptionTracker)
-				types.HPointSlicePool.Put(&s.Histograms, q.memoryConsumptionTracker)
-				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(s.Metric)
-			}
-			types.PutMatrix(merged)
-
-			if err != nil {
-				return err
-			}
+		// On error the query stops, so per this package's convention we do not return the merged-so-far
+		// slices to the pool or adjust the memory estimate; returnResultToPool frees what remains in
+		// q.matrix (the not-yet-processed series).
+		if err != nil {
+			return err
+		}
+		if conflict != nil {
 			return errMatrixContainsMetricsWithSameLabelset
 		}
 
