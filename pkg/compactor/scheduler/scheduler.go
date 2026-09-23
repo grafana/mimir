@@ -227,7 +227,7 @@ func (s *Scheduler) newDiscoverer(bkt objstore.Bucket) (recoverableService, erro
 	case modeCell:
 		return NewTenantDiscoverer(s.cfg, s.lanePolicy, s.allowList, s.rotator, bkt, s.jpm, s.metrics, s.logger), nil
 	case modeBackfill:
-		return NewBackfillDiscoverer(s.cfg, s.lanePolicy, s.rotator, bkt, s.jpm, s.metrics, s.logger), nil
+		return NewBackfillDiscoverer(s.cfg, s.lanePolicy, s.allowList, s.rotator, bkt, s.jpm, s.metrics, s.logger), nil
 	default:
 		return nil, fmt.Errorf("unrecognized compactor scheduler mode: %s", s.cfg.Mode)
 	}

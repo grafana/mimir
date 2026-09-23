@@ -13,6 +13,8 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 /* Bucket structure (may change later)
@@ -70,6 +72,7 @@ type BackfillDiscoverer struct {
 	metrics                        *schedulerMetrics
 	clock                          clock.Clock
 	lanePolicy                     lanePolicy
+	allowedTenants                 *util.AllowList
 	bkt                            objstore.Bucket
 	jpm                            JobPersistenceManager
 	backfillDiscoveryBackoff       backoff.Config
@@ -84,6 +87,7 @@ type BackfillDiscoverer struct {
 func NewBackfillDiscoverer(
 	cfg Config,
 	lanePolicy lanePolicy,
+	allowList *util.AllowList,
 	rotator *Rotator,
 	bkt objstore.Bucket,
 	jpm JobPersistenceManager,
@@ -94,6 +98,7 @@ func NewBackfillDiscoverer(
 		metrics:                        metrics,
 		clock:                          clock.New(),
 		lanePolicy:                     lanePolicy,
+		allowedTenants:                 allowList,
 		bkt:                            bkt,
 		jpm:                            jpm,
 		backfillDiscoveryBackoff:       cfg.BackfillDiscoveryBackoff,
@@ -152,6 +157,9 @@ func (s *BackfillDiscoverer) listPhases(ctx context.Context) (map[string]backfil
 		phase, tenant, ok := parsePhase(name)
 		if !ok {
 			level.Warn(s.logger).Log("msg", "ignoring unrecognized backfill phase object", "object", name)
+			return nil
+		}
+		if !s.allowedTenants.IsAllowed(tenant) {
 			return nil
 		}
 		// Writers create the next phase object before deleting the previous one, so keep the furthest phase
