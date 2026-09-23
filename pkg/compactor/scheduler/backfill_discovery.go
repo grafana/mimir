@@ -21,7 +21,7 @@ import (
 phases/ <-- indicates "this phase is now active", can be polled with recursive listing
   backfill/ <-- each phase prefix can have a tenant object underneath
   validate/
-  compaction/
+  compact/
   copy/
   cleanup/
 data/
@@ -35,26 +35,26 @@ const phasesPrefix = "phases/"
 type backfillPhase string
 
 const (
-	phaseUnknown     backfillPhase = ""
-	phaseBackfilling backfillPhase = "backfill"
-	phaseValidating  backfillPhase = "validate"
-	phaseCompaction  backfillPhase = "compaction"
-	phaseCopying     backfillPhase = "copy"
-	phaseCleaning    backfillPhase = "cleanup"
+	phaseUnknown  backfillPhase = ""
+	phaseBackfill backfillPhase = "backfill"
+	phaseValidate backfillPhase = "validate"
+	phaseCompact  backfillPhase = "compact"
+	phaseCopy     backfillPhase = "copy"
+	phaseCleanup  backfillPhase = "cleanup"
 )
 
 // order is the position of the phase in a backfill's progression, or 0 if it is unknown
 func (b backfillPhase) order() int {
 	switch b {
-	case phaseBackfilling:
+	case phaseBackfill:
 		return 1
-	case phaseValidating:
+	case phaseValidate:
 		return 2
-	case phaseCompaction:
+	case phaseCompact:
 		return 3
-	case phaseCopying:
+	case phaseCopy:
 		return 4
-	case phaseCleaning:
+	case phaseCleanup:
 		return 5
 	default:
 		return 0

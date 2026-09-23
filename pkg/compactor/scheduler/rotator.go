@@ -392,7 +392,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			r.mtx.RUnlock()
 			return
 		}
-		tenantPlan := plan && (!r.backfillMode || tenantState.tracker.BackfillPhase() == phaseCompaction)
+		tenantPlan := plan && (!r.backfillMode || tenantState.tracker.BackfillPhase() == phaseCompact)
 		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, tenantPlan, r.planningInterval, r.compactionWaitPeriod)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)

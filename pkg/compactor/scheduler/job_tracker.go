@@ -79,7 +79,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 	return jt
 }
 
-// BackfillPhase returns the phase of a tenan's backfill. This is only meaningful when the scheduler is in backfill mode.
+// BackfillPhase returns the phase of a tenant's backfill. This is only meaningful when the scheduler is in backfill mode.
 func (jt *JobTracker) BackfillPhase() backfillPhase {
 	return backfillPhase(jt.backfillPhase.Load())
 }
