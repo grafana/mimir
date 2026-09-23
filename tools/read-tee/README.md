@@ -72,7 +72,7 @@ Two things to know:
 
 ### Matching all replicas (`amp.*`-mode)
 
-Per-replica copies each read one replica's worth of series, which can make individual copies lighter than heavy production queries. `-backend.amplify-all-replicas-fraction` (0.0–1.0, default 0) samples that fraction of incoming reads and, for each one, sends a **single** copy whose matchers target the base series plus every replica at once instead of the `N-1` per-replica copies: every matcher matches the value optionally followed by any `_amp{N}` (`l="v"` → `l=~"v(?:_amp[0-9]+)?"`, `l=~"re"` → `l=~"(?:re)(?:_amp[0-9]+)?"`, and negatives likewise). This raises samples-per-query to resemble heavier production queries. These copies are counted in `cortex_readtee_amplify_all_replicas_total`. Requires `amplification-factor > 1`.
+Per-replica copies each read one replica's worth of series, which can make individual copies lighter than heavy production queries. `-backend.amplify-all-replicas-fraction` (0.0–1.0, default 0) samples that fraction of incoming reads and, for each one, sends `M` copies (`-backend.amplify-all-replicas-factor`, default 1) whose matchers target the base series plus every replica at once, **in addition to** the `N-1` per-replica copies: every matcher matches the value optionally followed by any `_amp{N}` (`l="v"` → `l=~"v(?:_amp[0-9]+)?"`, `l=~"re"` → `l=~"(?:re)(?:_amp[0-9]+)?"`, and negatives likewise). This raises samples-per-query to resemble heavier production queries. The `M` copies are identical, so they can share the ingester's in-flight postings lookup and, for range queries, results-cache entries. Sampled reads are counted in `cortex_readtee_amplify_all_replicas_total`. Requires `amplification-factor > 1`.
 
 ### Strong read consistency
 
@@ -101,7 +101,8 @@ Copies flow through the full read path (query-frontend → querier → ingesters
 -backend.amplification-factor Factor N (default 1 = passthrough). Integer part = original + (N-1) copies.
 -backend.write-amplification-factor  Write-tee factor W (default 0 = disabled). When set, copy k targets variant k mod W (0 = base series), so N may exceed W by wrapping around the variants that exist.
 -backend.negative-matchers-exclude-all-amp-values  Default true. Negative matchers (!=, !~) exclude the value in all forms (base + every _amp{N}); != becomes a regex-quoted !~. Set false to suffix negative matchers with _amp{k} like positive matchers.
--backend.amplify-all-replicas-fraction  Fraction (0.0-1.0, default 0) of reads sent as a single heavy copy matching base + all replicas instead of N-1 per-replica copies. Requires amplification-factor > 1.
+-backend.amplify-all-replicas-fraction  Fraction (0.0-1.0, default 0) of reads that also get heavy copies matching base + all replicas, in addition to the N-1 per-replica copies. Requires amplification-factor > 1.
+-backend.amplify-all-replicas-factor  Number of heavy copies for each sampled read (default 1).
 -backend.strong-consistency-instant-fraction  Fraction (0.0-1.0, default 0) of instant-query copies sent with X-Read-Consistency: strong (per-copy, copies only). Mirrors the ruler.
 -backend.async-max-in-flight  Max concurrent in-flight amplified copies; excess dropped and counted.
 -backend.read-timeout         Timeout reading the backend response; set >= the query path's querier.timeout.

@@ -58,7 +58,7 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 		amplifyAllReplicasTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Namespace: readTeeMetricsNamespace,
 			Name:      "amplify_all_replicas_total",
-			Help:      "Total number of incoming reads amplified with a single copy matching the base series plus all replicas (amp.*-mode).",
+			Help:      "Total number of incoming reads sampled to also get heavy copies matching the base series plus all replicas (amp.*-mode).",
 		}, []string{"route"}),
 		strongConsistencyCopiesTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Namespace: readTeeMetricsNamespace,

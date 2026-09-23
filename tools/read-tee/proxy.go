@@ -40,6 +40,7 @@ type ProxyConfig struct {
 	AmpReplicaLabel                     string
 	NegativeMatchersExcludeAllAmpValues bool
 	AmplifyAllReplicasFraction          float64
+	AmplifyAllReplicasFactor            int
 	StrongConsistencyInstantFraction    float64
 	BackendReadTimeout                  time.Duration
 	BackendSkipTLSVerify                bool
@@ -111,8 +112,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 			"Set to false to suffix negative matchers with _amp{replica} like positive matchers (the original behaviour).",
 	)
 	f.Float64Var(&cfg.AmplifyAllReplicasFraction, "backend.amplify-all-replicas-fraction", 0.0,
-		"Fraction (0.0-1.0) of incoming reads for which, instead of sending N-1 per-replica copies, a single heavy copy is sent whose matchers target the base series plus all amplified replicas at once (every matcher matches the value optionally followed by any _amp{N}). "+
+		"Fraction (0.0-1.0) of incoming reads that get heavy copies in addition to the N-1 per-replica copies. Each heavy copy's matchers target the base series plus all amplified replicas at once (every matcher matches the value optionally followed by any _amp{N}). "+
 			"This raises samples-per-query to resemble heavier production queries. 0 disables it. Requires amplification-factor > 1.",
+	)
+	f.IntVar(&cfg.AmplifyAllReplicasFactor, "backend.amplify-all-replicas-factor", 1,
+		"Number of heavy copies sent for each read sampled by -backend.amplify-all-replicas-fraction. The copies are identical.",
 	)
 	f.Float64Var(&cfg.StrongConsistencyInstantFraction, "backend.strong-consistency-instant-fraction", 0.0,
 		"Fraction (0.0-1.0) of amplified copies of instant queries (/api/v1/query) that are sent with the X-Read-Consistency: strong header, sampled independently per copy. "+
@@ -192,6 +196,10 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("backend.amplify-all-replicas-fraction must be between 0 and 1")
 	}
 
+	if cfg.AmplifyAllReplicasFraction > 0 && cfg.AmplifyAllReplicasFactor < 1 {
+		return nil, errors.New("backend.amplify-all-replicas-factor must be >= 1")
+	}
+
 	// Validate the strong-consistency fraction.
 	if cfg.StrongConsistencyInstantFraction < 0 || cfg.StrongConsistencyInstantFraction > 1 {
 		return nil, errors.New("backend.strong-consistency-instant-fraction must be between 0 and 1")
@@ -261,9 +269,14 @@ func (p *Proxy) Start() error {
 		ampReplicaLabel:          p.cfg.AmpReplicaLabel,
 	}
 
+	ampAll := amplifyAllReplicasConfig{
+		fraction: p.cfg.AmplifyAllReplicasFraction,
+		copies:   p.cfg.AmplifyAllReplicasFactor,
+	}
+
 	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, p.cfg.AmplifyAllReplicasFraction, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -274,7 +287,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, p.cfg.AmplifyAllReplicasFraction, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.cfg.WriteAmplificationFactor, rewriteOpts, ampAll, p.cfg.StrongConsistencyInstantFraction, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.

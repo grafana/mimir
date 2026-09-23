@@ -119,6 +119,28 @@ func TestNewProxy_Validation(t *testing.T) {
 			expectedErr: "backend.amplify-all-replicas-fraction must be between 0 and 1",
 		},
 		{
+			name: "amplify-all-replicas factor below 1",
+			cfg: ProxyConfig{
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        1.0,
+				AsyncMaxInFlightPerBackend: 1000,
+				AmplifyAllReplicasFraction: 0.5,
+				AmplifyAllReplicasFactor:   0,
+			},
+			expectedErr: "backend.amplify-all-replicas-factor must be >= 1",
+		},
+		{
+			name: "valid amplify-all-replicas",
+			cfg: ProxyConfig{
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        3.0,
+				AsyncMaxInFlightPerBackend: 1000,
+				AmplifyAllReplicasFraction: 0.5,
+				AmplifyAllReplicasFactor:   2,
+			},
+			expectedErr: "",
+		},
+		{
 			name: "strong-consistency fraction out of range",
 			cfg: ProxyConfig{
 				BackendEndpoint:                  "http://backend1:8080",
@@ -189,7 +211,7 @@ func TestProxyEndpoint_Response(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, 0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", `/api/v1/query?query=up`, nil)
 			rec := httptest.NewRecorder()
@@ -258,7 +280,7 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -373,7 +395,7 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, tt.writeFactor, rewriteOptions{}, 0.0, 0.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, tt.writeFactor, rewriteOptions{}, amplifyAllReplicasConfig{}, 0.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
@@ -397,52 +419,98 @@ func TestProxyEndpoint_AmplificationWrapsAroundWriteFactor(t *testing.T) {
 	}
 }
 
-// TestProxyEndpoint_AmplifyAllReplicas verifies that with amplify-all-replicas-fraction=1 a single
-// heavy copy (matching the base value plus all replicas) is sent instead of the N-1 per-replica
-// copies, regardless of the amplification factor.
+// TestProxyEndpoint_AmplifyAllReplicas verifies that sampled reads get the heavy copies, matching the
+// base value plus all replicas, in addition to the per-replica copies.
 func TestProxyEndpoint_AmplifyAllReplicas(t *testing.T) {
 	logger := log.NewNopLogger()
 
-	const originalQuery = `up{job="api"}`
+	const (
+		originalQuery = `up{job="api"}`
+		heavyQuery    = `up{job=~"api(?:_amp[0-9]+)?"}`
+	)
 
-	registry := prometheus.NewRegistry()
-	metrics := NewProxyMetrics(registry)
+	tests := []struct {
+		name            string
+		factor          float64
+		ampAll          amplifyAllReplicasConfig
+		expectedSampled float64
+		expectedQueries map[string]int
+	}{
+		{
+			name:            "heavy copies are added to the per-replica copies",
+			factor:          3.0,
+			ampAll:          amplifyAllReplicasConfig{fraction: 1.0, copies: 2},
+			expectedSampled: 1,
+			expectedQueries: map[string]int{
+				originalQuery:        1,
+				`up{job="api_amp1"}`: 1,
+				`up{job="api_amp2"}`: 1,
+				heavyQuery:           2,
+			},
+		},
+		{
+			name:            "no heavy copies without read amplification",
+			factor:          1.0,
+			ampAll:          amplifyAllReplicasConfig{fraction: 1.0, copies: 1},
+			expectedSampled: 0,
+			expectedQueries: map[string]int{
+				originalQuery: 1,
+			},
+		},
+		{
+			name:            "reads that are not sampled get only the per-replica copies",
+			factor:          3.0,
+			ampAll:          amplifyAllReplicasConfig{fraction: 0, copies: 2},
+			expectedSampled: 0,
+			expectedQueries: map[string]int{
+				originalQuery:        1,
+				`up{job="api_amp1"}`: 1,
+				`up{job="api_amp2"}`: 1,
+			},
+		},
+	}
 
-	var mu sync.Mutex
-	var queries []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		queries = append(queries, r.URL.Query().Get("query"))
-		mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}))
-	defer server.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := NewProxyMetrics(registry)
 
-	backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
-	route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}}
-	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
+			var mu sync.Mutex
+			queries := map[string]int{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				queries[r.URL.Query().Get("query")]++
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer server.Close()
 
-	// Factor 3 would normally send 2 per-replica copies; with fraction 1.0 we expect a single copy.
-	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 3.0, 0, rewriteOptions{}, 1.0, 0.0, asyncDispatcher)
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(t, server.URL), 5*time.Second, false, 1000)
+			route := Route{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}}
+			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
-	req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
-	rec := httptest.NewRecorder()
-	endpoint.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.factor, 0, rewriteOptions{}, tt.ampAll, 0.0, asyncDispatcher)
 
-	asyncDispatcher.Stop()
-	asyncDispatcher.Await()
+			req := httptest.NewRequest("GET", "/api/v1/query?query="+url.QueryEscape(originalQuery), nil)
+			rec := httptest.NewRecorder()
+			endpoint.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
 
-	mu.Lock()
-	got := append([]string(nil), queries...)
-	mu.Unlock()
+			asyncDispatcher.Stop()
+			asyncDispatcher.Await()
 
-	// Exactly the original plus one heavy copy.
-	require.Len(t, got, 2)
-	require.Contains(t, got, originalQuery)
-	require.Contains(t, got, `up{job=~"api(?:_amp[0-9]+)?"}`)
-	require.Equal(t, 1.0, testutil.ToFloat64(metrics.amplifyAllReplicasTotal.WithLabelValues("api_v1_query")))
+			mu.Lock()
+			got := map[string]int{}
+			for q, c := range queries {
+				got[q] = c
+			}
+			mu.Unlock()
+
+			require.Equal(t, tt.expectedQueries, got)
+			require.Equal(t, tt.expectedSampled, testutil.ToFloat64(metrics.amplifyAllReplicasTotal.WithLabelValues("api_v1_query")))
+		})
+	}
 }
 
 // TestProxyEndpoint_StrongConsistency verifies that, with strong-consistency-instant-fraction=1 on
@@ -491,7 +559,7 @@ func TestProxyEndpoint_StrongConsistency(t *testing.T) {
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 
 			// factor 3 -> 2 copies; strong-consistency-instant-fraction 1.0 -> every copy sampled.
-			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, 0, rewriteOptions{}, 0.0, 1.0, asyncDispatcher)
+			endpoint := NewProxyEndpoint(backend, tt.route, metrics, logger, 3.0, 0, rewriteOptions{}, amplifyAllReplicasConfig{}, 1.0, asyncDispatcher)
 
 			req := httptest.NewRequest("GET", tt.route.Path+"?query="+url.QueryEscape(originalQuery), nil)
 			rec := httptest.NewRecorder()
