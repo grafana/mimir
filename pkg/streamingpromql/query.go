@@ -7,6 +7,7 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -16,11 +17,17 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// errMatrixContainsMetricsWithSameLabelset matches the error Prometheus returns when a top-level range
+// vector result has two samples for the same labelset at the same timestamp after same-labelset series
+// are merged.
+var errMatrixContainsMetricsWithSameLabelset = errors.New("vector cannot contain metrics with the same labelset")
 
 // Query represents a top-level query.
 // It acts as a bridge from the querying interface Prometheus expects into how MQE operates.
@@ -72,6 +79,15 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 
 	switch {
 	case q.matrix != nil:
+		// A top-level range vector result (i.e. an instant query whose expression is a subquery) can
+		// contain series that collide after name removal. Merge them, matching Prometheus.
+		if q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeMatrix {
+			if err := q.mergeMatrixSeriesWithSameLabelset(); err != nil {
+				q.returnResultToPool()
+				return &promql.Result{Err: err}
+			}
+		}
+
 		slices.SortFunc(q.matrix, func(a, b promql.Series) int {
 			return labels.Compare(a.Metric, b.Metric)
 		})
@@ -103,6 +119,98 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 
 	q.succeeded = true
 	return result
+}
+
+// mergeMatrixSeriesWithSameLabelset merges series in q.matrix that share a labelset, combining their
+// samples, mirroring Prometheus under delayed name removal (cleanupMetricLabels ->
+// mergeSeriesWithSameLabelset). Two samples for the same labelset at the same timestamp are an error.
+func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
+	if len(q.matrix) <= 1 {
+		return nil
+	}
+
+	// Group by labelset, keyed on the label bytes rather than a hash so distinct series that share a
+	// hash are not merged.
+	groups := make(map[string][]int, len(q.matrix))
+	order := make([]string, 0, len(q.matrix))
+	var keyBuf []byte
+	haveDuplicates := false
+	for i := range q.matrix {
+		keyBuf = q.matrix[i].Metric.Bytes(keyBuf)
+		indices, exists := groups[string(keyBuf)]
+		if exists {
+			haveDuplicates = true
+		} else {
+			order = append(order, string(keyBuf))
+		}
+		groups[string(keyBuf)] = append(indices, i)
+	}
+
+	if !haveDuplicates {
+		return nil
+	}
+
+	// Move each processed series out of q.matrix (leaving an empty Series) into merged, so every sample
+	// slice is owned in one place: q.matrix and merged never share a slice, so returnResultToPool
+	// (called by Exec on error) frees the not-yet-processed series without double freeing.
+	original := q.matrix
+	merged := types.GetMatrix(len(order))
+
+	for _, key := range order {
+		indices := groups[key]
+
+		if len(indices) == 1 {
+			merged = append(merged, original[indices[0]])
+			original[indices[0]] = promql.Series{}
+			continue
+		}
+
+		data := make([]types.InstantVectorSeriesData, len(indices))
+		for i, idx := range indices {
+			data[i] = types.InstantVectorSeriesData{Floats: original[idx].Floats, Histograms: original[idx].Histograms}
+		}
+
+		// MergeSeries takes ownership of (and frees) the sample slices in data regardless of the outcome,
+		// so clear the corresponding series in original and release the labels of all but the first.
+		outputMetric := original[indices[0]].Metric
+		mergedData, conflict, err := operators.MergeSeries(data, slices.Clone(indices), q.memoryConsumptionTracker)
+		for i, idx := range indices {
+			if i != 0 {
+				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(original[idx].Metric)
+			}
+			original[idx] = promql.Series{}
+		}
+
+		if err != nil || conflict != nil {
+			// MergeSeries returns no data on conflict, but free it defensively in case it ever does.
+			types.FPointSlicePool.Put(&mergedData.Floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(&mergedData.Histograms, q.memoryConsumptionTracker)
+			q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(outputMetric)
+
+			// Release the series merged so far; the remaining series are freed via original by the caller.
+			for _, s := range merged {
+				types.FPointSlicePool.Put(&s.Floats, q.memoryConsumptionTracker)
+				types.HPointSlicePool.Put(&s.Histograms, q.memoryConsumptionTracker)
+				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(s.Metric)
+			}
+			types.PutMatrix(merged)
+
+			if err != nil {
+				return err
+			}
+			return errMatrixContainsMetricsWithSameLabelset
+		}
+
+		merged = append(merged, promql.Series{
+			Metric:     outputMetric,
+			Floats:     mergedData.Floats,
+			Histograms: mergedData.Histograms,
+		})
+	}
+
+	types.PutMatrix(original)
+	q.matrix = merged
+	return nil
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
