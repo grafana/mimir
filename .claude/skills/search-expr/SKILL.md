@@ -73,6 +73,7 @@ endpoints.
 | `fuzz_threshold` | 0-100 minimum score | Meaning is **algorithm-dependent** — see "Setting fuzz_threshold" below. Do not reuse the same number across algorithms. |
 | `match[]` | PromQL series selector(s), OR'd across repeats | Scopes candidates to series that actually exist. Cheap — see step 5. |
 | `sort_by` | `alpha` (default) or `score` | `score` requires `search[]` or `search_expr`, and is rejected with `fuzz_alg=substring` because every match ties at `1.0`. |
+| `cursor` | Opaque token from a previous response's `next_cursor` trailer field | Only exists for `sort_by=alpha` — a `sort_by=score` response never emits one. When `cursor` is set, it must be the **only** query parameter; every other parameter (terms, `fuzz_alg`, `match[]`, `limit`, ...) travels inside the opaque token from the original request. See "Paginating with cursor" below. |
 | `include_score` | bool | Needed to see the numeric score, not just the ordering. |
 | `include_metadata` | bool, default `false` | **Only affects `/search/metric_names`**; silently ignored on the other two endpoints. Adds `type`/`help`/`unit` per result, sourced from the ingesters via an extra fan-out call per result batch (`FetchMetricMetadata` in `pkg/querier/distributor_queryable_search.go`) — best-effort, so a fetch error just leaves results un-enriched rather than failing the request. Worth the extra round trip when deciding between several same-named-ish candidates by their real semantics; skip it on a first broad exploratory pass. |
 | `limit`, `batch_size` | result cap / NDJSON batch framing | `limit=0` means unlimited, still capped by the tenant's `-querier.max-label-{names,values}-limit`. Default `limit` is 100 with default `sort_by=alpha` — see step 7. |
@@ -127,16 +128,19 @@ endpoints.
    roughly 0.001 of each other) means the score is not doing the ranking —
    the expression's AND/OR/NOT composition filtered the list, not the fuzzy
    score.
-8. **Check `has_more` on the trailer, and raise `limit` if the expected
-   match seems to be missing.** There is no continuation cursor — the only
-   way to see more results is to raise `limit` and re-run, not to page.
-   This matters most with the default `sort_by=alpha`: a broad term can
-   match more than the default `limit=100`, and the one candidate actually
-   wanted can sort alphabetically past the cutoff and simply never appear,
-   with no error to explain why. If a plausible term returns nothing (or
-   not the expected metric) and `has_more` is `true`, raise `limit` before
-   concluding the metric doesn't exist. Narrowing the expression (step 3)
-   avoids the problem in the first place.
+8. **Check `has_more` on the trailer if the expected match seems to be
+   missing.** With the default `sort_by=alpha`, a broad term can match more
+   than the default `limit=100`, and the one candidate actually wanted can
+   sort alphabetically past the cutoff and simply never appear, with no
+   error to explain why. If `has_more` is `true`:
+   - Under `sort_by=alpha`, follow `next_cursor` (see "Paginating with
+     cursor" below) rather than guessing a bigger `limit` — it walks every
+     remaining result exactly once instead of re-running a wider query.
+   - Under `sort_by=score`, there is no cursor (score-ordered responses
+     never emit one) — raise `limit` and re-run, since "more of the top
+     N by score" isn't a resumable walk.
+   Narrowing the expression (step 3) avoids the problem in the first place,
+   and is usually cheaper than paging through a broad one.
 9. **Iterate.** If results are too broad, add another `and not <term>` or a
    `match[]`. If too narrow or empty, loosen with `or`, drop a `not`, widen
    `fuzz_threshold`, or switch `fuzz_alg`.
@@ -212,6 +216,55 @@ algorithm to another:
   explicit value is rejected with an HTTP 400, because every match already
   scores `1.0`.
 
+### Paginating with cursor
+
+Use `cursor` when the task genuinely needs *every* matching result, not
+just a bigger top-N: enumerating all values of a high-cardinality label,
+or walking a broad metric-name expression to completion without missing an
+alphabetically-late match. Don't reach for it just to see "a bit more" of
+a ranked list — for `sort_by=score` there is no cursor at all (see step 8);
+raise `limit` there instead.
+
+How it works, confirmed live against the local dev cluster:
+
+1. Run the initial search as normal (`sort_by=alpha`, the default). If the
+   trailer has `has_more:true`, it also carries `next_cursor`, an opaque
+   base64 token.
+2. Fetch the next page with `cursor=<next_cursor>` as the **only** query
+   parameter:
+
+   ```bash
+   curl -s -G --data-urlencode 'cursor=<next_cursor value>' \
+     'http://localhost:8080/prometheus/api/v1/search/metric_names'
+   ```
+
+   Adding any other parameter alongside `cursor` (even repeating `limit`
+   or `search_expr` with the same value) is an HTTP 400 — the token already
+   encodes every original parameter (terms/expression, `case_sensitive`,
+   `fuzz_alg`, `fuzz_threshold`, `sort_dir`, `limit`, `batch_size`,
+   `include_score`, `include_metadata`, `label`, `start`/`end`, `match[]`)
+   plus the resume position. Just pass the token back unchanged.
+3. Keep following `next_cursor` until a trailer has `has_more:false` (no
+   `next_cursor`) — that page is the last one.
+
+Things that matter operationally, not just mechanically:
+
+- **A cursor is a resume position, not a consistent snapshot.** It resumes
+  strictly after the last value seen, by value comparison — not an offset.
+  A result added between two pages, sorting before the resume point, is
+  never seen; a result deleted between pages is just naturally skipped.
+  Don't treat a completed walk as a point-in-time listing if the underlying
+  data can change mid-walk.
+- **A cursor can go stale across a Mimir upgrade.** It's versioned
+  (`searchCursorVersion` in `pkg/querier/search_handler.go`); a version bump
+  makes an old in-flight cursor fail clearly (`"unsupported version"`)
+  rather than being misinterpreted. Don't persist a cursor across a
+  deployment.
+- **During a rolling upgrade**, if the backend that served a page doesn't
+  yet understand cursor-based resume, the trailer's `warnings` says so and
+  that page's results may be incomplete — don't treat a clean `has_more`
+  walk as guaranteed-complete if that warning appears on any page.
+
 ## Verification
 
 Run one call and check both the NDJSON body and the trailer:
@@ -234,8 +287,10 @@ trailer line:
 {"status":"success","has_more":false}
 ```
 
-- `has_more:true` means raise `limit` and re-run to see the rest — there is
-  no cursor.
+- `has_more:true` means there's more to see: under `sort_by=alpha` the
+  trailer also carries `next_cursor` (follow it, see "Paginating with
+  cursor"); under `sort_by=score` there is no cursor, so raise `limit` and
+  re-run instead.
 - A `warnings` array on the trailer means the tenant's
   `-querier.max-label-{names,values}-limit` clamped the result; the
   shortfall is real, not a bug in the expression.
@@ -259,5 +314,8 @@ trailer line:
 | A guessed value (e.g. a status/state string) never matches | `case_sensitive` defaults to `true`, and label values have no casing convention (e.g. ring states are `ACTIVE`, `JOINING`, `Unhealthy`) | Pass `case_sensitive=false` |
 | Result set has unrelated hits | `subsequence` default matched an unrelated name through a loose subsequence, especially with short generic terms | Switch to `substring_left`/`substring`, add `match[]`, or add another `and` term |
 | Scores are all within about 0.001 of each other | The score carries little relevance signal for this expression or term length | Trust the AND/OR/NOT composition and `not` exclusions, not the score ordering; add `match[]` for real precision |
-| The expected metric doesn't appear, but the term seems right | Default `sort_by=alpha` with default `limit=100` can truncate before reaching an alphabetically-late match when the term is broad | Check `has_more`; raise `limit`, or narrow the expression with more AND'ed terms |
+| The expected metric doesn't appear, but the term seems right | Default `sort_by=alpha` with default `limit=100` can truncate before reaching an alphabetically-late match when the term is broad | Check `has_more`; under `sort_by=alpha` follow `next_cursor` (see "Paginating with cursor"), under `sort_by=score` raise `limit`, or narrow the expression with more AND'ed terms |
+| HTTP 400, "cursor and other search parameters are mutually exclusive" | A parameter (even a repeat of one already inside the cursor) was sent alongside `cursor` | Send `cursor` alone; every other parameter is already encoded in it |
+| HTTP 400, "invalid cursor: unsupported version" | The cursor was generated by a different (older or newer) Mimir binary version and its payload shape changed | Restart the walk from a fresh, cursor-less request rather than resuming an old one across an upgrade |
+| A `has_more` walk via cursor looks complete but data seems missing | A backend source mid-rolling-upgrade doesn't yet honor the cursor's resume position and returns its same fixed first-N window every page | Check the trailer's `warnings` for the "may not yet support cursor-based resume" text; treat that page as possibly incomplete, not as ground truth |
 | Search feels slower than expected | A legacy `match[]` regex on `/api/v1/label/<name>/values` triggers a full series scan on some backends; `search_expr` does not share that cost profile | Prefer `search_expr` over a legacy `match[]` regex when the goal is text filtering, not series existence |
