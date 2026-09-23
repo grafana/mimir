@@ -811,7 +811,7 @@ const (
 // considered in the calling loops.
 func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) map[int64]STOwner {
 	floatSampleSTs := make(map[int64]int64)
-	stOwners := make(map[int64]STOwner)
+	var stOwners map[int64]STOwner
 
 	// First seed the map with all the earliest start times in the float Sample
 	// list.
@@ -845,14 +845,14 @@ func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) 
 		if _, ok := stOwners[h.StartTimestamp]; ok {
 			continue
 		}
+		if stOwners == nil {
+			stOwners = make(map[int64]STOwner)
+		}
 		if h.Timestamp < floatSampleSTs[h.StartTimestamp] {
 			stOwners[h.StartTimestamp] = STOwnerHistogram
 		} else {
 			stOwners[h.StartTimestamp] = STOwnerFloat
 		}
-	}
-	if len(stOwners) == 0 {
-		return nil
 	}
 
 	return stOwners
