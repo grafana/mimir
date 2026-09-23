@@ -41,6 +41,13 @@ type amplifiedRequest struct {
 	body []byte
 }
 
+// amplifyAllReplicasConfig controls the heavy copies, matching the base series plus every replica,
+// that a sampled fraction of reads gets in addition to the per-replica copies.
+type amplifyAllReplicasConfig struct {
+	fraction float64
+	copies   int
+}
+
 type ProxyEndpoint struct {
 	backend                   ProxyBackend
 	metrics                   *ProxyMetrics
@@ -48,14 +55,14 @@ type ProxyEndpoint struct {
 	amplificationFactor       float64
 	writeAmplificationFactor  int
 	rewriteOpts               rewriteOptions
-	ampAllReplicasFraction    float64
+	ampAll                    amplifyAllReplicasConfig
 	strongConsistencyFraction float64
 	asyncDispatcher           *AsyncBackendDispatcher
 
 	route Route
 }
 
-func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, writeAmplificationFactor int, rewriteOpts rewriteOptions, ampAllReplicasFraction, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, writeAmplificationFactor int, rewriteOpts rewriteOptions, ampAll amplifyAllReplicasConfig, strongConsistencyFraction float64, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
 		backend:                   backend,
 		route:                     route,
@@ -64,7 +71,7 @@ func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, 
 		amplificationFactor:       amplificationFactor,
 		writeAmplificationFactor:  writeAmplificationFactor,
 		rewriteOpts:               rewriteOpts,
-		ampAllReplicasFraction:    ampAllReplicasFraction,
+		ampAll:                    ampAll,
 		strongConsistencyFraction: strongConsistencyFraction,
 		asyncDispatcher:           asyncDispatcher,
 	}
@@ -191,15 +198,15 @@ type amplifiedRequestSource struct {
 	hasFormParams bool
 }
 
-// prepareAmplifiedRequests builds the rewritten copies of the original read request. Normally it
-// builds N-1 per-replica copies (amplified replicas _amp1.._amp{N-1}, where N is the integer part
-// of the amplification factor), each with its query and match[] parameters suffixed _amp{k}. When
-// the write amplification factor W is set, copy k instead targets variant k mod W so N may exceed
-// W: the copies wrap around the base series (variant 0, sent with the original unrewritten params)
+// prepareAmplifiedRequests builds the rewritten copies of the original read request. It builds N-1
+// per-replica copies (amplified replicas _amp1.._amp{N-1}, where N is the integer part of the
+// amplification factor), each with its query and match[] parameters suffixed _amp{k}. When the
+// write amplification factor W is set, copy k instead targets variant k mod W so N may exceed W:
+// the copies wrap around the base series (variant 0, sent with the original unrewritten params)
 // and the W-1 replicas write-tee actually created. For a sampled fraction of queries
-// (amplify-all-replicas-fraction) it instead builds a single heavy copy whose matchers target the
-// base series plus every replica at once. Copies that fail to rewrite are skipped and counted.
-// Returns nil when amplification is disabled (factor <= 1).
+// (amplify-all-replicas-fraction) it also builds heavy copies whose matchers target the base
+// series plus every replica at once. Copies that fail to rewrite are skipped and counted. Returns
+// nil when amplification is disabled (factor <= 1).
 func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http.Request, origBody []byte, logger *spanlogger.SpanLogger) []amplifiedRequest {
 	// Integer factors only for v1; the fractional part is ignored.
 	n := int(p.amplificationFactor)
@@ -231,22 +238,6 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 		hasFormParams: hasFormParams,
 	}
 
-	// amp.*-mode: for a sampled fraction of queries, send a single heavy copy whose matchers target
-	// the base series plus every amplified replica at once, instead of N-1 per-replica copies. This
-	// raises samples-per-query to resemble heavier production queries.
-	if p.ampAllReplicasFraction > 0 && rand.Float64() < p.ampAllReplicasFraction {
-		opts := p.rewriteOpts
-		opts.matchAllReplicas = true
-		// The replica index is irrelevant when matching all replicas.
-		a, ok := p.buildCopy(ctx, src, 1, opts, logger)
-		logger.SetSpanAndLogTag("amplify_all_replicas", "true")
-		if !ok {
-			return nil
-		}
-		p.metrics.amplifyAllReplicasTotal.WithLabelValues(p.route.RouteName).Inc()
-		return []amplifiedRequest{a}
-	}
-
 	result := make([]amplifiedRequest, 0, n-1)
 	for k := 1; k <= n-1; k++ {
 		// With the write amplification factor set, wrap copies around the variants that actually
@@ -261,6 +252,24 @@ func (p *ProxyEndpoint) prepareAmplifiedRequests(ctx context.Context, orig *http
 			continue
 		}
 		result = append(result, a)
+	}
+
+	// amp.*-mode: in addition to the per-replica copies, a sampled fraction of queries gets heavy
+	// copies whose matchers target the base series plus every amplified replica at once. This raises
+	// samples-per-query to resemble heavier production queries.
+	if p.ampAll.fraction > 0 && rand.Float64() < p.ampAll.fraction {
+		p.metrics.amplifyAllReplicasTotal.WithLabelValues(p.route.RouteName).Inc()
+		logger.SetSpanAndLogTag("amplify_all_replicas", "true")
+		opts := p.rewriteOpts
+		opts.matchAllReplicas = true
+		for range p.ampAll.copies {
+			// The replica index is irrelevant when matching all replicas.
+			a, ok := p.buildCopy(ctx, src, 1, opts, logger)
+			if !ok {
+				continue
+			}
+			result = append(result, a)
+		}
 	}
 
 	logger.SetSpanAndLogTag("amplified", "true")
