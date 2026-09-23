@@ -88,7 +88,7 @@ func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryCo
 // should be added to the corresponding subset.
 //
 // The samples are also recorded in the number of physical samples read in the overall query stats.
-func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) {
+func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int64, sampleCount int64, matchesSubsets []bool) error {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
 	}
@@ -103,6 +103,8 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 			subset.Add(pointIdx, sampleCount, sampleCount, sampleCount)
 		}
 	}
+
+	return nil
 }
 
 // TrackSamplesForRangeVectorSelector records samples for a range vector selector at output timestamp stepT.
@@ -117,7 +119,7 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 // should be added to the corresponding subset.
 //
 // The samples are also recorded in the number of physical samples read in the overall query stats.
-func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, haveTimestamp bool, matchesSubsets []bool) {
+func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64, floats *FPointRingBuffer, histograms *HPointRingBuffer, rangeStart int64, rangeEnd int64, haveTimestamp bool, matchesSubsets []bool) error {
 	if len(matchesSubsets) != len(s.subsets) {
 		panic(fmt.Errorf("expected %d subsets, got %d", len(s.subsets), len(matchesSubsets)))
 	}
@@ -151,6 +153,8 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 			subset.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
 		}
 	}
+
+	return nil
 }
 
 // Add adds the statistics from other to this instance.
