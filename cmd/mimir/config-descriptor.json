@@ -915,6 +915,16 @@
           "fieldDefaultValue": false,
           "fieldFlag": "server.create-new-traces",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "enable_open_metrics_text_created_samples",
+          "required": false,
+          "desc": "Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and \"_created\" suffix. Only applies if -server.register-instrumentation is set to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.enable-open-metrics-text-created-samples",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
@@ -6656,7 +6666,7 @@
           "kind": "field",
           "name": "enabled_promql_extended_range_selectors",
           "required": false,
-          "desc": "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.",
+          "desc": "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-extended-range-selectors",
@@ -8418,11 +8428,12 @@
           "kind": "field",
           "name": "log_queries_longer_than",
           "required": false,
-          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
+          "desc": "(use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.log-queries-longer-than",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -9362,6 +9373,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_inflight_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-metrics-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -17753,6 +17775,28 @@
           "fieldValue": null,
           "fieldDefaultValue": 10000000000,
           "fieldFlag": "ruler.inbound-sync-queue-poll-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ring_change_debounce",
+          "required": false,
+          "desc": "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.ring-change-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ring_change_max_debounce",
+          "required": false,
+          "desc": "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ruler.ring-change-max-debounce",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

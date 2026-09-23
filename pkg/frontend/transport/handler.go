@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -37,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 const (
@@ -95,15 +97,19 @@ var (
 
 // HandlerConfig is a config for the handler.
 type HandlerConfig struct {
-	LogQueriesLongerThan     time.Duration          `yaml:"log_queries_longer_than"`
-	LogQueryRequestHeaders   flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
-	MaxBodySize              int64                  `yaml:"max_body_size" category:"advanced"`
-	QueryStatsEnabled        bool                   `yaml:"query_stats_enabled" category:"advanced"`
-	ActiveSeriesWriteTimeout time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
+	// Deprecated, remove in Mimir 3.5 or 4.0
+	DeprecatedLogQueriesLongerThan time.Duration          `yaml:"log_queries_longer_than" category:"deprecated"`
+	LogQueryRequestHeaders         flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
+	MaxBodySize                    int64                  `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled              bool                   `yaml:"query_stats_enabled" category:"advanced"`
+	ActiveSeriesWriteTimeout       time.Duration          `yaml:"active_series_write_timeout" category:"experimental"`
+
+	// MaxInflightMetricsEnabled is injected internally from the query-frontend config.
+	MaxInflightMetricsEnabled bool `yaml:"-"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
-	f.DurationVar(&cfg.LogQueriesLongerThan, "query-frontend.log-queries-longer-than", 0, "Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.")
+	f.DurationVar(&cfg.DeprecatedLogQueriesLongerThan, "query-frontend.log-queries-longer-than", 0, "(use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.")
 	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
@@ -143,6 +149,9 @@ type Handler struct {
 	queryEquivalentSamplesRead *prometheus.CounterVec
 	activeUsers                *util.ActiveUsersCleanupService
 
+	// maxInflight is nil when -query-frontend.max-inflight-http-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
+
 	mtx              sync.Mutex
 	inflightRequests int
 	stopped          bool
@@ -158,6 +167,13 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		roundTripper:     roundTripper,
 	}
 	h.cond = sync.NewCond(&h.mtx)
+
+	if cfg.MaxInflightMetricsEnabled {
+		h.maxInflight = inflight.NewMaxInflightCollector("http")
+		if reg != nil {
+			reg.MustRegister(h.maxInflight)
+		}
+	}
 
 	if cfg.QueryStatsEnabled {
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -241,23 +257,46 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.inflightRequests++
 	f.mtx.Unlock()
 
+	// Arm the cleanup before tracking below, not after. Anything that panics between the
+	// increment above and this defer leaks inflightRequests, which would make Stop() wait
+	// forever. inflightID is captured by reference, so the assignment below is visible here,
+	// and Remove ignores the zero value it holds until then.
+	var inflightID inflight.InflightRequest
 	defer func() {
+		if f.maxInflight != nil {
+			f.maxInflight.Remove(inflightID)
+		}
+
 		f.mtx.Lock()
 		f.inflightRequests--
 		f.cond.Broadcast()
 		f.mtx.Unlock()
 	}()
 
+	// The auth middleware wraps this handler, so the tenant is already in the request
+	// context. Requests without a resolvable tenant are rejected further down the chain;
+	// leave them untracked rather than attributing them to an empty tenant.
+	if f.maxInflight != nil {
+		if tenantIDs, err := tenant.TenantIDs(r.Context()); err == nil {
+			inflightID = f.maxInflight.Add(tenant.JoinTenantIDs(tenantIDs))
+		}
+	}
+
 	var queryDetails *querydetails.QueryDetails
+
+	// Allocate a unique root query id which can be referenced for all sub-requests which
+	// are related to this query. This root_query_id will be logged on sub-requests running on the
+	// query-scheduler and querier components.
+	ctx := rootqueryid.ContextWithID(r.Context(), rootqueryid.New())
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
 	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
-		var ctx context.Context
-		queryDetails, ctx = querydetails.ContextWithEmptyDetails(r.Context())
-		r = r.WithContext(ctx)
+		queryDetails, ctx = querydetails.ContextWithEmptyDetails(ctx)
 	}
+
+	r = r.WithContext(ctx)
 
 	var params url.Values
 	var err error
@@ -317,7 +356,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, queryDetails)...)
+		parts = append(parts, getResponseQueryStats(queryResponseTime, resp.ContentLength, rootqueryid.IDFromContext(r.Context()), queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -327,7 +366,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	queryResponseSize, err := io.Copy(w, resp.Body)
 
-	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
+	if f.cfg.DeprecatedLogQueriesLongerThan > 0 && queryResponseTime > f.cfg.DeprecatedLogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
@@ -351,6 +390,8 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"path", dskitlog.DropUnsafeChars(r.URL.Path),
 		"time_taken", queryResponseTime.String(),
 	}
+
+	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
 
 	logMessage = append(logMessage, f.formatRequestHeaders(&r.Header)...)
 
@@ -431,6 +472,8 @@ func (f *Handler) reportQueryStats(
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,
 	}
+
+	logMessage = rootqueryid.AppendLogFields(logMessage, rootqueryid.IDFromContext(r.Context()))
 
 	if details != nil {
 		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
@@ -666,7 +709,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryD
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querydetails.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, rootQueryID string, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -695,6 +738,11 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		// streaming, so the encode time is not available until after the headers have been sent.
 		// We only insert this if we are in a non-streaming response.
 		statsResponse = append(statsResponse, statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()))
+	}
+
+	if rootQueryID != "" {
+		// Reported so that a caller can quote this value when it asks about a query it ran.
+		statsResponse = append(statsResponse, statsValue(rootqueryid.FieldName, rootQueryID))
 	}
 
 	return statsResponse

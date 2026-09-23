@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -174,7 +173,7 @@ func (m Materializer) Materialize(ctx context.Context, n planning.Node, material
 	// the querier's current time and the tenant's out-of-order window. If the ranges turn out not to be worth
 	// splitting (e.g. there's no complete cacheable block, or every block falls within the out-of-order window), fall
 	// back to unsplit execution.
-	ranges, notApplied, err := m.computeRanges(ctx, splitNode, timeRange, params.QueryParameters.LookbackDelta)
+	ranges, notApplied, err := m.computeRanges(ctx, splitNode, timeRange, params.QueryParameters.LookbackDelta, params.QueryParameters.CacheDisabled)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +219,7 @@ func (m Materializer) Materialize(ctx context.Context, n planning.Node, material
 // ranges is nil and the caller should fall back to unsplit execution). The notApplied reasons mirror those recorded by
 // the optimization pass at planning time, but for the checks that depend on runtime state (the current time and the
 // tenant's out-of-order window).
-func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNode, timeRange types.QueryTimeRange, lookbackDelta time.Duration) (ranges []Range, notApplied string, err error) {
+func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNode, timeRange types.QueryTimeRange, lookbackDelta time.Duration, cacheDisabled bool) (ranges []Range, notApplied string, err error) {
 	timeParams := inner.GetRangeParams()
 	if !timeParams.IsSet {
 		// Should always be set if it's a splittable node.
@@ -285,7 +284,7 @@ func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNod
 		return nil, "no_cacheable_blocks_after_ooo_filter", nil
 	}
 
-	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
+	if cacheDisabled {
 		for i := range ranges {
 			ranges[i].Cacheable = false
 		}
@@ -300,6 +299,9 @@ func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]
 	// Clear query time range as queries at different times can share cache entries if the queries overlap.
 	cacheKeyParams.TimeRange = types.QueryTimeRange{}
 	cacheKeyParams.OriginalExpression = ""
+	// CacheDisabled only controls whether this request reads/writes the cache, not the cached value, so it
+	// must not fragment the key: a no-store query and a normal query address the same entries.
+	cacheKeyParams.CacheDisabled = false
 
 	plan := &planning.QueryPlan{Root: node, Parameters: &cacheKeyParams}
 	encoded, _, err := plan.ToEncodedPlan(false, true)

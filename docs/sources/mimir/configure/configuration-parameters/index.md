@@ -981,6 +981,13 @@ cluster_validation:
 # using Open-Telemetry tracing.
 # CLI flag: -server.create-new-traces
 [create_new_traces: <boolean> | default = false]
+
+# Specifies if this handler should emit start timestamps for counters,
+# histograms and summaries over OpenMetrics 1.0, which are defined as extra
+# series with the same name and "_created" suffix. Only applies if
+# -server.register-instrumentation is set to true.
+# CLI flag: -server.enable-open-metrics-text-created-samples
+[enable_open_metrics_text_created_samples: <boolean> | default = false]
 ```
 
 ### distributor
@@ -2319,8 +2326,9 @@ ring:
 The `frontend` block configures the query-frontend.
 
 ```yaml
-# Log queries that are slower than the specified duration. Set to 0 to disable.
-# Set to < 0 to enable on all queries.
+# (deprecated) (use query-frontend.query-stats-enabled instead) Log queries that
+# are slower than the specified duration. Set to 0 to disable. Set to < 0 to
+# enable on all queries.
 # CLI flag: -query-frontend.log-queries-longer-than
 [log_queries_longer_than: <duration> | default = 0s]
 
@@ -2536,6 +2544,14 @@ client_cluster_validation:
 # empty, so starting to serve before then means failing queries.
 # CLI flag: -query-frontend.wait-for-querier-ring-on-startup
 [wait_for_querier_ring_on_startup: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_frontend_max_inflight_requests and
+# cortex_query_frontend_max_inflight_request_age_seconds metrics, which report
+# the per-tenant peak number of concurrent in-flight requests and the greatest
+# age an in-flight request reached since the last scrape. Disabling it skips
+# per-tenant in-flight tracking on every request.
+# CLI flag: -query-frontend.max-inflight-metrics-enabled
+[max_inflight_metrics_enabled: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -3137,6 +3153,22 @@ tenant_federation:
 # (experimental) Interval between applying queued incoming rule sync requests.
 # CLI flag: -ruler.inbound-sync-queue-poll-interval
 [inbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) How long to wait for the ring to stop changing before syncing
+# rules in response to a ring change. This can reduce duplicate rule evaluation
+# when multiple ring changes happen in quick succession, such as during a
+# rollout. 0 disables debouncing and syncs immediately on every detected ring
+# change, which is the default and historical behaviour. Must be less than
+# -ruler.ring-change-max-debounce.
+# CLI flag: -ruler.ring-change-debounce
+[ring_change_debounce: <duration> | default = 0s]
+
+# (experimental) The maximum time to keep postponing a ring-change-triggered
+# sync while the ring keeps changing, so continuous ring churn can't
+# indefinitely delay picking up a ring change. Only used when
+# -ruler.ring-change-debounce is greater than 0.
+# CLI flag: -ruler.ring-change-max-debounce
+[ring_change_max_debounce: <duration> | default = 15s]
 
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
@@ -5071,10 +5103,8 @@ blocked_requests:
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
-# Enable certain experimental PromQL extended range selector modifiers, which
-# are subject to being changed or removed at any time, on a per-tenant basis.
-# Defaults to empty which means all experimental modifiers are disabled. Set to
-# 'all' to enable all experimental modifiers.
+# Deprecated: this setting has no effect. The PromQL extended range selector
+# modifiers smoothed and anchored are always enabled.
 # CLI flag: -query-frontend.enabled-promql-extended-range-selectors
 [enabled_promql_extended_range_selectors: <string> | default = ""]
 

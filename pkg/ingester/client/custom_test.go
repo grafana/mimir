@@ -39,6 +39,16 @@ func TestChunkFromMeta(t *testing.T) {
 			encoding:         chunkenc.EncFloatHistogram,
 			expectedMimirEnc: chunk.PrometheusFloatHistogramChunk,
 		},
+		{
+			name:             "HistogramST",
+			encoding:         chunkenc.EncHistogramST,
+			expectedMimirEnc: chunk.PrometheusHistogramSTChunk,
+		},
+		{
+			name:             "FloatHistogramST",
+			encoding:         chunkenc.EncFloatHistogramST,
+			expectedMimirEnc: chunk.PrometheusFloatHistogramSTChunk,
+		},
 	}
 
 	for _, tc := range tests {

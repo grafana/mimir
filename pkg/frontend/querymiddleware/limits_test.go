@@ -753,10 +753,6 @@ func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string)
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
 
-func (m multiTenantMockLimits) EnabledPromQLExtendedRangeSelectors(userID string) []string {
-	return m.byTenant[userID].enabledPromQLExtendedRangeSelectors
-}
-
 func (m multiTenantMockLimits) EnabledPromQLBinopFillModifiers(userID string) []string {
 	return m.byTenant[userID].enabledPromQLBinopFillModifiers
 }
@@ -829,7 +825,6 @@ type mockLimits struct {
 	resultsCacheTTLForErrors              time.Duration
 	resultsCacheForUnalignedQueryEnabled  bool
 	enabledPromQLExperimentalFunctions    []string
-	enabledPromQLExtendedRangeSelectors   []string
 	enabledPromQLBinopFillModifiers       []string
 	prom2RangeCompat                      bool
 	blockedQueries                        []validation.BlockedQuery
@@ -934,10 +929,6 @@ func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
 
 func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 	return m.enabledPromQLExperimentalFunctions
-}
-
-func (m mockLimits) EnabledPromQLExtendedRangeSelectors(string) []string {
-	return m.enabledPromQLExtendedRangeSelectors
 }
 
 func (m mockLimits) EnabledPromQLBinopFillModifiers(string) []string {
