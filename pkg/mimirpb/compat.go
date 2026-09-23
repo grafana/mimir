@@ -810,10 +810,11 @@ const (
 // min and max valid timestamps so that we only consider samples that will be
 // considered in the calling loops.
 func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) map[int64]STOwner {
-	stToTS := make(map[int64]int64)
+	floatSampleSTs := make(map[int64]int64)
 	stOwners := make(map[int64]STOwner)
 
-	// First seed the map with all the earliest start times in the Sample list.
+	// First seed the map with all the earliest start times in the float Sample
+	// list.
 	for _, s := range ts.Samples {
 		// This logic matches the validity logic in ingester_push.go and tsdb.go.
 		// If they diverge, this function may consider a different set of points
@@ -821,8 +822,8 @@ func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) 
 		if s.StartTimestamp <= 0 || s.StartTimestamp >= s.TimestampMs || s.TimestampMs > maxTimestampMs || s.TimestampMs < minTimestampMs {
 			continue
 		}
-		if _, ok := stToTS[s.StartTimestamp]; !ok {
-			stToTS[s.StartTimestamp] = s.TimestampMs
+		if _, ok := floatSampleSTs[s.StartTimestamp]; !ok {
+			floatSampleSTs[s.StartTimestamp] = s.TimestampMs
 		}
 	}
 	for _, h := range ts.Histograms {
@@ -831,20 +832,20 @@ func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) 
 		}
 
 		// No corresponding float sample, don't need to consider.
-		if _, ok := stToTS[h.StartTimestamp]; !ok {
+		if _, ok := floatSampleSTs[h.StartTimestamp]; !ok {
 			continue
 		}
 
-		// Here's the dupe case -- we have seen this start time before, and we might
-		// have seen it in the Samples list. If the *timestamp* of the current
-		// histogram sample is lower, assign ownership to the histogram.
+		// Here's the dupe case -- there's a float sample with the same Start Time.
+		// If the *timestamp* of the current histogram sample is lower, assign
+		// ownership to the histogram.
 
 		// If we already recorded an owner, don't change anything, this new
 		// timestamp can only be newer than whoever already won the race.
 		if _, ok := stOwners[h.StartTimestamp]; ok {
 			continue
 		}
-		if h.Timestamp < stToTS[h.StartTimestamp] {
+		if h.Timestamp < floatSampleSTs[h.StartTimestamp] {
 			stOwners[h.StartTimestamp] = STOwnerHistogram
 		} else {
 			stOwners[h.StartTimestamp] = STOwnerFloat
