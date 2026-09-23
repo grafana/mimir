@@ -142,11 +142,15 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		var prevSampleStartTimestamp int64
-		var injectedStartTimestamps map[int64]struct{}
+		var stOwners map[int64]mimirpb.STOwner
+		if nativeHistogramsIngestionEnabled {
+			stOwners = mimirpb.DupeSTOwners(&ts, math.MinInt64, math.MaxInt64)
+		}
 
 		for _, s := range ts.Samples {
 			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs {
-				if _, alreadyInjected := injectedStartTimestamps[s.StartTimestamp]; !alreadyInjected {
+				// If there's no owner entry, or if we are the owner, record the zero.
+				if owner, ok := stOwners[s.StartTimestamp]; !ok || owner == mimirpb.STOwnerFloat {
 					if ref != 0 {
 						// If the cached reference exists, we try to use it.
 						_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, s.StartTimestamp)
@@ -165,10 +169,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 						level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
 						discardedSamples++
 					}
-					if injectedStartTimestamps == nil {
-						injectedStartTimestamps = make(map[int64]struct{})
-					}
-					injectedStartTimestamps[s.StartTimestamp] = struct{}{}
 				}
 				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
@@ -204,7 +204,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 		for _, h := range ts.Histograms {
 			if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
-				if _, alreadyInjected := injectedStartTimestamps[h.StartTimestamp]; !alreadyInjected {
+				if owner, ok := stOwners[h.StartTimestamp]; !ok || owner == mimirpb.STOwnerHistogram {
 					var (
 						ih *histogram.Histogram
 						fh *histogram.FloatHistogram
@@ -233,10 +233,6 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 						level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
 						discardedSamples++
 					}
-					if injectedStartTimestamps == nil {
-						injectedStartTimestamps = make(map[int64]struct{})
-					}
-					injectedStartTimestamps[h.StartTimestamp] = struct{}{}
 				}
 				prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 			}

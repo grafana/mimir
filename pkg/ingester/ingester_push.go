@@ -609,8 +609,10 @@ func (i *Ingester) pushSamplesToAppender(
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
 		var prevSampleStartTimestamp int64
-		// Record which start timestamps we've tried to zero-inject so we can avoid duplicates.
-		var injectedStartTimestamps map[int64]struct{}
+		var stOwners map[int64]mimirpb.STOwner
+		if nativeHistogramsIngestionEnabled {
+			stOwners = mimirpb.DupeSTOwners(&ts, minTimestampMs, maxTimestampMs)
+		}
 
 		for _, s := range ts.Samples {
 			var err error
@@ -625,7 +627,8 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 
 			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs {
-				if _, alreadyInjected := injectedStartTimestamps[s.StartTimestamp]; !alreadyInjected {
+				// If there's no owner entry, or if we are the owner, record the zero.
+				if owner, ok := stOwners[s.StartTimestamp]; !ok || owner == mimirpb.STOwnerFloat {
 					if ref != 0 {
 						_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, s.StartTimestamp)
 					} else {
@@ -644,10 +647,6 @@ func (i *Ingester) pushSamplesToAppender(
 						// except when written before the first sample.
 						errProcessor.ProcessErr(err, s.StartTimestamp, ts.Labels)
 					}
-					if injectedStartTimestamps == nil {
-						injectedStartTimestamps = make(map[int64]struct{})
-					}
-					injectedStartTimestamps[s.StartTimestamp] = struct{}{}
 				}
 				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
@@ -704,7 +703,7 @@ func (i *Ingester) pushSamplesToAppender(
 				}
 
 				if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
-					if _, alreadyInjected := injectedStartTimestamps[h.StartTimestamp]; !alreadyInjected {
+					if owner, ok := stOwners[h.StartTimestamp]; !ok || owner == mimirpb.STOwnerHistogram {
 						if ref != 0 {
 							_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, h.StartTimestamp, ih, fh)
 						} else {
@@ -723,10 +722,6 @@ func (i *Ingester) pushSamplesToAppender(
 							// except when written before the first sample.
 							errProcessor.ProcessErr(err, h.StartTimestamp, ts.Labels)
 						}
-						if injectedStartTimestamps == nil {
-							injectedStartTimestamps = make(map[int64]struct{})
-						}
-						injectedStartTimestamps[h.StartTimestamp] = struct{}{}
 					}
 					prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 				}
