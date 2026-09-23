@@ -36,7 +36,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.Storage.RegisterFlagsWithPrefixAndDefaultDirectory("backfill.storage.", "backfillblocks", f)
+	cfg.Storage.RegisterFlagsWithPrefixAndDefaultDirectory("backfill-api.storage.", "backfillblocks", f)
 }
 
 func (cfg *Config) Validate() error {
