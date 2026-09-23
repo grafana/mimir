@@ -12,12 +12,12 @@ detect this by itself: each component has to be told to advertise an IPv6 addres
 and the memberlist transport and the HTTP and gRPC listeners have to bind to the IPv6 wildcard
 address.
 
-The chart ships an [`ipv6`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/ipv6.yaml)
+The chart ships an [`ipv6-only`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/ipv6-only.yaml)
 preset that does all of that. Install it as an extra values file, before your own values:
 
 ```bash
 helm install mimir grafana/mimir-distributed \
-  -f https://raw.githubusercontent.com/grafana/mimir/main/operations/helm/charts/mimir-distributed/ipv6.yaml \
+  -f https://raw.githubusercontent.com/grafana/mimir/main/operations/helm/charts/mimir-distributed/ipv6-only.yaml \
   -f my-values.yaml
 ```
 
