@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] HTTPRoute: Add support k8s Gateway API HTTPRoute #14439
+
 ### Grafana Mimir
 
 * [CHANGE] Query-frontend: The PromQL extended range selector modifiers `smoothed` and `anchored` are now always enabled. The `-query-frontend.enabled-promql-extended-range-selectors` flag and `enabled_promql_extended_range_selectors` per-tenant setting are deprecated and have no effect, but remain accepted for configuration compatibility. #16618
