@@ -172,6 +172,12 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		))
 	}
 
+	// Note that the NodeIdentifier pass must run last since its purpose is to add a unique ID to all
+	// planning nodes that have been created.
+	if opts.EnableNodeIdentifiers {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNodeIdentifierOptimizationPass())
+	}
+
 	return planner, nil
 }
 
@@ -635,8 +641,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			}
 
 			return &core.EvaluationRoot{
-				EvaluationRootDetails: &core.EvaluationRootDetails{},
 				Inner:                 inner,
+				EvaluationRootDetails: &core.EvaluationRootDetails{},
 			}, nil
 		}
 

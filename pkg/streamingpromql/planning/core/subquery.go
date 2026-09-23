@@ -21,6 +21,7 @@ import (
 
 //node:generate
 type Subquery struct {
+	NodeIdentifier
 	*SubqueryDetails
 	Inner planning.Node `json:"-" node:"child"`
 }

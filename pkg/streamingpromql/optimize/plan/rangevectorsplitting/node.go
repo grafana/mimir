@@ -29,6 +29,7 @@ func init() {
 
 //node:generate
 type SplitFunctionCall struct {
+	core.NodeIdentifier
 	*SplitFunctionCallDetails
 	Inner *core.FunctionCall `node:"child"`
 }
