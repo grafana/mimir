@@ -825,6 +825,13 @@ func (s *cursorResumingSearchResultSet) Warnings() annotations.Annotations { ret
 func (s *cursorResumingSearchResultSet) Err() error                        { return s.inner.Err() }
 func (s *cursorResumingSearchResultSet) Close() error                      { return s.inner.Close() }
 
+// roundScore rounds a relevance score to 3 decimal places before it goes on
+// the wire (e.g. 0.727906976744186 -> 0.728), so include_score=true results
+// are readable without every client needing to round the raw float itself.
+func roundScore(score float64) float64 {
+	return math.Round(score*1000) / 1000
+}
+
 // SearchLabelNamesHandler returns the handler for GET/POST /api/v1/search/label_names.
 func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -852,7 +859,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			env := getSearchEnvelope[searchLabelNameRecordWithScore](req, &searchLabelNameWithScorePool)
 			defer putSearchEnvelope(env, &searchLabelNameWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelNameRecordWithScore {
-				return searchLabelNameRecordWithScore{Name: r.Value, Score: r.Score}
+				return searchLabelNameRecordWithScore{Name: r.Value, Score: roundScore(r.Score)}
 			})
 			return
 		}
@@ -891,7 +898,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			env := getSearchEnvelope[searchLabelValueRecordWithScore](req, &searchLabelValueWithScorePool)
 			defer putSearchEnvelope(env, &searchLabelValueWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelValueRecordWithScore {
-				return searchLabelValueRecordWithScore{Value: r.Value, Score: r.Score}
+				return searchLabelValueRecordWithScore{Value: r.Value, Score: roundScore(r.Score)}
 			})
 			return
 		}
@@ -962,7 +969,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			env := getSearchEnvelope[searchMetricNameRecordWithScore](req, &searchMetricNameWithScorePool)
 			defer putSearchEnvelope(env, &searchMetricNameWithScorePool, req)
 			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchMetricNameRecordWithScore {
-				rec := searchMetricNameRecordWithScore{Name: r.Value, Score: r.Score}
+				rec := searchMetricNameRecordWithScore{Name: r.Value, Score: roundScore(r.Score)}
 				if md := r.Metadata; md != nil {
 					rec.Type = string(md.Type)
 					rec.Help = md.Help

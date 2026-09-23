@@ -269,6 +269,46 @@ func TestSearchLabelNamesHandler_IncludeScoreEmitsScore(t *testing.T) {
 	assert.InDelta(t, 0.75, rec["score"], 1e-9)
 }
 
+// TestSearchLabelNamesHandler_IncludeScoreRoundsToThreeDecimalPlaces pins
+// that a high-precision internal score (e.g. a mean-of-leaves relevance
+// score) is rounded to 3 decimal places on the wire, not emitted with its
+// full float64 precision.
+func TestSearchLabelNamesHandler_IncludeScoreRoundsToThreeDecimalPlaces(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("foo", 0.727906976744186)}, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?include_score=true"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 2)
+	rec := lines[0]["results"].([]any)[0].(map[string]any)
+	assert.Equal(t, 0.728, rec["score"])
+}
+
+func TestRoundScore(t *testing.T) {
+	tests := []struct {
+		name  string
+		score float64
+		want  float64
+	}{
+		{name: "rounds down", score: 0.727906976744186, want: 0.728},
+		{name: "rounds up at exact midpoint", score: 0.7275, want: 0.728},
+		{name: "already 3 decimals is unchanged", score: 0.92, want: 0.92},
+		{name: "zero is unchanged", score: 0, want: 0},
+		{name: "one is unchanged", score: 1.0, want: 1.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, roundScore(tt.score))
+		})
+	}
+}
+
 func TestSearchLabelNamesHandler_BatchBoundaries(t *testing.T) {
 	// 5 results, batch_size=2 → 3 batch lines + 1 trailer = 4 lines.
 	results := []storage.SearchResult{
