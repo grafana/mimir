@@ -151,6 +151,11 @@ type userTSDB struct {
 	// Only set when ingest storage is enabled.
 	offsetCatalogue *offsetCatalogue
 
+	// committedOffset is the last committed offset observed from the consumer group
+	// configured in offset catalogue. Updated by a background service on the ingester.
+	// -1 means unknown (no offset fetched yet).
+	committedOffset atomic.Int64
+
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	pendingNonOwnedRefsMtx sync.Mutex
@@ -444,6 +449,22 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 	deletable := tsdb.DefaultBlocksToDelete(u.db)(blocks)
 	result := map[ulid.ULID]struct{}{}
+
+	// Offset-catalogue path drops any block whose watermark is at or below the block-builder's committed offset.
+	// Those series are guaranteed to be in object storage already.
+	committedOffset := u.committedOffset.Load()
+	if u.offsetCatalogue != nil && committedOffset >= 0 {
+		catalogue := u.offsetCatalogue.Data()
+		if len(catalogue.Data) > 0 {
+			for blockID := range deletable {
+				if wm, ok := catalogue.Data[blockID.String()]; ok && wm.Offset <= committedOffset {
+					result[blockID] = struct{}{}
+				}
+			}
+		}
+		return result
+	}
+
 	deadline := time.Now().Add(-u.blockMinRetention)
 
 	// The shipper enabled case goes first because its common in the way we run the ingesters
