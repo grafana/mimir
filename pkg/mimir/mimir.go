@@ -133,7 +133,7 @@ type Config struct {
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Backfill                       backfill.Config                 `yaml:"backfill" doc:"hidden"`
+	BackfillAPI                    backfill.Config                 `yaml:"backfill_api" doc:"hidden"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
 	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
@@ -211,7 +211,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
-	c.Backfill.RegisterFlags(f)
+	c.BackfillAPI.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.CompactorScheduler.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -241,7 +241,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":                   &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage":            &c.AlertmanagerStorage.StorageBackendConfig,
 			"usage_tracker_snapshots_storage": &c.UsageTracker.SnapshotsStorage.StorageBackendConfig,
-			"backfill_storage":                &c.Backfill.Storage.StorageBackendConfig,
+			"backfill_api_storage":            &c.BackfillAPI.Storage.StorageBackendConfig,
 		},
 		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
@@ -348,8 +348,8 @@ func (c *Config) Validate(log log.Logger) error {
 			}
 		}
 	}
-	if err := c.Backfill.Validate(); err != nil {
-		return errors.Wrap(err, "invalid backfill config")
+	if err := c.BackfillAPI.Validate(); err != nil {
+		return errors.Wrap(err, "invalid backfill-api config")
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
@@ -498,8 +498,8 @@ func (c *Config) isStoreGatewayEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway)
 }
 
-func (c *Config) isBackfillEnabled() bool {
-	return c.isAnyModuleExplicitlyTargeted(Backfill)
+func (c *Config) isBackfillAPIEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(BackfillAPI)
 }
 
 func (c *Config) isCompactorEnabled() bool {
@@ -544,9 +544,9 @@ func (c *Config) validateBucketConfigs() error {
 		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
 	}
 
-	// Validate backfill bucket config.
-	if c.isBackfillEnabled() && c.Backfill.Storage.Backend != bucket.Filesystem {
-		errs.Add(errors.Wrap(validateBucketConfig(c.Backfill.Storage, c.BlocksStorage.Bucket), "backfill storage"))
+	// Validate backfill-api bucket config.
+	if c.isBackfillAPIEnabled() && c.BackfillAPI.Storage.Backend != bucket.Filesystem {
+		errs.Add(errors.Wrap(validateBucketConfig(c.BackfillAPI.Storage, c.BlocksStorage.Bucket), "backfill-api storage"))
 	}
 
 	return errs.Err()
@@ -610,12 +610,12 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 		})
 	}
 
-	// Backfill storage.
-	if c.isBackfillEnabled() && c.Backfill.Storage.Backend == bucket.Filesystem {
+	// Backfill API storage.
+	if c.isBackfillAPIEnabled() && c.BackfillAPI.Storage.Backend == bucket.Filesystem {
 		paths = append(paths, pathConfig{
-			name:       "backfill storage filesystem directory",
-			cfgValue:   c.Backfill.Storage.Filesystem.Directory,
-			checkValue: filepath.Join(c.Backfill.Storage.Filesystem.Directory, c.Backfill.Storage.StoragePrefix),
+			name:       "backfill-api storage filesystem directory",
+			cfgValue:   c.BackfillAPI.Storage.Filesystem.Directory,
+			checkValue: filepath.Join(c.BackfillAPI.Storage.Filesystem.Directory, c.BackfillAPI.Storage.StoragePrefix),
 		})
 	}
 
