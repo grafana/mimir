@@ -113,3 +113,7 @@ eval instant at 10m (up * 1)[3m:1m]
   {foo="bar"} 8 9 10
   {foo="bar2"} 24 27 30
   {foo="bar3"} 40 45 50
+
+# Series that collide after name removal in a top-level subquery must fail, as they do for instant vectors.
+eval instant at 10m (rate({__name__=~"up|down"}[5m]))[3m:1m]
+  expect fail msg: vector cannot contain metrics with the same labelset

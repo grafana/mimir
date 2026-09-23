@@ -7,6 +7,7 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -21,6 +22,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+var errDuplicateLabelSetInRangeVectorResult = errors.New("vector cannot contain metrics with the same labelset")
 
 // Query represents a top-level query.
 // It acts as a bridge from the querying interface Prometheus expects into how MQE operates.
@@ -45,8 +48,9 @@ type Query struct {
 	stats          *types.OperatorEvaluationStats
 	finalizedStats *promstats.QuerySamples
 
-	topLevelValueType parser.ValueType
-	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	topLevelValueType        parser.ValueType
+	resultIsVector           bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	enableDelayedNameRemoval bool
 
 	succeeded bool
 }
@@ -76,6 +80,14 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 			return labels.Compare(a.Metric, b.Metric)
 		})
 
+		if q.enableDelayedNameRemoval && q.topLevelValueType == parser.ValueTypeMatrix && containsAdjacentDuplicateLabelSets(q.matrix) {
+			// A top-level range vector result has no DeduplicateAndMerge, so series can collide once their names are dropped.
+			// Prometheus merges colliding series whose samples don't overlap (mergeSeriesWithSameLabelset); we reject all
+			// collisions instead.
+			q.returnResultToPool()
+			return &promql.Result{Err: errDuplicateLabelSetInRangeVectorResult}
+		}
+
 		result.Value = q.matrix
 	case q.vector != nil:
 		result.Value = q.vector
@@ -103,6 +115,17 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 
 	q.succeeded = true
 	return result
+}
+
+// containsAdjacentDuplicateLabelSets reports whether any two adjacent series in the sorted matrix have the same labels.
+func containsAdjacentDuplicateLabelSets(matrix promql.Matrix) bool {
+	for i := 1; i < len(matrix); i++ {
+		if labels.Equal(matrix[i-1].Metric, matrix[i].Metric) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
