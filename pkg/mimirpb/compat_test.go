@@ -262,6 +262,192 @@ func TestFromFloatSamplesToFPoints(t *testing.T) {
 	assert.Equal(t, expected, FromFloatSamplesToFPoints(input))
 }
 
+func TestDupeSTOwners(t *testing.T) {
+	tests := map[string]struct {
+		ts             PreallocTimeseries
+		maxTimestampMs int64
+		expected       map[int64]STOwner
+	}{
+		"empty timeseries": {
+			ts:             PreallocTimeseries{TimeSeries: &TimeSeries{}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"only float samples": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 200, StartTimestamp: 150},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"only histograms": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Histograms: []Histogram{
+					{Timestamp: 100, StartTimestamp: 50},
+					{Timestamp: 200, StartTimestamp: 150},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"no duplicate start timestamps between floats and histograms": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 200, StartTimestamp: 150},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 300, StartTimestamp: 250},
+					{Timestamp: 400, StartTimestamp: 350},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"duplicates between floats and histograms choose earliest timestamp": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 300, StartTimestamp: 250},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 75, StartTimestamp: 50},
+					{Timestamp: 350, StartTimestamp: 250},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+			expected: map[int64]STOwner{
+				50:  STOwnerHistogram,
+				250: STOwnerFloat,
+			},
+		},
+		"duplicates within only floats do not create owners": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 200, StartTimestamp: 50},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 300, StartTimestamp: 250},
+					{Timestamp: 400, StartTimestamp: 350},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"duplicates within only histograms do not create owners": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 200, StartTimestamp: 150},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 300, StartTimestamp: 250},
+					{Timestamp: 400, StartTimestamp: 250},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+		},
+		"invalid start timestamp greater than point timestamp is ignored": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 150, StartTimestamp: 100},
+					{TimestampMs: 100, StartTimestamp: 250},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 200, StartTimestamp: 100},
+					{Timestamp: 400, StartTimestamp: 250},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+			expected: map[int64]STOwner{
+				100: STOwnerFloat,
+			},
+		},
+		"points newer than max timestamp are ignored": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 500, StartTimestamp: 450},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 300, StartTimestamp: 50},
+					{Timestamp: 600, StartTimestamp: 450},
+				},
+			}},
+			maxTimestampMs: 400,
+			expected: map[int64]STOwner{
+				50: STOwnerFloat,
+			},
+		},
+		"zero start timestamps are ignored": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 0},
+					{TimestampMs: 300, StartTimestamp: 250},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 50, StartTimestamp: 0},
+					{Timestamp: 275, StartTimestamp: 250},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+			expected: map[int64]STOwner{
+				250: STOwnerHistogram,
+			},
+		},
+		"invalid histogram with earlier timestamp does not take ownership": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 300, StartTimestamp: 250},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 200, StartTimestamp: 250},
+					{Timestamp: 400, StartTimestamp: 250},
+				},
+			}},
+			maxTimestampMs: math.MaxInt64,
+			expected: map[int64]STOwner{
+				250: STOwnerFloat,
+			},
+		},
+		"duplicates all over use earliest valid in range owner": {
+			ts: PreallocTimeseries{TimeSeries: &TimeSeries{
+				Samples: []Sample{
+					{TimestampMs: 100, StartTimestamp: 50},
+					{TimestampMs: 200, StartTimestamp: 50},
+					{TimestampMs: 400, StartTimestamp: 300},
+					{TimestampMs: 700, StartTimestamp: 600},
+					{TimestampMs: 900, StartTimestamp: 800},
+					{TimestampMs: 950, StartTimestamp: 800},
+					{TimestampMs: 1200, StartTimestamp: 1000},
+				},
+				Histograms: []Histogram{
+					{Timestamp: 75, StartTimestamp: 50},
+					{Timestamp: 250, StartTimestamp: 50},
+					{Timestamp: 350, StartTimestamp: 300},
+					{Timestamp: 650, StartTimestamp: 600},
+					{Timestamp: 950, StartTimestamp: 800},
+					{Timestamp: 975, StartTimestamp: 800},
+					{Timestamp: 1100, StartTimestamp: 1000},
+				},
+			}},
+			maxTimestampMs: 1000,
+			expected: map[int64]STOwner{
+				50:  STOwnerHistogram,
+				300: STOwnerHistogram,
+				600: STOwnerHistogram,
+				800: STOwnerFloat,
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			actual := DupeSTOwners(&tc.ts, math.MinInt64, tc.maxTimestampMs)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 // Check that Prometheus FPoint and Mimir FloatSample types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusFPointInSyncWithMimirPbFloatSample(t *testing.T) {

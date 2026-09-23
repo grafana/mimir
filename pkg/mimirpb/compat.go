@@ -791,3 +791,68 @@ loop:
 
 	return numLabels, true
 }
+
+// STOwner describes who "owns" the Start Time for a TimeSeries -- which is to
+// say, when both the Sample and Histogram series have the same Start Time, we
+// only want to record a single Zero Sample.
+type STOwner int
+
+const (
+	STOwnerFloat STOwner = iota
+	STOwnerHistogram
+)
+
+// DupeSTOwners pre-scans the TimeSeries and finds cases where a start time is
+// claimed by both the Sample and Histogram series. Returns a map that
+// describes, for those dupe cases, which set has the earlier Timestamp so we
+// know which one should record the Zero Sample. If there is no record in the
+// map for a given start time, there is no dual claim of ownership. We need the
+// min and max valid timestamps so that we only consider samples that will be
+// considered in the calling loops.
+func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) map[int64]STOwner {
+	stToTS := make(map[int64]int64)
+	stOwners := make(map[int64]STOwner)
+
+	// First seed the map with all the earliest start times in the Sample list.
+	for _, s := range ts.Samples {
+		// This logic matches the validity logic in ingester_push.go and tsdb.go.
+		// If they diverge, this function may consider a different set of points
+		// than the callers and could return inaccurate ownership information.
+		if s.StartTimestamp <= 0 || s.StartTimestamp >= s.TimestampMs || s.TimestampMs > maxTimestampMs || s.TimestampMs < minTimestampMs {
+			continue
+		}
+		if _, ok := stToTS[s.StartTimestamp]; !ok {
+			stToTS[s.StartTimestamp] = s.TimestampMs
+		}
+	}
+	for _, h := range ts.Histograms {
+		if h.StartTimestamp <= 0 || h.StartTimestamp >= h.Timestamp || h.Timestamp > maxTimestampMs || h.Timestamp < minTimestampMs {
+			continue
+		}
+
+		// No corresponding float sample, don't need to consider.
+		if _, ok := stToTS[h.StartTimestamp]; !ok {
+			continue
+		}
+
+		// Here's the dupe case -- we have seen this start time before, and we might
+		// have seen it in the Samples list. If the *timestamp* of the current
+		// histogram sample is lower, assign ownership to the histogram.
+
+		// If we already recorded an owner, don't change anything, this new
+		// timestamp can only be newer than whoever already won the race.
+		if _, ok := stOwners[h.StartTimestamp]; ok {
+			continue
+		}
+		if h.Timestamp < stToTS[h.StartTimestamp] {
+			stOwners[h.StartTimestamp] = STOwnerHistogram
+		} else {
+			stOwners[h.StartTimestamp] = STOwnerFloat
+		}
+	}
+	if len(stOwners) == 0 {
+		return nil
+	}
+
+	return stOwners
+}
