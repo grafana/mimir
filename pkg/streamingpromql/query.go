@@ -129,58 +129,46 @@ func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
 	// Group by labelset, keyed on the label bytes rather than a hash so distinct series that share a
 	// hash are not merged.
 	groups := make(map[string][]int, len(q.matrix))
-	order := make([]string, 0, len(q.matrix))
 	var keyBuf []byte
-	haveDuplicates := false
 	for i := range q.matrix {
 		keyBuf = q.matrix[i].Metric.Bytes(keyBuf)
-		indices, exists := groups[string(keyBuf)]
-		if exists {
-			haveDuplicates = true
-		} else {
-			order = append(order, string(keyBuf))
-		}
-		groups[string(keyBuf)] = append(indices, i)
+		groups[string(keyBuf)] = append(groups[string(keyBuf)], i)
 	}
-
-	if !haveDuplicates {
+	if len(groups) == len(q.matrix) {
+		// Every series has a unique labelset; nothing to merge.
 		return nil
 	}
 
-	// Move each processed series out of q.matrix (leaving an empty Series) into merged, so every sample
-	// slice is owned in one place; returnResultToPool (called by Exec on error) can then safely free
-	// whatever remains in q.matrix.
+	// Move each series out of q.matrix (leaving an empty Series) into merged, so every sample slice is
+	// owned in one place; returnResultToPool (called by Exec on error) can then safely free whatever
+	// remains in q.matrix. Exec sorts the result afterwards, so the group order here does not matter.
 	original := q.matrix
-	merged := types.GetMatrix(len(order))
+	merged := types.GetMatrix(len(groups))
 
-	for _, key := range order {
-		indices := groups[key]
-
+	for _, indices := range groups {
 		if len(indices) == 1 {
+			// Most series are unique even when some collide: move them as-is rather than allocating a
+			// single-element slice and calling MergeSeries for each one.
 			merged = append(merged, original[indices[0]])
 			original[indices[0]] = promql.Series{}
 			continue
 		}
 
+		// MergeSeries takes ownership of (and frees) the sample slices, so clear the corresponding series
+		// in original and release the labels of all but the first (reused for the merged series).
+		outputMetric := original[indices[0]].Metric
 		data := make([]types.InstantVectorSeriesData, len(indices))
 		for i, idx := range indices {
 			data[i] = types.InstantVectorSeriesData{Floats: original[idx].Floats, Histograms: original[idx].Histograms}
-		}
-
-		// MergeSeries takes ownership of (and frees) the sample slices in data regardless of the outcome,
-		// so clear the corresponding series in original and release the labels of all but the first.
-		outputMetric := original[indices[0]].Metric
-		mergedData, conflict, err := operators.MergeSeries(data, slices.Clone(indices), q.memoryConsumptionTracker)
-		for i, idx := range indices {
 			if i != 0 {
 				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(original[idx].Metric)
 			}
 			original[idx] = promql.Series{}
 		}
 
-		// On error the query stops, so per this package's convention we do not return the merged-so-far
-		// slices to the pool or adjust the memory estimate; returnResultToPool frees what remains in
-		// q.matrix (the not-yet-processed series).
+		// On error the query stops, so per this package's convention we do not free the merged-so-far
+		// slices or adjust the memory estimate; returnResultToPool frees what remains in q.matrix.
+		mergedData, conflict, err := operators.MergeSeries(data, indices, q.memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
