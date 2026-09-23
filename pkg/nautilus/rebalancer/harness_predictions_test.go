@@ -71,6 +71,9 @@ func seedHotPartitionLayout(t *testing.T, h *harness, rc *fakeReadcache, partiti
 	// only reports on (partition, range) pairs it considers owned.
 	// We stuff partition 0 with all the ranges (matching tier-1).
 	rc.mu.Lock()
+	for pid := int32(0); pid < int32(partitionCount); pid++ {
+		rc.owned[pid] = nil
+	}
 	rc.owned[0] = append([]assignment.HashRange(nil), ranges...)
 	rc.mu.Unlock()
 

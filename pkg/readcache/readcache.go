@@ -203,6 +203,15 @@ type Readcache struct {
 	// elsewhere before the pod returned), so startKafkaReader deletes
 	// it and adopts the live edge.
 	startupReconcileDone atomic.Bool
+
+	// assignmentReady flips after the first assignment has been
+	// successfully reconciled. Until then HashRangeStats returns
+	// Unavailable instead of an empty response, which would make the
+	// tier-2 slicer mistake this starting pod for a warm, idle target.
+	// Kept separate from startupReconcileDone: the latter controls offset
+	// adoption semantics and intentionally flips even when a reconcile
+	// only partially succeeds.
+	assignmentReady atomic.Bool
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -495,6 +504,7 @@ func (r *Readcache) starting(ctx context.Context) error {
 	}
 	r.removeUnownedFrozenPartitionOffsets(wanted)
 	r.startupReconcileDone.Store(true)
+	r.assignmentReady.Store(true)
 
 	level.Info(r.logger).Log(
 		"msg", "readcache started with static partition assignment",
@@ -1371,6 +1381,9 @@ func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassi
 			"add_failed_partition_ids", formatPartitionIDs(addFailed, 20),
 			"remove_failed_partition_ids", formatPartitionIDs(removeFailed, 20),
 		)
+	}
+	if firstErr == nil {
+		r.assignmentReady.Store(true)
 	}
 	return firstErr
 }

@@ -822,7 +822,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			// snapshot containing only the newly discovered tenants.
 			r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
 		}
-		_, _, _, _, _, unknownTenants, _, collectErr := r.collectRoundStats(ctx, current)
+		_, _, _, _, _, unknownTenants, _, _, collectErr := r.collectRoundStats(ctx, current)
 		if collectErr != nil {
 			level.Warn(r.logger).Log("msg", "failed to collect unknown tenants during cold start", "err", collectErr)
 		} else {
@@ -953,7 +953,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		)
 	}
 
-	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, unknownTenants, failedReadcaches, err := r.collectRoundStats(ctx, current)
+	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, unknownTenants, statsReadiness, failedReadcaches, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
@@ -1057,6 +1057,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		activePartitions,
 	)
 	r.metrics.setRateZeroExclusions(len(excludedFromSlicer))
+	if len(statsReadiness.unreadyPartitions) > 0 {
+		if excludedFromSlicer == nil {
+			excludedFromSlicer = make(map[int32]bool, len(statsReadiness.unreadyPartitions))
+		}
+		for partitionID := range statsReadiness.unreadyPartitions {
+			excludedFromSlicer[partitionID] = true
+		}
+	}
 	if len(excludedFromSlicer) > 0 {
 		excludedIDs := make([]int32, 0, len(excludedFromSlicer))
 		for pid := range excludedFromSlicer {
@@ -1065,7 +1073,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		level.Info(r.logger).Log(
 			"msg", "excluded rate-unknown partitions from slicer pool",
 			"count", len(excludedFromSlicer),
-			"reason", "rate=0 but L>0; likely tier-2 reassignment or readcache restart",
+			"reason", "rate=0 with L>0 or no assigned readcache replica has reported the partition warm",
 			"partitions", formatInt32IDs(excludedIDs, 16),
 		)
 	}
@@ -1157,6 +1165,14 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				excludedTargets := failedReadcaches
 				if r.cfg.ReadcacheSlicer.DesiredReplicas > 0 {
 					excludedTargets = excludeLogicalTargetsFromConcreteFailures(failedReadcaches, replicaMap, r.healthyConcreteSet())
+				}
+				if len(statsReadiness.unreadyLogicalTargets) > 0 {
+					if excludedTargets == nil {
+						excludedTargets = make(map[string]struct{}, len(statsReadiness.unreadyLogicalTargets))
+					}
+					for instanceID := range statsReadiness.unreadyLogicalTargets {
+						excludedTargets[instanceID] = struct{}{}
+					}
 				}
 				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, excludedTargets, excludedFromSlicer)
 				// Update the gating state regardless of whether the

@@ -144,7 +144,7 @@ func TestCollectUnknownTenants_DeduplicatesAcrossBootstrapPartitions(t *testing.
 		{TenantId: "tenant-new", PartitionId: 7, FirstSeenUnixMs: firstSeen.Add(30 * time.Second).UnixMilli()},
 	}
 
-	_, _, _, _, _, unknowns, _, err := h.r.collectRatesFromReadcaches(h.ctx)
+	_, _, _, _, _, unknowns, _, _, err := h.r.collectRatesFromReadcaches(h.ctx)
 
 	require.NoError(t, err)
 	require.Len(t, unknowns, 1)

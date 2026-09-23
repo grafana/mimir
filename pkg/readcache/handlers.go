@@ -789,6 +789,10 @@ func (r *Readcache) activeSeries(_ *client.ActiveSeriesRequest, srv client.Inges
 // the head compacts and the count drops to zero, the walker GCs the
 // historical entry on the next tick.
 func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
+	if r.cfg.RebalancerAddress != "" && !r.assignmentReady.Load() {
+		return nil, errAssignmentNotReady()
+	}
+
 	r.partitionMu.RLock()
 	parts := make([]*partitionState, 0, len(r.partitions))
 	for _, p := range r.partitions {
@@ -808,15 +812,35 @@ func (r *Readcache) hashRangeStats(_ context.Context, _ *client.HashRangeStatsRe
 		}
 	}
 
-	partitionSeries := make([]client.PartitionActiveSeries, len(partSnap.Partitions))
-	for i, e := range partSnap.Partitions {
+	partitionSeriesByPID := make(map[int32]client.PartitionActiveSeries, len(partSnap.Partitions)+len(parts))
+	for _, e := range partSnap.Partitions {
 		_, stillWarming := warming[e.PartitionID]
-		partitionSeries[i] = client.PartitionActiveSeries{
+		partitionSeriesByPID[e.PartitionID] = client.PartitionActiveSeries{
 			PartitionId:  e.PartitionID,
 			ActiveSeries: e.ActiveSeries,
 			Warming:      stillWarming,
 		}
 	}
+	// A newly acquired partition may not have appeared in the asynchronous
+	// series walk yet. Emit it explicitly at zero series so the rebalancer
+	// can distinguish "owned but still warming" from "not reported", and
+	// therefore from a genuinely warm, idle partition.
+	for _, p := range parts {
+		if _, exists := partitionSeriesByPID[p.partitionID]; exists {
+			continue
+		}
+		partitionSeriesByPID[p.partitionID] = client.PartitionActiveSeries{
+			PartitionId: p.partitionID,
+			Warming:     !p.warm.Load(),
+		}
+	}
+	partitionSeries := make([]client.PartitionActiveSeries, 0, len(partitionSeriesByPID))
+	for _, entry := range partitionSeriesByPID {
+		partitionSeries = append(partitionSeries, entry)
+	}
+	sort.Slice(partitionSeries, func(i, j int) bool {
+		return partitionSeries[i].PartitionId < partitionSeries[j].PartitionId
+	})
 
 	resp := &client.HashRangeStatsResponse{
 		TotalActiveSeries:     partSnap.Total,

@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -388,6 +390,47 @@ func TestReadcache_HashRangeStats_UnknownTenantBootstrap(t *testing.T) {
 	_, retained := p0.ranges.unknownFirstSeen["tenant-gone"]
 	p0.ranges.mu.RUnlock()
 	assert.False(t, retained)
+}
+
+func TestReadcache_HashRangeStats_RequiresAssignmentReadiness(t *testing.T) {
+	r := &Readcache{
+		cfg:             Config{RebalancerAddress: "rebalancer"},
+		partitions:      map[int32]*partitionState{},
+		partitionSeries: loadstats.NewPartitionSeries(),
+		queryLoad:       loadstats.NewTracker("test"),
+	}
+
+	resp, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Equal(t, assignmentNotReadyDetail, status.Convert(err).Message())
+
+	r.assignmentReady.Store(true)
+	resp, err = r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
+func TestReadcache_HashRangeStats_EmitsOwnedPartitionsBeforeSeriesWalk(t *testing.T) {
+	warm := newPartitionState(3)
+	warm.warm.Store(true)
+	warming := newPartitionState(7)
+	r := &Readcache{
+		partitions: map[int32]*partitionState{
+			3: warm,
+			7: warming,
+		},
+		partitionSeries: loadstats.NewPartitionSeries(),
+		queryLoad:       loadstats.NewTracker("test"),
+	}
+
+	resp, err := r.hashRangeStats(t.Context(), &ingester_client.HashRangeStatsRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []ingester_client.PartitionActiveSeries{
+		{PartitionId: 3},
+		{PartitionId: 7, Warming: true},
+	}, resp.PartitionActiveSeries)
 }
 
 func TestReadcache_HashRangeStats_EmitsTenantScopedRates(t *testing.T) {
