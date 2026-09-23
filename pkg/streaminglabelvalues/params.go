@@ -55,6 +55,11 @@ type Params struct {
 	// BuildFilter divides by 100 before passing to filter constructors.
 	// Zero accepts any subseq match (Prometheus's default).
 	FuzzThreshold int
+	// SearchAfter is the last value returned by a previous page of a
+	// cursor-paginated search (sort_by=alpha only). Empty means no cursor is
+	// in effect. Read by the ingester/store-gateway search handlers via
+	// streaminglabelvalues.ApplyResumeAfter, not by BuildFilter itself.
+	SearchAfter string
 
 	// expression is retained privately so validated Params can be forwarded over
 	// the wire without exposing mutable expression state. expressionExpr is the

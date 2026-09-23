@@ -400,6 +400,32 @@ func TestStorepbToParams(t *testing.T) {
 		require.NotNil(t, params)
 		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
 	})
+
+	t.Run("carries SearchAfter", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, SearchAfter: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.SearchAfter)
+	})
+}
+
+func TestApplyPerBlockSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.T) {
+	params, err := streaminglabelvalues.NewParams([]string{"pod"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.SearchAfter = "kube_pod_info"
+
+	values := []string{"kube_pod_container_status_pod", "kube_pod_info", "kube_pod_status_ready"}
+	rs, err := applyPerBlockSearchHints(values, params, storage.OrderByValueAsc, 0)
+	require.NoError(t, err)
+	require.NotNil(t, rs)
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"kube_pod_status_ready"}, got, "only the value alphabetically after the resume point survives")
 }
 
 // prepareBenchmarkSearchStore builds a BucketStore backed by the same series

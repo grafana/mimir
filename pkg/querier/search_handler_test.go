@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -963,9 +964,10 @@ func TestParseSearchRequest_FuzzAlgSubstringVariants(t *testing.T) {
 
 // TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering pins the
 // fuzz_alg=substring constraints: fuzz_threshold defaults to 100 (the only
-// value that means anything once containsScorerAny always scores 1.0), an
-// explicit non-100 threshold is rejected rather than silently ignored, and
-// sort_by=score is rejected since every match scores identically.
+// value that means anything once FilterContains's anyPosition=true always
+// scores 1.0), an explicit non-100 threshold is rejected rather than
+// silently ignored, and sort_by=score is rejected since every match scores
+// identically.
 func TestParseSearchRequest_FuzzAlgSubstringThresholdAndOrdering(t *testing.T) {
 	t.Run("defaults fuzz_threshold to 100", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&fuzz_alg=substring")
@@ -1568,4 +1570,454 @@ func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestSearchCursorRoundTrip(t *testing.T) {
+	matchers, err := parseSearchMatchers([]string{`{job="prom"}`})
+	require.NoError(t, err)
+	req := &searchRequest{
+		params:          mustNewParams(t, []string{"foo", "bar"}, false, streaminglabelvalues.FuzzAlgJaroWinkler, 75),
+		matchers:        matchers,
+		hints:           &storage.SearchHints{OrderBy: storage.OrderByValueDesc, Limit: 43},
+		limit:           42,
+		startMs:         1758500000000,
+		endMs:           1758503600000,
+		batchSize:       7,
+		includeScore:    true,
+		includeMetadata: true,
+		labelName:       "job",
+	}
+
+	encoded, err := encodeSearchCursor(req, "kube_pod_status_ready")
+	require.NoError(t, err)
+	require.NotEmpty(t, encoded)
+
+	decoded, err := decodeSearchCursor(encoded)
+	require.NoError(t, err)
+
+	got, err := decoded.toSearchRequest(true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"foo", "bar"}, got.params.Terms)
+	assert.False(t, got.params.CaseSensitive)
+	assert.Equal(t, streaminglabelvalues.FuzzAlgJaroWinkler, got.params.FuzzAlg)
+	assert.Equal(t, 75, got.params.FuzzThreshold)
+	assert.Equal(t, "kube_pod_status_ready", got.params.SearchAfter)
+	assert.Equal(t, storage.OrderByValueDesc, got.hints.OrderBy)
+	assert.Equal(t, 42, got.limit)
+	assert.Equal(t, int64(1758500000000), got.startMs)
+	assert.Equal(t, int64(1758503600000), got.endMs)
+	assert.Equal(t, 7, got.batchSize)
+	assert.True(t, got.includeScore)
+	assert.True(t, got.includeMetadata)
+	assert.Equal(t, "job", got.labelName)
+	require.Len(t, got.matchers, 1)
+	require.Len(t, got.matchers[0], 1)
+	assert.Equal(t, "job", got.matchers[0][0].Name)
+	assert.Equal(t, "prom", got.matchers[0][0].Value)
+}
+
+func TestSearchCursorRoundTripWithExpression(t *testing.T) {
+	req := &searchRequest{
+		params:    mustNewExpressionParams(t, "foo AND NOT bar", true, streaminglabelvalues.FuzzAlgSubsequence, 0),
+		hints:     &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 101},
+		limit:     100,
+		startMs:   0,
+		endMs:     3600000,
+		batchSize: 100,
+	}
+	encoded, err := encodeSearchCursor(req, "foo_new")
+	require.NoError(t, err)
+	decoded, err := decodeSearchCursor(encoded)
+	require.NoError(t, err)
+	got, err := decoded.toSearchRequest(false)
+	require.NoError(t, err)
+	assert.Equal(t, "foo AND NOT bar", got.params.Expression())
+	assert.Empty(t, got.params.Terms)
+}
+
+func TestDecodeSearchCursorRejectsMalformed(t *testing.T) {
+	_, err := decodeSearchCursor("not-valid-base64!!!")
+	require.Error(t, err)
+
+	// Valid base64, invalid JSON.
+	_, err = decodeSearchCursor(base64.RawURLEncoding.EncodeToString([]byte("not json")))
+	require.Error(t, err)
+}
+
+func TestDecodeSearchCursorRejectsUnknownVersion(t *testing.T) {
+	raw, err := json.Marshal(searchCursor{Version: 999, SortDir: "asc"})
+	require.NoError(t, err)
+	_, err = decodeSearchCursor(base64.RawURLEncoding.EncodeToString(raw))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported version")
+}
+
+func TestDecodeSearchCursorRejectsScoreOrdering(t *testing.T) {
+	// v1 never generates a cursor with sort_by=score (see Scope in the spec);
+	// this pins that a hand-crafted one is rejected rather than silently
+	// accepted.
+	raw, err := json.Marshal(searchCursor{Version: searchCursorVersion, SortBy: "score", SortDir: "asc"})
+	require.NoError(t, err)
+	_, err = decodeSearchCursor(base64.RawURLEncoding.EncodeToString(raw))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sort_by")
+}
+
+func TestParseSearchRequest_RejectsCursorWithOtherParams(t *testing.T) {
+	req := &searchRequest{
+		params: mustNewParams(t, []string{"foo"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0),
+		hints:  &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 1},
+		limit:  1,
+		endMs:  3600000,
+	}
+	cursor, err := encodeSearchCursor(req, "")
+	require.NoError(t, err)
+
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor+"&limit=5")
+	_, err = parseSearchRequest(r, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+// TestParseSearchRequest_RejectsEmptyCursorWithOtherParams pins that a
+// present-but-empty cursor= counts as "a cursor was supplied", so it hits
+// the exclusivity check rather than falling through to ordinary parsing.
+func TestParseSearchRequest_RejectsEmptyCursorWithOtherParams(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor=&limit=5")
+	_, err := parseSearchRequest(r, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+// TestParseSearchRequest_RejectsEmptyCursorAlone pins that a lone empty
+// cursor= reaches decodeSearchCursor and fails its validation, rather than
+// being silently treated as "no cursor".
+func TestParseSearchRequest_RejectsEmptyCursorAlone(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor=")
+	_, err := parseSearchRequest(r, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid cursor")
+}
+
+func TestParseSearchRequest_CursorRoundTripThroughHTTP(t *testing.T) {
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&limit=5")
+	first, err := parseSearchRequest(r, false)
+	require.NoError(t, err)
+
+	cursor, err := encodeSearchCursor(first, "kube_pod_status_ready")
+	require.NoError(t, err)
+
+	r2 := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor)
+	second, err := parseSearchRequest(r2, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"foo"}, second.params.Terms)
+	assert.Equal(t, "kube_pod_status_ready", second.params.SearchAfter)
+	assert.Equal(t, 5, second.limit)
+}
+
+func TestSearchLabelNamesHandler_MultiPageCursorWalk(t *testing.T) {
+	all := []storage.SearchResult{sr("a", 1.0), sr("b", 1.0), sr("c", 1.0), sr("d", 1.0), sr("e", 1.0)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(all, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	fetchPage := func(target string) (names []string, nextCursor string, hasMore bool) {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+		require.Equal(t, http.StatusOK, w.Code)
+		lines := drainNDJSON(t, w.Body.String())
+		require.NotEmpty(t, lines)
+		for _, r := range lines[0]["results"].([]any) {
+			names = append(names, r.(map[string]any)["name"].(string))
+		}
+		trailer := lines[len(lines)-1]
+		if c, ok := trailer["next_cursor"]; ok {
+			nextCursor = c.(string)
+		}
+		hasMore, _ = trailer["has_more"].(bool)
+		return names, nextCursor, hasMore
+	}
+
+	var walked []string
+	names, cursor, hasMore := fetchPage("/api/v1/search/label_names?limit=2")
+	walked = append(walked, names...)
+	require.True(t, hasMore)
+	require.NotEmpty(t, cursor)
+
+	for hasMore {
+		names, cursor, hasMore = fetchPage("/api/v1/search/label_names?cursor=" + cursor)
+		walked = append(walked, names...)
+	}
+
+	assert.Equal(t, []string{"a", "b", "c", "d", "e"}, walked, "no gaps or overlaps across the full cursor walk")
+	assert.Empty(t, cursor, "the final page carries no cursor")
+}
+
+func TestCursorResumingSearchResultSet_SkipsUpToAndIncludingExactMatch(t *testing.T) {
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("b", 1.0), sr("c", 1.0)}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"c"}, got, "'b' itself is excluded, not just values strictly before it")
+}
+
+func TestCursorResumingSearchResultSet_ResumeValueNoLongerPresent(t *testing.T) {
+	// The value the cursor names ("b") was deleted between pages; only "a"
+	// and "c" remain. Comparing by value, not position, still resumes
+	// correctly at "c".
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("c", 1.0)}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"c"}, got)
+}
+
+func TestCursorResumingSearchResultSet_EmptyAfterSkip(t *testing.T) {
+	// resumeAfter is the last value in the set: every record is skipped and
+	// the iterator ends cleanly, not with an error.
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("b", 1.0)}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.NoError(t, rs.Err())
+}
+
+func TestCursorResumingSearchResultSet_Descending(t *testing.T) {
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("c", 1.0), sr("b", 1.0), sr("a", 1.0)}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueDesc)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"a"}, got)
+}
+
+func TestSearchLabelNamesHandler_ScoreOrderingNeverEmitsCursor(t *testing.T) {
+	results := []storage.SearchResult{sr("a", 0.9), sr("b", 0.8)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&sort_by=score&limit=1"))
+	require.Equal(t, http.StatusOK, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, true, trailer["has_more"])
+	_, hasCursor := trailer["next_cursor"]
+	assert.False(t, hasCursor, "score ordering must never emit a cursor")
+}
+
+// TestSearchLabelNamesHandler_CursorNegativeBatchSizeDoesNotPanic pins a
+// review finding: cursors are unsigned (any client can hand-craft one), and
+// (*searchCursor).toSearchRequest previously copied BatchSize straight
+// through with none of parseSearchRequest's validation. A negative
+// batch_size reached getSearchEnvelope's make([]T, 0, req.batchSize) and
+// panicked with "makeslice: cap out of range" -- an unrecovered panic on the
+// live request path, since nothing upstream (worker/middleware/server)
+// recovers it.
+func TestSearchLabelNamesHandler_CursorNegativeBatchSizeDoesNotPanic(t *testing.T) {
+	raw, err := json.Marshal(searchCursor{Version: searchCursorVersion, SortDir: "asc", BatchSize: -1})
+	require.NoError(t, err)
+	cursor := base64.RawURLEncoding.EncodeToString(raw)
+
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(nil, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor)
+	w := httptest.NewRecorder()
+
+	require.NotPanics(t, func() {
+		h.ServeHTTP(w, r)
+	})
+}
+
+// oldBinarySearchMock returns a mock source that behaves like a
+// not-yet-upgraded ingester/store-gateway during a rolling upgrade: it does
+// not recognize search_after, but it still honors the pre-existing Limit
+// field positionally. It therefore returns the SAME first-Limit window of
+// the ordering on every page, whatever the cursor says.
+func oldBinarySearchMock(values []string) *searchMockQuerier {
+	return &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, hints *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			hintsCopy := *hints
+			// An old binary wouldn't understand search_after even if it were
+			// wired through a filter, but it does apply Limit.
+			hintsCopy.Filter = nil
+			return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
+		},
+	}
+}
+
+// fetchSearchPage issues one request against h and splits the NDJSON body
+// into the emitted names plus the trailer fields the cursor walk depends on.
+func fetchSearchPage(t *testing.T, h http.Handler, target string) (names []string, nextCursor string, hasMore bool, warnings []string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+	require.Equal(t, http.StatusOK, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.NotEmpty(t, lines)
+	if res, ok := lines[0]["results"].([]any); ok {
+		for _, r := range res {
+			names = append(names, r.(map[string]any)["name"].(string))
+		}
+	}
+	trailer := lines[len(lines)-1]
+	if c, ok := trailer["next_cursor"]; ok {
+		nextCursor = c.(string)
+	}
+	hasMore, _ = trailer["has_more"].(bool)
+	if ws, ok := trailer["warnings"].([]any); ok {
+		for _, warn := range ws {
+			warnings = append(warnings, warn.(string))
+		}
+	}
+	return names, nextCursor, hasMore, warnings
+}
+
+func TestSearchLabelNamesHandler_CursorCorrectDespiteSourceIgnoringSearchAfter(t *testing.T) {
+	// Full correctness is not achievable client-side against a source that
+	// positionally truncates before the cursor's resume point. What must
+	// hold is: no already-seen record is re-emitted, the walk terminates
+	// rather than looping, and a totally-discarded page is disclosed via a
+	// warning instead of reported as a silent success.
+	h := SearchLabelNamesHandler(newSearchMockQueryable(oldBinarySearchMock([]string{"a", "b", "c", "d", "e"})), enabledSearchConfig(), nil)
+
+	// Page 1: limit=2, so hints.Limit=3 as the has_more probe. The old
+	// source returns its fixed first-3 window a,b,c. "c" is the probe
+	// record — dropped, but its presence sets has_more=true.
+	names1, cursor1, hasMore1, warnings1 := fetchSearchPage(t, h, "/api/v1/search/label_names?limit=2")
+	assert.Equal(t, []string{"a", "b"}, names1)
+	assert.True(t, hasMore1)
+	assert.NotEmpty(t, cursor1)
+	// No warning on page 1: with resumeAfter=="" the constructor returns
+	// inner directly, so rs is not a *cursorResumingSearchResultSet at all
+	// and the disclosure check cannot match.
+	assert.Empty(t, warnings1, "page 1 has no resume point yet, so the backstop is not even wrapped in")
+
+	// Page 2: resumeAfter="b". The old source ignores search_after and
+	// returns the SAME a,b,c window. The backstop skips a and b and emits
+	// c, so no already-seen record is re-emitted. has_more is false: only
+	// one record survived the backstop, so the (limit+1)-th probe record
+	// could never be reached. d and e are unreachable from this source
+	// until it is upgraded, so this page is incomplete and must say so:
+	// the backstop examined all 3 records of the source's window to find
+	// one past the cursor, which reaches hints.Limit and trips the
+	// disclosure even though the page was only partially discarded.
+	names2, cursor2, hasMore2, warnings2 := fetchSearchPage(t, h, "/api/v1/search/label_names?cursor="+cursor1)
+	assert.Equal(t, []string{"c"}, names2)
+	assert.False(t, hasMore2, "the probe record is unreachable once the backstop has discarded the rest of the window")
+	assert.Empty(t, cursor2, "no cursor when the walk has terminated")
+	require.Len(t, warnings2, 1, "a partially discarded page hides the same unreachable tail as a fully discarded one")
+	assert.Contains(t, warnings2[0], "may not yet support cursor-based resume")
+
+	// Page 3: a cursor whose resume point is "c", the last item of the old
+	// source's fixed window. This is what a real rolling upgrade produces
+	// when an earlier page was served by an already-upgraded source and
+	// this one lands on an old binary. Every record the old source returns
+	// (a,b,c) is now <= resumeAfter, so the backstop discards all of them
+	// and emitted==0. That MUST NOT be reported as a complete walk.
+	names3, cursor3, hasMore3, warnings3 := fetchSearchPage(t, h, "/api/v1/search/label_names?cursor="+resumeAfterCursor(t, cursor1, "c"))
+	assert.Empty(t, names3)
+	assert.False(t, hasMore3, "must terminate, not loop forever polling a source stuck at its fixed window")
+	assert.Empty(t, cursor3, "no cursor when the walk has terminated")
+	require.Len(t, warnings3, 1)
+	assert.Contains(t, warnings3[0], "may not yet support cursor-based resume")
+}
+
+// resumeAfterCursor re-encodes cursor with a different resume point,
+// standing in for a cursor an already-upgraded source would have issued
+// from deeper in the ordering.
+func resumeAfterCursor(t *testing.T, cursor, resumeAfter string) string {
+	t.Helper()
+	decoded, err := decodeSearchCursor(cursor)
+	require.NoError(t, err)
+	decoded.ResumeAfter = resumeAfter
+	raw, err := json.Marshal(decoded)
+	require.NoError(t, err)
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func TestSearchCursorToSearchRequest_RejectsBatchSizeOverMax(t *testing.T) {
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", BatchSize: maxSearchBatchSize + 1}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "batch_size")
+}
+
+// TestSearchLabelNamesHandler_NoCursorWhenNothingEmitted pins that a
+// has_more=true reached via the clamp branch with nothing emitted does not
+// emit a next_cursor. lastValue is still "" there, and a cursor carrying an
+// empty resume_after would restart the walk from the beginning.
+func TestSearchLabelNamesHandler_NoCursorWhenNothingEmitted(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			var warns annotations.Annotations
+			// Enforced=0, so the clamp branch's emitted >= enforced holds
+			// even with zero results.
+			warns.Add(NewMaxLimitError(10, 0, validation.MaxLabelNamesLimitFlag))
+			return storage.NewSearchResultSetFromSlice(nil, warns)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names"))
+	require.Equal(t, http.StatusOK, w.Code)
+	lines := drainNDJSON(t, w.Body.String())
+	require.NotEmpty(t, lines)
+	trailer := lines[len(lines)-1]
+	require.Equal(t, true, trailer["has_more"], "the clamp branch must have fired for this test to be meaningful")
+	assert.NotContains(t, trailer, "next_cursor", "an empty resume point must not be encoded into a cursor")
+}
+
+func TestSearchCursorToSearchRequest_RejectsTooManyTerms(t *testing.T) {
+	terms := make([]string, maxSearchTermsPerRequest+1)
+	for i := range terms {
+		terms[i] = "x"
+	}
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Terms: terms}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "too many search terms")
+}
+
+func TestSearchCursorToSearchRequest_RejectsNegativeLimit(t *testing.T) {
+	c := &searchCursor{Version: searchCursorVersion, SortDir: "asc", Limit: -1}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "limit")
+}
+
+func mustNewParams(t *testing.T, terms []string, caseSensitive bool, alg streaminglabelvalues.FuzzAlg, threshold int) *streaminglabelvalues.Params {
+	t.Helper()
+	p, err := streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
+	require.NoError(t, err)
+	return p
+}
+
+func mustNewExpressionParams(t *testing.T, expr string, caseSensitive bool, alg streaminglabelvalues.FuzzAlg, threshold int) *streaminglabelvalues.Params {
+	t.Helper()
+	p, err := streaminglabelvalues.NewExpressionParams(expr, caseSensitive, alg, threshold)
+	require.NoError(t, err)
+	return p
 }

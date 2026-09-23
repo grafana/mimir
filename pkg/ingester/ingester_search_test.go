@@ -390,6 +390,13 @@ func TestProtoToParams(t *testing.T) {
 		require.NotNil(t, params)
 		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
 	})
+
+	t.Run("carries SearchAfter", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, SearchAfter: "bar"})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Equal(t, "bar", params.SearchAfter)
+	})
 }
 
 // TestIngesterSearchLabelValuesRejectsInvalidExpressionAsInvalidArgument
@@ -496,6 +503,44 @@ func TestBuildSearchHintsLimitGuard(t *testing.T) {
 			assert.Equal(t, tc.want, hints.Limit)
 		})
 	}
+}
+
+func TestBuildSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.T) {
+	hints, matchers, err := buildSearchHints(
+		&client.SearchFilter{Terms: []string{"pod"}, SearchAfter: "kube_pod_info"},
+		client.ORDER_BY_VALUE_ASC,
+		10,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, matchers)
+	require.NotNil(t, hints.Filter)
+
+	accepted, _ := hints.Filter.Accept("kube_pod_info")
+	assert.False(t, accepted, "the resume-after value itself must not be re-returned")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_container_status_pod")
+	assert.False(t, accepted, "alphabetically before the resume-after value")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_status_ready")
+	assert.True(t, accepted, "alphabetically after the resume-after value, and matches the term")
+}
+
+func TestBuildSearchHintsExcludesValuesAtOrAfterSearchAfterDescending(t *testing.T) {
+	hints, _, err := buildSearchHints(
+		&client.SearchFilter{Terms: []string{"pod"}, SearchAfter: "kube_pod_status_ready"},
+		client.ORDER_BY_VALUE_DESC,
+		10,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+
+	accepted, _ := hints.Filter.Accept("kube_pod_status_ready")
+	assert.False(t, accepted, "the resume-after value itself must not be re-returned")
+
+	accepted, _ = hints.Filter.Accept("kube_pod_container_status_pod")
+	assert.True(t, accepted, "alphabetically before the resume-after value, so it comes after it in descending order")
 }
 
 // Benchmark fixture shape mirrors BenchmarkIngester_LabelValuesCardinality
