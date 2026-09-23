@@ -29,6 +29,11 @@
     autoscaling_ruler_querier_cpu_target_utilization: 1,
     autoscaling_ruler_querier_memory_target_utilization: 1,
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
+    autoscaling_ruler_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of ruler-queriers needed.
+    autoscaling_ruler_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
+    autoscaling_ruler_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the ruler-querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
+    autoscaling_ruler_querier_scaleup_percent_cap: null,  // The maximum percent a ruler-querier deployment may scale up every 2m. Null leaves scale-up uncapped (Kubernetes' own default).
+    autoscaling_ruler_querier_scaledown_percent_cap: 10,  // The maximum percent a ruler-querier deployment may scale down every 1m.
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas_per_zone: error 'you must set autoscaling_distributor_min_replicas_per_zone in the _config',
@@ -676,34 +681,109 @@
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       extra_matchers=extra_matchers,
-      extra_triggers=if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
-        {
-          local name = 'ruler-querier-queries',
-          local querier_max_concurrent = querier_args['querier.max-concurrent'],
-          local query_params = {
-            namespace: $._config.namespace,
-            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+      extra_triggers=
+      (if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
+         {
+           local name = 'ruler-querier-queries',
+           local querier_max_concurrent = querier_args['querier.max-concurrent'],
+           local query_params = {
+             namespace: $._config.namespace,
+             extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+           },
+
+           metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+           // Each ruler-query-scheduler tracks *at regular intervals* the number of inflight requests
+           // (both enqueued and processing queries) as a summary. With the following query we target
+           // to have enough querier workers to run the max observed inflight requests 50% of time.
+           //
+           // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
+           // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
+           // because resources utilization is not increasing significantly.
+           query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % query_params,
+
+           threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
+
+           // Do not let KEDA use the value "0" as scaling metric if the query returns no result
+           // (e.g. query-scheduler is crashing).
+           ignore_null_values: false,
+         },
+       ])
+      +
+      (
+        if !$._config.autoscaling_ruler_querier_predictive_scaling_enabled then [] else
+          local querier_max_concurrent = querier_args['querier.max-concurrent'];
+          local threshold = std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization);
+
+          // A rendered threshold of 0 or less makes KEDA request a non-positive HPA metric target, which
+          // Kubernetes rejects outright, so the whole ScaledObject (including the reactive CPU
+          // and memory triggers) fails to apply. Fail fast at render time instead.
+          assert threshold > 0 :
+                 'autoscaling_ruler_querier_predictive_scaling_enabled requires querier_max_concurrent * autoscaling_ruler_querier_workers_target_utilization > 0, got threshold %d' % threshold;
+          [
+            {
+              local name = 'ruler-querier-queries-predictive',
+              local query_params = {
+                namespace: $._config.namespace,
+                extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+                lookback: $._config.autoscaling_ruler_querier_predictive_scaling_lookback,
+                period: $._config.autoscaling_ruler_querier_predictive_scaling_period,
+              },
+
+              metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+              // Scale ruler-queriers according to how many would have been sufficient to handle
+              // the ruler-query-scheduler queue depth $period ago.
+              //
+              // >= 0 drops NaN samples (emitted by the Prometheus Summary before the first Observe() call)
+              // before sum; or vector(0) handles the absent case when the zone is newer than the offset
+              // period, or when the lookback window aligns with the first NaN scrape at deployment time.
+              query: '(sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[%(lookback)s] offset %(period)s) >= 0) or vector(0))' % query_params,
+
+              threshold: '%d' % threshold,
+
+              // Inert here (the query above already guarantees a numeric result); kept for consistency.
+              ignore_null_values: false,
+            },
+          ]
+      ),
+    ) + {
+      spec+: {
+        advanced+: {
+          horizontalPodAutoscalerConfig+: {
+            behavior+: {
+              // Capping the scale-down rate avoids reacting too aggressively to a brief dip in load.
+              scaleDown: {
+                policies: [{
+                  type: 'Percent',
+                  value: $._config.autoscaling_ruler_querier_scaledown_percent_cap,
+                  periodSeconds: 60,
+                }],
+              },
+            } + (
+              if $._config.autoscaling_ruler_querier_scaleup_percent_cap == null then {} else {
+                // Capping the scale-up rate avoids reacting too aggressively to a brief spike in load.
+                scaleUp: {
+                  policies: [
+                    {
+                      type: 'Percent',
+                      value: $._config.autoscaling_ruler_querier_scaleup_percent_cap,
+                      periodSeconds: 120,
+                    },
+                    {
+                      type: 'Pods',
+                      value: 15,
+                      periodSeconds: 120,
+                    },
+                  ],
+                  stabilizationWindowSeconds: 60,
+                },
+              }
+            ),
           },
-
-          metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-          // Each ruler-query-scheduler tracks *at regular intervals* the number of inflight requests
-          // (both enqueued and processing queries) as a summary. With the following query we target
-          // to have enough querier workers to run the max observed inflight requests 50% of time.
-          //
-          // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
-          // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
-          // because resources utilization is not increasing significantly.
-          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % query_params,
-
-          threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
-
-          // Do not let KEDA use the value "0" as scaling metric if the query returns no result
-          // (e.g. query-scheduler is crashing).
-          ignore_null_values: false,
         },
-      ],
-    ),
+      },
+    },
 
   ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
     $.newRulerQuerierScaledObject('ruler-querier', $.ruler_querier_args),
