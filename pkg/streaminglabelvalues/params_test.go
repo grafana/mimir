@@ -71,8 +71,16 @@ func TestParamsDoesNotExposeMutableExpressionSource(t *testing.T) {
 			exportedFields = append(exportedFields, field.Name)
 		}
 	}
-	assert.Equal(t, []string{"Terms", "CaseSensitive", "FuzzAlg", "FuzzThreshold"}, exportedFields,
+	assert.Equal(t, []string{"Terms", "CaseSensitive", "FuzzAlg", "FuzzThreshold", "SearchAfter"}, exportedFields,
 		"an exported expression source could diverge from the private validated AST")
+}
+
+func TestParamsSearchAfterIsAPlainField(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	assert.Empty(t, p.SearchAfter, "zero value is empty, no cursor in effect")
+	p.SearchAfter = "kube_pod_status_ready"
+	assert.Equal(t, "kube_pod_status_ready", p.SearchAfter)
 }
 
 func TestNilParamsValidates(t *testing.T) {

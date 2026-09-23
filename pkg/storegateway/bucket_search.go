@@ -250,6 +250,9 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 	if err != nil {
 		return nil, err
 	}
+	if params != nil {
+		filter = streaminglabelvalues.ApplyResumeAfter(filter, params.SearchAfter, order)
+	}
 	results := storage.ApplySearchHints(values, &storage.SearchHints{
 		Filter:  filter,
 		OrderBy: order,
@@ -281,10 +284,18 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	case storepb.FUZZ_ALG_SUBSTRING:
 		alg = streaminglabelvalues.FuzzAlgSubstring
 	}
+	var params *streaminglabelvalues.Params
+	var err error
 	if wf.Expression != "" {
-		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+		params, err = streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	} else {
+		params, err = streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	if err != nil {
+		return nil, err
+	}
+	params.SearchAfter = wf.SearchAfter
+	return params, nil
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.

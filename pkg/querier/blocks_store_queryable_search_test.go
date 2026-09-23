@@ -1021,6 +1021,27 @@ func TestParamsToSGProto(t *testing.T) {
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstring},
 			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
 		},
+		{
+			name: "SearchAfter rides on the wire filter",
+			in: func() *streaminglabelvalues.Params {
+				p := &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true}
+				p.SearchAfter = "bar"
+				return p
+			}(),
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, SearchAfter: "bar"},
+		},
+		{
+			// A cursor walk with no search[] and no search_expr still needs
+			// search_after pushed down, so a SearchAfter-only Params must
+			// not be dropped as "empty".
+			name: "SearchAfter alone keeps the wire filter",
+			in: func() *streaminglabelvalues.Params {
+				p := &streaminglabelvalues.Params{}
+				p.SearchAfter = "foo"
+				return p
+			}(),
+			want: &storepb.SearchFilter{CaseInsensitive: true, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, SearchAfter: "foo"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

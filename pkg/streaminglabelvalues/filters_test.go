@@ -44,7 +44,7 @@ func TestFilterContains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := NewFilterContains(tt.term, tt.caseSensitive, containsScorerLeft)
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, false)
 			require.NoError(t, err)
 			gotAccepted, gotScore := f.Accept(tt.value)
 			assert.Equal(t, tt.wantAccepted, gotAccepted)
@@ -54,7 +54,7 @@ func TestFilterContains(t *testing.T) {
 }
 
 func TestFilterContainsRejectsEmptyTerm(t *testing.T) {
-	_, err := NewFilterContains("", true, containsScorerLeft)
+	_, err := NewFilterContains("", true, false)
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "empty")
 }
@@ -711,4 +711,60 @@ func benchmarkBuildFilterAccept(b *testing.B, params *Params, candidate string) 
 	for i := 0; i < b.N; i++ {
 		benchmarkFilterResult.accepted, benchmarkFilterResult.score = filter.Accept(candidate)
 	}
+}
+
+func TestApplyResumeAfterPassesThroughWhenEmpty(t *testing.T) {
+	inner := &scoreFilter{accepted: true, score: 0.5}
+	got := ApplyResumeAfter(inner, "", storage.OrderByValueAsc)
+	assert.Same(t, storage.Filter(inner), got)
+}
+
+func TestApplyResumeAfterAscendingRejectsAtAndBeforeThreshold(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 1.0}
+	f := ApplyResumeAfter(inner, "m", storage.OrderByValueAsc)
+
+	accepted, _ := f.Accept("a")
+	assert.False(t, accepted, "before threshold is rejected")
+
+	accepted, _ = f.Accept("m")
+	assert.False(t, accepted, "exact match on the last-seen value is rejected")
+
+	accepted, score := f.Accept("z")
+	assert.True(t, accepted, "past the threshold is accepted")
+	assert.Equal(t, 1.0, score)
+}
+
+func TestApplyResumeAfterDescendingRejectsAtAndAfterThreshold(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 1.0}
+	f := ApplyResumeAfter(inner, "m", storage.OrderByValueDesc)
+
+	accepted, _ := f.Accept("z")
+	assert.False(t, accepted, "before threshold (in descending order) is rejected")
+
+	accepted, _ = f.Accept("m")
+	assert.False(t, accepted, "exact match on the last-seen value is rejected")
+
+	accepted, score := f.Accept("a")
+	assert.True(t, accepted, "past the threshold is accepted")
+	assert.Equal(t, 1.0, score)
+}
+
+func TestApplyResumeAfterComposesWithInnerRejection(t *testing.T) {
+	inner := scoreFilter{accepted: false, score: 0}
+	f := ApplyResumeAfter(inner, "a", storage.OrderByValueAsc)
+	accepted, score := f.Accept("z")
+	assert.False(t, accepted, "past the threshold but the inner filter itself rejects")
+	assert.Zero(t, score)
+}
+
+func TestApplyResumeAfterHandlesNilInner(t *testing.T) {
+	// BuildFilter returns a nil storage.Filter when Params has no terms/expression
+	// (accept everything, score 1.0). ApplyResumeAfter must not panic on that nil.
+	f := ApplyResumeAfter(nil, "m", storage.OrderByValueAsc)
+	accepted, score := f.Accept("a")
+	assert.False(t, accepted)
+	assert.Zero(t, score)
+	accepted, score = f.Accept("z")
+	assert.True(t, accepted)
+	assert.Equal(t, 1.0, score)
 }

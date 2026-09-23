@@ -1707,6 +1707,56 @@ func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsLimit(t *test
 	assert.Equal(t, []string{"team-a", "team-b"}, drainSearchResultSet(t, rs))
 }
 
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsSearchAfter
+// pins the cursor-resume pushdown on the synthetic-ID path. This is the
+// querier's own in-process search, so there is no rolling-upgrade angle: if
+// ApplyResumeAfter is not applied here, a cursor walk over __tenant_id__
+// re-serves values the caller has already seen.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsSearchAfter(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.SearchAfter = "team-b"
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-c", "team-d"}, drainSearchResultSet(t, rs),
+		"values at or before SearchAfter must be excluded")
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsSearchAfterDesc
+// pins the same exclusion for descending order, where the resume boundary
+// inverts.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsSearchAfterDesc(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	params, err := streaminglabelvalues.NewParams(nil, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.SearchAfter = "team-c"
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueDesc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-b", "team-a"}, drainSearchResultSet(t, rs),
+		"values at or after SearchAfter must be excluded when ordering descending")
+}
+
 // TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_BypassNotInjected
 // pins the bypass contract: with bypassWithSingleID=true and a single
 // tenant, the synthetic label is NOT injected — the request is forwarded

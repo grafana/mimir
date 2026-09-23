@@ -16,31 +16,16 @@ import (
 	"github.com/grafana/mimir/pkg/streaminglabelvalues/internal/searchexpr"
 )
 
-type containsScorer func(value string, term string) (bool, float64)
-
-var containsScorerLeft containsScorer = func(value string, term string) (bool, float64) {
-	idx := strings.Index(value, term)
-	if idx < 0 {
-		return false, 0
-	}
-	if idx == 0 {
-		return true, 1.0
-	}
-	maxIdx := len(value) - len(term)
-	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
-}
-
-var containsScorerAny containsScorer = func(value string, term string) (bool, float64) {
-	if strings.Contains(value, term) {
-		return true, 1.0
-	}
-	return false, 0
-}
-
-// FilterContains accepts values that contain a fixed substring. Score is
-// 1.0 on prefix match; for non-prefix substrings the score decays linearly
-// with the match position from 1.0 (early match) to 0.1 (latest match).
-// Mirrors Prometheus PR #18573's SubstringFilter score semantics.
+// FilterContains accepts values that contain a fixed substring.
+//
+// anyPosition selects the scoring rule: false gives position-weighted
+// scoring (1.0 on prefix match, decaying linearly with match position down
+// to 0.1 at the latest possible position — mirrors Prometheus PR #18573's
+// SubstringFilter); true scores every match 1.0 regardless of position
+// (used for fuzz_alg=substring and for negated terms, where fuzzy recall
+// must not over-exclude candidates). Hardcoded as a branch inside Accept
+// rather than a scorer func field: benchmarked faster (~5-10%, avoids an
+// indirect call) and this is the only place either rule is needed.
 //
 // caseSensitive drives in-Accept folding only for direct callers of
 // NewFilterContains; BuildFilter constructs leaves with caseSensitive=true
@@ -49,30 +34,45 @@ var containsScorerAny containsScorer = func(value string, term string) (bool, fl
 type FilterContains struct {
 	term          string
 	caseSensitive bool
-	scorer        containsScorer
+	anyPosition   bool
 }
 
 // NewFilterContains returns a substring-containment filter. Term must be
 // non-empty. When caseSensitive is false the term is lowercased once at
-// construction time.
-func NewFilterContains(term string, caseSensitive bool, scorer containsScorer) (*FilterContains, error) {
+// construction time. See FilterContains for anyPosition's meaning.
+func NewFilterContains(term string, caseSensitive bool, anyPosition bool) (*FilterContains, error) {
 	if term == "" {
 		return nil, errors.New("FilterContains: empty term")
 	}
 	if !caseSensitive {
 		term = strings.ToLower(term)
 	}
-	return &FilterContains{term: term, caseSensitive: caseSensitive, scorer: scorer}, nil
+	return &FilterContains{term: term, caseSensitive: caseSensitive, anyPosition: anyPosition}, nil
 }
 
-// Accept returns (true, 1.0) on prefix match; (true, score) for a non-prefix
-// substring where score = 1.0 - 0.9 * idx / maxIdx (range [0.1, 1.0));
+// Accept returns (true, 1.0) on prefix match or (with anyPosition) any
+// match; (true, score) for a non-prefix substring under position-weighted
+// scoring where score = 1.0 - 0.9 * idx / maxIdx (range [0.1, 1.0));
 // (false, 0) on reject.
 func (f *FilterContains) Accept(value string) (bool, float64) {
 	if !f.caseSensitive {
 		value = strings.ToLower(value)
 	}
-	return f.scorer(value, f.term)
+	if f.anyPosition {
+		if strings.Contains(value, f.term) {
+			return true, 1.0
+		}
+		return false, 0
+	}
+	idx := strings.Index(value, f.term)
+	if idx < 0 {
+		return false, 0
+	}
+	if idx == 0 {
+		return true, 1.0
+	}
+	maxIdx := len(value) - len(f.term)
+	return true, 1.0 - 0.9*float64(idx)/float64(maxIdx)
 }
 
 // FilterJaro accepts values whose Jaro-Winkler similarity to a fixed term is
@@ -223,6 +223,47 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 	return c.inner.Accept(strings.ToLower(value))
 }
 
+// ApplyResumeAfter wraps inner so it also rejects any value already
+// returned by an earlier page of a cursor-paginated search. after is the
+// last value emitted on the previous page; an empty after means no cursor
+// is in effect, and inner is returned unchanged (no wrapper allocated).
+// order determines comparison direction: OrderByValueDesc rejects values
+// >= after; anything else (OrderByValueAsc, and defensively any other
+// value) rejects values <= after, matching protoToOrdering/storepbToOrdering's
+// own default-to-ascending convention. A nil inner is treated as
+// BuildFilter's "accept everything, score 1.0" convention.
+//
+// This is deliberately a Filter-level concern, not a storage.SearchHints
+// field: SearchHints, ApplySearchHints, and MergeSearchResultSets live in
+// the vendored github.com/grafana/mimir-prometheus fork, which this
+// function does not touch.
+func ApplyResumeAfter(inner storage.Filter, after string, order storage.Ordering) storage.Filter {
+	if after == "" {
+		return inner
+	}
+	return &resumeAfterFilter{inner: inner, after: after, descending: order == storage.OrderByValueDesc}
+}
+
+type resumeAfterFilter struct {
+	inner      storage.Filter
+	after      string
+	descending bool
+}
+
+func (f *resumeAfterFilter) Accept(value string) (bool, float64) {
+	if f.descending {
+		if value >= f.after {
+			return false, 0
+		}
+	} else if value <= f.after {
+		return false, 0
+	}
+	if f.inner == nil {
+		return true, 1.0
+	}
+	return f.inner.Accept(value)
+}
+
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
 // when Params is nil or has neither Terms nor a parsed expression — a nil
 // storage.Filter accepts every value with score 1.0 by Prometheus convention.
@@ -265,7 +306,7 @@ func BuildFilter(p *Params) (storage.Filter, error) {
 			term = strings.ToLower(term)
 		}
 		if negated {
-			return NewFilterContains(term, p.CaseSensitive, containsScorerAny)
+			return NewFilterContains(term, p.CaseSensitive, true)
 		}
 		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
@@ -309,7 +350,7 @@ func buildLegacyTermsFilter(terms []string, newTermFilter searchexpr.TermFilterF
 func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresholdInt int, threshold float64) (storage.Filter, error) {
 	switch alg {
 	case FuzzAlgJaroWinkler:
-		substring, err := NewFilterContains(term, caseSensitive, containsScorerLeft)
+		substring, err := NewFilterContains(term, caseSensitive, false)
 		if err != nil {
 			return nil, err
 		}
@@ -322,9 +363,9 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 		}
 		return &filterFallback{substring: substring, fuzzy: fuzzy}, nil
 	case FuzzAlgSubstringLeft:
-		return NewFilterContains(term, caseSensitive, containsScorerLeft)
+		return NewFilterContains(term, caseSensitive, false)
 	case FuzzAlgSubstring:
-		return NewFilterContains(term, caseSensitive, containsScorerAny)
+		return NewFilterContains(term, caseSensitive, true)
 	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
 		return NewFilterSubsequence(term, threshold, caseSensitive)
 	}
