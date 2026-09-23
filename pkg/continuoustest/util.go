@@ -3,6 +3,7 @@
 package continuoustest
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -408,8 +409,8 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
-			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
+			if mismatchErr := compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram); mismatchErr != nil {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) doesn't match the expected one: %s", histogram.Timestamp, ts.String(), mismatchErr)
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
@@ -459,32 +460,89 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	return lastMatchingIdx, nil
 }
 
-// accounts for float imprecision
+// compareFloatValues returns whether actual and expected are close enough, accounting for float imprecision.
+//
+// Note: this divides the difference by tolerance before comparing it against tolerance, so the effective
+// absolute tolerance is tolerance² (e.g. 1e-4 when called with maxComparisonDeltaHistogram = 0.01), which
+// doesn't match the name and intent of the tolerance constants. It's intentionally left unchanged here to
+// not alter the comparison semantics of the continuous test.
 func compareFloatValues(actual, expected, tolerance float64) bool {
 	delta := math.Abs((actual - expected) / tolerance)
 	return delta < tolerance
 }
 
-func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) bool {
-	return compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
+// compareHistogramValues returns nil if actual and expected match, or an error describing which fields
+// (count, sum and/or buckets) diverged, including their full precision values.
+func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) error {
+	var errs []error
+
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		errs = append(errs, fmt.Errorf("count is %s while was expecting %s", formatFloatValue(float64(actual.Count)), formatFloatValue(float64(expected.Count))))
+	}
+	if !compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) {
+		errs = append(errs, fmt.Errorf("sum is %s while was expecting %s", formatFloatValue(float64(actual.Sum)), formatFloatValue(float64(expected.Sum))))
+	}
+	errs = append(errs, compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)...)
+
+	return errors.Join(errs...)
 }
 
-func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) bool {
+// compareHistogramBuckets returns an error for each mismatching bucket, or no errors if all buckets match.
+func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) []error {
 	if len(actual) != len(expected) {
-		return false
+		return []error{fmt.Errorf("has %d buckets while was expecting %d", len(actual), len(expected))}
 	}
 
+	var errs []error
 	for i, bucket := range actual {
-		if !compareHistogramBucketValues(bucket, expected[i], tolerance) {
-			return false
+		if err := compareHistogramBucketValues(bucket, expected[i], tolerance); err != nil {
+			errs = append(errs, fmt.Errorf("bucket %d %s: %s", i, formatHistogramBucketRange(expected[i]), err))
 		}
 	}
-	return true
+	return errs
 }
 
-func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) bool {
+// compareHistogramBucketValues returns nil if actual and expected match, or an error describing the
+// mismatching bucket fields.
+func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) error {
+	var errs []error
+
+	if actual.Boundaries != expected.Boundaries {
+		errs = append(errs, fmt.Errorf("boundaries are %d while was expecting %d", actual.Boundaries, expected.Boundaries))
+	}
 	// the precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count
-	return actual.Boundaries == expected.Boundaries && compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
+	if !compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) {
+		errs = append(errs, fmt.Errorf("lower boundary is %s while was expecting %s", formatFloatValue(float64(actual.Lower)), formatFloatValue(float64(expected.Lower))))
+	}
+	if !compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) {
+		errs = append(errs, fmt.Errorf("upper boundary is %s while was expecting %s", formatFloatValue(float64(actual.Upper)), formatFloatValue(float64(expected.Upper))))
+	}
+	if !compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) {
+		errs = append(errs, fmt.Errorf("count is %s while was expecting %s", formatFloatValue(float64(actual.Count)), formatFloatValue(float64(expected.Count))))
+	}
+
+	return errors.Join(errs...)
+}
+
+// formatHistogramBucketRange returns a human readable representation of the bucket boundaries.
+func formatHistogramBucketRange(bucket *model.HistogramBucket) string {
+	lowerInclusive := bucket.Boundaries == 1 || bucket.Boundaries == 3
+	upperInclusive := bucket.Boundaries == 0 || bucket.Boundaries == 3
+
+	openBracket, closeBracket := "(", ")"
+	if lowerInclusive {
+		openBracket = "["
+	}
+	if upperInclusive {
+		closeBracket = "]"
+	}
+
+	return openBracket + formatFloatValue(float64(bucket.Lower)) + "," + formatFloatValue(float64(bucket.Upper)) + closeBracket
+}
+
+// formatFloatValue formats value with full precision, so that tiny differences are visible.
+func formatFloatValue(value float64) string {
+	return strconv.FormatFloat(value, 'g', -1, 64)
 }
 
 func minTime(first, second time.Time) time.Time {

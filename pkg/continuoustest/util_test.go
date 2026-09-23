@@ -202,7 +202,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
 			expectedLastMatchingIdx: -1,
-			expectedErr:             "histogram at timestamp .* has sum .* while was expecting .*",
+			expectedErr:             "histogram at timestamp .* doesn't match the expected one: (count|sum|bucket) .*",
 		},
 		"should return error if there's a missing histogram": {
 			histograms: []model.SampleHistogramPair{
@@ -238,6 +238,80 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 				assert.Regexp(t, testData.expectedErr, actualErr.Error())
 			}
 			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
+		})
+	}
+}
+
+func TestCompareHistogramValues(t *testing.T) {
+	newHistogram := func(count, sum, bucketCount float64) *model.SampleHistogram {
+		return &model.SampleHistogram{
+			Count: model.FloatString(count),
+			Sum:   model.FloatString(sum),
+			Buckets: model.HistogramBuckets{{
+				Boundaries: 0,
+				Lower:      model.FloatString(1),
+				Upper:      model.FloatString(2),
+				Count:      model.FloatString(bucketCount),
+			}},
+		}
+	}
+
+	tests := map[string]struct {
+		actual              *model.SampleHistogram
+		expected            *model.SampleHistogram
+		expectedErrContains []string
+		expectedErrExcludes []string
+	}{
+		"should return no error if histograms match": {
+			actual:   newHistogram(10, 20, 10),
+			expected: newHistogram(10, 20, 10),
+		},
+		"should report the count if only the count diverged": {
+			actual:              newHistogram(11, 20, 10),
+			expected:            newHistogram(10, 20, 10),
+			expectedErrContains: []string{"count is 11 while was expecting 10"},
+			expectedErrExcludes: []string{"sum is", "bucket 0"},
+		},
+		"should report the sum if only the sum diverged": {
+			actual:              newHistogram(10, 21, 10),
+			expected:            newHistogram(10, 20, 10),
+			expectedErrContains: []string{"sum is 21 while was expecting 20"},
+			expectedErrExcludes: []string{"count is", "bucket 0"},
+		},
+		"should report the bucket if only a bucket diverged": {
+			actual:              newHistogram(10, 20, 11),
+			expected:            newHistogram(10, 20, 10),
+			expectedErrContains: []string{"bucket 0 (1,2]: count is 11 while was expecting 10"},
+			expectedErrExcludes: []string{"sum is"},
+		},
+		"should report the number of buckets if it diverged": {
+			actual:              &model.SampleHistogram{Count: 10, Sum: 20},
+			expected:            newHistogram(10, 20, 10),
+			expectedErrContains: []string{"has 0 buckets while was expecting 1"},
+		},
+		"should report values with full precision": {
+			actual:              newHistogram(10, 6284.2758712345, 10),
+			expected:            newHistogram(10, 6284.2768712345, 10),
+			expectedErrContains: []string{"sum is 6284.2758712345 while was expecting 6284.2768712345"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := compareHistogramValues(testData.actual, testData.expected, maxComparisonDeltaHistogram)
+
+			if len(testData.expectedErrContains) == 0 {
+				require.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			for _, expected := range testData.expectedErrContains {
+				assert.Contains(t, err.Error(), expected)
+			}
+			for _, excluded := range testData.expectedErrExcludes {
+				assert.NotContains(t, err.Error(), excluded)
+			}
 		})
 	}
 }
