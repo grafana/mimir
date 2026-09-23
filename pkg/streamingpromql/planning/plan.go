@@ -126,6 +126,10 @@ type QueryParameters struct {
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
 	LookbackDelta            time.Duration
+
+	// CacheDisabled reflects the request's Cache-Control: no-store option, carried in the plan so the
+	// querier's splitting/caching passes can honour it.
+	CacheDisabled bool
 }
 
 // Node represents a node in the query plan graph.
@@ -331,6 +335,7 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool,
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
+		CacheDisabled:            p.Parameters.CacheDisabled,
 		Version:                  p.Version,
 	}
 
@@ -487,6 +492,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
+		CacheDisabled:            p.CacheDisabled,
 	}
 }
 

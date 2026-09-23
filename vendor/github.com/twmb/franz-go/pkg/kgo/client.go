@@ -1188,6 +1188,27 @@ func (cl *Client) updateBrokers(brokers []kmsg.MetadataResponseBroker) {
 	sort.Slice(brokers, func(i, j int) bool { return brokers[i].NodeID < brokers[j].NodeID })
 	newBrokers := make([]*broker, 0, len(brokers))
 
+	// Removed or replaced brokers are stopped AFTER brokersMu is released:
+	// stopForever dies each connection, which synchronously fires the
+	// user's OnBrokerDisconnect hook, and a hook that re-enters the client
+	// (issuing a request, DiscoveredBrokers, anything needing brokersMu)
+	// would deadlock this goroutine -- the metadata loop -- under the
+	// write lock, wedging every request path client-wide. Walkthrough: a
+	// rolling restart removes node 5 from metadata; we take brokersMu and
+	// stopForever(node 5) inline; the hook calls cl.Broker(5).Request;
+	// brokerOrErr blocks on brokersMu.RLock behind our write lock forever.
+	// Same hazard reapMu had (see stopForever), one lock up. Stopping
+	// late is safe: requests racing a removed broker already contend with
+	// stopForever via b.dead / errChosenBrokerDead, and the broker is out
+	// of cl.brokers the moment we unlock (UpdateSeedBrokers already stops
+	// its old seeds this way).
+	var stopped []*broker
+	defer func() {
+		for _, b := range stopped {
+			b.stopForever()
+		}
+	}()
+
 	cl.brokersMu.Lock()
 	defer cl.brokersMu.Unlock()
 
@@ -1201,12 +1222,12 @@ func (cl *Client) updateBrokers(brokers []kmsg.MetadataResponseBroker) {
 
 		switch {
 		case ob.meta.NodeID < nb.NodeID:
-			ob.stopForever()
+			stopped = append(stopped, ob)
 			cl.brokers = cl.brokers[1:]
 
 		case ob.meta.NodeID == nb.NodeID:
 			if !ob.meta.equals(nb) {
-				ob.stopForever()
+				stopped = append(stopped, ob)
 				ob = cl.newBroker(nb.NodeID, nb.Host, nb.Port, nb.Rack)
 			}
 			newBrokers = append(newBrokers, ob)
@@ -1221,7 +1242,7 @@ func (cl *Client) updateBrokers(brokers []kmsg.MetadataResponseBroker) {
 
 	for len(cl.brokers) > 0 {
 		ob := cl.brokers[0]
-		ob.stopForever()
+		stopped = append(stopped, ob)
 		cl.brokers = cl.brokers[1:]
 	}
 
@@ -1355,12 +1376,16 @@ func (cl *Client) close(ctx context.Context) (rerr error) {
 	// stop the metadata loop and metrics loop.
 	cl.ctxCancel()
 
+	// Stop brokers outside brokersMu: stopForever fires the user's
+	// OnBrokerDisconnect hook synchronously, and a hook re-entering the
+	// client would deadlock on the held write lock (see updateBrokers).
 	cl.brokersMu.Lock()
 	cl.stopBrokers = true
-	for _, broker := range cl.brokers {
+	stopBrokers := slices.Clone(cl.brokers)
+	cl.brokersMu.Unlock()
+	for _, broker := range stopBrokers {
 		broker.stopForever()
 	}
-	cl.brokersMu.Unlock()
 	for _, broker := range cl.loadSeeds() {
 		broker.stopForever()
 	}
@@ -3520,6 +3545,15 @@ func (cl *offsetFetchSharder) shard(ctx context.Context, kreq kmsg.Request, last
 	dup := *req
 	req = &dup
 
+	// Deep-dup the groups: the struct copy above still shares the
+	// caller's Groups slice (and each group's Topics slice), and the
+	// Topic/TopicID resolution fill below would otherwise write into the
+	// caller's request structs in place.
+	req.Groups = slices.Clone(req.Groups)
+	for i := range req.Groups {
+		req.Groups[i].Topics = slices.Clone(req.Groups[i].Topics)
+	}
+
 	if len(req.Groups) == 0 {
 		req.Groups = append(req.Groups, offsetFetchReqToGroup(req))
 	}
@@ -3554,21 +3588,39 @@ func (cl *offsetFetchSharder) shard(ctx context.Context, kreq kmsg.Request, last
 		nameMeta, _ = cl.resolveTopicMeta(ctx, unresolvedNames, true, 0)
 	}
 	if resolving {
+		// Fill from metaCache, which the resolve calls above populated:
+		// resolveTopicMetaByID stores into metaCache.byID (and returns
+		// nil when everything was already cached), while cl.id2t only
+		// ever holds topics this client produces or consumes -- an
+		// admin-style client fetching offsets by TopicID has the mapping
+		// ONLY in the cache. This mirrors the response-side resolution
+		// in the onResp below, which reads the cache for the same
+		// reason. id2t and the resolveTopicMeta return value remain as
+		// fallbacks. Names matter most below v10, where TopicID is
+		// structurally absent from the wire and an empty name is
+		// unmatchable by the broker (see #1312).
 		id2t := cl.id2tMap()
+		cl.metaCache.mu.Lock()
 		for i := range req.Groups {
 			g := &req.Groups[i]
 			for j := range g.Topics {
 				t := &g.Topics[j]
 				if t.Topic == "" && t.TopicID != ([16]byte{}) {
-					t.Topic = id2t[t.TopicID]
+					t.Topic = cl.metaCache.byID[t.TopicID]
+					if t.Topic == "" {
+						t.Topic = id2t[t.TopicID]
+					}
 				}
 				if t.TopicID == ([16]byte{}) && t.Topic != "" {
-					if ct, ok := nameMeta[t.Topic]; ok {
+					if ct, ok := cl.metaCache.topics[t.Topic]; ok {
+						t.TopicID = ct.id
+					} else if ct, ok := nameMeta[t.Topic]; ok {
 						t.TopicID = ct.id
 					}
 				}
 			}
 		}
+		cl.metaCache.mu.Unlock()
 	}
 
 	groups := make([]string, 0, len(req.Groups))
@@ -3813,7 +3865,11 @@ func (*findCoordinatorSharder) shard(_ context.Context, kreq kmsg.Request, lastE
 			uniq[key] = struct{}{}
 		}
 	}
-	req.CoordinatorKeys = req.CoordinatorKeys[:0]
+	// Build the deduplicated keys in a FRESH slice: the struct copy above
+	// still shares the caller's backing array, and appending into
+	// req.CoordinatorKeys[:0] would overwrite the caller's request slice
+	// with deduplicated, map-order-shuffled keys.
+	req.CoordinatorKeys = make([]string, 0, len(uniq))
 	for key := range uniq {
 		req.CoordinatorKeys = append(req.CoordinatorKeys, key)
 	}

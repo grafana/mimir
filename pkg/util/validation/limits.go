@@ -275,7 +275,7 @@ type Limits struct {
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
-	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
+	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"` // Deprecated: extended range selectors are always enabled.
 	EnabledPromQLBinopFillModifiers        flagext.StringSliceCSV `yaml:"enabled_promql_binop_fill_modifiers" json:"enabled_promql_binop_fill_modifiers"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
@@ -549,7 +549,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
-	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.")
+	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.")
 	f.Var(&l.EnabledPromQLBinopFillModifiers, "query-frontend.enabled-promql-binop-fill-modifiers", "Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.BoolVar(&l.SubquerySpinOffEnabled, SubquerySpinOffEnabledFlag, false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
@@ -1741,10 +1741,6 @@ func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 
 func (o *Overrides) EnabledPromQLExperimentalFunctions(userID string) []string {
 	return o.getOverridesForUser(userID).EnabledPromQLExperimentalFunctions
-}
-
-func (o *Overrides) EnabledPromQLExtendedRangeSelectors(userID string) []string {
-	return o.getOverridesForUser(userID).EnabledPromQLExtendedRangeSelectors
 }
 
 func (o *Overrides) EnabledPromQLBinopFillModifiers(userID string) []string {

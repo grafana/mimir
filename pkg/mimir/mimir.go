@@ -277,6 +277,9 @@ func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
 // Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
+	if c.Server.EnableOpenMetricsTextCreatedSamples && !c.Server.RegisterInstrumentation {
+		return errors.New("server.enable-open-metrics-text-created-samples can only be used if server.register-instrumentation is set to true")
+	}
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
