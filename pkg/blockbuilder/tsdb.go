@@ -152,27 +152,33 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		var prevSampleStartTimestamp int64
+		var injectedStartTimestamps map[int64]struct{}
 
 		for _, s := range ts.Samples {
-			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs &&
-				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
-				if ref != 0 {
-					// If the cached reference exists, we try to use it.
-					_, err = app.Append(ref, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
-				} else {
-					// Copy the label set because TSDB may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
-				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
+			if s.StartTimestamp > 0 && s.StartTimestamp != prevSampleStartTimestamp && s.StartTimestamp < s.TimestampMs {
+				if _, alreadyInjected := injectedStartTimestamps[s.StartTimestamp]; !alreadyInjected {
+					if ref != 0 {
+						// If the cached reference exists, we try to use it.
+						_, err = app.Append(ref, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
+					} else {
+						// Copy the label set because TSDB may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.Append(0, copiedLabels, 0, s.StartTimestamp, 0, nil, nil, zeroSampleOptions)
+					}
+					if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
+						discardedSamples++
+					}
+					if injectedStartTimestamps == nil {
+						injectedStartTimestamps = make(map[int64]struct{})
+					}
+					injectedStartTimestamps[s.StartTimestamp] = struct{}{}
 				}
 				prevSampleStartTimestamp = s.StartTimestamp // Only try to append a given start timestamp once per series.
 			}
@@ -219,23 +225,29 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			}
 
 			if h.StartTimestamp > 0 && h.StartTimestamp != prevHistogramStartTimestamp && h.StartTimestamp < h.Timestamp {
-				zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
-				if ref != 0 {
-					_, err = app.Append(ref, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
-				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
-				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
+				if _, alreadyInjected := injectedStartTimestamps[h.StartTimestamp]; !alreadyInjected {
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
+					if ref != 0 {
+						_, err = app.Append(ref, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.Append(0, copiedLabels, 0, h.StartTimestamp, 0, zih, zfh, zeroSampleOptions)
+					}
+					if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
+						discardedSamples++
+					}
+					if injectedStartTimestamps == nil {
+						injectedStartTimestamps = make(map[int64]struct{})
+					}
+					injectedStartTimestamps[h.StartTimestamp] = struct{}{}
 				}
 				prevHistogramStartTimestamp = h.StartTimestamp // Only try to append a given start timestamp once per series.
 			}

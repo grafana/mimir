@@ -39,10 +39,10 @@ func TestDistributor_Push_ShouldSupportCompartments(t *testing.T) {
 
 	res, err := d.Push(ctx, &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(now.UnixMilli(), 1), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "metric_b"}, makeSamples(now.UnixMilli(), 2), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "metric_c"}, makeSamples(now.UnixMilli(), 3), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "metric_d"}, makeSamples(now.UnixMilli(), 4), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(now.UnixMilli(), 0, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_b"}, makeSamples(now.UnixMilli(), 0, 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_c"}, makeSamples(now.UnixMilli(), 0, 3), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_d"}, makeSamples(now.UnixMilli(), 0, 4), nil, nil),
 		},
 		Metadata: []*mimirpb.MetricMetadata{
 			{MetricFamilyName: "metric_a", Type: mimirpb.COUNTER},
@@ -108,7 +108,7 @@ func TestDistributor_Push_Compartments_ShouldNotWriteToEmptyCompartments(t *test
 
 	// A single series maps to exactly one read compartment; the others are empty and must not be written.
 	_, err := d.Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-		makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
+		makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(time.Now().UnixMilli(), 0, 1), nil, nil),
 	}})
 	require.NoError(t, err)
 
@@ -162,8 +162,8 @@ func TestDistributor_Push_Compartments_SoftErrorInOneCompartmentDoesNotCancelOth
 	}
 
 	_, err := d.Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-		makeTimeseries([]string{model.MetricNameLabel, failMetric}, makeSamples(now.UnixMilli(), 1), nil, nil),
-		makeTimeseries([]string{model.MetricNameLabel, okMetric}, makeSamples(now.UnixMilli(), 2), nil, nil),
+		makeTimeseries([]string{model.MetricNameLabel, failMetric}, makeSamples(now.UnixMilli(), 0, 1), nil, nil),
+		makeTimeseries([]string{model.MetricNameLabel, okMetric}, makeSamples(now.UnixMilli(), 0, 2), nil, nil),
 	}})
 
 	// The soft error makes the whole request fail with a client (4xx / bad-data) error.
@@ -221,8 +221,8 @@ func TestDistributor_Push_Compartments_HardErrorCancelsOtherCompartments(t *test
 	pushErr := make(chan error, 1)
 	go func() {
 		_, err := d.Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, failMetric}, makeSamples(now.UnixMilli(), 1), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, slowMetric}, makeSamples(now.UnixMilli(), 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, failMetric}, makeSamples(now.UnixMilli(), 0, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, slowMetric}, makeSamples(now.UnixMilli(), 0, 2), nil, nil),
 		}})
 		pushErr <- err
 	}()
