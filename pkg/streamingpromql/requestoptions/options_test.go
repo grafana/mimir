@@ -103,6 +103,35 @@ func TestDecodeOptions(t *testing.T) {
 				TotalShards: 16,
 			},
 		},
+		{
+			name: "explain, no values",
+			input: &http.Request{
+				Header: http.Header{
+					ExplainHeader: []string{},
+				},
+			},
+			expected: Options{},
+		},
+		{
+			name: "explain, invalid value",
+			input: &http.Request{
+				Header: http.Header{
+					ExplainHeader: []string{"invalid"},
+				},
+			},
+			expected: Options{},
+		},
+		{
+			name: "explain, cost value",
+			input: &http.Request{
+				Header: http.Header{
+					ExplainHeader: []string{"cost"},
+				},
+			},
+			expected: Options{
+				Explain: []ExplainValue{ExplainValueCost},
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -123,7 +152,8 @@ func TestEncodeDecodeOptionsRoundTrip(t *testing.T) {
 		{name: "cache disabled", in: Options{CacheDisabled: true}},
 		{name: "sharding disabled", in: Options{ShardingDisabled: true}},
 		{name: "total shards set", in: Options{TotalShards: 128}},
-		{name: "all set", in: Options{CacheDisabled: true, TotalShards: 32}},
+		{name: "explain cost set", in: Options{Explain: []ExplainValue{ExplainValueCost}}},
+		{name: "all set", in: Options{CacheDisabled: true, TotalShards: 32, Explain: []ExplainValue{ExplainValueCost}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -182,7 +212,7 @@ func TestDecodeCacheDisabledOption(t *testing.T) {
 }
 
 func TestContextRoundTrip(t *testing.T) {
-	in := Options{CacheDisabled: true, ShardingDisabled: true, TotalShards: 16}
+	in := Options{CacheDisabled: true, ShardingDisabled: true, TotalShards: 16, Explain: []ExplainValue{ExplainValueCost}}
 	ctx := ContextWithOptions(context.Background(), in)
 	require.Equal(t, in, OptionsFromContext(ctx))
 }
