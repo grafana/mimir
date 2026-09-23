@@ -268,21 +268,21 @@ func (q *queueMetrics) decActive(isPlan bool) {
 func (q *queueMetrics) addBytes(cj *TrackedCompactionJob) {
 	l := q.laneForJob(cj)
 	if cj.value.isSplit {
-		q.splitBytes[l] += cj.totalBlockBytes
-		q.incompleteSplitBytes[l].Add(float64(cj.totalBlockBytes))
+		q.splitBytes[l] += cj.value.totalBlockBytes
+		q.incompleteSplitBytes[l].Add(float64(cj.value.totalBlockBytes))
 	} else {
-		q.mergeBytes[l] += cj.totalBlockBytes
-		q.incompleteMergeBytes[l].Add(float64(cj.totalBlockBytes))
+		q.mergeBytes[l] += cj.value.totalBlockBytes
+		q.incompleteMergeBytes[l].Add(float64(cj.value.totalBlockBytes))
 	}
 }
 
 func (q *queueMetrics) subBytes(cj *TrackedCompactionJob) {
 	l := q.laneForJob(cj)
 	if cj.value.isSplit {
-		q.splitBytes[l] -= cj.totalBlockBytes
-		q.incompleteSplitBytes[l].Sub(float64(cj.totalBlockBytes))
+		q.splitBytes[l] -= cj.value.totalBlockBytes
+		q.incompleteSplitBytes[l].Sub(float64(cj.value.totalBlockBytes))
 	} else {
-		q.mergeBytes[l] -= cj.totalBlockBytes
-		q.incompleteMergeBytes[l].Sub(float64(cj.totalBlockBytes))
+		q.mergeBytes[l] -= cj.value.totalBlockBytes
+		q.incompleteMergeBytes[l].Sub(float64(cj.value.totalBlockBytes))
 	}
 }
