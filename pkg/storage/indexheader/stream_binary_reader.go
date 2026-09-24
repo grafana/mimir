@@ -80,9 +80,6 @@ type StreamBinaryReader struct {
 		index  uint32
 		symbol string
 	}
-
-	// onClose, if set, is called once Close has released the reader's resources.
-	onClose func()
 }
 
 func NewStreamBinaryReader(
@@ -110,7 +107,7 @@ func NewStreamBinaryReader(
 		_ = f.Close()
 	}
 
-	localIndexHeaderPath := filepath.Join(localBlockDir, block.IndexHeaderFilename)
+	localIndexHeaderPath := indexHeaderPath(localBlockDir, requiredIndexHeaderVersion(cfg))
 	localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 
 	// Attempt to load existing sparse index-header from previous write to local disk or from bucket.
@@ -137,13 +134,18 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.Enabled); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
+
+		// Remove any existing index-header versions not required by the current config
+		if err = removeOtherIndexHeaderVersions(localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
+			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
+		}
 	}
 
 	// Initialize the local-disk-backed decbuf factory and read the TOC.
@@ -160,13 +162,17 @@ func NewStreamBinaryReader(
 			"path", localIndexHeaderPath, "indexHeaderVersion", indexHeaderVersion, "err", err,
 		)
 		start := time.Now()
-		if err = WriteBinary(ctx, bkt, blockID, localIndexHeaderPath, cfg.BucketReader.Enabled); err != nil {
+		if err = WriteBinary(ctx, bkt, blockID, localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
 			return nil, fmt.Errorf("failed to write index header: %w", err)
 		}
 		level.Info(spanLog).Log(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
+
+		if err = removeOtherIndexHeaderVersions(localBlockDir, requiredIndexHeaderVersion(cfg)); err != nil {
+			return nil, fmt.Errorf("failed to remove other index-header versions: %w", err)
+		}
 
 		// filePoolDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
 		// we close it and open a new one.
@@ -410,9 +416,6 @@ func (r *StreamBinaryReader) Close() error {
 		// When both Symbols and Postings offset are read from disk,
 		// they use the same DecbufFactory object; avoid double-close.
 		merr.Add(r.postingsOffsetsDecbufFactory.Close())
-	}
-	if r.onClose != nil {
-		r.onClose()
 	}
 	return merr.Err()
 }

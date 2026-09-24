@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -27,10 +28,9 @@ type ReaderPoolMetrics struct {
 	lazyReader   *LazyBinaryReaderMetrics
 	streamReader *StreamBinaryReaderMetrics
 
-	// onDiskVersion tracks, by on-disk format version, how many index-header files this
-	// store-gateway currently has on local disk - independent of whether each one is presently
-	// loaded into memory. It is maintained by ReaderPool because that's the only place with a
-	// view of a block's reader lifetime that spans lazy loading's idle-unload/reload cycles.
+	// onDiskVersion reports the index-header version on disk when a binary reader is set up,
+	// and decremented immediately before a block's directory is actually removed from disk.
+	// It is NOT decremented on reader close, since reader close doesn't remove the index-header from disk.
 	onDiskVersion *prometheus.GaugeVec
 }
 
@@ -109,15 +109,8 @@ func (p *ReaderPool) NewBinaryReader(
 		return NewStreamBinaryReader(ctx, id, bkt, dir, cfg, postingOffsetsInMemSampling, logger, p.metrics.streamReader)
 	}
 
-	// cfg determines what version we keep on disk;
-	// if Reader implementations find a different version that the one required, they build the correct version.
-	onDiskVersion := p.metrics.onDiskVersion.WithLabelValues(strconv.Itoa(requiredIndexHeaderVersion(cfg)))
 	if p.lazyReaderEnabled {
-		onClosed := func(r *LazyBinaryReader) {
-			p.onLazyReaderClosed(r)
-			onDiskVersion.Dec()
-		}
-		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, onClosed, p.lazyLoadingGate)
+		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}
@@ -126,11 +119,14 @@ func (p *ReaderPool) NewBinaryReader(
 		return nil, err
 	}
 
-	onDiskVersion.Inc()
-	if sr, ok := reader.(*StreamBinaryReader); ok {
-		// Non-lazy: reader IS the StreamBinaryReader constructed above, and its Close is only
-		// ever called once (block removal) - reuse it directly rather than wrapping.
-		sr.onClose = onDiskVersion.Dec
+	blockDir := filepath.Join(dir, id.String())
+	onDiskHeaders, listErr := IndexHeadersOnDisk(blockDir)
+	if listErr != nil {
+		level.Warn(p.logger).Log("msg", "failed to list index-header files on disk", "block", id, "err", listErr)
+	}
+
+	for _, h := range onDiskHeaders {
+		p.metrics.onDiskVersion.WithLabelValues(strconv.Itoa(h.Version)).Inc()
 	}
 
 	// Keep track of lazy readers only if required.
@@ -141,6 +137,21 @@ func (p *ReaderPool) NewBinaryReader(
 	}
 
 	return reader, err
+}
+
+// RecordOnDiskIndexHeaderRemoval decrements indexheader_on_disk for all index-header files currently present in blockDir.
+// This is done when a block is removed from a store-gateway, or when index-headers are built while adding a block if the block add ultimately fails.
+// Note that closing a reader does not, by itself, remove anything from disk, we decrement when the file is actually removed.
+func (p *ReaderPool) RecordOnDiskIndexHeaderRemoval(blockDir string) {
+	headers, err := IndexHeadersOnDisk(blockDir)
+	if err != nil {
+		// Best-effort: if we can't list it, there's nothing safe to subtract.
+		level.Warn(p.logger).Log("msg", "failed to list index-header files on disk before removal", "dir", blockDir, "err", err)
+		return
+	}
+	for _, h := range headers {
+		p.metrics.onDiskVersion.WithLabelValues(strconv.Itoa(h.Version)).Dec()
+	}
 }
 
 func (p *ReaderPool) unloadIdleReaders(context.Context) error {

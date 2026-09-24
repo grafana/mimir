@@ -134,8 +134,8 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				compareIndexToHeaderPostings(t, b, r3)
 
 				// The v2 index-header holds the symbols table only, and should be smaller than the full one written by r1.
-				v1Header := readIndexHeaderFromDisk(t, tmpDir, blockID)
-				v2Header := readIndexHeaderFromDisk(t, bucketDir, blockID)
+				v1Header := readIndexHeaderFromDisk(t, tmpDir, blockID, BinaryFormatV1)
+				v2Header := readIndexHeaderFromDisk(t, bucketDir, blockID, BinaryFormatV2)
 				require.Equal(t, byte(BinaryFormatV1), v1Header[4])
 				require.Equal(t, byte(BinaryFormatV2), v2Header[4])
 				require.Less(t, len(v2Header), len(v1Header))
@@ -403,7 +403,7 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 			require.Equal(t, tc.expectVersion, reader.IndexHeaderVersion())
 			// Assert the format on disk too, not just what the reader reports,
 			// so this still fails if the reader and the file ever disagree.
-			require.Equal(t, byte(tc.expectVersion), readIndexHeaderFromDisk(t, readerDir, blockID)[4])
+			require.Equal(t, byte(tc.expectVersion), readIndexHeaderFromDisk(t, readerDir, blockID, tc.expectVersion)[4])
 
 			require.Equal(t, tc.expectRemote, reader.postingsOffsetTable.IsRemote())
 
@@ -419,16 +419,22 @@ func TestStreamBinaryReader_IndexHeaderVersionOnDisk(t *testing.T) {
 func seedIndexHeaderOnDisk(t *testing.T, ctx context.Context, bkt objstore.InstrumentedBucketReader, blockID ulid.ULID, dir string, writeV2 bool) {
 	t.Helper()
 
+	version := BinaryFormatV1
+	if writeV2 {
+		version = BinaryFormatV2
+	}
+
 	blockDir := filepath.Join(dir, blockID.String())
 	require.NoError(t, os.MkdirAll(blockDir, os.ModePerm))
-	require.NoError(t, WriteBinary(ctx, bkt, blockID, filepath.Join(blockDir, block.IndexHeaderFilename), writeV2))
+	require.NoError(t, WriteBinary(ctx, bkt, blockID, blockDir, version))
 }
 
-// readIndexHeaderFromDisk reads the raw index-header bytes a StreamBinaryReader wrote under dir.
-func readIndexHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID) []byte {
+// readIndexHeaderFromDisk reads the raw index-header bytes a StreamBinaryReader wrote under dir,
+// at the canonical name for the given format version.
+func readIndexHeaderFromDisk(t *testing.T, dir string, blockID ulid.ULID, version int) []byte {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join(dir, blockID.String(), block.IndexHeaderFilename))
+	raw, err := os.ReadFile(indexHeaderPath(filepath.Join(dir, blockID.String()), version))
 	require.NoError(t, err)
 	require.Greater(t, len(raw), HeaderLen, "index-header on disk is too short to contain its header")
 
