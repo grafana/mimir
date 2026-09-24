@@ -46,14 +46,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Only main's vendoring branches: release branches don't have these tools.
-          case "$BRANCH" in
-            bot/main/update-mimir-prometheus-*) ;;
-            *)
-              echo "::error::Branch '$BRANCH' is not an automated mimir-prometheus vendoring branch for main (must match 'bot/main/update-mimir-prometheus-*')."
-              exit 1
-              ;;
-          esac
+          # Only main's vendoring branches (release branches don't have these tools), in the exact format the
+          # vendoring workflow creates, so no unexpected input reaches the API calls below.
+          if [[ ! "$BRANCH" =~ ^bot/main/update-mimir-prometheus-[0-9a-f]{12}-[0-9]{12}$ ]]; then
+            echo "::error::Branch '$BRANCH' is not an automated mimir-prometheus vendoring branch for main (expected bot/main/update-mimir-prometheus-<12 hex>-<YYYYMMDDHHMM>)."
+            exit 1
+          fi
 
           # Check both: on a re-run, github.actor stays the original triggerer and its privileges apply.
           for user in "$ACTOR" "$TRIGGERING_ACTOR"; do
@@ -68,9 +66,18 @@ jobs:
             esac
           done
 
+          # The branch must belong to an open PR opened by the vendoring bot, so this only ever acts on a real
+          # vendoring PR rather than a same-named branch someone else created.
+          prs=$(gh api -X GET "repos/$REPO/pulls" -f head="${REPO%%/*}:$BRANCH" -f state=open)
+          pr=$(jq -c '[.[] | select(.user.login == "mimir-vendoring[bot]" and any(.labels[]; .name == "vendored-mimir-prometheus-update"))] | if length == 1 then .[0] else empty end' <<<"$prs")
+          if [ -z "$pr" ]; then
+            echo "::error::$BRANCH is not the head of exactly one open PR opened by mimir-vendoring[bot] with the vendored-mimir-prometheus-update label."
+            exit 1
+          fi
+
           # Pin the commit the later jobs operate on, so a push to the branch after this check can't change
           # what runs or what gets committed (ghcommit also refuses to commit onto a moved branch head).
-          head_sha=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha')
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
 
           # Refuse if the branch has any commit not made by the bot. The bot's commits would make it the
           # last pusher, letting a human who pushed earlier commits approve their own changes.
