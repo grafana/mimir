@@ -98,6 +98,7 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 	policy := scallop.Policy{
 		Weights:           scallop.Weights{Resolution: 1},
 		ActionMultipliers: scallop.ActionMultipliers{Move: 1, Split: 1, Merge: 1},
+		CandidateSearch:   scallop.DefaultCandidateSearchLimits(),
 		MaxActions:        4,
 	}
 	plan, err := scallop.Plan(scallop.Snapshot{
@@ -125,8 +126,7 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	fixtures = weightSearchFixtures(fixtures)
-	require.Len(t, fixtures, 3)
+	require.Len(t, fixtures, 4)
 	policy := scallop.DefaultPolicy()
 	policy.MaxActions = 4
 	policy.Weights.Resolution = 0.005
@@ -166,7 +166,6 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
 	fixture := fixtureByName(t, fixtures, "large-cell-static")
-	require.True(t, fixture.ExcludeFromWeightSearch)
 	require.Equal(t, 500, fixture.Partitions)
 	require.Equal(t, 100, fixture.Readcaches)
 	require.Len(t, fixture.Tenants, 50)
@@ -191,6 +190,35 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 	require.Len(t, observation.ReplicaLoads, fixture.Readcaches)
 	require.Len(t, observation.RangeLoads, fixture.InitialRanges*len(fixture.Tenants))
 	require.Greater(t, observation.TotalLoad, 0.0)
+
+	policy := scallop.DefaultPolicy()
+	policy.MaxActions = 4
+	first, err := simulateFixture(fixture, policy)
+	require.NoError(t, err)
+	second, err := simulateFixture(fixture, policy)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Len(t, first.Rounds, fixture.Ticks)
+	requireSevenEvaluationGroups(t, first.Evaluation)
+	require.Equal(t, fixture.Ticks, first.CandidateSearch.RoundsTruncated)
+	require.LessOrEqual(t,
+		first.CandidateSearch.FullyScored.Total,
+		first.CandidateSearch.Iterations*policy.CandidateSearch.MaxFullyScored,
+	)
+	require.Greater(t, first.CandidateSearch.Discarded.Total, 0)
+	require.Equal(t, first.CandidateSearch.Discarded.Total,
+		first.CandidateSearch.DiscardedByBudget.MoveSources+
+			first.CandidateSearch.DiscardedByBudget.Destinations+
+			first.CandidateSearch.DiscardedByBudget.Splits+
+			first.CandidateSearch.DiscardedByBudget.Merges+
+			first.CandidateSearch.DiscardedByBudget.FullyScored,
+	)
+	for _, round := range first.Rounds {
+		require.LessOrEqual(t,
+			round.CandidateSearch.FullyScored.Total,
+			round.CandidateSearch.Iterations*policy.CandidateSearch.MaxFullyScored,
+		)
+	}
 }
 
 func TestClosedLoopSupportsMultipleInitialGranularities(t *testing.T) {
@@ -215,7 +243,6 @@ func TestClosedLoopSupportsMultipleInitialGranularities(t *testing.T) {
 func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	fixtures = weightSearchFixtures(fixtures)
 	seed := scallop.DefaultPolicy()
 	seed.MaxActions = 4
 	config := defaultSearchConfig()
@@ -232,6 +259,12 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	for _, policy := range first.Ranked {
 		for _, fixture := range policy.Fixtures {
 			requireSevenEvaluationGroups(t, fixture.Evaluation)
+			if fixture.FixtureName == "large-cell-static" {
+				require.Greater(t, fixture.CandidateSearch.RoundsTruncated, 0)
+			} else {
+				require.Zero(t, fixture.CandidateSearch.RoundsTruncated,
+					"small fixtures should fit entirely within candidate limits")
+			}
 		}
 	}
 	recommendation := buildRecommendationReport(first)

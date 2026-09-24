@@ -43,15 +43,30 @@ type RoundRecord struct {
 	RangeCount       int     `json:"range_count"`
 	TenantPartitions int     `json:"tenant_partitions"`
 
-	Actions []scallop.Action `json:"actions"`
+	Actions         []scallop.Action                   `json:"actions"`
+	CandidateSearch scallop.CandidateSearchDiagnostics `json:"candidate_search"`
+}
+
+type CandidateSearchSummary struct {
+	Limits                scallop.CandidateSearchLimits   `json:"limits"`
+	RoundsTruncated       int                             `json:"rounds_truncated"`
+	Iterations            int                             `json:"iterations"`
+	LegalMoveSources      int                             `json:"legal_move_sources"`
+	LegalMoveDestinations int                             `json:"legal_move_destinations"`
+	Legal                 scallop.CandidateCounts         `json:"legal"`
+	Admitted              scallop.CandidateCounts         `json:"admitted"`
+	FullyScored           scallop.CandidateCounts         `json:"fully_scored"`
+	Discarded             scallop.CandidateCounts         `json:"discarded"`
+	DiscardedByBudget     scallop.CandidateBudgetDiscards `json:"discarded_by_budget"`
 }
 
 type SimulationResult struct {
-	FixtureName string           `json:"fixture"`
-	Policy      scallop.Policy   `json:"policy"`
-	Rounds      []RoundRecord    `json:"rounds"`
-	Evaluation  EvaluationReport `json:"evaluation"`
-	Utility     float64          `json:"utility"`
+	FixtureName     string                 `json:"fixture"`
+	Policy          scallop.Policy         `json:"policy"`
+	Rounds          []RoundRecord          `json:"rounds"`
+	Evaluation      EvaluationReport       `json:"evaluation"`
+	CandidateSearch CandidateSearchSummary `json:"candidate_search"`
+	Utility         float64                `json:"utility"`
 }
 
 type simulator struct {
@@ -181,18 +196,51 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 			RangeCount:       len(sim.assignment.Entries),
 			TenantPartitions: tenantPartitionCount(sim.assignment),
 			Actions:          plan.Actions,
+			CandidateSearch:  plan.CandidateSearch,
 		})
 		sim.now = sim.now.Add(time.Duration(fixture.TickSeconds) * time.Second)
 	}
 
 	evaluation := evaluate(fixture, rounds)
 	return SimulationResult{
-		FixtureName: fixture.Name,
-		Policy:      policy,
-		Rounds:      rounds,
-		Evaluation:  evaluation,
-		Utility:     fixedUtility(evaluation),
+		FixtureName:     fixture.Name,
+		Policy:          policy,
+		Rounds:          rounds,
+		Evaluation:      evaluation,
+		CandidateSearch: summarizeCandidateSearch(rounds, policy.CandidateSearch),
+		Utility:         fixedUtility(evaluation),
 	}, nil
+}
+
+// summarizeCandidateSearch aggregates per-plan pruning diagnostics for one fixture run.
+func summarizeCandidateSearch(rounds []RoundRecord, limits scallop.CandidateSearchLimits) CandidateSearchSummary {
+	out := CandidateSearchSummary{Limits: limits}
+	for _, round := range rounds {
+		diagnostics := round.CandidateSearch
+		if diagnostics.Truncated {
+			out.RoundsTruncated++
+		}
+		out.Iterations += diagnostics.Iterations
+		out.LegalMoveSources += diagnostics.LegalMoveSources
+		out.LegalMoveDestinations += diagnostics.LegalMoveDestinations
+		addCandidateCounts(&out.Legal, diagnostics.Legal)
+		addCandidateCounts(&out.Admitted, diagnostics.Admitted)
+		addCandidateCounts(&out.FullyScored, diagnostics.FullyScored)
+		addCandidateCounts(&out.Discarded, diagnostics.Discarded)
+		out.DiscardedByBudget.MoveSources += diagnostics.DiscardedByBudget.MoveSources
+		out.DiscardedByBudget.Destinations += diagnostics.DiscardedByBudget.Destinations
+		out.DiscardedByBudget.Splits += diagnostics.DiscardedByBudget.Splits
+		out.DiscardedByBudget.Merges += diagnostics.DiscardedByBudget.Merges
+		out.DiscardedByBudget.FullyScored += diagnostics.DiscardedByBudget.FullyScored
+	}
+	return out
+}
+
+func addCandidateCounts(dst *scallop.CandidateCounts, src scallop.CandidateCounts) {
+	dst.Move += src.Move
+	dst.Split += src.Split
+	dst.Merge += src.Merge
+	dst.Total += src.Total
 }
 
 // observe analytically computes the exact load each range, partition, and dummy readcache owns at a tick.

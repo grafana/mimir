@@ -44,13 +44,20 @@ type Snapshot struct {
 // Weights defines the relative importance of each cost. PartitionBalance is
 // deliberately absent: it is fixed at 1 and establishes the cost scale.
 type Weights struct {
-	ReplicaBalance      float64 `json:"replica_balance"`
-	TransitionEvents    float64 `json:"transition_events"`
-	TransitionLoad      float64 `json:"transition_load"`
+	// ReplicaBalance weights logical-replica max/mean load excess.
+	ReplicaBalance float64 `json:"replica_balance"`
+	// TransitionEvents weights normalized fixed overhead per selected action.
+	TransitionEvents float64 `json:"transition_events"`
+	// TransitionLoad weights the fraction of total observed load relocated.
+	TransitionLoad float64 `json:"transition_load"`
+	// TransitionHashSpace weights the fraction of tenant hash space relocated.
 	TransitionHashSpace float64 `json:"transition_hash_space"`
-	LocalityMiss        float64 `json:"locality_miss"`
-	Fragmentation       float64 `json:"fragmentation"`
-	Resolution          float64 `json:"resolution"`
+	// LocalityMiss weights relocated load sent to a replica without recent tenant history.
+	LocalityMiss float64 `json:"locality_miss"`
+	// Fragmentation weights normalized range count, discouraging persistent fanout.
+	Fragmentation float64 `json:"fragmentation"`
+	// Resolution weights load times hash width, making coarse hot ranges expensive.
+	Resolution float64 `json:"resolution"`
 }
 
 // ActionMultipliers models fixed per-action control-plane overhead.
@@ -60,13 +67,36 @@ type ActionMultipliers struct {
 	Merge float64 `json:"merge"`
 }
 
+// CandidateSearchLimits bounds expensive candidate projection while allowing
+// small legal candidate sets to pass through in full.
+type CandidateSearchLimits struct {
+	MaxMoveSources          int `json:"max_move_sources"`
+	MaxDestinationsPerRange int `json:"max_destinations_per_range"`
+	MaxSplitCandidates      int `json:"max_split_candidates"`
+	MaxMergeCandidates      int `json:"max_merge_candidates"`
+	MaxFullyScored          int `json:"max_fully_scored"`
+}
+
+// DefaultCandidateSearchLimits returns limits that fully cover Phase 1's
+// fixtures while bounding work on large cells.
+func DefaultCandidateSearchLimits() CandidateSearchLimits {
+	return CandidateSearchLimits{
+		MaxMoveSources:          32,
+		MaxDestinationsPerRange: 4,
+		MaxSplitCandidates:      32,
+		MaxMergeCandidates:      32,
+		MaxFullyScored:          192,
+	}
+}
+
 // Policy defines what Scallop considers preferable. It contains no observed
 // cluster state and is safe to reuse across planning rounds.
 type Policy struct {
-	Weights           Weights           `json:"weights"`
-	ActionMultipliers ActionMultipliers `json:"action_multipliers"`
-	LocalityWindow    time.Duration     `json:"locality_window"`
-	MaxActions        int               `json:"max_actions"`
+	Weights           Weights               `json:"weights"`
+	ActionMultipliers ActionMultipliers     `json:"action_multipliers"`
+	CandidateSearch   CandidateSearchLimits `json:"candidate_search"`
+	LocalityWindow    time.Duration         `json:"locality_window"`
+	MaxActions        int                   `json:"max_actions"`
 }
 
 // DefaultPolicy returns conservative, non-zero weights suitable for examples
@@ -83,6 +113,7 @@ func DefaultPolicy() Policy {
 			Resolution:          0.001,
 		},
 		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1},
+		CandidateSearch:   DefaultCandidateSearchLimits(),
 		LocalityWindow:    30 * time.Minute,
 		MaxActions:        8,
 	}
@@ -141,6 +172,37 @@ type Action struct {
 	Explanation    string        `json:"explanation"`
 }
 
+// CandidateCounts reports candidate volume by action kind.
+type CandidateCounts struct {
+	Move  int `json:"move"`
+	Split int `json:"split"`
+	Merge int `json:"merge"`
+	Total int `json:"total"`
+}
+
+// CandidateBudgetDiscards attributes pruning to each configured search limit.
+type CandidateBudgetDiscards struct {
+	MoveSources  int `json:"move_sources"`
+	Destinations int `json:"destinations"`
+	Splits       int `json:"splits"`
+	Merges       int `json:"merges"`
+	FullyScored  int `json:"fully_scored"`
+}
+
+// CandidateSearchDiagnostics makes bounded-search decisions inspectable.
+type CandidateSearchDiagnostics struct {
+	Limits                CandidateSearchLimits   `json:"limits"`
+	Iterations            int                     `json:"iterations"`
+	LegalMoveSources      int                     `json:"legal_move_sources"`
+	LegalMoveDestinations int                     `json:"legal_move_destinations"`
+	Legal                 CandidateCounts         `json:"legal"`
+	Admitted              CandidateCounts         `json:"admitted"`
+	FullyScored           CandidateCounts         `json:"fully_scored"`
+	Discarded             CandidateCounts         `json:"discarded"`
+	DiscardedByBudget     CandidateBudgetDiscards `json:"discarded_by_budget"`
+	Truncated             bool                    `json:"truncated"`
+}
+
 // PlanResult is a complete, replayable planning result.
 type PlanResult struct {
 	Assignment *assignment.Assignment `json:"assignment"`
@@ -150,8 +212,9 @@ type PlanResult struct {
 	PartitionOwners map[int32]string `json:"partition_owners"`
 	Actions         []Action         `json:"actions"`
 
-	InitialCost CostBreakdown `json:"initial_cost"`
-	FinalCost   CostBreakdown `json:"final_cost"`
+	InitialCost     CostBreakdown              `json:"initial_cost"`
+	FinalCost       CostBreakdown              `json:"final_cost"`
+	CandidateSearch CandidateSearchDiagnostics `json:"candidate_search"`
 }
 
 // validate rejects policy values that would make planning unsafe or nondeterministic.
@@ -161,6 +224,14 @@ func (p Policy) validate() error {
 	}
 	if p.LocalityWindow < 0 {
 		return fmt.Errorf("locality window must be non-negative")
+	}
+	limits := p.CandidateSearch
+	if limits.MaxMoveSources <= 0 ||
+		limits.MaxDestinationsPerRange <= 0 ||
+		limits.MaxSplitCandidates <= 0 ||
+		limits.MaxMergeCandidates <= 0 ||
+		limits.MaxFullyScored <= 0 {
+		return fmt.Errorf("all candidate search limits must be positive")
 	}
 	values := map[string]float64{
 		"replica balance":       p.Weights.ReplicaBalance,

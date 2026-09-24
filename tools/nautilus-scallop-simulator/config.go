@@ -14,15 +14,14 @@ import (
 var fixtureFiles embed.FS
 
 type Fixture struct {
-	Name                    string           `json:"name"`
-	Ticks                   int              `json:"ticks"`
-	TickSeconds             int              `json:"tick_seconds"`
-	Partitions              int              `json:"partitions"`
-	Readcaches              int              `json:"readcaches"`
-	InitialRanges           int              `json:"initial_ranges_per_tenant"`
-	ImbalanceThreshold      float64          `json:"imbalance_threshold"`
-	ExcludeFromWeightSearch bool             `json:"exclude_from_weight_search,omitempty"`
-	Tenants                 []TenantWorkload `json:"tenants"`
+	Name               string           `json:"name"`
+	Ticks              int              `json:"ticks"`
+	TickSeconds        int              `json:"tick_seconds"`
+	Partitions         int              `json:"partitions"`
+	Readcaches         int              `json:"readcaches"`
+	InitialRanges      int              `json:"initial_ranges_per_tenant"`
+	ImbalanceThreshold float64          `json:"imbalance_threshold"`
+	Tenants            []TenantWorkload `json:"tenants"`
 }
 
 type TenantWorkload struct {
@@ -75,17 +74,6 @@ func loadEmbeddedFixtures() ([]Fixture, error) {
 		fixtures = append(fixtures, fixture)
 	}
 	return fixtures, nil
-}
-
-// weightSearchFixtures removes scale-only scenarios that would make exhaustive policy calibration impractical.
-func weightSearchFixtures(fixtures []Fixture) []Fixture {
-	selected := make([]Fixture, 0, len(fixtures))
-	for _, fixture := range fixtures {
-		if !fixture.ExcludeFromWeightSearch {
-			selected = append(selected, fixture)
-		}
-	}
-	return selected
 }
 
 // validate rejects incomplete or nonsensical fixture topology and workload definitions before simulation.

@@ -21,7 +21,7 @@ func main() {
 	}
 	policy := scallop.DefaultPolicy()
 	policy.MaxActions = 4
-	result, err := runWeightSearch(weightSearchFixtures(fixtures), policy, defaultSearchConfig())
+	result, err := runWeightSearch(fixtures, policy, defaultSearchConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

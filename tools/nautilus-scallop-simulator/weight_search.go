@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -62,14 +63,17 @@ func runWeightSearch(fixtures []Fixture, seed scallop.Policy, config SearchConfi
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
+		pendingKeys := make([]string, 0, len(keys))
 		for _, key := range keys {
-			if _, exists := evaluated[key]; exists {
-				continue
+			if _, exists := evaluated[key]; !exists {
+				pendingKeys = append(pendingKeys, key)
 			}
-			result, err := evaluatePolicy(fixtures, candidatesByKey[key], generation)
-			if err != nil {
-				return SearchResult{}, err
-			}
+		}
+		generationResults, err := evaluatePolicyBatch(fixtures, candidatesByKey, pendingKeys, generation)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		for key, result := range generationResults {
 			evaluated[key] = result
 		}
 
@@ -98,6 +102,58 @@ func runWeightSearch(fixtures []Fixture, seed scallop.Policy, config SearchConfi
 		Recommended:       ranked[0],
 		Ranked:            ranked,
 	}, nil
+}
+
+type policyEvaluationResult struct {
+	key        string
+	evaluation PolicyEvaluation
+	err        error
+}
+
+// evaluatePolicyBatch evaluates one generation concurrently while returning results in deterministic key space.
+func evaluatePolicyBatch(
+	fixtures []Fixture,
+	policies map[string]scallop.Policy,
+	keys []string,
+	generation int,
+) (map[string]PolicyEvaluation, error) {
+	if len(keys) == 0 {
+		return map[string]PolicyEvaluation{}, nil
+	}
+	workers := min(runtime.GOMAXPROCS(0), len(keys))
+	jobs := make(chan string)
+	results := make(chan policyEvaluationResult, len(keys))
+	for range workers {
+		go func() {
+			for key := range jobs {
+				evaluation, err := evaluatePolicy(fixtures, policies[key], generation)
+				results <- policyEvaluationResult{key: key, evaluation: evaluation, err: err}
+			}
+		}()
+	}
+	go func() {
+		for _, key := range keys {
+			jobs <- key
+		}
+		close(jobs)
+	}()
+
+	evaluated := make(map[string]PolicyEvaluation, len(keys))
+	errorsByKey := make(map[string]error)
+	for range keys {
+		result := <-results
+		if result.err != nil {
+			errorsByKey[result.key] = result.err
+			continue
+		}
+		evaluated[result.key] = result.evaluation
+	}
+	for _, key := range keys {
+		if err := errorsByKey[key]; err != nil {
+			return nil, fmt.Errorf("evaluate policy %s: %w", key, err)
+		}
+	}
+	return evaluated, nil
 }
 
 // evaluatePolicy runs one policy against every fixture and combines mean and worst-case utility.
@@ -189,7 +245,15 @@ func policyKey(policy scallop.Policy) string {
 	for i := range values {
 		values[i] = fmt.Sprintf("%.12g", policyDimension(policy, i))
 	}
-	return strings.Join(values, "/")
+	limits := policy.CandidateSearch
+	return fmt.Sprintf("%s/%d/%d/%d/%d/%d",
+		strings.Join(values, "/"),
+		limits.MaxMoveSources,
+		limits.MaxDestinationsPerRange,
+		limits.MaxSplitCandidates,
+		limits.MaxMergeCandidates,
+		limits.MaxFullyScored,
+	)
 }
 
 // sortPolicyEvaluations orders policies by external utility and then deterministic weight key.

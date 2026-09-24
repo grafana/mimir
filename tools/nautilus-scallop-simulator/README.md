@@ -55,7 +55,7 @@ relative replica-balance, transition, locality, fragmentation, and resolution
 weights. Policies are ranked by a separate fixed evaluation utility across all
 calibration fixtures, using both mean and worst-fixture outcomes.
 
-## Scale fixture
+## Large-cell fixture
 
 `large-cell-static` models 500 partitions, 100 readcaches, and 50 tenants with
 distinct static hotspot locations, widths, baselines, and amplitudes. Each
@@ -63,7 +63,12 @@ tenant deliberately starts with five coarse ranges—one on each partition
 owned by its initial readcache—so the fixture represents a large topology
 without pre-creating 25,000 ranges.
 
-The fixture is validated and loadable, but excluded from the default weight
-search. Scallop currently enumerates every legal range destination and
-including this topology in every one of the 239 policy evaluations would make
-the calibration run impractically expensive.
+The fixture participates in the same 239-policy beam search, closed-loop
+simulation, evaluation, and JSON/CSV reporting as every smaller fixture. There
+is no fixture category or exclusion flag.
+
+Scallop uses one deterministic bounded search for every topology. Small
+candidate sets fit entirely within its source, destination, split, merge, and
+fully-scored limits. Larger candidate sets rank likely actions and project only
+the bounded shortlist. Reports include legal, admitted, fully-scored, and
+per-budget discarded candidate counts so pruning remains visible.

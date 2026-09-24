@@ -26,10 +26,13 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 	currentCost := initialCost
 	var actions []Action
 	var cumulativeTransition CostBreakdown
+	searchDiagnostics := CandidateSearchDiagnostics{Limits: policy.CandidateSearch}
 
 	for len(actions) < policy.MaxActions {
 		var best *evaluatedCandidate
-		for _, candidate := range generateCandidates(state, snapshot.ActivePartitions) {
+		candidates, iterationDiagnostics := generateCandidates(state, snapshot, policy)
+		accumulateSearchDiagnostics(&searchDiagnostics, iterationDiagnostics)
+		for _, candidate := range candidates {
 			projected := project(state, candidate)
 			projectedAssignment := projected.assignment()
 			if err := projectedAssignment.Validate(); err != nil {
@@ -84,6 +87,7 @@ func Plan(snapshot Snapshot, policy Policy) (PlanResult, error) {
 		Actions:         actions,
 		InitialCost:     initialCost,
 		FinalCost:       finalCost,
+		CandidateSearch: searchDiagnostics,
 	}, nil
 }
 
@@ -128,4 +132,28 @@ func clonePartitionOwners(owners map[int32]string) map[int32]string {
 		cloned[partitionID] = owner
 	}
 	return cloned
+}
+
+// accumulateSearchDiagnostics combines one greedy iteration's pruning evidence into the plan result.
+func accumulateSearchDiagnostics(dst *CandidateSearchDiagnostics, src CandidateSearchDiagnostics) {
+	dst.Iterations++
+	dst.LegalMoveSources += src.LegalMoveSources
+	dst.LegalMoveDestinations += src.LegalMoveDestinations
+	addCandidateCounts(&dst.Legal, src.Legal)
+	addCandidateCounts(&dst.Admitted, src.Admitted)
+	addCandidateCounts(&dst.FullyScored, src.FullyScored)
+	addCandidateCounts(&dst.Discarded, src.Discarded)
+	dst.DiscardedByBudget.MoveSources += src.DiscardedByBudget.MoveSources
+	dst.DiscardedByBudget.Destinations += src.DiscardedByBudget.Destinations
+	dst.DiscardedByBudget.Splits += src.DiscardedByBudget.Splits
+	dst.DiscardedByBudget.Merges += src.DiscardedByBudget.Merges
+	dst.DiscardedByBudget.FullyScored += src.DiscardedByBudget.FullyScored
+	dst.Truncated = dst.Truncated || src.Truncated
+}
+
+func addCandidateCounts(dst *CandidateCounts, src CandidateCounts) {
+	dst.Move += src.Move
+	dst.Split += src.Split
+	dst.Merge += src.Merge
+	dst.Total += src.Total
 }
