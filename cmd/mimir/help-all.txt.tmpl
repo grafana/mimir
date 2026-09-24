@@ -1153,6 +1153,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of blocks whose health can be validated concurrently during a compaction job. A nonpositive value means no limit.
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
+  -compactor.block-symbol-table-size-threshold uint
+    	[experimental] Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.
   -compactor.block-sync-concurrency int
     	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
@@ -2820,7 +2822,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
-    	Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.
+    	Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.
   -query-frontend.grpc-client-config.backoff-max-period duration
@@ -2884,13 +2886,15 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.labels-query-optimizer-enabled
     	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
-    	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
+    	[deprecated] (use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.
   -query-frontend.max-body-size int
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
+  -query-frontend.max-inflight-metrics-enabled
+    	[experimental] Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
@@ -3619,6 +3623,10 @@ Usage of ./cmd/mimir/mimir:
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
+  -ruler.ring-change-debounce duration
+    	[experimental] How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.
+  -ruler.ring-change-max-debounce duration
+    	[experimental] The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0. (default 15s)
   -ruler.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 2)
   -ruler.ring.consul.acl-token string
@@ -3700,7 +3708,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
-    	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+    	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: ";optional-on-startup" lets the process start without it, but a later failure still fails the reload; ";optional-keep-last-value-on-failure" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because ";" starts a new command.
   -runtime-config.http-client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -runtime-config.http-client-disable-keep-alives
@@ -3729,6 +3737,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Primary cluster validation label.
   -server.create-new-traces
     	Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.
+  -server.enable-open-metrics-text-created-samples
+    	Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and "_created" suffix. Only applies if -server.register-instrumentation is set to true.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-collect-max-streams-by-conn

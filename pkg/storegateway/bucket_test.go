@@ -303,6 +303,16 @@ func TestBucketIndexReader_RefetchSeries(t *testing.T) {
 }
 
 func TestBlockLabelNames(t *testing.T) {
+	testBlockLabelNames(t, indexheader.Config{})
+}
+
+// TestBlockLabelNames_IndexHeaderBucketReader repeats TestBlockLabelNames
+// with the experimental index-header bucket reader path.
+func TestBlockLabelNames_IndexHeaderBucketReader(t *testing.T) {
+	testBlockLabelNames(t, indexHeaderBucketReaderConfig())
+}
+
+func testBlockLabelNames(t *testing.T, headerCfg indexheader.Config) {
 	const series = 500
 
 	allLabelNames := []string{"i", "n", "j", "p", "q", "r", "s", "t"}
@@ -318,7 +328,7 @@ func TestBlockLabelNames(t *testing.T) {
 
 	tb := test.NewTB(t)
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -498,11 +508,21 @@ func (s *omitMatcherStrategy) selectPostings(groups []postingGroup) (selected, o
 }
 
 func TestBlockLabelValues(t *testing.T) {
+	testBlockLabelValues(t, indexheader.Config{})
+}
+
+// TestBlockLabelValues_IndexHeaderBucketReader repeats TestBlockLabelValues
+// with the experimental index-header bucket reader path.
+func TestBlockLabelValues_IndexHeaderBucketReader(t *testing.T) {
+	testBlockLabelValues(t, indexHeaderBucketReaderConfig())
+}
+
+func testBlockLabelValues(t *testing.T, headerCfg indexheader.Config) {
 	const series = 100_000
 
 	tb := test.NewTB(t)
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -760,11 +780,21 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
+	testBucketIndexReaderExpandedPostings(t, indexheader.Config{})
+}
+
+// TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader repeats TestBucketIndexReader_ExpandedPostings
+// with the experimental index-header bucket reader path.
+func TestBucketIndexReader_ExpandedPostings_IndexHeaderBucketReader(t *testing.T) {
+	testBucketIndexReaderExpandedPostings(t, indexHeaderBucketReaderConfig())
+}
+
+func testBucketIndexReaderExpandedPostings(t *testing.T, headerCfg indexheader.Config) {
 	tb := test.NewTB(t)
 	const series = 50000
 
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
-	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock, headerCfg)
 
 	t.Run("happy cases", func(t *testing.T) {
 		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
@@ -1373,7 +1403,23 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) func() *bucketBlock {
+// indexHeaderBucketReaderConfig returns an indexheader.Config
+// which enables the experimental index-header bucket reader path.
+func indexHeaderBucketReaderConfig() indexheader.Config {
+	return indexheader.Config{
+		BucketReader: indexheader.BucketReaderConfig{
+			Enabled:             true,
+			BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
+		},
+	}
+}
+
+func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock, headerCfg ...indexheader.Config) func() *bucketBlock {
+	var cfg indexheader.Config
+	if len(headerCfg) > 0 {
+		cfg = headerCfg[0]
+	}
+
 	return func() *bucketBlock {
 		var chunkObjects []string
 		err := testBlock.InstrBkt.Iter(
@@ -1384,7 +1430,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			})
 		require.NoError(tb, err)
 
-		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), indexheader.Config{}, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
+		indexReader, err := indexheader.NewStreamBinaryReader(context.Background(), testBlock.Meta.ULID, testBlock.InstrBkt, tb.TempDir(), cfg, mimir_tsdb.DefaultPostingOffsetInMemorySampling, log.NewNopLogger(), indexheader.NewStreamBinaryReaderMetrics(nil))
 		require.NoError(tb, err)
 
 		return &bucketBlock{

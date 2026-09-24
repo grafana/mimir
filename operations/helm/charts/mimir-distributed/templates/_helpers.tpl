@@ -279,7 +279,6 @@ Params:
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
-helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
@@ -305,6 +304,18 @@ zone: {{ .rolloutZoneName }}
 {{- end -}}
 
 {{/*
+Calculate the hash of a rendered ConfigMap or Secret from its data section only.
+Hashing the whole manifest would include the helm.sh/chart label, which changes on every chart
+version bump and would restart the pods even when the configuration is unchanged.
+Params:
+  ctx = . context
+  name = template file name of the ConfigMap or Secret
+*/}}
+{{- define "mimir.configMapOrSecretContentHash" -}}
+{{ get (include (print .ctx.Template.BasePath .name) .ctx | fromYaml) "data" | toYaml | sha256sum }}
+{{- end -}}
+
+{{/*
 POD annotations
 Params:
   ctx = . context
@@ -314,7 +325,7 @@ Params:
 {{- if .ctx.Values.useExternalConfig }}
 checksum/config: {{ .ctx.Values.externalConfigVersion | quote }}
 {{- else -}}
-checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+checksum/config: {{ include "mimir.configMapOrSecretContentHash" (dict "ctx" .ctx "name" "/mimir-config.yaml") }}
 {{- end }}
 {{- with .ctx.Values.global.podAnnotations }}
 {{ toYaml . }}

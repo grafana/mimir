@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 const (
@@ -268,6 +269,10 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				defer queueSpan.End()
 			}
 			logger := util_log.WithContext(ctx, sp.log)
+			if request.RootQueryID != "" {
+				ctx = rootqueryid.ContextWithID(ctx, request.RootQueryID)
+				logger = log.With(logger, rootqueryid.FieldName, request.RootQueryID)
+			}
 
 			var stats *querier_stats.SafeStats
 			if request.StatsEnabled {

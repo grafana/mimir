@@ -57,7 +57,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: KAFKA_CLUSTER_ID
+            - name: CLUSTER_ID
               value: ""
             - name: KAFKA_NODE_ID
               valueFrom:
@@ -101,7 +101,8 @@ spec:
             readOnlyRootFilesystem: true
           volumeMounts:
             - name: kafka-data
-              mountPath: /var/lib/kafka
+              mountPath: /var/lib/kafka/data
+              subPath: data
             - name: kafka-config
               mountPath: /opt/kafka/config
             - name: tmp
