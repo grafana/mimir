@@ -43,7 +43,7 @@ type JobTracker struct {
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
 	metrics                        *trackerMetrics
 
-	backfillPhase atomic.String
+	backfillPhase atomic.Uint32
 
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
@@ -85,7 +85,7 @@ func (jt *JobTracker) BackfillPhase() backfillPhase {
 }
 
 func (jt *JobTracker) SetBackfillPhase(phase backfillPhase) {
-	jt.backfillPhase.Store(string(phase))
+	jt.backfillPhase.Store(uint32(phase))
 }
 
 // toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.

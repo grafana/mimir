@@ -32,37 +32,48 @@ data/
 // phasesPrefix is the prefix holding one object per tenant participating in a phase.
 const phasesPrefix = "phases/"
 
-type backfillPhase string
+type backfillPhase uint8
 
 const (
-	phaseUnknown  backfillPhase = ""
-	phaseBackfill backfillPhase = "backfill"
-	phaseValidate backfillPhase = "validate"
-	phaseCompact  backfillPhase = "compact"
-	phaseCopy     backfillPhase = "copy"
-	phaseCleanup  backfillPhase = "cleanup"
+	phaseUnknown backfillPhase = iota
+	phaseBackfill
+	phaseValidate
+	phaseCompact
+	phaseCopy
+	phaseCleanup
 )
 
-// order is the position of the phase in a backfill's progression, or 0 if it is unknown
-func (b backfillPhase) order() int {
+func (b backfillPhase) String() string {
 	switch b {
 	case phaseBackfill:
-		return 1
+		return "backfill"
 	case phaseValidate:
-		return 2
+		return "validate"
 	case phaseCompact:
-		return 3
+		return "compact"
 	case phaseCopy:
-		return 4
+		return "copy"
 	case phaseCleanup:
-		return 5
-	default:
-		return 0
+		return "cleanup"
 	}
+	return ""
 }
 
-// isAfter reports whether b comes later than o in a backfill's progression
-func (b backfillPhase) isAfter(o backfillPhase) bool { return b.order() > o.order() }
+func backfillPhaseFromString(s string) backfillPhase {
+	switch s {
+	case "backfill":
+		return phaseBackfill
+	case "validate":
+		return phaseValidate
+	case "compact":
+		return phaseCompact
+	case "copy":
+		return phaseCopy
+	case "cleanup":
+		return phaseCleanup
+	}
+	return phaseUnknown
+}
 
 // BackfillDiscoverer periodically scans the bucket for backfill phase transitions
 type BackfillDiscoverer struct {
@@ -142,11 +153,11 @@ func parsePhase(objectName string) (backfillPhase, string, bool) {
 	pt := strings.TrimPrefix(objectName, phasesPrefix)
 	phase, tenant, found := strings.Cut(pt, objstore.DirDelim)
 	if !found || tenant == "" || strings.Contains(tenant, objstore.DirDelim) {
-		return "", "", false
+		return phaseUnknown, "", false
 	}
-	p := backfillPhase(phase)
-	if p.order() == 0 {
-		return "", "", false
+	p := backfillPhaseFromString(phase)
+	if p == phaseUnknown {
+		return phaseUnknown, "", false
 	}
 	return p, tenant, true
 }
@@ -163,7 +174,7 @@ func (s *BackfillDiscoverer) listPhases(ctx context.Context) (map[string]backfil
 			return nil
 		}
 		// Writers create the next phase object before deleting the previous one, so keep the furthest phase
-		if prev, ok := seen[tenant]; ok && prev.isAfter(phase) {
+		if prev, ok := seen[tenant]; ok && prev > phase {
 			return nil
 		}
 		seen[tenant] = phase
