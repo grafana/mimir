@@ -6,70 +6,103 @@ name: Sync upstream PromQL test cases
 # upstream test cases and comments out the ones Mimir's engine fails, pushing the result to the branch
 # as two verified commits (re-sync, then disable). Intended to be wired into the vendoring workflow
 # automatically once proven.
+#
+# The work is split across jobs so that the job running code from the branch (including newly vendored
+# upstream code) has no write access or OIDC token, and the job holding credentials never runs it.
 
 on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to sync (e.g. the failing vendored-mimir-prometheus PR branch)'
+        description: 'Branch to sync (the failing bot/main/update-mimir-prometheus-* PR branch)'
         required: true
         type: string
 
-permissions:
-  # contents: write (not read) because the Authorize step's collaborator-permission lookup requires
-  # the token to have repo write privilege.
-  contents: write
-  id-token: write
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  # Two runs on the same branch would race on its head; queue them rather than cancel one mid-commit.
+  group: ${{ github.workflow }}-${{ inputs.branch }}
+  cancel-in-progress: false
 
 jobs:
-  sync-upstream-promql-tests:
+  authorize:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # The collaborator-permission lookup requires the token to have repo write privilege.
+      contents: write
+    outputs:
+      head_sha: ${{ steps.authorize.outputs.head_sha }}
     steps:
-      # Gate before any privileged step runs: only repo maintainers/admins, and only the automated
-      # mimir-prometheus vendoring branches (so this can't be pointed at main or an arbitrary branch).
       - name: Authorize
+        id: authorize
         env:
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           BRANCH: ${{ inputs.branch }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          # Only main's vendoring branches: release branches don't have these tools.
           case "$BRANCH" in
-            bot/*/update-mimir-prometheus-*) ;;
+            bot/main/update-mimir-prometheus-*) ;;
             *)
-              echo "::error::Branch '$BRANCH' is not an automated mimir-prometheus vendoring branch (must match 'bot/*/update-mimir-prometheus-*')."
-              exit 1
-              ;;
-          esac
-          perm=$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.permission') \
-            || { echo "::error::Could not determine $ACTOR's permission on $REPO."; exit 1; }
-          echo "$ACTOR has '$perm' permission on $REPO."
-          case "$perm" in
-            admin | maintain) ;;
-            *)
-              echo "::error::$ACTOR must have 'maintain' or 'admin' permission on $REPO to run this workflow (has '$perm')."
+              echo "::error::Branch '$BRANCH' is not an automated mimir-prometheus vendoring branch for main (must match 'bot/main/update-mimir-prometheus-*')."
               exit 1
               ;;
           esac
 
-      # Use the mimir-vendoring app (not GITHUB_TOKEN) so the pushed commits are verified and re-trigger
-      # the branch's CI.
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
-        with:
-          github_app: mimir-vendoring
-          permission_set: ${{ github.ref == 'refs/heads/main' && 'main' || 'release' }}
+          # Check both: on a re-run, github.actor stays the original triggerer and its privileges apply.
+          for user in "$ACTOR" "$TRIGGERING_ACTOR"; do
+            perm=$(gh api "repos/$REPO/collaborators/$user/permission" --jq '.permission') \
+              || { echo "::error::Could not determine $user's permission on $REPO."; exit 1; }
+            case "$perm" in
+              admin | maintain) ;;
+              *)
+                echo "::error::$user must have 'maintain' or 'admin' permission on $REPO to run this workflow (has '$perm')."
+                exit 1
+                ;;
+            esac
+          done
 
-      - name: Check out the branch
+          # Pin the commit the later jobs operate on, so a push to the branch after this check can't change
+          # what runs or what gets committed (ghcommit also refuses to commit onto a moved branch head).
+          head_sha=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha')
+
+          # Refuse if the branch has any commit not made by the bot. The bot's commits would make it the
+          # last pusher, letting a human who pushed earlier commits approve their own changes.
+          compare=$(gh api "repos/$REPO/compare/main...$head_sha")
+          if [ "$(jq '.total_commits' <<<"$compare")" -ne "$(jq '.commits | length' <<<"$compare")" ]; then
+            echo "::error::Too many commits on $BRANCH to verify their authors."
+            exit 1
+          fi
+          others=$(jq -r '.commits[]
+            | select(.author.login != "mimir-vendoring[bot]" or .committer.login != "web-flow" or .commit.verification.verified != true)
+            | "\(.sha[0:12]) \(.author.login // .commit.author.name)"' <<<"$compare")
+          if [ -n "$others" ]; then
+            echo "::error::$BRANCH has commits not made by mimir-vendoring[bot]. Run the tools locally instead (make sync-upstream-promql-tests disable-failing-upstream-promql-tests) so the PR gets an independent review:"
+            echo "$others"
+            exit 1
+          fi
+
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Runs code from the branch, so it gets read-only access and no OIDC token. Its only output is the
+    # regenerated testdata and report, committed by the next job.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the authorized commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ inputs.branch }}
-          token: ${{ steps.app-token.outputs.token }}
-          fetch-depth: 0
-          set-safe-directory: '*'
+          ref: ${{ needs.authorize.outputs.head_sha }}
           persist-credentials: false
 
       - name: Set up Go
@@ -80,17 +113,105 @@ jobs:
 
       - name: Re-sync upstream PromQL test cases
         env:
-          MIMIR_SYNC_REPORT: ${{ runner.temp }}/sync-report.md
+          MIMIR_SYNC_REPORT: ${{ runner.temp }}/report/sync-report.md
           MIMIR_SYNC_BASELINE_DIR: ${{ runner.temp }}/upstream-baseline
         run: |
+          mkdir -p "$(dirname "$MIMIR_SYNC_REPORT")"
+          touch "$MIMIR_SYNC_REPORT"
           # Snapshot the pre-sync copies so the disabling step can tell new upstream cases from
           # previously-passing ones.
           cp -a pkg/streamingpromql/testdata/upstream "$MIMIR_SYNC_BASELINE_DIR"
-          cd tools/sync-upstream-promql-tests && go run .
+          (cd tools/sync-upstream-promql-tests && go run .)
+          cp -a pkg/streamingpromql/testdata/upstream "$RUNNER_TEMP/after-resync"
+
+      - name: Disable failing upstream PromQL test cases
+        env:
+          MIMIR_SYNC_REPORT: ${{ runner.temp }}/report/sync-report.md
+          MIMIR_SYNC_DISABLED: ${{ runner.temp }}/report/disabled-cases.md
+          MIMIR_SYNC_BASELINE_DIR: ${{ runner.temp }}/upstream-baseline
+        run: |
+          cd tools/disable-failing-upstream-promql-tests && go run .
+
+      - name: Upload re-synced test cases
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: after-resync
+          path: ${{ runner.temp }}/after-resync
+          retention-days: 1
+
+      - name: Upload test cases after disabling
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: after-disable
+          path: pkg/streamingpromql/testdata/upstream
+          retention-days: 1
+
+      - name: Upload sync report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sync-report
+          path: ${{ runner.temp }}/report
+          retention-days: 1
+
+  commit:
+    needs: [authorize, generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Never runs code from the branch: it only commits the files the previous job produced.
+    permissions:
+      contents: read
+      # create-github-app-token gets the app credentials from Vault via OIDC.
+      id-token: write
+      # For commenting the report on the PR (as github-actions[bot], via the default token).
+      pull-requests: write
+    env:
+      UPSTREAM_DIR: pkg/streamingpromql/testdata/upstream
+    steps:
+      # Use the mimir-vendoring app (not GITHUB_TOKEN) so the pushed commits are verified and re-trigger
+      # the branch's CI.
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: mimir-vendoring
+          permission_set: main
+
+      # ghcommit uses the checked-out HEAD as the expected branch head, so checking out the pinned commit
+      # makes the commit fail if the branch moved since authorization.
+      - name: Check out the authorized commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.authorize.outputs.head_sha }}
+          set-safe-directory: '*'
+          persist-credentials: false
+
+      - name: Download re-synced test cases
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: after-resync
+          path: ${{ runner.temp }}/after-resync
+
+      - name: Download test cases after disabling
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: after-disable
+          path: ${{ runner.temp }}/after-disable
+
+      - name: Download sync report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: sync-report
+          path: ${{ runner.temp }}/report
+
+      - name: Stage re-synced test cases
+        run: |
+          rm -rf "$UPSTREAM_DIR"
+          cp -r "$RUNNER_TEMP/after-resync" "$UPSTREAM_DIR"
 
       # Commit 1, signed and verified via the GitHub API (a plain git push would be unverified and
       # blocked by branch protection).
       - name: Commit re-sync
+        id: commit-resync
         uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: Re-sync upstream PromQL test cases
@@ -100,23 +221,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      # Re-checkout so the working tree matches commit 1 before the disabling step runs and commits 2.
-      - name: Check out the updated branch
+      # Move HEAD to commit 1 so commit 2 goes on top of it (and fails if anything else was pushed).
+      - name: Check out the re-sync commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ inputs.branch }}
-          token: ${{ steps.app-token.outputs.token }}
-          fetch-depth: 0
+          # commit-hash is empty when there was nothing to re-sync.
+          ref: ${{ steps.commit-resync.outputs.commit-hash || needs.authorize.outputs.head_sha }}
           set-safe-directory: '*'
           persist-credentials: false
 
-      - name: Disable failing upstream PromQL test cases
-        env:
-          MIMIR_SYNC_REPORT: ${{ runner.temp }}/sync-report.md
-          MIMIR_SYNC_DISABLED: ${{ runner.temp }}/disabled-cases.md
-          MIMIR_SYNC_BASELINE_DIR: ${{ runner.temp }}/upstream-baseline
+      - name: Stage test cases after disabling
         run: |
-          cd tools/disable-failing-upstream-promql-tests && go run .
+          rm -rf "$UPSTREAM_DIR"
+          cp -r "$RUNNER_TEMP/after-disable" "$UPSTREAM_DIR"
 
       # Commit 2 (only pushes if the disabling step changed anything), same verified path.
       - name: Commit disabled cases
@@ -129,14 +246,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      # Surface the report on the PR (as github-actions[bot], via the default token) so the maintainer
-      # who ran this sees what was disabled without opening the run logs.
+      # Surface the report on the PR so the maintainer who ran this sees what was disabled without
+      # opening the run logs.
       - name: Comment sync report on the PR
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           BRANCH: ${{ inputs.branch }}
-          REPORT: ${{ runner.temp }}/sync-report.md
+          REPORT: ${{ runner.temp }}/report/sync-report.md
         run: |
           set -euo pipefail
           if [ ! -s "$REPORT" ]; then
@@ -147,13 +265,13 @@ jobs:
             echo "## Upstream PromQL test-case sync"
             echo
             cat "$REPORT"
-          } > comment.md
-          gh pr comment "$BRANCH" --body-file comment.md
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$BRANCH" --body-file "$RUNNER_TEMP/comment.md"
 
       - name: Summarize what was synced
         if: always()
         env:
-          REPORT: ${{ runner.temp }}/sync-report.md
+          REPORT: ${{ runner.temp }}/report/sync-report.md
         run: |
           {
             echo "## Upstream PromQL test-case sync"
