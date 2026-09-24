@@ -40,5 +40,8 @@ func NewKafkaReaderClientMetrics(prefix, component string, reg prometheus.Regist
 	return kprom.NewMetrics(prefix,
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)),
 		// Do not export the client ID, because we use it to specify options to the backend.
-		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
+		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
+		// Drop the "node_id" label from broker-level metrics to reduce cardinality. The node ID
+		// can change frequently (e.g. when brokers are restarted) and isn't useful for our alerting.
+		kprom.BrokerLabels())
 }
