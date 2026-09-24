@@ -20,6 +20,10 @@ on:
 
 permissions: {}
 
+# None of the jobs use the Actions cache. Disabling it also stops the generate job's code, which runs in
+# the default branch's cache scope, from writing entries that other workflows would then restore.
+cache-mode: none
+
 concurrency:
   # Two runs on the same branch would race on its head; queue them rather than cancel one mid-commit.
   group: ${{ github.workflow }}-${{ inputs.branch }}
