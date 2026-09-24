@@ -210,6 +210,20 @@ jobs:
           name: sync-report
           path: ${{ runner.temp }}/report
 
+      # The artifacts come from a job that runs code from the branch, so only accept what the tools can
+      # legitimately produce: a flat directory of test case files.
+      - name: Validate downloaded test cases
+        run: |
+          set -euo pipefail
+          for dir in "$RUNNER_TEMP/after-resync" "$RUNNER_TEMP/after-disable"; do
+            unexpected=$(find "$dir" -mindepth 1 \( ! -type f -o -path "$dir/*/*" -o ! \( -name '*.test' -o -name '*.test.disabled' -o -name README.md \) \) -print)
+            if [ -n "$unexpected" ]; then
+              echo "::error::Unexpected entries in the $(basename "$dir") artifact:"
+              echo "$unexpected"
+              exit 1
+            fi
+          done
+
       - name: Stage re-synced test cases
         run: |
           rm -rf "$UPSTREAM_DIR"
