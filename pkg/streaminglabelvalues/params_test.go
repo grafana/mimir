@@ -71,16 +71,24 @@ func TestParamsDoesNotExposeMutableExpressionSource(t *testing.T) {
 			exportedFields = append(exportedFields, field.Name)
 		}
 	}
-	assert.Equal(t, []string{"Terms", "CaseSensitive", "FuzzAlg", "FuzzThreshold", "SearchAfter"}, exportedFields,
+	assert.Equal(t, []string{"Terms", "CaseSensitive", "FuzzAlg", "FuzzThreshold", "ResumeAfter", "ScoreAfter"}, exportedFields,
 		"an exported expression source could diverge from the private validated AST")
 }
 
-func TestParamsSearchAfterIsAPlainField(t *testing.T) {
+func TestParamsResumeAfterIsAPlainField(t *testing.T) {
 	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
 	require.NoError(t, err)
-	assert.Empty(t, p.SearchAfter, "zero value is empty, no cursor in effect")
-	p.SearchAfter = "kube_pod_status_ready"
-	assert.Equal(t, "kube_pod_status_ready", p.SearchAfter)
+	assert.Empty(t, p.ResumeAfter, "zero value is empty, no cursor in effect")
+	p.ResumeAfter = "kube_pod_status_ready"
+	assert.Equal(t, "kube_pod_status_ready", p.ResumeAfter)
+}
+
+func TestParamsScoreAfterIsAPlainField(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, p.ScoreAfter, "zero value is 0, no cursor in effect")
+	p.ScoreAfter = 0.75
+	assert.Equal(t, 0.75, p.ScoreAfter)
 }
 
 func TestNilParamsValidates(t *testing.T) {

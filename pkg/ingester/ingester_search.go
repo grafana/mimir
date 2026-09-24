@@ -124,9 +124,14 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	order := protoToOrdering(ord)
 	// params is nil when wf is nil (protoToParams's documented nil-input
 	// contract); guard the field access rather than pass an empty
-	// SearchAfter, since ApplyResumeAfter treats "" as "no cursor" anyway.
+	// ResumeAfter, since both ApplyResumeAfter and ApplyScoreResumeAfter
+	// treat "" as "no cursor" anyway.
 	if params != nil {
-		filter = streaminglabelvalues.ApplyResumeAfter(filter, params.SearchAfter, order)
+		if order == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, order)
+		}
 	}
 	if limit < 0 {
 		return nil, nil, fmt.Errorf("limit must be >= 0, got %d", limit)
@@ -175,7 +180,8 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 	if err != nil {
 		return nil, err
 	}
-	params.SearchAfter = wf.SearchAfter
+	params.ResumeAfter = wf.ResumeAfter
+	params.ScoreAfter = wf.ScoreAfter
 	return params, nil
 }
 

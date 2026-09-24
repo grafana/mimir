@@ -206,10 +206,10 @@ const searchCursorVersion = 1
 // cursor-driven request. See
 // docs/superpowers/specs/2026-09-22-search-cursor-pagination-design.md.
 //
-// SortBy is only ever "" or "alpha" for a server-generated cursor (v1 never
-// emits a cursor for sort_by=score) but is still decoded and validated
-// defensively against a hand-crafted cursor that tries to smuggle in
-// sort_by=score.
+// SortBy is "" or "alpha" for an alpha-ordered cursor, or "score" for a
+// score-ordered one. ScoreAfter is only meaningful alongside a non-empty
+// ResumeAfter and SortBy=="score" — 0.0 is a legitimate score and has no
+// independent meaning as "no cursor."
 type searchCursor struct {
 	Version         int               `json:"v"`
 	Terms           []string          `json:"terms,omitempty"`
@@ -228,6 +228,7 @@ type searchCursor struct {
 	EndMs           int64             `json:"end_ms"`
 	Matchers        [][]cursorMatcher `json:"matchers,omitempty"`
 	ResumeAfter     string            `json:"resume_after"`
+	ScoreAfter      float64           `json:"score_after,omitempty"`
 }
 
 // cursorMatcher mirrors the wire LabelMatcher encoding (pkg/ingester/client's
@@ -274,8 +275,8 @@ func cursorStringToFuzzAlg(s string) (streaminglabelvalues.FuzzAlg, error) {
 
 // orderingToSortDir converts a resolved storage.Ordering back into the
 // sort_dir vocabulary parseSortOrder accepts. Only ever called for
-// OrderByValueAsc/OrderByValueDesc — encodeSearchCursor is never reached for
-// sort_by=score (see SearchLabelNamesHandler/streamSearchNDJSON in Task 9).
+// OrderByValueAsc/OrderByValueDesc — encodeSearchCursor's score-ordering
+// branch sets SortBy/ScoreAfter directly instead and never calls this.
 func orderingToSortDir(order storage.Ordering) string {
 	if order == storage.OrderByValueDesc {
 		return "dsc"
@@ -321,14 +322,12 @@ func cursorToMatchers(rows [][]cursorMatcher) ([][]*labels.Matcher, error) {
 }
 
 // encodeSearchCursor builds the opaque cursor value for the next page of
-// req, given resumeAfter (the last value emitted on the current page).
-// Only ever called when the effective ordering is alpha (see Task 9); it
-// panics if handed a score-ordered request, since that would indicate a
-// caller bug rather than bad user input.
-func encodeSearchCursor(req *searchRequest, resumeAfter string) (string, error) {
-	if req.hints.OrderBy == storage.OrderByScoreDesc {
-		panic("encodeSearchCursor called for a score-ordered request")
-	}
+// req, given resumeAfter and afterScore — the value and (for score
+// ordering) raw score of the last record emitted on the current page.
+// afterScore is ignored for alpha ordering. Callers must pass the raw,
+// unrounded storage.SearchResult.Score, never a display-rounded copy — see
+// this plan's Global Constraints.
+func encodeSearchCursor(req *searchRequest, resumeAfter string, afterScore float64) (string, error) {
 	c := searchCursor{
 		Version:         searchCursorVersion,
 		Terms:           req.params.Terms,
@@ -336,7 +335,6 @@ func encodeSearchCursor(req *searchRequest, resumeAfter string) (string, error) 
 		CaseSensitive:   req.params.CaseSensitive,
 		FuzzAlg:         fuzzAlgToCursorString(req.params.FuzzAlg),
 		FuzzThreshold:   req.params.FuzzThreshold,
-		SortDir:         orderingToSortDir(req.hints.OrderBy),
 		Limit:           req.limit,
 		BatchSize:       req.batchSize,
 		IncludeScore:    req.includeScore,
@@ -346,6 +344,12 @@ func encodeSearchCursor(req *searchRequest, resumeAfter string) (string, error) 
 		EndMs:           req.endMs,
 		Matchers:        matchersToCursor(req.matchers),
 		ResumeAfter:     resumeAfter,
+	}
+	if req.hints.OrderBy == storage.OrderByScoreDesc {
+		c.SortBy = "score"
+		c.ScoreAfter = afterScore
+	} else {
+		c.SortDir = orderingToSortDir(req.hints.OrderBy)
 	}
 	raw, err := json.Marshal(c)
 	if err != nil {
@@ -368,7 +372,7 @@ func decodeSearchCursor(raw string) (*searchCursor, error) {
 	if c.Version != searchCursorVersion {
 		return nil, fmt.Errorf("invalid cursor: unsupported version %d", c.Version)
 	}
-	if c.SortBy != "" && c.SortBy != "alpha" {
+	if c.SortBy != "" && c.SortBy != "alpha" && c.SortBy != "score" {
 		return nil, fmt.Errorf("invalid cursor: sort_by=%q is not supported with a cursor", c.SortBy)
 	}
 	return &c, nil
@@ -400,6 +404,20 @@ func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, e
 		batchSize = searchDefaultBatchSize
 	}
 
+	sortBy := c.SortBy
+	if sortBy == "" {
+		sortBy = "alpha"
+	}
+	if sortBy == "score" && alg == streaminglabelvalues.FuzzAlgSubstring {
+		return nil, errors.New("invalid cursor: sort_by=score is not supported with fuzz_alg=substring; every match scores 1.0, use sort_by=alpha")
+	}
+	if sortBy == "score" && len(c.Terms) == 0 && c.Expression == "" {
+		return nil, errors.New("invalid cursor: sort_by=score requires search terms or an expression")
+	}
+	if c.ScoreAfter < 0 || c.ScoreAfter > 1 {
+		return nil, fmt.Errorf("invalid cursor: score_after %v must be between 0 and 1", c.ScoreAfter)
+	}
+
 	var params *streaminglabelvalues.Params
 	if c.Expression != "" {
 		if len(c.Terms) > 0 {
@@ -415,9 +433,12 @@ func (c *searchCursor) toSearchRequest(requireLabelName bool) (*searchRequest, e
 			return nil, fmt.Errorf("invalid cursor: %w", err)
 		}
 	}
-	params.SearchAfter = c.ResumeAfter
+	params.ResumeAfter = c.ResumeAfter
+	if sortBy == "score" {
+		params.ScoreAfter = c.ScoreAfter
+	}
 
-	order, err := parseSortOrder("alpha", c.SortDir, true)
+	order, err := parseSortOrder(sortBy, c.SortDir, c.SortDir != "")
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
 	}
@@ -749,9 +770,15 @@ func dispatchSearchOverMatcherSets(matcherSets [][]*labels.Matcher, hints *stora
 
 // cursorResumingSearchResultSet wraps inner so it discards every record up
 // to and including resumeAfter before passing records through unchanged.
-// This is the querier-side backstop described in
+// For alpha ordering, "up to and including" is a value comparison. For
+// score ordering (byScore), it is the same (Score desc, Value asc) total
+// order ApplyScoreResumeAfter applies on the source side: a record is
+// already-returned when its score is higher than afterScore, or equal to
+// afterScore with a value <= resumeAfter — both sides of the resume
+// boundary must agree on this rule for a correct walk. This is the
+// querier-side backstop described in
 // docs/superpowers/specs/2026-09-22-search-cursor-pagination-design.md: even
-// once every ingester/store-gateway honors Params.SearchAfter, an
+// once every ingester/store-gateway honors Params.ResumeAfter, an
 // old-binary source during a rolling upgrade will silently ignore it and
 // return its ordinary first-N results, so the querier must always be able
 // to re-apply the same exclusion itself. resumeAfter == "" makes this a
@@ -770,15 +797,23 @@ type cursorResumingSearchResultSet struct {
 	inner       storage.SearchResultSet
 	resumeAfter string
 	descending  bool
+	byScore     bool
+	afterScore  float64
 	pastCursor  bool
 	innerSeen   int
 }
 
-func newCursorResumingSearchResultSet(inner storage.SearchResultSet, resumeAfter string, order storage.Ordering) storage.SearchResultSet {
+func newCursorResumingSearchResultSet(inner storage.SearchResultSet, resumeAfter string, order storage.Ordering, afterScore float64) storage.SearchResultSet {
 	if resumeAfter == "" {
 		return inner
 	}
-	return &cursorResumingSearchResultSet{inner: inner, resumeAfter: resumeAfter, descending: order == storage.OrderByValueDesc}
+	return &cursorResumingSearchResultSet{
+		inner:       inner,
+		resumeAfter: resumeAfter,
+		descending:  order == storage.OrderByValueDesc,
+		byScore:     order == storage.OrderByScoreDesc,
+		afterScore:  afterScore,
+	}
 }
 
 func (s *cursorResumingSearchResultSet) Next() bool {
@@ -787,13 +822,20 @@ func (s *cursorResumingSearchResultSet) Next() bool {
 	}
 	for s.inner.Next() {
 		s.innerSeen++
-		v := s.inner.At().Value
-		if s.descending {
-			if v < s.resumeAfter {
+		r := s.inner.At()
+		if s.byScore {
+			if r.Score < s.afterScore || (r.Score == s.afterScore && r.Value > s.resumeAfter) {
 				s.pastCursor = true
 				return true
 			}
-		} else if v > s.resumeAfter {
+			continue
+		}
+		if s.descending {
+			if r.Value < s.resumeAfter {
+				s.pastCursor = true
+				return true
+			}
+		} else if r.Value > s.resumeAfter {
 			s.pastCursor = true
 			return true
 		}
@@ -853,7 +895,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelNames(r.Context(), req.params, req.hints, m...)
 		})
-		rs = newCursorResumingSearchResultSet(rs, req.params.SearchAfter, req.hints.OrderBy)
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 		defer rs.Close()
 		if req.includeScore {
 			env := getSearchEnvelope[searchLabelNameRecordWithScore](req, &searchLabelNameWithScorePool)
@@ -892,7 +934,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, m...)
 		})
-		rs = newCursorResumingSearchResultSet(rs, req.params.SearchAfter, req.hints.OrderBy)
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 		defer rs.Close()
 		if req.includeScore {
 			env := getSearchEnvelope[searchLabelValueRecordWithScore](req, &searchLabelValueWithScorePool)
@@ -934,7 +976,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
-		rs = newCursorResumingSearchResultSet(rs, req.params.SearchAfter, req.hints.OrderBy)
+		rs = newCursorResumingSearchResultSet(rs, req.params.ResumeAfter, req.hints.OrderBy, req.params.ScoreAfter)
 
 		// Metric metadata (include_metadata) is enriched here, above every merge,
 		// so a single batched fetch covers the fully-deduped result.
@@ -1093,6 +1135,7 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	flushedAny := false
 	emitted := 0
 	var lastValue string
+	var lastScore float64
 	flushBatch := func() error {
 		if len(env.Results) == 0 {
 			return nil
@@ -1123,6 +1166,7 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 			break
 		}
 		lastValue = rs.At().Value
+		lastScore = rs.At().Score
 		env.Results = append(env.Results, build(rs.At()))
 		if len(env.Results) >= req.batchSize {
 			if err := flushBatch(); err != nil {
@@ -1203,9 +1247,10 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	}
 	// lastValue == "" means nothing was emitted, so there is no resume
 	// point to encode; a cursor carrying an empty resume_after would
-	// restart the walk from the beginning.
-	if trailer.HasMore && req.hints.OrderBy != storage.OrderByScoreDesc && lastValue != "" {
-		if cursor, err := encodeSearchCursor(req, lastValue); err == nil {
+	// restart the walk from the beginning. This now applies to both
+	// orderings — score ordering no longer refuses to emit a cursor.
+	if trailer.HasMore && lastValue != "" {
+		if cursor, err := encodeSearchCursor(req, lastValue, lastScore); err == nil {
 			trailer.NextCursor = cursor
 		}
 	}

@@ -1022,25 +1022,40 @@ func TestParamsToSGProto(t *testing.T) {
 			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
 		},
 		{
-			name: "SearchAfter rides on the wire filter",
+			name: "ResumeAfter rides on the wire filter",
 			in: func() *streaminglabelvalues.Params {
 				p := &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true}
-				p.SearchAfter = "bar"
+				p.ResumeAfter = "bar"
 				return p
 			}(),
-			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, SearchAfter: "bar"},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, ResumeAfter: "bar"},
 		},
 		{
 			// A cursor walk with no search[] and no search_expr still needs
-			// search_after pushed down, so a SearchAfter-only Params must
+			// resume_after pushed down, so a ResumeAfter-only Params must
 			// not be dropped as "empty".
-			name: "SearchAfter alone keeps the wire filter",
+			name: "ResumeAfter alone keeps the wire filter",
 			in: func() *streaminglabelvalues.Params {
 				p := &streaminglabelvalues.Params{}
-				p.SearchAfter = "foo"
+				p.ResumeAfter = "foo"
 				return p
 			}(),
-			want: &storepb.SearchFilter{CaseInsensitive: true, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, SearchAfter: "foo"},
+			want: &storepb.SearchFilter{CaseInsensitive: true, FuzzAlg: storepb.FUZZ_ALG_SUBSEQUENCE, ResumeAfter: "foo"},
+		},
+		{
+			name: "term-less ScoreAfter rides on the wire filter alongside ResumeAfter",
+			in: func() *streaminglabelvalues.Params {
+				p := &streaminglabelvalues.Params{}
+				p.ResumeAfter = "bar"
+				p.ScoreAfter = 0.75
+				return p
+			}(),
+			want: &storepb.SearchFilter{
+				CaseInsensitive: true,
+				FuzzAlg:         storepb.FUZZ_ALG_SUBSEQUENCE,
+				ResumeAfter:     "bar",
+				ScoreAfter:      0.75,
+			},
 		},
 	}
 	for _, tc := range cases {

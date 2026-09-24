@@ -768,3 +768,73 @@ func TestApplyResumeAfterHandlesNilInner(t *testing.T) {
 	assert.True(t, accepted)
 	assert.Equal(t, 1.0, score)
 }
+
+func TestApplyScoreResumeAfterPassesThroughWhenEmpty(t *testing.T) {
+	inner := &scoreFilter{accepted: true, score: 0.5}
+	got := ApplyScoreResumeAfter(inner, 0.9, "")
+	assert.Same(t, storage.Filter(inner), got)
+}
+
+func TestApplyScoreResumeAfterRejectsHigherScore(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 0.9}
+	f := ApplyScoreResumeAfter(inner, 0.5, "m")
+	accepted, _ := f.Accept("z")
+	assert.False(t, accepted, "a higher score than the resume point was already returned")
+}
+
+func TestApplyScoreResumeAfterRejectsTiedScoreAtOrBeforeValue(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 0.5}
+	f := ApplyScoreResumeAfter(inner, 0.5, "m")
+
+	accepted, _ := f.Accept("a")
+	assert.False(t, accepted, "tied score, value before the resume point (Score desc, Value asc): already returned")
+
+	accepted, _ = f.Accept("m")
+	assert.False(t, accepted, "tied score, exact value match: already returned")
+}
+
+func TestApplyScoreResumeAfterAcceptsTiedScoreAfterValue(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 0.5}
+	f := ApplyScoreResumeAfter(inner, 0.5, "m")
+	accepted, score := f.Accept("z")
+	assert.True(t, accepted, "tied score, value after the resume point: not yet returned")
+	assert.Equal(t, 0.5, score)
+}
+
+func TestApplyScoreResumeAfterAcceptsLowerScore(t *testing.T) {
+	inner := scoreFilter{accepted: true, score: 0.1}
+	f := ApplyScoreResumeAfter(inner, 0.5, "m")
+	accepted, score := f.Accept("a")
+	assert.True(t, accepted, "a lower score than the resume point has not been returned yet, regardless of value")
+	assert.Equal(t, 0.1, score)
+}
+
+func TestApplyScoreResumeAfterComposesWithInnerRejection(t *testing.T) {
+	inner := scoreFilter{accepted: false, score: 0}
+	f := ApplyScoreResumeAfter(inner, 0.5, "a")
+	accepted, score := f.Accept("z")
+	assert.False(t, accepted, "the inner filter itself rejects, regardless of the resume point")
+	assert.Zero(t, score)
+}
+
+func TestApplyScoreResumeAfterHandlesNilInner(t *testing.T) {
+	// BuildFilter returns a nil storage.Filter when Params has no terms/expression
+	// (accept everything, score 1.0). ApplyScoreResumeAfter must not panic on
+	// that nil, and must still apply the resume-point exclusion against the
+	// implied score of 1.0.
+	f := ApplyScoreResumeAfter(nil, 1.0, "m")
+	accepted, score := f.Accept("z")
+	// Implied score (1.0) ties afterScore (1.0), so the tie-break falls to the
+	// value comparison: "z" > "m", so this candidate sorts after the resume
+	// point and has not been returned yet. Accepted.
+	assert.True(t, accepted, "tied score, value after the resume point: not yet returned")
+	assert.Equal(t, 1.0, score)
+
+	f2 := ApplyScoreResumeAfter(nil, 0.5, "m")
+	accepted2, score2 := f2.Accept("z")
+	// Implied score (1.0) is strictly higher than afterScore (0.5). Results
+	// are score-descending, so a higher score sorts before the resume point
+	// and was already returned on an earlier page, regardless of value.
+	assert.False(t, accepted2, "a higher implied score than the resume point was already returned")
+	assert.Zero(t, score2)
+}

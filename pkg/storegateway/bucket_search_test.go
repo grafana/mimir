@@ -401,18 +401,26 @@ func TestStorepbToParams(t *testing.T) {
 		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
 	})
 
-	t.Run("carries SearchAfter", func(t *testing.T) {
-		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, SearchAfter: "bar"})
+	t.Run("carries ResumeAfter", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar"})
 		require.NoError(t, err)
 		require.NotNil(t, params)
-		assert.Equal(t, "bar", params.SearchAfter)
+		assert.Equal(t, "bar", params.ResumeAfter)
 	})
 }
 
-func TestApplyPerBlockSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.T) {
+func TestStorepbToParams_CarriesScoreAfter(t *testing.T) {
+	wf := &storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	params, err := storepbToParams(wf)
+	require.NoError(t, err)
+	assert.Equal(t, "bar", params.ResumeAfter)
+	assert.Equal(t, 0.75, params.ScoreAfter)
+}
+
+func TestApplyPerBlockSearchHintsExcludesValuesAtOrBeforeResumeAfter(t *testing.T) {
 	params, err := streaminglabelvalues.NewParams([]string{"pod"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
 	require.NoError(t, err)
-	params.SearchAfter = "kube_pod_info"
+	params.ResumeAfter = "kube_pod_info"
 
 	values := []string{"kube_pod_container_status_pod", "kube_pod_info", "kube_pod_status_ready"}
 	rs, err := applyPerBlockSearchHints(values, params, storage.OrderByValueAsc, 0)
@@ -426,6 +434,45 @@ func TestApplyPerBlockSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.
 	}
 	require.NoError(t, rs.Err())
 	assert.Equal(t, []string{"kube_pod_status_ready"}, got, "only the value alphabetically after the resume point survives")
+}
+
+func TestApplyPerBlockSearchHintsExcludesScoreAfterUnderScoreOrdering(t *testing.T) {
+	params, err := streaminglabelvalues.NewParams([]string{"foo"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "bar"
+	params.ScoreAfter = 0.75
+	rs, err := applyPerBlockSearchHints([]string{"foo", "zzz"}, params, storage.OrderByScoreDesc, 10)
+	require.NoError(t, err)
+	// "zzz" never matches term "foo" at all, so once "foo" is excluded by
+	// ScoreAfter, no candidate survives and applyPerBlockSearchHints
+	// returns a nil result set by design (see the len(results)==0 guard).
+	var got []string
+	if rs != nil {
+		for rs.Next() {
+			got = append(got, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+	}
+	assert.Empty(t, got, "score 1.0 exceeds afterScore 0.75, already returned")
+}
+
+func TestApplyPerBlockSearchHintsDoesNotApplyScoreResumeAfterUnderAlphaOrdering(t *testing.T) {
+	// These inputs must discriminate the two rules: with ResumeAfter="eee",
+	// ScoreAfter=0.9, the value-rule accepts "foo" (not <= "eee") while a
+	// wrongly-applied score-rule would reject it (term "foo" scores 1.0,
+	// which exceeds afterScore 0.9).
+	params, err := streaminglabelvalues.NewParams([]string{"foo"}, true, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+	params.ResumeAfter = "eee"
+	params.ScoreAfter = 0.9
+	rs, err := applyPerBlockSearchHints([]string{"foo"}, params, storage.OrderByValueAsc, 10)
+	require.NoError(t, err)
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Contains(t, got, "foo", "value-based resume: 'foo' is not <= after 'eee', so it is accepted — if the score-rule leaked in here instead, it would wrongly reject since score 1.0 > ScoreAfter 0.9")
 }
 
 // prepareBenchmarkSearchStore builds a BucketStore backed by the same series

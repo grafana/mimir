@@ -391,11 +391,11 @@ func TestProtoToParams(t *testing.T) {
 		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
 	})
 
-	t.Run("carries SearchAfter", func(t *testing.T) {
-		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, SearchAfter: "bar"})
+	t.Run("carries ResumeAfter", func(t *testing.T) {
+		params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar"})
 		require.NoError(t, err)
 		require.NotNil(t, params)
-		assert.Equal(t, "bar", params.SearchAfter)
+		assert.Equal(t, "bar", params.ResumeAfter)
 	})
 }
 
@@ -505,9 +505,9 @@ func TestBuildSearchHintsLimitGuard(t *testing.T) {
 	}
 }
 
-func TestBuildSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.T) {
+func TestBuildSearchHintsExcludesValuesAtOrBeforeResumeAfter(t *testing.T) {
 	hints, matchers, err := buildSearchHints(
-		&client.SearchFilter{Terms: []string{"pod"}, SearchAfter: "kube_pod_info"},
+		&client.SearchFilter{Terms: []string{"pod"}, ResumeAfter: "kube_pod_info"},
 		client.ORDER_BY_VALUE_ASC,
 		10,
 		nil,
@@ -526,9 +526,9 @@ func TestBuildSearchHintsExcludesValuesAtOrBeforeSearchAfter(t *testing.T) {
 	assert.True(t, accepted, "alphabetically after the resume-after value, and matches the term")
 }
 
-func TestBuildSearchHintsExcludesValuesAtOrAfterSearchAfterDescending(t *testing.T) {
+func TestBuildSearchHintsExcludesValuesAtOrAfterResumeAfterDescending(t *testing.T) {
 	hints, _, err := buildSearchHints(
-		&client.SearchFilter{Terms: []string{"pod"}, SearchAfter: "kube_pod_status_ready"},
+		&client.SearchFilter{Terms: []string{"pod"}, ResumeAfter: "kube_pod_status_ready"},
 		client.ORDER_BY_VALUE_DESC,
 		10,
 		nil,
@@ -541,6 +541,45 @@ func TestBuildSearchHintsExcludesValuesAtOrAfterSearchAfterDescending(t *testing
 
 	accepted, _ = hints.Filter.Accept("kube_pod_container_status_pod")
 	assert.True(t, accepted, "alphabetically before the resume-after value, so it comes after it in descending order")
+}
+
+func TestProtoToParams_CarriesScoreAfter(t *testing.T) {
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	params, err := protoToParams(wf)
+	require.NoError(t, err)
+	assert.Equal(t, "bar", params.ResumeAfter)
+	assert.Equal(t, 0.75, params.ScoreAfter)
+}
+
+func TestBuildSearchHintsExcludesScoreAfterUnderScoreOrdering(t *testing.T) {
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.75}
+	hints, _, err := buildSearchHints(wf, client.ORDER_BY_SCORE_DESC, 10, nil)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+	// "foo" as a value scores 1.0 under FuzzAlgSubsequence's prefix rule
+	// (term == value), which is > afterScore 0.75, so it must be excluded —
+	// this candidate was already returned on an earlier page.
+	accepted, _ := hints.Filter.Accept("foo")
+	assert.False(t, accepted, "score 1.0 exceeds afterScore 0.75, already returned")
+}
+
+func TestBuildSearchHintsDoesNotApplyScoreResumeAfterUnderAlphaOrdering(t *testing.T) {
+	// Guard against the score branch leaking into the alpha path: a filter
+	// built for OrderByValueAsc must use ApplyResumeAfter's value-based
+	// rule, not the score-based one, even if ScoreAfter happens to be set
+	// (which toSearchRequest/decode should never actually produce for an
+	// alpha cursor, but buildSearchHints itself must not assume that).
+	//
+	// These inputs must discriminate the two rules: with ResumeAfter="eee",
+	// ScoreAfter=0.9, the value-rule accepts "foo" (not <= "eee") while a
+	// wrongly-applied score-rule would reject it (score 1.0 > afterScore
+	// 0.9).
+	wf := &client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "eee", ScoreAfter: 0.9}
+	hints, _, err := buildSearchHints(wf, client.ORDER_BY_VALUE_ASC, 10, nil)
+	require.NoError(t, err)
+	require.NotNil(t, hints.Filter)
+	accepted, _ := hints.Filter.Accept("foo")
+	assert.True(t, accepted, "value-based resume: 'foo' is not <= after 'eee', so it is accepted — if the score-rule leaked in here instead, it would wrongly reject since score 1.0 > ScoreAfter 0.9")
 }
 
 // Benchmark fixture shape mirrors BenchmarkIngester_LabelValuesCardinality
