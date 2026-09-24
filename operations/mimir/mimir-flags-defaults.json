@@ -415,6 +415,7 @@
   "ingester.early-head-compaction-min-estimated-series-reduction-percentage": 15,
   "ingester.native-histograms-ingestion-enabled": true,
   "blocks-storage.tsdb.float-chunk-encoding": "xor",
+  "blocks-storage.tsdb.histogram-chunk-encoding": "histogram",
   "ingester.active-series-custom-trackers": {},
   "validation.max-active-series-additional-custom-trackers": 0,
   "ingester.out-of-order-time-window": 0,
