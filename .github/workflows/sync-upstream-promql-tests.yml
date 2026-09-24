@@ -268,9 +268,9 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       # Surface the report on the PR so the maintainer who ran this sees what was disabled without
-      # opening the run logs.
+      # opening the run logs. Only on success: after a partial failure it could describe changes that
+      # didn't land (the notify-failure job comments instead).
       - name: Comment sync report on the PR
-        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -298,3 +298,21 @@ jobs:
             echo "## Upstream PromQL test-case sync"
             if [ -s "$REPORT" ]; then cat "$REPORT"; else echo "Nothing to report - all cases already in sync and passing."; fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    needs: [authorize, generate, commit]
+    # Only for authorized runs, so an unauthorized dispatch can't make this comment on arbitrary PRs.
+    if: failure() && needs.authorize.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on the PR that the sync failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ inputs.branch }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "$BRANCH" --body "The upstream PromQL test-case sync failed, see $RUN_URL. Any commit it already pushed stays on the branch. If it failed after pushing a commit, start a new run (or use Re-run all jobs) rather than Re-run failed jobs, which reuses the branch head this run started from."
