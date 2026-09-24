@@ -251,7 +251,11 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 		return nil, err
 	}
 	if params != nil {
-		filter = streaminglabelvalues.ApplyResumeAfter(filter, params.SearchAfter, order)
+		if order == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, order)
+		}
 	}
 	results := storage.ApplySearchHints(values, &storage.SearchHints{
 		Filter:  filter,
@@ -294,7 +298,8 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	if err != nil {
 		return nil, err
 	}
-	params.SearchAfter = wf.SearchAfter
+	params.ResumeAfter = wf.ResumeAfter
+	params.ScoreAfter = wf.ScoreAfter
 	return params, nil
 }
 

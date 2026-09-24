@@ -264,6 +264,50 @@ func (f *resumeAfterFilter) Accept(value string) (bool, float64) {
 	return f.inner.Accept(value)
 }
 
+// ApplyScoreResumeAfter wraps inner so it also rejects any (score, value)
+// pair already returned by an earlier page of a sort_by=score
+// cursor-paginated search. after == "" means no cursor is in effect, and
+// inner is returned unchanged (afterScore is not consulted in that case).
+//
+// Unlike ApplyResumeAfter, this must call inner first: the score is
+// computed by inner.Accept, not known from the raw candidate value alone.
+// A nil inner is treated as BuildFilter's "accept everything, score 1.0"
+// convention, exactly like ApplyResumeAfter.
+//
+// The exclusion rule matches compareSearchResults(OrderByScoreDesc) in the
+// vendored storage fork exactly: already-returned means score >
+// afterScore, or score == afterScore and value <= after. storage.Ordering
+// has no OrderByScoreAsc, so there is only one direction to implement.
+func ApplyScoreResumeAfter(inner storage.Filter, afterScore float64, after string) storage.Filter {
+	if after == "" {
+		return inner
+	}
+	return &scoreResumeAfterFilter{inner: inner, afterScore: afterScore, after: after}
+}
+
+type scoreResumeAfterFilter struct {
+	inner      storage.Filter
+	afterScore float64
+	after      string
+}
+
+func (f *scoreResumeAfterFilter) Accept(value string) (bool, float64) {
+	var accepted bool
+	var score float64
+	if f.inner == nil {
+		accepted, score = true, 1.0
+	} else {
+		accepted, score = f.inner.Accept(value)
+	}
+	if !accepted {
+		return false, 0
+	}
+	if score > f.afterScore || (score == f.afterScore && value <= f.after) {
+		return false, 0
+	}
+	return true, score
+}
+
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
 // when Params is nil or has neither Terms nor a parsed expression — a nil
 // storage.Filter accepts every value with score 1.0 by Prometheus convention.

@@ -525,7 +525,11 @@ func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *st
 	// over the synthetic ID label does not re-serve already-seen values.
 	// Uses hintsCopy.OrderBy because hints itself may be nil.
 	if params != nil {
-		filter = streaminglabelvalues.ApplyResumeAfter(filter, params.SearchAfter, hintsCopy.OrderBy)
+		if hintsCopy.OrderBy == storage.OrderByScoreDesc {
+			filter = streaminglabelvalues.ApplyScoreResumeAfter(filter, params.ScoreAfter, params.ResumeAfter)
+		} else {
+			filter = streaminglabelvalues.ApplyResumeAfter(filter, params.ResumeAfter, hintsCopy.OrderBy)
+		}
 	}
 	hintsCopy.Filter = filter
 	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)

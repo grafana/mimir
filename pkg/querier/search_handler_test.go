@@ -1628,7 +1628,7 @@ func TestSearchCursorRoundTrip(t *testing.T) {
 		labelName:       "job",
 	}
 
-	encoded, err := encodeSearchCursor(req, "kube_pod_status_ready")
+	encoded, err := encodeSearchCursor(req, "kube_pod_status_ready", 0)
 	require.NoError(t, err)
 	require.NotEmpty(t, encoded)
 
@@ -1641,7 +1641,7 @@ func TestSearchCursorRoundTrip(t *testing.T) {
 	assert.False(t, got.params.CaseSensitive)
 	assert.Equal(t, streaminglabelvalues.FuzzAlgJaroWinkler, got.params.FuzzAlg)
 	assert.Equal(t, 75, got.params.FuzzThreshold)
-	assert.Equal(t, "kube_pod_status_ready", got.params.SearchAfter)
+	assert.Equal(t, "kube_pod_status_ready", got.params.ResumeAfter)
 	assert.Equal(t, storage.OrderByValueDesc, got.hints.OrderBy)
 	assert.Equal(t, 42, got.limit)
 	assert.Equal(t, int64(1758500000000), got.startMs)
@@ -1665,7 +1665,7 @@ func TestSearchCursorRoundTripWithExpression(t *testing.T) {
 		endMs:     3600000,
 		batchSize: 100,
 	}
-	encoded, err := encodeSearchCursor(req, "foo_new")
+	encoded, err := encodeSearchCursor(req, "foo_new", 0)
 	require.NoError(t, err)
 	decoded, err := decodeSearchCursor(encoded)
 	require.NoError(t, err)
@@ -1692,15 +1692,18 @@ func TestDecodeSearchCursorRejectsUnknownVersion(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported version")
 }
 
-func TestDecodeSearchCursorRejectsScoreOrdering(t *testing.T) {
-	// v1 never generates a cursor with sort_by=score (see Scope in the spec);
-	// this pins that a hand-crafted one is rejected rather than silently
-	// accepted.
+// TestDecodeSearchCursorAcceptsScoreOrderingWithConflictingSortDir pins
+// Task 9's change: decodeSearchCursor no longer rejects sort_by=score (an
+// earlier task's v1 restriction, since lifted). A sort_dir combined with
+// sort_by=score is still invalid, but that rejection now happens at
+// toSearchRequest, not at decode — see
+// TestSearchCursorToSearchRequest_RejectsSortDirWithScoreOrdering.
+func TestDecodeSearchCursorAcceptsScoreOrderingWithConflictingSortDir(t *testing.T) {
 	raw, err := json.Marshal(searchCursor{Version: searchCursorVersion, SortBy: "score", SortDir: "asc"})
 	require.NoError(t, err)
-	_, err = decodeSearchCursor(base64.RawURLEncoding.EncodeToString(raw))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "sort_by")
+	decoded, err := decodeSearchCursor(base64.RawURLEncoding.EncodeToString(raw))
+	require.NoError(t, err)
+	assert.Equal(t, "score", decoded.SortBy)
 }
 
 func TestParseSearchRequest_RejectsCursorWithOtherParams(t *testing.T) {
@@ -1710,7 +1713,7 @@ func TestParseSearchRequest_RejectsCursorWithOtherParams(t *testing.T) {
 		limit:  1,
 		endMs:  3600000,
 	}
-	cursor, err := encodeSearchCursor(req, "")
+	cursor, err := encodeSearchCursor(req, "", 0)
 	require.NoError(t, err)
 
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor+"&limit=5")
@@ -1744,14 +1747,14 @@ func TestParseSearchRequest_CursorRoundTripThroughHTTP(t *testing.T) {
 	first, err := parseSearchRequest(r, false)
 	require.NoError(t, err)
 
-	cursor, err := encodeSearchCursor(first, "kube_pod_status_ready")
+	cursor, err := encodeSearchCursor(first, "kube_pod_status_ready", 0)
 	require.NoError(t, err)
 
 	r2 := newSearchHandlerRequest(t, "/api/v1/search/label_names?cursor="+cursor)
 	second, err := parseSearchRequest(r2, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, second.params.Terms)
-	assert.Equal(t, "kube_pod_status_ready", second.params.SearchAfter)
+	assert.Equal(t, "kube_pod_status_ready", second.params.ResumeAfter)
 	assert.Equal(t, 5, second.limit)
 }
 
@@ -1798,7 +1801,7 @@ func TestSearchLabelNamesHandler_MultiPageCursorWalk(t *testing.T) {
 
 func TestCursorResumingSearchResultSet_SkipsUpToAndIncludingExactMatch(t *testing.T) {
 	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("b", 1.0), sr("c", 1.0)}, nil)
-	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc, 0)
 	defer rs.Close()
 	var got []string
 	for rs.Next() {
@@ -1813,7 +1816,7 @@ func TestCursorResumingSearchResultSet_ResumeValueNoLongerPresent(t *testing.T) 
 	// and "c" remain. Comparing by value, not position, still resumes
 	// correctly at "c".
 	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("c", 1.0)}, nil)
-	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc, 0)
 	defer rs.Close()
 	var got []string
 	for rs.Next() {
@@ -1827,7 +1830,7 @@ func TestCursorResumingSearchResultSet_EmptyAfterSkip(t *testing.T) {
 	// resumeAfter is the last value in the set: every record is skipped and
 	// the iterator ends cleanly, not with an error.
 	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("a", 1.0), sr("b", 1.0)}, nil)
-	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueAsc, 0)
 	defer rs.Close()
 	assert.False(t, rs.Next())
 	require.NoError(t, rs.Err())
@@ -1835,7 +1838,7 @@ func TestCursorResumingSearchResultSet_EmptyAfterSkip(t *testing.T) {
 
 func TestCursorResumingSearchResultSet_Descending(t *testing.T) {
 	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("c", 1.0), sr("b", 1.0), sr("a", 1.0)}, nil)
-	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueDesc)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByValueDesc, 0)
 	defer rs.Close()
 	var got []string
 	for rs.Next() {
@@ -1845,7 +1848,12 @@ func TestCursorResumingSearchResultSet_Descending(t *testing.T) {
 	assert.Equal(t, []string{"a"}, got)
 }
 
-func TestSearchLabelNamesHandler_ScoreOrderingNeverEmitsCursor(t *testing.T) {
+// TestSearchLabelNamesHandler_ScoreOrderingEmitsCursor pins Task 9's change:
+// score ordering used to never emit a cursor (v1 scope restriction from an
+// earlier task); this task lifts that restriction, so a score-ordered page
+// with has_more=true must now carry a next_cursor whose decoded ScoreAfter
+// is the raw (unrounded) score of the last emitted record.
+func TestSearchLabelNamesHandler_ScoreOrderingEmitsCursor(t *testing.T) {
 	results := []storage.SearchResult{sr("a", 0.9), sr("b", 0.8)}
 	mq := &searchMockQuerier{
 		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
@@ -1859,8 +1867,13 @@ func TestSearchLabelNamesHandler_ScoreOrderingNeverEmitsCursor(t *testing.T) {
 	lines := drainNDJSON(t, w.Body.String())
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, true, trailer["has_more"])
-	_, hasCursor := trailer["next_cursor"]
-	assert.False(t, hasCursor, "score ordering must never emit a cursor")
+	cursor, hasCursor := trailer["next_cursor"]
+	require.True(t, hasCursor, "score ordering must now emit a cursor")
+	decoded, err := decodeSearchCursor(cursor.(string))
+	require.NoError(t, err)
+	assert.Equal(t, "score", decoded.SortBy)
+	assert.Equal(t, "a", decoded.ResumeAfter)
+	assert.Equal(t, 0.9, decoded.ScoreAfter)
 }
 
 // TestSearchLabelNamesHandler_CursorNegativeBatchSizeDoesNotPanic pins a
@@ -1934,7 +1947,7 @@ func fetchSearchPage(t *testing.T, h http.Handler, target string) (names []strin
 	return names, nextCursor, hasMore, warnings
 }
 
-func TestSearchLabelNamesHandler_CursorCorrectDespiteSourceIgnoringSearchAfter(t *testing.T) {
+func TestSearchLabelNamesHandler_CursorCorrectDespiteSourceIgnoringResumeAfter(t *testing.T) {
 	// Full correctness is not achievable client-side against a source that
 	// positionally truncates before the cursor's resume point. What must
 	// hold is: no already-seen record is re-emitted, the walk terminates
@@ -2048,6 +2061,197 @@ func TestSearchCursorToSearchRequest_RejectsNegativeLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "limit")
 }
 
+func TestSearchCursorRoundTrip_ScoreOrdering(t *testing.T) {
+	req := &searchRequest{
+		params:    mustNewParams(t, []string{"foo"}, true, streaminglabelvalues.FuzzAlgJaroWinkler, 75),
+		hints:     &storage.SearchHints{OrderBy: storage.OrderByScoreDesc, Limit: 11},
+		limit:     10,
+		startMs:   1758500000000,
+		endMs:     1758503600000,
+		batchSize: 50,
+	}
+	encoded, err := encodeSearchCursor(req, "kube_pod_status_ready", 0.727906976744186)
+	require.NoError(t, err)
+
+	decoded, err := decodeSearchCursor(encoded)
+	require.NoError(t, err)
+
+	got, err := decoded.toSearchRequest(false)
+	require.NoError(t, err)
+	assert.Equal(t, "kube_pod_status_ready", got.params.ResumeAfter)
+	assert.Equal(t, 0.727906976744186, got.params.ScoreAfter, "cursor must carry the raw, unrounded score")
+	assert.Equal(t, storage.OrderByScoreDesc, got.hints.OrderBy)
+	assert.Equal(t, 10, got.limit)
+}
+
+func TestDecodeSearchCursorAcceptsScoreOrdering(t *testing.T) {
+	raw, err := json.Marshal(searchCursor{
+		Version: searchCursorVersion, SortBy: "score",
+		Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.5,
+	})
+	require.NoError(t, err)
+	decoded, err := decodeSearchCursor(base64.RawURLEncoding.EncodeToString(raw))
+	require.NoError(t, err)
+	assert.Equal(t, "score", decoded.SortBy)
+}
+
+func TestSearchCursorToSearchRequest_RejectsSortDirWithScoreOrdering(t *testing.T) {
+	c := &searchCursor{
+		Version: searchCursorVersion, SortBy: "score", SortDir: "asc",
+		Terms: []string{"foo"}, ResumeAfter: "bar",
+	}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sort_dir")
+}
+
+func TestSearchCursorToSearchRequest_RejectsFuzzAlgSubstringWithScoreOrdering(t *testing.T) {
+	c := &searchCursor{
+		Version: searchCursorVersion, SortBy: "score",
+		FuzzAlg: "substring", FuzzThreshold: 100,
+		Terms: []string{"foo"}, ResumeAfter: "bar",
+	}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fuzz_alg=substring")
+}
+
+func TestSearchCursorToSearchRequest_RejectsScoreOrderingWithNoTermsOrExpression(t *testing.T) {
+	c := &searchCursor{
+		Version: searchCursorVersion, SortBy: "score",
+		ResumeAfter: "bar",
+	}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sort_by=score requires")
+}
+
+func TestSearchCursorToSearchRequest_RejectsScoreAfterOutOfRange(t *testing.T) {
+	for _, bad := range []float64{-0.1, 1.1} {
+		c := &searchCursor{
+			Version: searchCursorVersion, SortBy: "score",
+			Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: bad,
+		}
+		_, err := c.toSearchRequest(false)
+		require.Error(t, err, "score_after=%v", bad)
+		assert.Contains(t, err.Error(), "score_after")
+	}
+}
+
+func TestSearchCursorToSearchRequest_RejectsScoreAfterOutOfRangeEvenUnderAlphaOrdering(t *testing.T) {
+	c := &searchCursor{
+		Version: searchCursorVersion, SortDir: "asc", // alpha ordering (SortBy empty)
+		Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 1e300,
+	}
+	_, err := c.toSearchRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "score_after")
+}
+
+func TestSearchCursorToSearchRequest_DoesNotAssignScoreAfterUnderAlphaOrdering(t *testing.T) {
+	c := &searchCursor{
+		Version: searchCursorVersion, SortDir: "asc",
+		Terms: []string{"foo"}, ResumeAfter: "bar", ScoreAfter: 0.5,
+	}
+	got, err := c.toSearchRequest(false)
+	require.NoError(t, err)
+	assert.Zero(t, got.params.ScoreAfter, "ScoreAfter must not be assigned for an alpha-ordered cursor")
+}
+
+func TestCursorResumingSearchResultSet_ByScore_SkipsUpToAndIncludingExactMatch(t *testing.T) {
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+		sr("c", 0.9), sr("b", 0.9), sr("a", 0.5),
+	}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "c", storage.OrderByScoreDesc, 0.9)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"a"}, got, "'c' at score 0.9 is the resume point (Score desc, Value asc): 'b' at the same score but lower value is also already returned")
+}
+
+func TestCursorResumingSearchResultSet_ByScore_HigherScoreAlreadySeen(t *testing.T) {
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+		sr("z", 0.95), sr("a", 0.5),
+	}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByScoreDesc, 0.9)
+	defer rs.Close()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"a"}, got, "score 0.95 > afterScore 0.9 was already returned, regardless of value")
+}
+
+func TestCursorResumingSearchResultSet_ByScore_EmptyAfterSkip(t *testing.T) {
+	// resumeAfter is "b": under (Score desc, Value asc), a value <= "b" at
+	// the same score is already-returned per ApplyScoreResumeAfter's own
+	// rule, so both "b" and "a" are excluded regardless of scan order.
+	inner := storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+		sr("b", 0.9), sr("a", 0.9),
+	}, nil)
+	rs := newCursorResumingSearchResultSet(inner, "b", storage.OrderByScoreDesc, 0.9)
+	defer rs.Close()
+	assert.False(t, rs.Next())
+	require.NoError(t, rs.Err())
+}
+
+func TestSearchLabelNamesHandler_MultiPageCursorWalk_ScoreOrdering(t *testing.T) {
+	// The mock ignores hints entirely and always returns the full,
+	// already (Score desc, Value asc)-sorted set — mirroring the alpha
+	// plan's TestSearchLabelNamesHandler_MultiPageCursorWalk exactly. Do
+	// NOT route the raw values through storage.ApplySearchHints using the
+	// real hints.Filter here: hints.Filter is built by the actual request
+	// pipeline from the search[] term, and its real per-candidate scores
+	// would silently replace these fixed test scores. Letting the mock
+	// return everything, correctly pre-sorted, and relying entirely on
+	// the querier-side backstop (cursorResumingSearchResultSet) plus
+	// streamSearchNDJSON's own probe-based limit is what this test is
+	// actually meant to exercise.
+	all := []storage.SearchResult{sr("a", 0.9), sr("b", 0.9), sr("c", 0.7279069767), sr("d", 0.5), sr("e", 0.5)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(all, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	fetchPage := func(target string) (names []string, nextCursor string, hasMore bool) {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+		require.Equal(t, http.StatusOK, w.Code)
+		lines := drainNDJSON(t, w.Body.String())
+		require.NotEmpty(t, lines)
+		if res, ok := lines[0]["results"].([]any); ok {
+			for _, r := range res {
+				names = append(names, r.(map[string]any)["name"].(string))
+			}
+		}
+		trailer := lines[len(lines)-1]
+		if c, ok := trailer["next_cursor"]; ok {
+			nextCursor = c.(string)
+		}
+		hasMore, _ = trailer["has_more"].(bool)
+		return names, nextCursor, hasMore
+	}
+
+	var walked []string
+	names, cursor, hasMore := fetchPage("/api/v1/search/label_names?search[]=x&sort_by=score&limit=2")
+	walked = append(walked, names...)
+	require.True(t, hasMore)
+	require.NotEmpty(t, cursor)
+
+	for hasMore {
+		names, cursor, hasMore = fetchPage("/api/v1/search/label_names?cursor=" + cursor)
+		walked = append(walked, names...)
+	}
+
+	assert.Equal(t, []string{"a", "b", "c", "d", "e"}, walked, "score-descending, value-ascending tie-break, no gaps or overlaps")
+}
+
 func mustNewParams(t *testing.T, terms []string, caseSensitive bool, alg streaminglabelvalues.FuzzAlg, threshold int) *streaminglabelvalues.Params {
 	t.Helper()
 	p, err := streaminglabelvalues.NewParams(terms, caseSensitive, alg, threshold)
@@ -2060,4 +2264,106 @@ func mustNewExpressionParams(t *testing.T, expr string, caseSensitive bool, alg 
 	p, err := streaminglabelvalues.NewExpressionParams(expr, caseSensitive, alg, threshold)
 	require.NoError(t, err)
 	return p
+}
+
+// fixedScoreFilter stands in for an old binary's own real per-candidate
+// scoring (unrelated to the new score_after cursor field) in the rolling-
+// upgrade test below. Do not use a nil storage.Filter to simulate "doesn't
+// understand score_after": for OrderByScoreDesc, storage.ApplySearchHints'
+// no-filter path (applySearchHintsNoFilter) assigns every candidate a
+// uniform score of 1.0, which can't exercise tie-breaking or exclusion at
+// all — verified against vendor/github.com/prometheus/prometheus/storage/generic.go
+// directly before writing this test. A fixedScoreFilter routes through the
+// real storage.ApplySearchHints/topKByScore machinery with real, distinct
+// scores, while still correctly excluding whatever score_after/search_after
+// would have excluded — because this filter simply doesn't know they exist,
+// exactly like an old binary.
+type fixedScoreFilter struct{ scores map[string]float64 }
+
+func (f fixedScoreFilter) Accept(value string) (bool, float64) {
+	s, ok := f.scores[value]
+	if !ok {
+		return false, 0
+	}
+	return true, s
+}
+
+func TestSearchLabelNamesHandler_ScoreOrderingCorrectDespiteSourceIgnoringScoreAfter(t *testing.T) {
+	// Simulates an old-binary ingester/store-gateway during a rolling
+	// upgrade: it doesn't recognize score_after (or search_after), but it
+	// still honors the pre-existing Limit field positionally — the same
+	// scenario the alpha rolling-upgrade test covers, adapted for score
+	// ordering. Full correctness is not achievable client-side against
+	// this (see the design doc); what must hold is bounded termination and
+	// a disclosed warning instead of a silent false-complete signal.
+	all := []storage.SearchResult{sr("a", 0.9), sr("b", 0.9), sr("c", 0.7), sr("d", 0.5), sr("e", 0.5)}
+	scores := make(map[string]float64, len(all))
+	for _, r := range all {
+		scores[r.Value] = r.Score
+	}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, hints *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			values := make([]string, len(all))
+			for i, r := range all {
+				values[i] = r.Value
+			}
+			hintsCopy := *hints
+			hintsCopy.Filter = fixedScoreFilter{scores: scores}
+			return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	fetchPage := func(target string) (names []string, nextCursor string, hasMore bool, warnings []string) {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, target))
+		require.Equal(t, http.StatusOK, w.Code)
+		lines := drainNDJSON(t, w.Body.String())
+		require.NotEmpty(t, lines)
+		if res, ok := lines[0]["results"].([]any); ok {
+			for _, r := range res {
+				names = append(names, r.(map[string]any)["name"].(string))
+			}
+		}
+		trailer := lines[len(lines)-1]
+		if c, ok := trailer["next_cursor"]; ok {
+			nextCursor = c.(string)
+		}
+		hasMore, _ = trailer["has_more"].(bool)
+		if ws, ok := trailer["warnings"].([]any); ok {
+			for _, w := range ws {
+				warnings = append(warnings, w.(string))
+			}
+		}
+		return names, nextCursor, hasMore, warnings
+	}
+
+	// Page 1: limit=2, hints.Limit=3 probe. The old source's fixed top-3
+	// window by (Score desc, Value asc) is a, b, c. "c" is the probe
+	// record — dropped, but its presence sets has_more=true.
+	names1, cursor1, hasMore1, warnings1 := fetchPage("/api/v1/search/label_names?search[]=x&sort_by=score&limit=2")
+	assert.Equal(t, []string{"a", "b"}, names1)
+	assert.True(t, hasMore1)
+	assert.NotEmpty(t, cursor1)
+	assert.Empty(t, warnings1)
+
+	// Page 2: resumeAfter=(0.9,"b"). The old source ignores score_after and
+	// recomputes the SAME fixed a,b,c window. The backstop skips a and b
+	// (tied at score 0.9, value <= resume value "b"), finds c (score 0.7 <
+	// afterScore 0.9), and emits it — one real new record.
+	//
+	// This page emits data AND carries the warning: innerRecordsDiscarded
+	// reaches 3 (a, b, and c are all examined during the skip loop), equal
+	// to hints.Limit, which trips the "may be positionally stuck" signal
+	// regardless of whether anything was emitted. has_more is false
+	// because emitted=1 is never > req.limit=2 (a fixed-window source can
+	// reveal at most req.limit new items across every later page), so no
+	// cursor2 is emitted and a normal client would otherwise stop polling
+	// here believing the walk complete.
+	names2, cursor2, hasMore2, warnings2 := fetchPage("/api/v1/search/label_names?cursor=" + cursor1)
+	assert.Equal(t, []string{"c"}, names2)
+	assert.False(t, hasMore2, "the old source's fixed window is exhausted by this page; a normal client would stop here")
+	assert.Empty(t, cursor2, "has_more is false, so no cursor is emitted regardless of lastValue")
+	require.Len(t, warnings2, 1, "disclose that this page may be incomplete, since it doesn't actually claim silent success")
+	assert.Contains(t, warnings2[0], "may not yet support cursor-based resume")
 }
