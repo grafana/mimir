@@ -11,6 +11,7 @@ import (
 type Failure struct {
 	BlockULID string // "" for meta-parse failures or batch-level failures
 	BlockDir  string // "" for batch-level failures
+	Shard     string // "" for unsharded blocks
 	Check     string // verifier Name()
 	Err       error
 }
@@ -33,12 +34,13 @@ func newReport(totalBlocks int) *Report {
 
 // Add records a failure. blockULID may be "" for meta-parse or batch-level
 // failures; blockDir may be "" for batch failures.
-func (r *Report) Add(blockULID, checkName, blockDir string, err error) {
+func (r *Report) Add(blockULID, checkName, blockDir, shard string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.failures = append(r.failures, Failure{
 		BlockULID: blockULID,
 		BlockDir:  blockDir,
+		Shard:     shard,
 		Check:     checkName,
 		Err:       err,
 	})

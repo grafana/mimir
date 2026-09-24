@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // DuplicateDayVerifier rejects a batch that contains two or more blocks whose
@@ -35,6 +38,24 @@ func NewDuplicateDayVerifier(logger log.Logger) *DuplicateDayVerifier {
 // Name returns the stable check name used in log lines and Report entries.
 func (v *DuplicateDayVerifier) Name() string { return "duplicate-day" }
 
+func getShardID(m *block.Meta) string {
+	for l, v := range m.Thanos.Labels {
+		switch l {
+		case block.CompactorShardIDExternalLabel:
+			if v == "" {
+				continue
+			}
+
+			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
+				// Swallow error here, meta errors should be caught by other verifiers
+				return ""
+			}
+			return v
+		}
+	}
+	return ""
+}
+
 // Verify records one failure per block that shares its UTC day with another
 // block, and returns a bounded summary error naming how many blocks and days
 // collided.
@@ -42,36 +63,52 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 	if len(blocks) < 2 {
 		return nil
 	}
-	dayToBlocks := make(map[int64][]BlockRef, len(blocks))
+	dayToBlocks := make(map[string]map[time.Time][]BlockRef)
 	for _, blk := range blocks {
-		day := blk.Meta.MinTime / msPerDay
-		dayToBlocks[day] = append(dayToBlocks[day], blk)
+		day := time.UnixMilli(blk.Meta.MinTime).UTC().Truncate(24 * time.Hour)
+		shard := getShardID(&blk.Meta)
+		if dayToBlocks[shard] == nil {
+			dayToBlocks[shard] = make(map[time.Time][]BlockRef)
+		}
+		dayToBlocks[shard][day] = append(dayToBlocks[shard][day], blk)
 	}
-	var collidingDays []int64
-	for day, blks := range dayToBlocks {
-		if len(blks) > 1 {
-			collidingDays = append(collidingDays, day)
+	collidingDays := make(map[string][]time.Time)
+	for shard, days := range dayToBlocks {
+		for day, blks := range days {
+			if len(blks) > 1 {
+				collidingDays[shard] = append(collidingDays[shard], day)
+			}
 		}
 	}
 	if len(collidingDays) == 0 {
 		return nil
 	}
 
-	// Record days in ascending order, and blocks within a day by ULID, so the
-	// Report reads the same regardless of input order.
-	slices.Sort(collidingDays)
+	// // Record days in ascending order, and blocks within a day by ULID, so the
+	// // Report reads the same regardless of input order.
+	// slices.SortFunc(collidingDays, func(a, b time.Time) int {
+	// 	return a.Compare(b)
+	// })
 	collided := 0
-	for _, day := range collidingDays {
-		blks := dayToBlocks[day]
-		slices.SortFunc(blks, func(a, b BlockRef) int {
-			return strings.Compare(a.Meta.ULID.String(), b.Meta.ULID.String())
-		})
-		for _, blk := range blks {
-			report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, fmt.Errorf(
-				"block covers UTC day %d, which is also covered by %d other block(s)",
-				day, len(blks)-1))
+	for shard, days := range collidingDays {
+		for _, day := range days {
+			blks := dayToBlocks[shard][day]
+			slices.SortFunc(blks, func(a, b BlockRef) int {
+				return strings.Compare(a.Meta.ULID.String(), b.Meta.ULID.String())
+			})
+			for _, blk := range blks {
+				if shard == "" {
+					report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, shard, fmt.Errorf(
+						"unsharded block covers UTC day %s, which is also covered by %d other block(s)",
+						day.Format("2006-01-02"), len(blks)-1))
+				} else {
+					report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, shard, fmt.Errorf(
+						"block in shard %s covers UTC day %s, which is also covered by %d other block(s)",
+						shard, day.Format("2006-01-02"), len(blks)-1))
+				}
+			}
+			collided += len(blks)
 		}
-		collided += len(blks)
 	}
 	return fmt.Errorf("%d block(s) share a UTC day with another block, across %d day(s)",
 		collided, len(collidingDays))
