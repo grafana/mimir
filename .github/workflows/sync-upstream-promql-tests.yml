@@ -166,7 +166,8 @@ jobs:
     timeout-minutes: 10
     # Never runs code from the branch: it only commits the files the previous job produced.
     permissions:
-      contents: read
+      # The collaborator-permission lookup requires the token to have repo write privilege.
+      contents: write
       # create-github-app-token gets the app credentials from Vault via OIDC.
       id-token: write
       # For commenting the report on the PR (as github-actions[bot], via the default token).
@@ -174,6 +175,28 @@ jobs:
     env:
       UPSTREAM_DIR: pkg/streamingpromql/testdata/upstream
     steps:
+      # "Re-run failed jobs" doesn't re-run the authorize job, so check again here whoever started this
+      # attempt, before any credential is minted.
+      - name: Re-check who is running this
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for user in "$ACTOR" "$TRIGGERING_ACTOR"; do
+            perm=$(gh api "repos/$REPO/collaborators/$user/permission" --jq '.permission') \
+              || { echo "::error::Could not determine $user's permission on $REPO."; exit 1; }
+            case "$perm" in
+              admin | maintain) ;;
+              *)
+                echo "::error::$user must have 'maintain' or 'admin' permission on $REPO to run this workflow (has '$perm')."
+                exit 1
+                ;;
+            esac
+          done
+
       # Use the mimir-vendoring app (not GITHUB_TOKEN) so the pushed commits are verified and re-trigger
       # the branch's CI.
       - name: Generate GitHub App Token
@@ -301,8 +324,9 @@ jobs:
 
   notify-failure:
     needs: [authorize, generate, commit]
-    # Only for authorized runs, so an unauthorized dispatch can't make this comment on arbitrary PRs.
-    if: failure() && needs.authorize.result == 'success'
+    # Only for authorized runs started by the original actor: an unauthorized dispatch, or someone else's
+    # "Re-run failed jobs" (which skips authorize and then fails in commit), can't make this comment.
+    if: failure() && needs.authorize.result == 'success' && github.triggering_actor == github.actor
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
