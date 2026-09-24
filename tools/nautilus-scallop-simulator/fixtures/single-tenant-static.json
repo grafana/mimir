@@ -1,0 +1,25 @@
+{
+  "name": "single-tenant-static",
+  "ticks": 16,
+  "tick_seconds": 60,
+  "partitions": 4,
+  "readcaches": 2,
+  "initial_ranges_per_tenant": 8,
+  "imbalance_threshold": 0.20,
+  "tenants": [
+    {
+      "id": "tenant-a",
+      "baseline": 40,
+      "components": [
+        {
+          "center": 0.18,
+          "width": 0.045,
+          "amplitude": {
+            "kind": "constant",
+            "value": 100
+          }
+        }
+      ]
+    }
+  ]
+}

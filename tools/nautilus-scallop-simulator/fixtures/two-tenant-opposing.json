@@ -1,0 +1,45 @@
+{
+  "name": "two-tenant-opposing",
+  "ticks": 16,
+  "tick_seconds": 60,
+  "partitions": 4,
+  "readcaches": 2,
+  "initial_ranges_per_tenant": 8,
+  "imbalance_threshold": 0.20,
+  "tenants": [
+    {
+      "id": "tenant-growing",
+      "baseline": 30,
+      "components": [
+        {
+          "center": 0.22,
+          "width": 0.05,
+          "amplitude": {
+            "kind": "linear",
+            "start_tick": 0,
+            "end_tick": 15,
+            "start_value": 20,
+            "end_value": 140
+          }
+        }
+      ]
+    },
+    {
+      "id": "tenant-shrinking",
+      "baseline": 30,
+      "components": [
+        {
+          "center": 0.72,
+          "width": 0.06,
+          "amplitude": {
+            "kind": "linear",
+            "start_tick": 0,
+            "end_tick": 15,
+            "start_value": 140,
+            "end_value": 20
+          }
+        }
+      ]
+    }
+  ]
+}
