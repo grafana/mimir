@@ -16,7 +16,7 @@ import (
 )
 
 func TestSingleUTCDayVerifier_Header(t *testing.T) {
-	const day = msPerDay
+	const day = 24 * 60 * 60 * 1000 // 86_400_000
 	const hour = int64(3_600_000)
 
 	tests := []struct {

@@ -1206,8 +1206,10 @@ The `backfill` command can optionally run a pre-verification step on blocks inte
 - That blocks do not cross the midnight UTC boundary.
 - (Optionally) Enforce one-day-for-one-block structure.
 
+Blocks that pass these checks are more likely, but not guaranteed to be accepted when uploaded to Mimir.
 If the blocks intended for upload fail these checks, it may be necessary to either regenerate the blocks with different options, or use a compaction tool to coerce them into the right shape.
-The process of correcting verification errors is outside the scope of this document.
+Note that Mimir may also perform its own verification checks that may differ from these ones performed locally, so a set of blocks that pass these checks may still be rejected during backfill.
+The process of correcting verification errors, whether local or remote, is outside the scope of this document.
 
 | Flag                     | Default | Description                                                                                                                                                                                                            |
 | ------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

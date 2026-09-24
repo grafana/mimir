@@ -21,6 +21,7 @@ import (
 // seed and a MinTime/MaxTime confined to the given UTC day index.
 // day=0 -> [0, msPerDay); day=1 -> [msPerDay, 2*msPerDay); etc.
 func blockRefAt(t *testing.T, seed uint64, day int64) BlockRef {
+	const msPerDay = 24 * 60 * 60 * 1000 // 86_400_000
 	t.Helper()
 	id := ulid.MustNew(seed, nil)
 	return BlockRef{
@@ -100,7 +101,7 @@ func TestDuplicateDayVerifier_Verify(t *testing.T) {
 		assert.Equal(t, []string{r1.Meta.ULID.String(), r2.Meta.ULID.String()}, failureULIDs(failures))
 		for _, f := range failures {
 			assert.Equal(t, "duplicate-day", f.Check)
-			assert.Contains(t, f.Err.Error(), "covers UTC day 5")
+			assert.Contains(t, f.Err.Error(), "covers UTC day 1970-01-06")
 			assert.Contains(t, f.Err.Error(), "covered by 1 other block(s)")
 		}
 		assert.Equal(t, r1.Dir, failures[0].BlockDir, "BlockDir should be populated for batch failures")
@@ -143,10 +144,10 @@ func TestDuplicateDayVerifier_Verify(t *testing.T) {
 
 		msgs := failureMessages(failures)
 		for _, msg := range msgs[:2] {
-			assert.Contains(t, msg, "covers UTC day 2")
+			assert.Contains(t, msg, "covers UTC day 1970-01-03")
 		}
 		for _, msg := range msgs[2:] {
-			assert.Contains(t, msg, "covers UTC day 7")
+			assert.Contains(t, msg, "covers UTC day 1970-01-08")
 		}
 	})
 

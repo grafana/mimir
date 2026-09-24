@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 )
@@ -42,12 +43,12 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 	if len(blocks) < 2 {
 		return nil
 	}
-	dayToBlocks := make(map[int64][]BlockRef, len(blocks))
+	dayToBlocks := make(map[time.Time][]BlockRef, len(blocks))
 	for _, blk := range blocks {
-		day := blk.Meta.MinTime / msPerDay
+		day := time.UnixMilli(blk.Meta.MinTime).UTC().Truncate(24 * time.Hour)
 		dayToBlocks[day] = append(dayToBlocks[day], blk)
 	}
-	var collidingDays []int64
+	var collidingDays []time.Time
 	for day, blks := range dayToBlocks {
 		if len(blks) > 1 {
 			collidingDays = append(collidingDays, day)
@@ -59,7 +60,9 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 
 	// Record days in ascending order, and blocks within a day by ULID, so the
 	// Report reads the same regardless of input order.
-	slices.Sort(collidingDays)
+	slices.SortFunc(collidingDays, func(a, b time.Time) int {
+		return a.Compare(b)
+	})
 	collided := 0
 	for _, day := range collidingDays {
 		blks := dayToBlocks[day]
@@ -68,8 +71,8 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 		})
 		for _, blk := range blks {
 			report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, fmt.Errorf(
-				"block covers UTC day %d, which is also covered by %d other block(s)",
-				day, len(blks)-1))
+				"block covers UTC day %s, which is also covered by %d other block(s)",
+				day.Format("2006-01-02"), len(blks)-1))
 		}
 		collided += len(blks)
 	}
