@@ -76,6 +76,10 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 
 	switch {
 	case q.matrix != nil:
+		slices.SortFunc(q.matrix, func(a, b promql.Series) int {
+			return labels.Compare(a.Metric, b.Metric)
+		})
+
 		// A top-level range vector result (i.e. an instant query whose expression is a subquery) can
 		// contain series that collide after name removal. Merge them, matching Prometheus.
 		if q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeMatrix {
@@ -84,10 +88,6 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 				return &promql.Result{Err: err}
 			}
 		}
-
-		slices.SortFunc(q.matrix, func(a, b promql.Series) int {
-			return labels.Compare(a.Metric, b.Metric)
-		})
 
 		result.Value = q.matrix
 	case q.vector != nil:
@@ -118,49 +118,45 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	return result
 }
 
-// mergeMatrixSeriesWithSameLabelset merges series in q.matrix that share a labelset, combining their
-// samples, mirroring Prometheus under delayed name removal (cleanupMetricLabels ->
+// mergeMatrixSeriesWithSameLabelset merges series in the sorted q.matrix that share a labelset, combining
+// their samples, mirroring Prometheus under delayed name removal (cleanupMetricLabels ->
 // mergeSeriesWithSameLabelset). Two samples for the same labelset at the same timestamp are an error.
 func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
-	if len(q.matrix) <= 1 {
-		return nil
-	}
-
-	// Group by labelset, keyed on the label bytes rather than a hash so distinct series that share a
-	// hash are not merged.
-	groups := make(map[string][]int, len(q.matrix))
-	var keyBuf []byte
-	for i := range q.matrix {
-		keyBuf = q.matrix[i].Metric.Bytes(keyBuf)
-		groups[string(keyBuf)] = append(groups[string(keyBuf)], i)
-	}
-	if len(groups) == len(q.matrix) {
-		// Every series has a unique labelset; nothing to merge.
+	// q.matrix is sorted, so series with the same labelset are adjacent. Check for that first so the
+	// common case where nothing collides allocates nothing.
+	if !containsAdjacentSameLabelset(q.matrix) {
 		return nil
 	}
 
 	// Move each series out of q.matrix (leaving an empty Series) into merged, so every sample slice is
 	// owned in one place; returnResultToPool (called by Exec on error) can then safely free whatever
-	// remains in q.matrix. Exec sorts the result afterwards, so the group order here does not matter.
+	// remains in q.matrix. Merging adjacent runs keeps merged sorted.
 	original := q.matrix
-	merged := types.GetMatrix(len(groups))
+	merged := types.GetMatrix(len(original))
+	var indices []int
 
-	for _, indices := range groups {
-		if len(indices) == 1 {
-			// Most series are unique even when some collide: move them as-is rather than allocating a
-			// single-element slice and calling MergeSeries for each one.
-			merged = append(merged, original[indices[0]])
-			original[indices[0]] = promql.Series{}
+	for start := 0; start < len(original); {
+		end := start + 1
+		for end < len(original) && labels.Equal(original[start].Metric, original[end].Metric) {
+			end++
+		}
+
+		if end-start == 1 {
+			merged = append(merged, original[start])
+			original[start] = promql.Series{}
+			start = end
 			continue
 		}
 
 		// MergeSeries takes ownership of (and frees) the sample slices, so clear the corresponding series
 		// in original and release the labels of all but the first (reused for the merged series).
-		outputMetric := original[indices[0]].Metric
-		data := make([]types.InstantVectorSeriesData, len(indices))
-		for i, idx := range indices {
-			data[i] = types.InstantVectorSeriesData{Floats: original[idx].Floats, Histograms: original[idx].Histograms}
-			if i != 0 {
+		outputMetric := original[start].Metric
+		data := make([]types.InstantVectorSeriesData, 0, end-start)
+		indices = indices[:0]
+		for idx := start; idx < end; idx++ {
+			data = append(data, types.InstantVectorSeriesData{Floats: original[idx].Floats, Histograms: original[idx].Histograms})
+			indices = append(indices, idx)
+			if idx != start {
 				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(original[idx].Metric)
 			}
 			original[idx] = promql.Series{}
@@ -181,11 +177,22 @@ func (q *Query) mergeMatrixSeriesWithSameLabelset() error {
 			Floats:     mergedData.Floats,
 			Histograms: mergedData.Histograms,
 		})
+		start = end
 	}
 
 	types.PutMatrix(original)
 	q.matrix = merged
 	return nil
+}
+
+// containsAdjacentSameLabelset reports whether any two adjacent series in matrix have the same labels.
+func containsAdjacentSameLabelset(matrix promql.Matrix) bool {
+	for i := 1; i < len(matrix); i++ {
+		if labels.Equal(matrix[i-1].Metric, matrix[i].Metric) {
+			return true
+		}
+	}
+	return false
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
