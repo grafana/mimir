@@ -49,8 +49,9 @@ type Query struct {
 	stats          *types.OperatorEvaluationStats
 	finalizedStats *promstats.QuerySamples
 
-	topLevelValueType parser.ValueType
-	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	topLevelValueType        parser.ValueType
+	resultIsVector           bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	enableDelayedNameRemoval bool
 
 	succeeded bool
 }
@@ -81,8 +82,10 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 		})
 
 		// A top-level range vector result (i.e. an instant query whose expression is a subquery) can
-		// contain series that collide after name removal. Merge them, matching Prometheus.
-		if q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeMatrix {
+		// contain series that collide after delayed name removal. Merge them, matching Prometheus, which
+		// also only does this under delayed name removal. Without it, names are dropped eagerly and
+		// collisions are already merged or rejected by DeduplicateAndMerge below the top level.
+		if q.enableDelayedNameRemoval && q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeMatrix {
 			if err := q.mergeMatrixSeriesWithSameLabelset(); err != nil {
 				q.returnResultToPool()
 				return &promql.Result{Err: err}
