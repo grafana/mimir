@@ -46,15 +46,15 @@ type Snapshot struct {
 type Weights struct {
 	// ReplicaBalance weights logical-replica max/mean load excess.
 	ReplicaBalance float64 `json:"replica_balance"`
-	// TransitionEvents weights normalized fixed overhead per selected action.
+	// TransitionEvents weights fixed overhead normalized by active partition count.
 	TransitionEvents float64 `json:"transition_events"`
 	// TransitionLoad weights the fraction of total observed load relocated.
 	TransitionLoad float64 `json:"transition_load"`
-	// TransitionHashSpace weights the fraction of tenant hash space relocated.
+	// TransitionHashSpace weights relocated hash space averaged across active tenants.
 	TransitionHashSpace float64 `json:"transition_hash_space"`
 	// LocalityMiss weights relocated load sent to a replica without recent tenant history.
 	LocalityMiss float64 `json:"locality_miss"`
-	// Fragmentation weights normalized range count, discouraging persistent fanout.
+	// Fragmentation weights mean ranges per tenant, discouraging persistent fanout.
 	Fragmentation float64 `json:"fragmentation"`
 	// Resolution weights load times hash width, making coarse hot ranges expensive.
 	Resolution float64 `json:"resolution"`
@@ -62,31 +62,48 @@ type Weights struct {
 
 // ActionMultipliers models fixed per-action control-plane overhead.
 type ActionMultipliers struct {
-	Move  float64 `json:"move"`
-	Split float64 `json:"split"`
-	Merge float64 `json:"merge"`
+	Move          float64 `json:"move"`
+	Split         float64 `json:"split"`
+	Merge         float64 `json:"merge"`
+	MovePartition float64 `json:"move_partition"`
 }
 
 // CandidateSearchLimits bounds expensive candidate projection while allowing
 // small legal candidate sets to pass through in full.
 type CandidateSearchLimits struct {
-	MaxMoveSources          int `json:"max_move_sources"`
-	MaxDestinationsPerRange int `json:"max_destinations_per_range"`
-	MaxSplitCandidates      int `json:"max_split_candidates"`
-	MaxMergeCandidates      int `json:"max_merge_candidates"`
-	MaxFullyScored          int `json:"max_fully_scored"`
+	MaxMoveSources              int `json:"max_move_sources"`
+	MaxDestinationsPerRange     int `json:"max_destinations_per_range"`
+	MaxSplitCandidates          int `json:"max_split_candidates"`
+	MaxMergeCandidates          int `json:"max_merge_candidates"`
+	MaxPartitionMoveSources     int `json:"max_partition_move_sources"`
+	MaxDestinationsPerPartition int `json:"max_destinations_per_partition"`
+	MaxPartitionMoveCandidates  int `json:"max_partition_move_candidates"`
+	MaxFullyScored              int `json:"max_fully_scored"`
 }
 
-// DefaultCandidateSearchLimits returns limits that fully cover Phase 1's
-// fixtures while bounding work on large cells.
+// DefaultCandidateSearchLimits bounds large-cell work while admitting complete fair merge waves.
 func DefaultCandidateSearchLimits() CandidateSearchLimits {
 	return CandidateSearchLimits{
-		MaxMoveSources:          32,
-		MaxDestinationsPerRange: 4,
-		MaxSplitCandidates:      32,
-		MaxMergeCandidates:      32,
-		MaxFullyScored:          192,
+		MaxMoveSources:              80,
+		MaxDestinationsPerRange:     4,
+		MaxSplitCandidates:          80,
+		MaxMergeCandidates:          3200,
+		MaxPartitionMoveSources:     32,
+		MaxDestinationsPerPartition: 4,
+		MaxPartitionMoveCandidates:  128,
+		MaxFullyScored:              4096,
 	}
+}
+
+// ActionLimits bounds selected work per planning round independently from candidate-search effort.
+type ActionLimits struct {
+	Total int `json:"total"`
+	Move  int `json:"move"`
+	Split int `json:"split"`
+	Merge int `json:"merge"`
+	// MergePerTenant limits how quickly one tenant can consolidate from a single observation.
+	MergePerTenant int `json:"merge_per_tenant"`
+	MovePartition  int `json:"move_partition"`
 }
 
 // Policy defines what Scallop considers preferable. It contains no observed
@@ -95,12 +112,11 @@ type Policy struct {
 	Weights           Weights               `json:"weights"`
 	ActionMultipliers ActionMultipliers     `json:"action_multipliers"`
 	CandidateSearch   CandidateSearchLimits `json:"candidate_search"`
+	ActionLimits      ActionLimits          `json:"action_limits"`
 	LocalityWindow    time.Duration         `json:"locality_window"`
-	MaxActions        int                   `json:"max_actions"`
 }
 
-// DefaultPolicy returns conservative, non-zero weights suitable for examples
-// and as the center of the simulator's weight search.
+// DefaultPolicy returns non-zero evidence-centered weights and bounded execution budgets.
 func DefaultPolicy() Policy {
 	return Policy{
 		Weights: Weights{
@@ -109,23 +125,31 @@ func DefaultPolicy() Policy {
 			TransitionLoad:      0.1,
 			TransitionHashSpace: 0.1,
 			LocalityMiss:        0.1,
-			Fragmentation:       0.05,
-			Resolution:          0.001,
+			Fragmentation:       10,
+			Resolution:          10,
 		},
-		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1},
+		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 1},
 		CandidateSearch:   DefaultCandidateSearchLimits(),
-		LocalityWindow:    30 * time.Minute,
-		MaxActions:        8,
+		ActionLimits: ActionLimits{
+			Total:          1612,
+			Move:           4,
+			Split:          4,
+			Merge:          1600,
+			MergePerTenant: 4,
+			MovePartition:  4,
+		},
+		LocalityWindow: 30 * time.Minute,
 	}
 }
 
-// ActionKind identifies a projected hash-range operation.
+// ActionKind identifies a projected hash-range or partition-placement operation.
 type ActionKind string
 
 const (
-	ActionMove  ActionKind = "move_range"
-	ActionSplit ActionKind = "split_range"
-	ActionMerge ActionKind = "merge_ranges"
+	ActionMove          ActionKind = "move_range"
+	ActionSplit         ActionKind = "split_range"
+	ActionMerge         ActionKind = "merge_ranges"
+	ActionMovePartition ActionKind = "move_partition"
 )
 
 // CostBreakdown contains raw cost terms and their weighted total.
@@ -158,8 +182,11 @@ type Action struct {
 	Range    assignment.HashRange  `json:"range"`
 	Other    *assignment.HashRange `json:"other_range,omitempty"`
 
-	FromPartition int32 `json:"from_partition"`
-	ToPartition   int32 `json:"to_partition"`
+	FromPartition int32  `json:"from_partition"`
+	ToPartition   int32  `json:"to_partition"`
+	PartitionID   int32  `json:"partition_id"`
+	FromReplica   string `json:"from_replica,omitempty"`
+	ToReplica     string `json:"to_replica,omitempty"`
 
 	Load              float64 `json:"load"`
 	MovedLoad         float64 `json:"moved_load"`
@@ -174,41 +201,46 @@ type Action struct {
 
 // CandidateCounts reports candidate volume by action kind.
 type CandidateCounts struct {
-	Move  int `json:"move"`
-	Split int `json:"split"`
-	Merge int `json:"merge"`
-	Total int `json:"total"`
+	Move          int `json:"move"`
+	Split         int `json:"split"`
+	Merge         int `json:"merge"`
+	MovePartition int `json:"move_partition"`
+	Total         int `json:"total"`
 }
 
 // CandidateBudgetDiscards attributes pruning to each configured search limit.
 type CandidateBudgetDiscards struct {
-	MoveSources  int `json:"move_sources"`
-	Destinations int `json:"destinations"`
-	Splits       int `json:"splits"`
-	Merges       int `json:"merges"`
-	FullyScored  int `json:"fully_scored"`
+	MoveSources               int `json:"move_sources"`
+	Destinations              int `json:"destinations"`
+	Splits                    int `json:"splits"`
+	Merges                    int `json:"merges"`
+	PartitionMoveSources      int `json:"partition_move_sources"`
+	PartitionMoveDestinations int `json:"partition_move_destinations"`
+	PartitionMoves            int `json:"partition_moves"`
+	FullyScored               int `json:"fully_scored"`
 }
 
 // CandidateSearchDiagnostics makes bounded-search decisions inspectable.
 type CandidateSearchDiagnostics struct {
-	Limits                CandidateSearchLimits   `json:"limits"`
-	Iterations            int                     `json:"iterations"`
-	LegalMoveSources      int                     `json:"legal_move_sources"`
-	LegalMoveDestinations int                     `json:"legal_move_destinations"`
-	Legal                 CandidateCounts         `json:"legal"`
-	Admitted              CandidateCounts         `json:"admitted"`
-	FullyScored           CandidateCounts         `json:"fully_scored"`
-	Discarded             CandidateCounts         `json:"discarded"`
-	DiscardedByBudget     CandidateBudgetDiscards `json:"discarded_by_budget"`
-	Truncated             bool                    `json:"truncated"`
+	Limits                         CandidateSearchLimits   `json:"limits"`
+	Iterations                     int                     `json:"iterations"`
+	LegalMoveSources               int                     `json:"legal_move_sources"`
+	LegalMoveDestinations          int                     `json:"legal_move_destinations"`
+	LegalPartitionMoveSources      int                     `json:"legal_partition_move_sources"`
+	LegalPartitionMoveDestinations int                     `json:"legal_partition_move_destinations"`
+	Legal                          CandidateCounts         `json:"legal"`
+	Admitted                       CandidateCounts         `json:"admitted"`
+	FullyScored                    CandidateCounts         `json:"fully_scored"`
+	Discarded                      CandidateCounts         `json:"discarded"`
+	DiscardedByBudget              CandidateBudgetDiscards `json:"discarded_by_budget"`
+	Truncated                      bool                    `json:"truncated"`
 }
 
 // PlanResult is a complete, replayable planning result.
 type PlanResult struct {
 	Assignment *assignment.Assignment `json:"assignment"`
 
-	// PartitionOwners is the projected partition-to-logical-replica
-	// placement. It is unchanged in Phase 1, which has no partition moves.
+	// PartitionOwners is the projected partition-to-logical-replica placement.
 	PartitionOwners map[int32]string `json:"partition_owners"`
 	Actions         []Action         `json:"actions"`
 
@@ -219,8 +251,16 @@ type PlanResult struct {
 
 // validate rejects policy values that would make planning unsafe or nondeterministic.
 func (p Policy) validate() error {
-	if p.MaxActions <= 0 {
-		return fmt.Errorf("max actions must be positive")
+	if p.ActionLimits.Total <= 0 ||
+		p.ActionLimits.Move < 0 ||
+		p.ActionLimits.Split < 0 ||
+		p.ActionLimits.Merge < 0 ||
+		p.ActionLimits.MergePerTenant < 0 ||
+		p.ActionLimits.MovePartition < 0 {
+		return fmt.Errorf("action limits must have a positive total and non-negative per-kind values")
+	}
+	if p.ActionLimits.Merge > 0 && p.ActionLimits.MergePerTenant == 0 {
+		return fmt.Errorf("merge-per-tenant action limit must be positive when merges are enabled")
 	}
 	if p.LocalityWindow < 0 {
 		return fmt.Errorf("locality window must be non-negative")
@@ -230,20 +270,24 @@ func (p Policy) validate() error {
 		limits.MaxDestinationsPerRange <= 0 ||
 		limits.MaxSplitCandidates <= 0 ||
 		limits.MaxMergeCandidates <= 0 ||
+		limits.MaxPartitionMoveSources <= 0 ||
+		limits.MaxDestinationsPerPartition <= 0 ||
+		limits.MaxPartitionMoveCandidates <= 0 ||
 		limits.MaxFullyScored <= 0 {
 		return fmt.Errorf("all candidate search limits must be positive")
 	}
 	values := map[string]float64{
-		"replica balance":       p.Weights.ReplicaBalance,
-		"transition events":     p.Weights.TransitionEvents,
-		"transition load":       p.Weights.TransitionLoad,
-		"transition hash space": p.Weights.TransitionHashSpace,
-		"locality miss":         p.Weights.LocalityMiss,
-		"fragmentation":         p.Weights.Fragmentation,
-		"resolution":            p.Weights.Resolution,
-		"move multiplier":       p.ActionMultipliers.Move,
-		"split multiplier":      p.ActionMultipliers.Split,
-		"merge multiplier":      p.ActionMultipliers.Merge,
+		"replica balance":           p.Weights.ReplicaBalance,
+		"transition events":         p.Weights.TransitionEvents,
+		"transition load":           p.Weights.TransitionLoad,
+		"transition hash space":     p.Weights.TransitionHashSpace,
+		"locality miss":             p.Weights.LocalityMiss,
+		"fragmentation":             p.Weights.Fragmentation,
+		"resolution":                p.Weights.Resolution,
+		"move multiplier":           p.ActionMultipliers.Move,
+		"split multiplier":          p.ActionMultipliers.Split,
+		"merge multiplier":          p.ActionMultipliers.Merge,
+		"partition move multiplier": p.ActionMultipliers.MovePartition,
 	}
 	for name, value := range values {
 		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
@@ -320,7 +364,8 @@ type rangeState struct {
 }
 
 type planningState struct {
-	ranges []rangeState
+	ranges          []rangeState
+	partitionOwners map[int32]string
 }
 
 // stateFromSnapshot copies caller-owned assignment entries and observations into mutable projected state.
@@ -333,11 +378,14 @@ func stateFromSnapshot(s Snapshot) planningState {
 			observed: true,
 		}
 	}
-	return planningState{ranges: ranges}
+	return planningState{ranges: ranges, partitionOwners: clonePartitionOwners(s.PartitionOwners)}
 }
 
 func (s planningState) clone() planningState {
-	return planningState{ranges: append([]rangeState(nil), s.ranges...)}
+	return planningState{
+		ranges:          append([]rangeState(nil), s.ranges...),
+		partitionOwners: clonePartitionOwners(s.partitionOwners),
+	}
 }
 
 // assignment materializes projected ranges as a sorted, caller-owned assignment.

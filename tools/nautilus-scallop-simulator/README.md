@@ -32,8 +32,8 @@ go run ./tools/nautilus-scallop-simulator run-fixture \
   -transition-load 0.1 \
   -transition-hash-space 0.1 \
   -locality-miss 0.1 \
-  -fragmentation 0.05 \
-  -resolution 0.001 \
+  -fragmentation 10 \
+  -resolution 10 \
   -json-output ./fixture-result.jsonl \
   -csv-output ./fixture-result.csv
 ```
@@ -64,8 +64,9 @@ At each tick the simulator:
 
 1. Observes exact current loads from dummy readcaches.
 2. Builds a Scallop snapshot.
-3. Plans range moves, midpoint splits, and adjacent merges.
-4. Applies the resulting assignment.
+3. Plans range moves, midpoint splits, fair adjacent-merge waves, and logical
+   partition moves.
+4. Applies both projected placement levels.
 5. Recomputes exact post-plan load at the same tick.
 6. Records all evaluation groups and advances simulated time.
 
@@ -88,26 +89,27 @@ tenant deliberately starts with five coarse ranges—one on each partition
 owned by its initial readcache—so the fixture represents a large topology
 without pre-creating 25,000 ranges.
 
-The fixture participates in the same 239-policy beam search, closed-loop
-simulation, evaluation, and JSON/CSV reporting as every smaller fixture. There
-is no fixture category or exclusion flag.
+The fixture participates in the same complete deterministic beam search,
+closed-loop simulation, evaluation, and JSON/CSV reporting as every smaller
+fixture. There is no fixture category or exclusion flag.
 
 Scallop uses one deterministic bounded search for every topology. Small
-candidate sets fit entirely within its source, destination, split, merge, and
-fully-scored limits. Larger candidate sets rank likely actions and project only
-the bounded shortlist. Reports include legal, admitted, fully-scored, and
-per-budget discarded candidate counts so pruning remains visible.
+candidate sets fit entirely within its range and partition-move limits. Larger
+candidate sets rank likely actions and project only bounded shortlists. Reports
+include legal, admitted, fully-scored, and per-budget discarded candidate
+counts so pruning remains visible.
 
 ## Tiny-tenant consolidation fixture
 
 `many-tiny-tenants-consolidating` models 50 static low-load tenants, each
-bootstrapped with 64 ranges, on 500 partitions and 100 readcaches for eight
+bootstrapped with 64 ranges, on 500 partitions and 100 readcaches for 16
 ticks. It runs through the same command and beam-search paths as every other
 fixture.
 
-The fixture intentionally preserves the current global four-action bottleneck
-and deterministic tenant ordering as a Phase 3 baseline. With consolidation-
-oriented weights (zero transition and resolution costs, fragmentation `100`),
-all 32 available actions are merges for `tiny-00`; every other tenant makes no
-progress and all 50 remain unsettled. Per-tick tenant range counts and the final
-per-tenant merge summary make that starvation reproducible for Phase 4.
+The fixture evaluates convergence toward the legacy four-range structural
+target without imposing that target as a planner rule. The default policy caps
+each tenant at four merges per planning round while retaining a 1,600-merge
+global budget, so the first round performs 200 fair merges and every tenant
+reaches the target within the 16 configured rounds. Per-tick trajectories, settle ticks,
+no-progress intervals, merge throughput, and per-tenant merge counts make
+fairness and convergence directly inspectable.

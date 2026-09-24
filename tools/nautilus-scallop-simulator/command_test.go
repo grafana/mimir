@@ -67,7 +67,6 @@ func TestRunFixtureCommandMatchesBeamSearchSimulation(t *testing.T) {
 	fixture, ok := findFixture(fixtures, "single-tenant-static")
 	require.True(t, ok)
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
 	evaluation, err := evaluatePolicy([]Fixture{fixture}, policy, 0)
 	require.NoError(t, err)
 	require.Len(t, evaluation.Fixtures, 1)
@@ -152,8 +151,8 @@ func TestRunFixtureCommandRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// TestTinyTenantFixtureCapturesMergeStarvationBaseline freezes the failure Phase 4 will improve.
-func TestTinyTenantFixtureCapturesMergeStarvationBaseline(t *testing.T) {
+// TestTinyTenantFixtureConvergesFairly protects Phase 4's bounded compaction behavior.
+func TestTinyTenantFixtureConvergesFairly(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
 	fixture, ok := findFixture(fixtures, "many-tiny-tenants-consolidating")
@@ -161,6 +160,7 @@ func TestTinyTenantFixtureCapturesMergeStarvationBaseline(t *testing.T) {
 	require.Equal(t, 500, fixture.Partitions)
 	require.Equal(t, 100, fixture.Readcaches)
 	require.Equal(t, 64, fixture.InitialRanges)
+	require.Equal(t, 4, fixture.SettledRanges)
 	require.Len(t, fixture.Tenants, 50)
 	for _, tenant := range fixture.Tenants {
 		require.NotEmpty(t, tenant.Components)
@@ -173,37 +173,48 @@ func TestTinyTenantFixtureCapturesMergeStarvationBaseline(t *testing.T) {
 	require.NoError(t, runCLI([]string{
 		"run-fixture",
 		"-fixture", fixture.Name,
-		"-replica-balance", "0",
-		"-transition-events", "0",
-		"-transition-load", "0",
-		"-transition-hash-space", "0",
-		"-locality-miss", "0",
-		"-fragmentation", "100",
-		"-resolution", "0",
 	}, &output, &bytes.Buffer{}))
 	lines := nonEmptyLines(output.String())
 	require.Len(t, lines, fixture.Ticks+1)
 	ticks := make([]TickEvaluationRecord, fixture.Ticks)
+	previousCounts := make(map[string]int, len(fixture.Tenants))
+	for _, tenant := range fixture.Tenants {
+		previousCounts[tenant.ID] = fixture.InitialRanges
+	}
 	for i := range ticks {
 		require.NoError(t, json.Unmarshal([]byte(lines[i]), &ticks[i]))
-		require.Equal(t, 4, ticks[i].Actions.Merges)
-		require.Equal(t, 3200-4*(i+1), ticks[i].RangeCount)
 		require.Len(t, ticks[i].TenantRangeCounts, len(fixture.Tenants))
 		require.False(t, ticks[i].Tracking.WorkloadChanged)
+		require.LessOrEqual(t, ticks[i].Actions.Merges, len(fixture.Tenants)*ticks[i].Policy.ActionLimits.MergePerTenant)
+		for tenant, count := range ticks[i].TenantRangeCounts {
+			progress := previousCounts[tenant] - count
+			require.GreaterOrEqual(t, progress, 0)
+			require.LessOrEqual(t, progress, ticks[i].Policy.ActionLimits.MergePerTenant)
+			if previousCounts[tenant] > fixture.SettledRanges {
+				require.Greater(t, progress, 0, "unsettled tenant %s must make progress at tick %d", tenant, i)
+			}
+			previousCounts[tenant] = count
+		}
 	}
+	require.Equal(t, 200, ticks[0].Actions.Merges)
+	for _, count := range ticks[0].TenantRangeCounts {
+		require.Equal(t, 60, count, "every tenant must share the first merge wave")
+	}
+	require.Zero(t, ticks[15].UnsettledTenants)
 	var summary FixtureSummaryRecord
 	require.NoError(t, json.Unmarshal([]byte(lines[len(lines)-1]), &summary))
 	require.Len(t, summary.Baseline.InitialRangeCounts, len(fixture.Tenants))
 	require.Len(t, summary.Baseline.MergesPerTenant, len(fixture.Tenants))
-	require.Equal(t, 32, summary.Baseline.FinalRangeCounts["tiny-00"])
-	require.Equal(t, 32, summary.Baseline.MergesPerTenant["tiny-00"])
 	for tenant, merges := range summary.Baseline.MergesPerTenant {
-		if tenant != "tiny-00" {
-			require.Zero(t, merges)
-		}
+		require.GreaterOrEqual(t, merges, fixture.InitialRanges-fixture.SettledRanges, "tenant %s must settle", tenant)
+		require.LessOrEqual(t, summary.Baseline.FinalRangeCounts[tenant], fixture.SettledRanges)
 	}
-	require.Equal(t, len(fixture.Tenants), summary.Baseline.UnsettledTenants)
-	require.Equal(t, 32, summary.Evaluation.RebalancingWork.Merges)
+	require.Zero(t, summary.Baseline.UnsettledTenants)
+	require.Zero(t, summary.Evaluation.StructuralFootprint.UnsettledTenants)
+	require.Equal(t, 15, summary.Evaluation.StructuralFootprint.MaxSettleTick)
+	require.Equal(t, 15, summary.Evaluation.StructuralFootprint.P95SettleTick)
+	require.LessOrEqual(t, ticks[15].PostPlan.Partition, 3*ticks[0].Static.Partition)
+	require.Less(t, ticks[len(ticks)-1].PostPlan.Replica, ticks[0].Static.Replica)
 }
 
 func nonEmptyLines(output string) []string {

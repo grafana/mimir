@@ -1,11 +1,13 @@
 {
   "name": "many-tiny-tenants-consolidating",
-  "ticks": 8,
+  "ticks": 16,
   "tick_seconds": 60,
   "partitions": 500,
   "readcaches": 100,
   "initial_ranges_per_tenant": 64,
+  "settled_ranges_per_tenant": 4,
   "imbalance_threshold": 0.20,
+  "load_scale": 0.01,
   "tenants": [
     {"id":"tiny-00","baseline":0.10,"components":[{"center":0.01,"width":0.10,"amplitude":{"kind":"constant","value":1.0}}]},
     {"id":"tiny-01","baseline":0.11,"components":[{"center":0.03,"width":0.10,"amplitude":{"kind":"constant","value":1.1}}]},

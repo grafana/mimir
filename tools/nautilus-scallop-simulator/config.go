@@ -20,8 +20,26 @@ type Fixture struct {
 	Partitions         int              `json:"partitions"`
 	Readcaches         int              `json:"readcaches"`
 	InitialRanges      int              `json:"initial_ranges_per_tenant"`
+	SettledRanges      int              `json:"settled_ranges_per_tenant,omitempty"`
 	ImbalanceThreshold float64          `json:"imbalance_threshold"`
+	LoadScale          float64          `json:"load_scale,omitempty"`
 	Tenants            []TenantWorkload `json:"tenants"`
+}
+
+// settledRangeTarget returns the fixture's evaluation target without constraining planning.
+func (f Fixture) settledRangeTarget() int {
+	if f.SettledRanges > 0 {
+		return f.SettledRanges
+	}
+	return 1
+}
+
+// loadScale returns the fixture-wide absolute load scale used for tiny-cell scenarios.
+func (f Fixture) loadScale() float64 {
+	if f.LoadScale > 0 {
+		return f.LoadScale
+	}
+	return 1
 }
 
 type TenantWorkload struct {
@@ -89,6 +107,12 @@ func (f Fixture) validate() error {
 	}
 	if f.InitialRanges <= 0 {
 		return fmt.Errorf("initial ranges must be positive")
+	}
+	if f.SettledRanges < 0 {
+		return fmt.Errorf("settled ranges must be non-negative")
+	}
+	if f.LoadScale < 0 {
+		return fmt.Errorf("load scale must be non-negative")
 	}
 	if f.ImbalanceThreshold <= 0 {
 		return fmt.Errorf("imbalance threshold must be positive")

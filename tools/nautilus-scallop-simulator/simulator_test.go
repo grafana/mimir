@@ -97,9 +97,9 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 
 	policy := scallop.Policy{
 		Weights:           scallop.Weights{Resolution: 1},
-		ActionMultipliers: scallop.ActionMultipliers{Move: 1, Split: 1, Merge: 1},
+		ActionMultipliers: scallop.ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 1},
 		CandidateSearch:   scallop.DefaultCandidateSearchLimits(),
-		MaxActions:        4,
+		ActionLimits:      simulatorActionLimits(4),
 	}
 	plan, err := scallop.Plan(scallop.Snapshot{
 		At:               sim.now,
@@ -123,13 +123,57 @@ func TestSplitChildrenBecomeObservedOnNextSimulatorObservation(t *testing.T) {
 	}
 }
 
+func TestSimulatorAppliesProjectedPartitionOwnersBeforePostPlanObservation(t *testing.T) {
+	fixture := Fixture{
+		Name:               "partition-move",
+		Ticks:              2,
+		TickSeconds:        60,
+		Partitions:         4,
+		Readcaches:         2,
+		InitialRanges:      4,
+		ImbalanceThreshold: 0.2,
+		Tenants: []TenantWorkload{{
+			ID:       "tenant-a",
+			Baseline: 100,
+		}},
+	}
+	policy := scallop.DefaultPolicy()
+	policy.Weights = scallop.Weights{ReplicaBalance: 1}
+	policy.ActionLimits = scallop.ActionLimits{Total: 2, MovePartition: 2}
+
+	result, err := simulateFixture(fixture, policy)
+	require.NoError(t, err)
+	require.Greater(t, result.Evaluation.RebalancingWork.PartitionMoves, 0)
+	require.Equal(t, result.Rounds[0].PrePlan.Partition, result.Rounds[0].PostPlan.Partition)
+	require.Less(t, result.Rounds[0].PostPlan.Replica, result.Rounds[0].PrePlan.Replica)
+	require.Greater(t, result.Evaluation.RebalancingWork.PartitionMovedLoadFraction, 0.0)
+	ticks, _ := buildFixtureRecords(fixture, result)
+	require.Greater(t, ticks[0].PartitionMovedLoad, 0.0)
+	require.Greater(t, ticks[0].PartitionMovedLoadFraction, 0.0)
+}
+
+// TestActionColdMovedLoadHandlesPartialPartitionWarmth preserves load-weighted partition locality.
+func TestActionColdMovedLoadHandlesPartialPartitionWarmth(t *testing.T) {
+	action := scallop.Action{
+		MovedLoad: 8,
+		Transition: scallop.CostBreakdown{
+			TransitionLoad: 1,
+			LocalityMiss:   0.25,
+		},
+	}
+	require.Equal(t, 2.0, actionColdMovedLoad(action))
+}
+
 func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
 	require.Len(t, fixtures, 5)
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
+	policy.ActionLimits = simulatorActionLimits(4)
 	policy.Weights.Resolution = 0.005
+	policy.Weights.Fragmentation = 0.001
+	policy.Weights.TransitionEvents = 0
+	policy.ActionLimits.MovePartition = 0
 	observedLocalityDisruption := false
 
 	for _, fixture := range fixtures {
@@ -192,7 +236,7 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 	require.Greater(t, observation.TotalLoad, 0.0)
 
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
+	policy.ActionLimits = simulatorActionLimits(4)
 	first, err := simulateFixture(fixture, policy)
 	require.NoError(t, err)
 	second, err := simulateFixture(fixture, policy)
@@ -211,6 +255,9 @@ func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
 			first.CandidateSearch.DiscardedByBudget.Destinations+
 			first.CandidateSearch.DiscardedByBudget.Splits+
 			first.CandidateSearch.DiscardedByBudget.Merges+
+			first.CandidateSearch.DiscardedByBudget.PartitionMoveSources+
+			first.CandidateSearch.DiscardedByBudget.PartitionMoveDestinations+
+			first.CandidateSearch.DiscardedByBudget.PartitionMoves+
 			first.CandidateSearch.DiscardedByBudget.FullyScored,
 	)
 	for _, round := range first.Rounds {
@@ -226,7 +273,7 @@ func TestClosedLoopSupportsMultipleInitialGranularities(t *testing.T) {
 	require.NoError(t, err)
 	base := fixtureByName(t, fixtures, "single-tenant-static")
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
+	policy.ActionLimits = simulatorActionLimits(4)
 
 	for _, initialRanges := range []int{4, 8, 16} {
 		t.Run(fmt.Sprintf("%d-ranges", initialRanges), func(t *testing.T) {
@@ -244,18 +291,14 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
 	seed := scallop.DefaultPolicy()
-	seed.MaxActions = 4
 	config := defaultSearchConfig()
 
 	first, err := runWeightSearch(fixtures, seed, config)
 	require.NoError(t, err)
-	second, err := runWeightSearch(fixtures, seed, config)
+	replayed, err := evaluatePolicy(fixtures, first.Recommended.Policy, first.Recommended.Generation)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, first.EvaluatedPolicies, 100)
-	require.Equal(t, first.EvaluatedPolicies, second.EvaluatedPolicies)
-	require.Equal(t, policyKey(first.Recommended.Policy), policyKey(second.Recommended.Policy))
-	require.Equal(t, first.Recommended.AggregateUtility, second.Recommended.AggregateUtility)
-	require.Equal(t, rankedPolicyKeys(first), rankedPolicyKeys(second))
+	require.Equal(t, first.Recommended, replayed)
 	for _, policy := range first.Ranked {
 		for _, fixture := range policy.Fixtures {
 			requireSevenEvaluationGroups(t, fixture.Evaluation)
@@ -291,6 +334,17 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	}
 }
 
+func simulatorActionLimits(limit int) scallop.ActionLimits {
+	return scallop.ActionLimits{
+		Total:          limit,
+		Move:           limit,
+		Split:          limit,
+		Merge:          limit,
+		MergePerTenant: limit,
+		MovePartition:  limit,
+	}
+}
+
 func requireSevenEvaluationGroups(t *testing.T, evaluation EvaluationReport) {
 	t.Helper()
 	encoded, err := json.Marshal(evaluation)
@@ -317,14 +371,6 @@ func fixtureByName(t *testing.T, fixtures []Fixture, name string) Fixture {
 	}
 	t.Fatalf("fixture %q not found", name)
 	return Fixture{}
-}
-
-func rankedPolicyKeys(result SearchResult) []string {
-	keys := make([]string, len(result.Ranked))
-	for i, policy := range result.Ranked {
-		keys[i] = policyKey(policy.Policy)
-	}
-	return keys
 }
 
 func hasActionAfter(rounds []RoundRecord, tick int) bool {

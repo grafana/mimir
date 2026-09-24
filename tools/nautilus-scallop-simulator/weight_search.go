@@ -21,7 +21,7 @@ type SearchConfig struct {
 // defaultSearchConfig defines the checked-in deterministic beam shape and minimum experiment size.
 func defaultSearchConfig() SearchConfig {
 	return SearchConfig{
-		BeamWidth:       8,
+		BeamWidth:       3,
 		Log10StepByPass: []float64{0.75, 0.35, 0.15},
 		MinimumPolicies: 100,
 	}
@@ -177,7 +177,7 @@ func evaluatePolicy(fixtures []Fixture, policy scallop.Policy, generation int) (
 	return out, nil
 }
 
-// policyNeighbors varies each searchable weight up and down in log space while retaining the base policy.
+// policyNeighbors varies each weight and adds one joint structural tradeoff around the retained base policy.
 func policyNeighbors(base scallop.Policy, log10Step float64) []scallop.Policy {
 	out := []scallop.Policy{base}
 	factor := math.Pow(10, log10Step)
@@ -190,6 +190,10 @@ func policyNeighbors(base scallop.Policy, log10Step float64) []scallop.Policy {
 		setPolicyDimension(&upper, dimension, policyDimension(base, dimension)*factor)
 		out = append(out, upper)
 	}
+	structuralTradeoff := base
+	structuralTradeoff.Weights.Fragmentation /= factor
+	structuralTradeoff.Weights.Resolution *= factor
+	out = append(out, structuralTradeoff)
 	return out
 }
 
@@ -246,13 +250,23 @@ func policyKey(policy scallop.Policy) string {
 		values[i] = fmt.Sprintf("%.12g", policyDimension(policy, i))
 	}
 	limits := policy.CandidateSearch
-	return fmt.Sprintf("%s/%d/%d/%d/%d/%d",
+	actions := policy.ActionLimits
+	return fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d",
 		strings.Join(values, "/"),
 		limits.MaxMoveSources,
 		limits.MaxDestinationsPerRange,
 		limits.MaxSplitCandidates,
 		limits.MaxMergeCandidates,
+		limits.MaxPartitionMoveSources,
+		limits.MaxDestinationsPerPartition,
+		limits.MaxPartitionMoveCandidates,
 		limits.MaxFullyScored,
+		actions.Total,
+		actions.Move,
+		actions.Split,
+		actions.Merge,
+		actions.MergePerTenant,
+		actions.MovePartition,
 	)
 }
 

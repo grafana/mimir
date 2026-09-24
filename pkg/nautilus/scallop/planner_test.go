@@ -22,7 +22,7 @@ func TestPlanMovesRangeToReducePeakImbalance(t *testing.T) {
 		map[int32]string{0: "rc-a", 1: "rc-b"},
 	)
 	policy := zeroCostPolicy()
-	policy.MaxActions = 1
+	policy.ActionLimits = testActionLimits(1)
 	policy.Weights.TransitionEvents = 1
 	policy.ActionMultipliers.Move = 0
 
@@ -37,6 +37,104 @@ func TestPlanMovesRangeToReducePeakImbalance(t *testing.T) {
 	require.NoError(t, result.Assignment.Validate())
 }
 
+// TestPlanMovesPartitionWithoutChangingRangePlacement proves joint planning can correct only replica skew.
+func TestPlanMovesPartitionWithoutChangingRangePlacement(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1, 2, 3},
+		[]float64{8, 8, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b", 3: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.ReplicaBalance = 1
+	policy.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 1)
+	require.Equal(t, ActionMovePartition, result.Actions[0].Kind)
+	require.Equal(t, snapshot.Assignment, result.Assignment)
+	require.Equal(t, result.Actions[0].FromReplica, snapshot.PartitionOwners[result.Actions[0].PartitionID])
+	require.Equal(t, result.Actions[0].ToReplica, result.PartitionOwners[result.Actions[0].PartitionID])
+	require.NotEqual(t, result.Actions[0].FromReplica, result.Actions[0].ToReplica)
+	require.Equal(t, result.InitialCost.PartitionBalance, result.FinalCost.PartitionBalance)
+	require.Less(t, result.FinalCost.ReplicaBalance, result.InitialCost.ReplicaBalance)
+	require.Zero(t, result.Actions[0].MovedHashFraction)
+}
+
+// TestJointPlannerChangesActionTypeWithObservedLoad proves range and partition moves compete each round.
+func TestJointPlannerChangesActionTypeWithObservedLoad(t *testing.T) {
+	firstSnapshot := testSnapshot(
+		[]int32{0, 0, 1, 2, 3, 3},
+		[]float64{1, 1, 2, 2, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-a", 3: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.ReplicaBalance = 1
+	policy.ActionLimits = ActionLimits{Total: 1, Move: 1, MovePartition: 1}
+
+	first, err := Plan(firstSnapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, first.Actions, 1)
+	require.Equal(t, ActionMovePartition, first.Actions[0].Kind)
+
+	secondSnapshot := firstSnapshot
+	secondSnapshot.Assignment = first.Assignment
+	secondSnapshot.PartitionOwners = first.PartitionOwners
+	secondSnapshot.RangeLoads = make(map[RangeKey]float64, len(first.Assignment.Entries))
+	loads := []float64{6, 4, 1, 1, 4, 4}
+	for i, entry := range first.Assignment.Entries {
+		secondSnapshot.RangeLoads[RangeKey{TenantID: entry.TenantID, Range: entry.Range}] = loads[i]
+	}
+
+	second, err := Plan(secondSnapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, second.Actions, 1)
+	require.Equal(t, ActionMove, second.Actions[0].Kind)
+}
+
+// TestPartitionMoveCandidateSearchHonorsBudgets keeps two-tier search bounded and inspectable.
+func TestPartitionMoveCandidateSearchHonorsBudgets(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1, 2, 3},
+		[]float64{8, 8, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b", 3: "rc-c"},
+	)
+	policy := zeroCostPolicy()
+	policy.CandidateSearch.MaxPartitionMoveSources = 1
+	policy.CandidateSearch.MaxDestinationsPerPartition = 1
+	policy.CandidateSearch.MaxPartitionMoveCandidates = 1
+
+	candidates, diagnostics := generateCandidates(stateFromSnapshot(snapshot), snapshot, policy)
+	partitionMoves := 0
+	for _, candidate := range candidates {
+		if candidate.kind == ActionMovePartition {
+			partitionMoves++
+		}
+	}
+	require.LessOrEqual(t, partitionMoves, 1)
+	require.Greater(t, diagnostics.Legal.MovePartition, diagnostics.Admitted.MovePartition)
+	require.Greater(t, diagnostics.DiscardedByBudget.PartitionMoveSources, 0)
+	require.Greater(t, diagnostics.DiscardedByBudget.PartitionMoveDestinations, 0)
+}
+
+// TestMergeShortlistReservesFairTenantCapacity prevents priority ties from starving later tenant IDs.
+func TestMergeShortlistReservesFairTenantCapacity(t *testing.T) {
+	var candidates []candidate
+	for i := range 10 {
+		candidates = append(candidates,
+			candidate{kind: ActionMerge, tenantID: "tenant-a", r: assignment.HashRange{Lo: uint32(i * 2), Hi: uint32(i * 2)}, priority: 2},
+			candidate{kind: ActionMerge, tenantID: "tenant-b", r: assignment.HashRange{Lo: uint32(i * 2), Hi: uint32(i * 2)}, priority: 1},
+		)
+	}
+
+	selected := limitMergesFair(candidates, map[string]int{"tenant-a": 64, "tenant-b": 64}, 4)
+	counts := map[string]int{}
+	for _, candidate := range selected {
+		counts[candidate.tenantID]++
+	}
+	require.Equal(t, map[string]int{"tenant-a": 2, "tenant-b": 2}, counts)
+}
+
 // TestPlanSplitsHotRangeWithoutMovingChildren protects the observe-before-moving split semantics.
 func TestPlanSplitsHotRangeWithoutMovingChildren(t *testing.T) {
 	snapshot := Snapshot{
@@ -49,7 +147,7 @@ func TestPlanSplitsHotRangeWithoutMovingChildren(t *testing.T) {
 	}
 	policy := zeroCostPolicy()
 	policy.Weights.Resolution = 1
-	policy.MaxActions = 10
+	policy.ActionLimits = testActionLimits(10)
 
 	result, err := Plan(snapshot, policy)
 	require.NoError(t, err)
@@ -70,7 +168,7 @@ func TestPlanMergesAdjacentRangesToReduceFragmentation(t *testing.T) {
 	)
 	policy := zeroCostPolicy()
 	policy.Weights.Fragmentation = 1
-	policy.MaxActions = 1
+	policy.ActionLimits = testActionLimits(1)
 
 	result, err := Plan(snapshot, policy)
 	require.NoError(t, err)
@@ -78,6 +176,54 @@ func TestPlanMergesAdjacentRangesToReduceFragmentation(t *testing.T) {
 	require.Equal(t, ActionMerge, result.Actions[0].Kind)
 	require.Len(t, result.Assignment.Entries, 3)
 	require.NoError(t, result.Assignment.Validate())
+}
+
+// TestMergeCostsCanPreventHarmfulConsolidation preserves no-op as a real structural alternative.
+func TestMergeCostsCanPreventHarmfulConsolidation(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 0, 0},
+		[]float64{1, 1, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.Fragmentation = 1
+	policy.Weights.Resolution = 100
+	policy.ActionLimits = ActionLimits{Total: 4, Merge: 4, MergePerTenant: 4}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Empty(t, result.Actions)
+}
+
+// TestPlanCapsMergesPerTenantWithoutSacrificingFairProgress limits structural change per observation.
+func TestPlanCapsMergesPerTenantWithoutSacrificingFairProgress(t *testing.T) {
+	first := assignment.EvenSplitForTenant("tenant-a", []int32{0, 0, 0, 0, 0, 0, 0, 0})
+	second := assignment.EvenSplitForTenant("tenant-b", []int32{0, 0, 0, 0, 0, 0, 0, 0})
+	entries := append(append([]assignment.Entry(nil), first.Entries...), second.Entries...)
+	snapshot := Snapshot{
+		At:               time.Unix(100, 0),
+		Assignment:       &assignment.Assignment{Entries: entries},
+		RangeLoads:       make(map[RangeKey]float64, len(entries)),
+		ActivePartitions: []int32{0},
+		PartitionOwners:  map[int32]string{0: "rc-a"},
+		ActiveReplicas:   []string{"rc-a"},
+	}
+	for _, entry := range entries {
+		snapshot.RangeLoads[RangeKey{TenantID: entry.TenantID, Range: entry.Range}] = 1
+	}
+	policy := zeroCostPolicy()
+	policy.Weights.Fragmentation = 1
+	policy.ActionLimits = ActionLimits{Total: 100, Merge: 100, MergePerTenant: 2}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 4)
+	mergesByTenant := map[string]int{}
+	for _, action := range result.Actions {
+		require.Equal(t, ActionMerge, action.Kind)
+		mergesByTenant[action.TenantID]++
+	}
+	require.Equal(t, map[string]int{"tenant-a": 2, "tenant-b": 2}, mergesByTenant)
 }
 
 // TestPlanPrefersWarmDestination proves recent replica history influences shortlist and exact locality cost.
@@ -93,7 +239,7 @@ func TestPlanPrefersWarmDestination(t *testing.T) {
 	policy := zeroCostPolicy()
 	policy.Weights.LocalityMiss = 1
 	policy.LocalityWindow = 5 * time.Minute
-	policy.MaxActions = 1
+	policy.ActionLimits = testActionLimits(1)
 	policy.CandidateSearch.MaxDestinationsPerRange = 1
 
 	result, err := Plan(snapshot, policy)
@@ -125,7 +271,7 @@ func TestPlanIsDeterministic(t *testing.T) {
 		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c"},
 	)
 	policy := zeroCostPolicy()
-	policy.MaxActions = 3
+	policy.ActionLimits = testActionLimits(3)
 
 	first, err := Plan(snapshot, policy)
 	require.NoError(t, err)
@@ -158,11 +304,28 @@ func TestPlanHonorsActionLimit(t *testing.T) {
 	)
 	policy := zeroCostPolicy()
 	policy.Weights.Resolution = 1
-	policy.MaxActions = 2
+	policy.ActionLimits = testActionLimits(2)
 
 	result, err := Plan(snapshot, policy)
 	require.NoError(t, err)
-	require.Len(t, result.Actions, policy.MaxActions)
+	require.Len(t, result.Actions, policy.ActionLimits.Total)
+}
+
+// TestPlanHonorsPerKindActionLimits keeps one action type from consuming another type's budget.
+func TestPlanHonorsPerKindActionLimits(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 0, 0},
+		[]float64{1, 1, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.Resolution = 1
+	policy.ActionLimits = ActionLimits{Total: 10, Split: 1}
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 1)
+	require.Equal(t, ActionSplit, result.Actions[0].Kind)
 }
 
 // TestOnlySplitChildrenAreIneligibleForLaterActions distinguishes unknown split loads from known move and merge loads.
@@ -250,11 +413,14 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 	snapshot := testSnapshot(partitions, loads, owners)
 	policy := zeroCostPolicy()
 	policy.CandidateSearch = CandidateSearchLimits{
-		MaxMoveSources:          3,
-		MaxDestinationsPerRange: 2,
-		MaxSplitCandidates:      2,
-		MaxMergeCandidates:      2,
-		MaxFullyScored:          5,
+		MaxMoveSources:              3,
+		MaxDestinationsPerRange:     2,
+		MaxSplitCandidates:          2,
+		MaxMergeCandidates:          2,
+		MaxPartitionMoveSources:     2,
+		MaxDestinationsPerPartition: 2,
+		MaxPartitionMoveCandidates:  2,
+		MaxFullyScored:              5,
 	}
 
 	candidates, diagnostics := generateCandidates(stateFromSnapshot(snapshot), snapshot, policy)
@@ -273,6 +439,9 @@ func TestCandidateSearchNeverExceedsConfiguredBudgets(t *testing.T) {
 			diagnostics.DiscardedByBudget.Destinations+
 			diagnostics.DiscardedByBudget.Splits+
 			diagnostics.DiscardedByBudget.Merges+
+			diagnostics.DiscardedByBudget.PartitionMoveSources+
+			diagnostics.DiscardedByBudget.PartitionMoveDestinations+
+			diagnostics.DiscardedByBudget.PartitionMoves+
 			diagnostics.DiscardedByBudget.FullyScored,
 	)
 
@@ -317,34 +486,48 @@ func TestReplicaSurplusCanAdmitRangeFromUnderloadedPartition(t *testing.T) {
 
 	require.Less(t, index.partitionLoads[1], index.partitionMean)
 	require.Greater(t, index.replicaLoads["rc-a"], index.replicaMean)
-	require.Greater(t, moveSourcePriority(state.ranges[1], index, snapshot, policy), 0.0)
+	require.Greater(t, moveSourcePriority(state.ranges[1], index, policy), 0.0)
 }
 
 // TestPlanIsDeterministicUnderTopologyInputReordering prevents caller slice order from affecting ties or shortlists.
 func TestPlanIsDeterministicUnderTopologyInputReordering(t *testing.T) {
 	snapshot := testSnapshot(
-		[]int32{0, 0, 1, 2},
-		[]float64{4, 2, 1, 1},
-		map[int32]string{0: "rc-a", 1: "rc-b", 2: "rc-c"},
+		[]int32{0, 0, 1, 2, 3, 3},
+		[]float64{1, 1, 2, 2, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-a", 3: "rc-b"},
 	)
 	reordered := snapshot
 	reordered.ActivePartitions = append([]int32(nil), snapshot.ActivePartitions...)
 	reordered.ActiveReplicas = append([]string(nil), snapshot.ActiveReplicas...)
 	slices.Reverse(reordered.ActivePartitions)
 	slices.Reverse(reordered.ActiveReplicas)
+	policy := zeroCostPolicy()
+	policy.Weights.ReplicaBalance = 1
 
-	first, err := Plan(snapshot, zeroCostPolicy())
+	first, err := Plan(snapshot, policy)
 	require.NoError(t, err)
-	second, err := Plan(reordered, zeroCostPolicy())
+	second, err := Plan(reordered, policy)
 	require.NoError(t, err)
 	require.Equal(t, first, second)
+	require.Equal(t, ActionMovePartition, first.Actions[0].Kind)
 }
 
 func zeroCostPolicy() Policy {
 	return Policy{
-		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1},
+		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 1},
 		CandidateSearch:   DefaultCandidateSearchLimits(),
-		MaxActions:        4,
+		ActionLimits:      testActionLimits(4),
+	}
+}
+
+func testActionLimits(limit int) ActionLimits {
+	return ActionLimits{
+		Total:          limit,
+		Move:           limit,
+		Split:          limit,
+		Merge:          limit,
+		MergePerTenant: limit,
+		MovePartition:  limit,
 	}
 }
 

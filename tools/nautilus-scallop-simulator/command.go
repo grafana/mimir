@@ -21,10 +21,11 @@ import (
 
 // TickActionCounts reports the primitive actions selected during one simulation tick.
 type TickActionCounts struct {
-	Moves  int `json:"moves"`
-	Splits int `json:"splits"`
-	Merges int `json:"merges"`
-	Total  int `json:"total"`
+	Moves          int `json:"moves"`
+	Splits         int `json:"splits"`
+	Merges         int `json:"merges"`
+	PartitionMoves int `json:"partition_moves"`
+	Total          int `json:"total"`
 }
 
 // TickEffectiveness relates one tick's immediate imbalance change to its rebalancing work.
@@ -55,20 +56,23 @@ type TickEvaluationRecord struct {
 	PrePlan  ImbalancePoint `json:"pre_plan"`
 	PostPlan ImbalancePoint `json:"post_plan"`
 
-	TotalLoad         float64        `json:"total_load"`
-	RangeCount        int            `json:"range_count"`
-	TenantPartitions  int            `json:"tenant_partitions"`
-	TenantRangeCounts map[string]int `json:"tenant_range_counts"`
-	UnsettledTenants  int            `json:"unsettled_tenants"`
+	TotalLoad         float64          `json:"total_load"`
+	RangeCount        int              `json:"range_count"`
+	TenantPartitions  int              `json:"tenant_partitions"`
+	TenantRangeCounts map[string]int   `json:"tenant_range_counts"`
+	UnsettledTenants  int              `json:"unsettled_tenants"`
+	PartitionOwners   map[int32]string `json:"partition_owners"`
 
-	Actions           TickActionCounts                   `json:"actions"`
-	MovedLoad         float64                            `json:"moved_load"`
-	MovedLoadFraction float64                            `json:"moved_load_fraction"`
-	MovedHashFraction float64                            `json:"moved_hash_fraction"`
-	ColdMovedLoad     float64                            `json:"cold_moved_load"`
-	Effectiveness     TickEffectiveness                  `json:"action_effectiveness"`
-	Tracking          TickTracking                       `json:"imbalance_tracking"`
-	CandidateSearch   scallop.CandidateSearchDiagnostics `json:"candidate_search"`
+	Actions                    TickActionCounts                   `json:"actions"`
+	MovedLoad                  float64                            `json:"moved_load"`
+	MovedLoadFraction          float64                            `json:"moved_load_fraction"`
+	PartitionMovedLoad         float64                            `json:"partition_moved_load"`
+	PartitionMovedLoadFraction float64                            `json:"partition_moved_load_fraction"`
+	MovedHashFraction          float64                            `json:"moved_hash_fraction"`
+	ColdMovedLoad              float64                            `json:"cold_moved_load"`
+	Effectiveness              TickEffectiveness                  `json:"action_effectiveness"`
+	Tracking                   TickTracking                       `json:"imbalance_tracking"`
+	CandidateSearch            scallop.CandidateSearchDiagnostics `json:"candidate_search"`
 }
 
 // FixtureBaselineSummary captures tenant-level consolidation progress over a complete run.
@@ -114,7 +118,6 @@ func runSearchCommand(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
 	result, err := runWeightSearch(fixtures, policy, defaultSearchConfig())
 	if err != nil {
 		return err
@@ -129,7 +132,6 @@ func runSearchCommand(args []string, stdout, stderr io.Writer) error {
 // runFixtureCommand executes one fixture with caller-selected weights and emits tick records plus a summary.
 func runFixtureCommand(args []string, stdout, stderr io.Writer) error {
 	policy := scallop.DefaultPolicy()
-	policy.MaxActions = 4
 
 	flags := flag.NewFlagSet("run-fixture", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -228,6 +230,8 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 		actions := TickActionCounts{Total: len(round.Actions)}
 		movedLoad := 0.0
 		movedLoadFraction := 0.0
+		partitionMovedLoad := 0.0
+		partitionMovedLoadFraction := 0.0
 		movedHashFraction := 0.0
 		coldMovedLoad := 0.0
 		for _, action := range round.Actions {
@@ -239,13 +243,15 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 			case scallop.ActionMerge:
 				actions.Merges++
 				mergesPerTenant[action.TenantID]++
+			case scallop.ActionMovePartition:
+				actions.PartitionMoves++
+				partitionMovedLoad += action.MovedLoad
+				partitionMovedLoadFraction += action.Transition.TransitionLoad
 			}
 			movedLoad += action.MovedLoad
 			movedLoadFraction += action.Transition.TransitionLoad
 			movedHashFraction += action.MovedHashFraction
-			if action.Transition.LocalityMiss > 0 {
-				coldMovedLoad += action.MovedLoad
-			}
+			coldMovedLoad += actionColdMovedLoad(action)
 		}
 		reduction := round.PrePlan.Partition + round.PrePlan.Replica -
 			round.PostPlan.Partition - round.PostPlan.Replica
@@ -257,25 +263,28 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 			effectiveness.ReductionPerMovedLoad = reduction / movedLoad
 		}
 		ticks = append(ticks, TickEvaluationRecord{
-			RecordType:        "tick",
-			Fixture:           fixture.Name,
-			Policy:            result.Policy,
-			Tick:              round.Tick,
-			Time:              round.Time,
-			Static:            round.Static,
-			PrePlan:           round.PrePlan,
-			PostPlan:          round.PostPlan,
-			TotalLoad:         round.TotalLoad,
-			RangeCount:        round.RangeCount,
-			TenantPartitions:  round.TenantPartitions,
-			TenantRangeCounts: cloneIntMap(round.TenantRangeCounts),
-			UnsettledTenants:  countUnsettled(round.TenantRangeCounts),
-			Actions:           actions,
-			MovedLoad:         movedLoad,
-			MovedLoadFraction: movedLoadFraction,
-			MovedHashFraction: movedHashFraction,
-			ColdMovedLoad:     coldMovedLoad,
-			Effectiveness:     effectiveness,
+			RecordType:                 "tick",
+			Fixture:                    fixture.Name,
+			Policy:                     result.Policy,
+			Tick:                       round.Tick,
+			Time:                       round.Time,
+			Static:                     round.Static,
+			PrePlan:                    round.PrePlan,
+			PostPlan:                   round.PostPlan,
+			TotalLoad:                  round.TotalLoad,
+			RangeCount:                 round.RangeCount,
+			TenantPartitions:           round.TenantPartitions,
+			TenantRangeCounts:          cloneIntMap(round.TenantRangeCounts),
+			UnsettledTenants:           countUnsettled(round.TenantRangeCounts, fixture.settledRangeTarget()),
+			PartitionOwners:            cloneOwners(round.PartitionOwners),
+			Actions:                    actions,
+			MovedLoad:                  movedLoad,
+			MovedLoadFraction:          movedLoadFraction,
+			PartitionMovedLoad:         partitionMovedLoad,
+			PartitionMovedLoadFraction: partitionMovedLoadFraction,
+			MovedHashFraction:          movedHashFraction,
+			ColdMovedLoad:              coldMovedLoad,
+			Effectiveness:              effectiveness,
 			Tracking: TickTracking{
 				PartitionCorrectedFraction: correctedFraction(round.Static.Partition, round.PostPlan.Partition),
 				ReplicaCorrectedFraction:   correctedFraction(round.Static.Replica, round.PostPlan.Replica),
@@ -305,7 +314,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 			InitialRangeCounts: initial,
 			FinalRangeCounts:   final,
 			MergesPerTenant:    mergesPerTenant,
-			UnsettledTenants:   countUnsettled(final),
+			UnsettledTenants:   countUnsettled(final, fixture.settledRangeTarget()),
 		},
 	}
 	return ticks, summary
@@ -320,11 +329,11 @@ func correctedFraction(static, actual float64) *float64 {
 	return &value
 }
 
-// countUnsettled counts tenants that have not yet consolidated to one range.
-func countUnsettled(counts map[string]int) int {
+// countUnsettled counts tenants that have not yet reached the fixture's structural target.
+func countUnsettled(counts map[string]int, settledTarget int) int {
 	count := 0
 	for _, ranges := range counts {
-		if ranges > 1 {
+		if ranges > settledTarget {
 			count++
 		}
 	}
@@ -375,11 +384,12 @@ func writeFixtureCSV(path string, ticks []TickEvaluationRecord, summary FixtureS
 		"record_type", "fixture", "tick", "time", "policy_json",
 		"static_partition", "static_replica", "pre_partition", "pre_replica", "post_partition", "post_replica",
 		"total_load", "range_count", "tenant_partitions", "unsettled_tenants",
-		"moves", "splits", "merges", "moved_load", "moved_load_fraction", "moved_hash_fraction", "cold_moved_load",
+		"moves", "splits", "merges", "partition_moves", "moved_load", "moved_load_fraction",
+		"partition_moved_load", "partition_moved_load_fraction", "moved_hash_fraction", "cold_moved_load",
 		"imbalance_reduction", "reduction_per_action", "reduction_per_moved_load",
 		"partition_corrected_fraction", "replica_corrected_fraction",
 		"partition_above_threshold", "replica_above_threshold", "workload_changed",
-		"tenant_range_counts_json", "candidate_search_json", "summary_json",
+		"tenant_range_counts_json", "partition_owners_json", "candidate_search_json", "summary_json",
 	}
 	if err := writer.Write(header); err != nil {
 		_ = file.Close()
@@ -392,12 +402,14 @@ func writeFixtureCSV(path string, ticks []TickEvaluationRecord, summary FixtureS
 			formatFloat(tick.PrePlan.Partition), formatFloat(tick.PrePlan.Replica),
 			formatFloat(tick.PostPlan.Partition), formatFloat(tick.PostPlan.Replica),
 			formatFloat(tick.TotalLoad), strconv.Itoa(tick.RangeCount), strconv.Itoa(tick.TenantPartitions), strconv.Itoa(tick.UnsettledTenants),
-			strconv.Itoa(tick.Actions.Moves), strconv.Itoa(tick.Actions.Splits), strconv.Itoa(tick.Actions.Merges),
-			formatFloat(tick.MovedLoad), formatFloat(tick.MovedLoadFraction), formatFloat(tick.MovedHashFraction), formatFloat(tick.ColdMovedLoad),
+			strconv.Itoa(tick.Actions.Moves), strconv.Itoa(tick.Actions.Splits), strconv.Itoa(tick.Actions.Merges), strconv.Itoa(tick.Actions.PartitionMoves),
+			formatFloat(tick.MovedLoad), formatFloat(tick.MovedLoadFraction),
+			formatFloat(tick.PartitionMovedLoad), formatFloat(tick.PartitionMovedLoadFraction),
+			formatFloat(tick.MovedHashFraction), formatFloat(tick.ColdMovedLoad),
 			formatFloat(tick.Effectiveness.ImbalanceReduction), formatFloat(tick.Effectiveness.ReductionPerAction), formatFloat(tick.Effectiveness.ReductionPerMovedLoad),
 			formatOptionalFloat(tick.Tracking.PartitionCorrectedFraction), formatOptionalFloat(tick.Tracking.ReplicaCorrectedFraction),
 			strconv.FormatBool(tick.Tracking.PartitionAboveThreshold), strconv.FormatBool(tick.Tracking.ReplicaAboveThreshold), strconv.FormatBool(tick.Tracking.WorkloadChanged),
-			mustJSON(tick.TenantRangeCounts), mustJSON(tick.CandidateSearch), "",
+			mustJSON(tick.TenantRangeCounts), mustJSON(tick.PartitionOwners), mustJSON(tick.CandidateSearch), "",
 		}
 		if err := writer.Write(row); err != nil {
 			_ = file.Close()

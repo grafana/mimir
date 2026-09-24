@@ -32,11 +32,14 @@ func stateCost(state planningState, snapshot Snapshot, policy Policy) CostBreakd
 	for _, replica := range snapshot.ActiveReplicas {
 		replicaLoads[replica] = 0
 	}
-	for partitionID, load := range partitionLoads {
-		replicaLoads[snapshot.PartitionOwners[partitionID]] += load
+	partitions := append([]int32(nil), snapshot.ActivePartitions...)
+	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
+	for _, partitionID := range partitions {
+		load := partitionLoads[partitionID]
+		replicaLoads[state.partitionOwners[partitionID]] += load
 	}
 
-	fragmentationDenominator := len(snapshot.ActivePartitions) * len(tenants)
+	fragmentationDenominator := len(tenants)
 	if fragmentationDenominator == 0 {
 		fragmentationDenominator = 1
 	}
@@ -94,20 +97,40 @@ func transitionCost(action candidate, state planningState, snapshot Snapshot, po
 		eventMultiplier = policy.ActionMultipliers.Split
 	case ActionMerge:
 		eventMultiplier = policy.ActionMultipliers.Merge
+	case ActionMovePartition:
+		eventMultiplier = policy.ActionMultipliers.MovePartition
 	}
 
 	out := CostBreakdown{
-		TransitionEvents: eventMultiplier / float64(policy.MaxActions),
+		TransitionEvents: eventMultiplier / float64(max(1, len(snapshot.ActivePartitions))),
 	}
 	if totalLoad > 0 {
 		out.TransitionLoad = action.movedLoad / totalLoad
 	}
-	out.TransitionHashSpace = action.movedHashFraction
+	out.TransitionHashSpace = action.movedHashFraction / float64(max(1, tenantCount(state)))
 
 	if action.movedLoad > 0 {
-		destination := snapshot.PartitionOwners[action.toPartition]
-		if !recentlyHosted(snapshot, action.tenantID, destination, policy.LocalityWindow) && totalLoad > 0 {
-			out.LocalityMiss = action.movedLoad / totalLoad
+		if action.kind == ActionMovePartition {
+			coldLoad := 0.0
+			tenantIDs := make([]string, 0, len(action.tenantLoads))
+			for tenantID := range action.tenantLoads {
+				tenantIDs = append(tenantIDs, tenantID)
+			}
+			sort.Strings(tenantIDs)
+			for _, tenantID := range tenantIDs {
+				load := action.tenantLoads[tenantID]
+				if !recentlyHosted(snapshot, tenantID, action.toReplica, policy.LocalityWindow) {
+					coldLoad += load
+				}
+			}
+			if totalLoad > 0 {
+				out.LocalityMiss = coldLoad / totalLoad
+			}
+		} else {
+			destination := state.partitionOwners[action.toPartition]
+			if !recentlyHosted(snapshot, action.tenantID, destination, policy.LocalityWindow) && totalLoad > 0 {
+				out.LocalityMiss = action.movedLoad / totalLoad
+			}
 		}
 	}
 
@@ -121,6 +144,15 @@ func transitionCost(action candidate, state planningState, snapshot Snapshot, po
 			out.WeightedTransitionHashSpace +
 			out.WeightedLocalityMiss
 	return out
+}
+
+// tenantCount returns the number of tenants represented in one projected state.
+func tenantCount(state planningState) int {
+	tenants := map[string]struct{}{}
+	for _, r := range state.ranges {
+		tenants[r.entry.TenantID] = struct{}{}
+	}
+	return len(tenants)
 }
 
 // recentlyHosted reports whether locality history keeps a tenant-replica move warm within the policy window.

@@ -15,7 +15,7 @@ func BenchmarkLargeCellCandidateGeneration(b *testing.B) {
 	snapshot := largeCellBenchmarkSnapshot()
 	state := stateFromSnapshot(snapshot)
 	policy := DefaultPolicy()
-	policy.MaxActions = 4
+	policy.ActionLimits = testActionLimits(4)
 
 	b.ResetTimer()
 	for range b.N {
@@ -26,7 +26,7 @@ func BenchmarkLargeCellCandidateGeneration(b *testing.B) {
 func BenchmarkLargeCellPlan(b *testing.B) {
 	snapshot := largeCellBenchmarkSnapshot()
 	policy := DefaultPolicy()
-	policy.MaxActions = 4
+	policy.ActionLimits = testActionLimits(4)
 
 	b.ResetTimer()
 	for range b.N {

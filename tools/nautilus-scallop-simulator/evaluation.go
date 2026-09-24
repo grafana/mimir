@@ -32,16 +32,28 @@ type PeakImbalanceEvaluation struct {
 }
 
 type RebalancingWorkEvaluation struct {
-	MovedLoadFraction float64 `json:"moved_load_fraction"`
-	MovedHashFraction float64 `json:"moved_hash_fraction"`
-	Moves             int     `json:"moves"`
-	Splits            int     `json:"splits"`
-	Merges            int     `json:"merges"`
+	MovedLoadFraction          float64 `json:"moved_load_fraction"`
+	MovedHashFraction          float64 `json:"moved_hash_fraction"`
+	Moves                      int     `json:"moves"`
+	Splits                     int     `json:"splits"`
+	Merges                     int     `json:"merges"`
+	PartitionMoves             int     `json:"partition_moves"`
+	PartitionMovedLoadFraction float64 `json:"partition_moved_load_fraction"`
 }
 
 type StructuralFootprintEvaluation struct {
-	RangeSeconds           float64 `json:"range_seconds"`
-	TenantPartitionSeconds float64 `json:"tenant_partition_seconds"`
+	RangeSeconds                 float64          `json:"range_seconds"`
+	TenantPartitionSeconds       float64          `json:"tenant_partition_seconds"`
+	TenantRangeCountTrajectories map[string][]int `json:"tenant_range_count_trajectories"`
+	InitialRangeCounts           map[string]int   `json:"initial_range_counts"`
+	FinalRangeCounts             map[string]int   `json:"final_range_counts"`
+	SettleTicks                  map[string]int   `json:"settle_ticks"`
+	MaxSettleTick                int              `json:"max_settle_tick"`
+	P95SettleTick                int              `json:"p95_settle_tick"`
+	LongestNoProgressTicks       int              `json:"longest_no_progress_ticks"`
+	MergesPerTenant              map[string]int   `json:"merges_per_tenant"`
+	MergeThroughputPerRound      []int            `json:"merge_throughput_per_round"`
+	UnsettledTenants             int              `json:"unsettled_tenants"`
 }
 
 type LocalityDisruptionEvaluation struct {
@@ -99,7 +111,7 @@ func evaluate(fixture Fixture, rounds []RoundRecord) EvaluationReport {
 			Replica:   summarizeSeries(replicaPost, tickSeconds),
 		},
 		RebalancingWork:     evaluateWork(rounds),
-		StructuralFootprint: evaluateStructure(rounds, tickSeconds),
+		StructuralFootprint: evaluateStructure(fixture, rounds, tickSeconds),
 		AdaptationStability: evaluateAdaptation(fixture, rounds),
 		ImbalanceTracking: ImbalanceTrackingEvaluation{
 			Partition: evaluateTracking(fixture, rounds, partitionStatic, partitionPost, func(r RoundRecord) float64 {
@@ -140,6 +152,9 @@ func evaluateWork(rounds []RoundRecord) RebalancingWorkEvaluation {
 				out.Splits++
 			case scallop.ActionMerge:
 				out.Merges++
+			case scallop.ActionMovePartition:
+				out.PartitionMoves++
+				out.PartitionMovedLoadFraction += action.Transition.TransitionLoad
 			}
 		}
 	}
@@ -147,11 +162,65 @@ func evaluateWork(rounds []RoundRecord) RebalancingWorkEvaluation {
 }
 
 // evaluateStructure integrates range count and tenant fanout to expose persistent structural overhead.
-func evaluateStructure(rounds []RoundRecord, tickSeconds float64) StructuralFootprintEvaluation {
-	out := StructuralFootprintEvaluation{}
-	for _, round := range rounds {
+func evaluateStructure(fixture Fixture, rounds []RoundRecord, tickSeconds float64) StructuralFootprintEvaluation {
+	out := StructuralFootprintEvaluation{
+		TenantRangeCountTrajectories: map[string][]int{},
+		InitialRangeCounts:           map[string]int{},
+		FinalRangeCounts:             map[string]int{},
+		SettleTicks:                  map[string]int{},
+		MergesPerTenant:              map[string]int{},
+		MergeThroughputPerRound:      make([]int, len(rounds)),
+		MaxSettleTick:                -1,
+		P95SettleTick:                -1,
+	}
+	for _, tenant := range fixture.Tenants {
+		out.InitialRangeCounts[tenant.ID] = fixture.InitialRanges
+		out.SettleTicks[tenant.ID] = -1
+		out.MergesPerTenant[tenant.ID] = 0
+	}
+	settledTarget := fixture.settledRangeTarget()
+	for tick, round := range rounds {
 		out.RangeSeconds += float64(round.RangeCount) * tickSeconds
 		out.TenantPartitionSeconds += float64(round.TenantPartitions) * tickSeconds
+		for _, tenant := range fixture.Tenants {
+			count := round.TenantRangeCounts[tenant.ID]
+			out.TenantRangeCountTrajectories[tenant.ID] =
+				append(out.TenantRangeCountTrajectories[tenant.ID], count)
+			out.FinalRangeCounts[tenant.ID] = count
+			if count <= settledTarget && out.SettleTicks[tenant.ID] < 0 {
+				out.SettleTicks[tenant.ID] = tick
+			}
+		}
+		for _, action := range round.Actions {
+			if action.Kind == scallop.ActionMerge {
+				out.MergesPerTenant[action.TenantID]++
+				out.MergeThroughputPerRound[tick]++
+			}
+		}
+	}
+	var settled []float64
+	for _, tenant := range fixture.Tenants {
+		settleTick := out.SettleTicks[tenant.ID]
+		if settleTick < 0 {
+			out.UnsettledTenants++
+		} else {
+			settled = append(settled, float64(settleTick))
+			out.MaxSettleTick = max(out.MaxSettleTick, settleTick)
+		}
+		previous := fixture.InitialRanges
+		gap := 0
+		for _, count := range out.TenantRangeCountTrajectories[tenant.ID] {
+			if count < previous {
+				gap = 0
+			} else if count > settledTarget {
+				gap++
+				out.LongestNoProgressTicks = max(out.LongestNoProgressTicks, gap)
+			}
+			previous = count
+		}
+	}
+	if len(settled) > 0 {
+		out.P95SettleTick = int(percentile(settled, 0.95))
 	}
 	return out
 }
@@ -163,15 +232,21 @@ func evaluateLocality(rounds []RoundRecord) LocalityDisruptionEvaluation {
 	for _, round := range rounds {
 		for _, action := range round.Actions {
 			totalMovedLoad += action.MovedLoad
-			if action.Transition.LocalityMiss > 0 {
-				out.ColdMovedLoad += action.MovedLoad
-			}
+			out.ColdMovedLoad += actionColdMovedLoad(action)
 		}
 	}
 	if totalMovedLoad > 0 {
 		out.ColdMovedLoadFraction = out.ColdMovedLoad / totalMovedLoad
 	}
 	return out
+}
+
+// actionColdMovedLoad converts the normalized locality term back to its load amount.
+func actionColdMovedLoad(action scallop.Action) float64 {
+	if action.Transition.LocalityMiss <= 0 || action.Transition.TransitionLoad <= 0 {
+		return 0
+	}
+	return action.MovedLoad * action.Transition.LocalityMiss / action.Transition.TransitionLoad
 }
 
 // evaluateAdaptation measures recovery, tail churn, and repeated or reversed lineage movement.
@@ -340,6 +415,9 @@ func linearSlope(rounds []RoundRecord, value func(RoundRecord) float64) float64 
 
 // actionLineageKey groups repeated actions affecting the same tenant range lineage.
 func actionLineageKey(action scallop.Action) string {
+	if action.Kind == scallop.ActionMovePartition {
+		return fmt.Sprintf("%s/%d", action.Kind, action.PartitionID)
+	}
 	return fmt.Sprintf("%s/%d/%d", action.TenantID, action.Range.Lo, action.Range.Hi)
 }
 
@@ -351,7 +429,7 @@ func fixedUtility(report EvaluationReport) float64 {
 		report.PeakImbalance.Replica.Integral +
 		0.1*work.MovedLoadFraction +
 		0.05*work.MovedHashFraction +
-		0.01*float64(work.Moves+work.Splits+work.Merges) +
+		0.01*float64(work.Moves+work.Splits+work.Merges+work.PartitionMoves) +
 		0.1*report.LocalityDisruption.ColdMovedLoadFraction +
 		0.00001*structure.RangeSeconds +
 		0.00001*structure.TenantPartitionSeconds

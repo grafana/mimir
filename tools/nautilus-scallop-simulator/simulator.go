@@ -39,26 +39,29 @@ type RoundRecord struct {
 	PrePlan  ImbalancePoint `json:"pre_plan"`
 	PostPlan ImbalancePoint `json:"post_plan"`
 
-	TotalLoad         float64        `json:"total_load"`
-	RangeCount        int            `json:"range_count"`
-	TenantPartitions  int            `json:"tenant_partitions"`
-	TenantRangeCounts map[string]int `json:"tenant_range_counts"`
+	TotalLoad         float64          `json:"total_load"`
+	RangeCount        int              `json:"range_count"`
+	TenantPartitions  int              `json:"tenant_partitions"`
+	TenantRangeCounts map[string]int   `json:"tenant_range_counts"`
+	PartitionOwners   map[int32]string `json:"partition_owners"`
 
 	Actions         []scallop.Action                   `json:"actions"`
 	CandidateSearch scallop.CandidateSearchDiagnostics `json:"candidate_search"`
 }
 
 type CandidateSearchSummary struct {
-	Limits                scallop.CandidateSearchLimits   `json:"limits"`
-	RoundsTruncated       int                             `json:"rounds_truncated"`
-	Iterations            int                             `json:"iterations"`
-	LegalMoveSources      int                             `json:"legal_move_sources"`
-	LegalMoveDestinations int                             `json:"legal_move_destinations"`
-	Legal                 scallop.CandidateCounts         `json:"legal"`
-	Admitted              scallop.CandidateCounts         `json:"admitted"`
-	FullyScored           scallop.CandidateCounts         `json:"fully_scored"`
-	Discarded             scallop.CandidateCounts         `json:"discarded"`
-	DiscardedByBudget     scallop.CandidateBudgetDiscards `json:"discarded_by_budget"`
+	Limits                         scallop.CandidateSearchLimits   `json:"limits"`
+	RoundsTruncated                int                             `json:"rounds_truncated"`
+	Iterations                     int                             `json:"iterations"`
+	LegalMoveSources               int                             `json:"legal_move_sources"`
+	LegalMoveDestinations          int                             `json:"legal_move_destinations"`
+	LegalPartitionMoveSources      int                             `json:"legal_partition_move_sources"`
+	LegalPartitionMoveDestinations int                             `json:"legal_partition_move_destinations"`
+	Legal                          scallop.CandidateCounts         `json:"legal"`
+	Admitted                       scallop.CandidateCounts         `json:"admitted"`
+	FullyScored                    scallop.CandidateCounts         `json:"fully_scored"`
+	Discarded                      scallop.CandidateCounts         `json:"discarded"`
+	DiscardedByBudget              scallop.CandidateBudgetDiscards `json:"discarded_by_budget"`
 }
 
 type SimulationResult struct {
@@ -75,14 +78,15 @@ type simulator struct {
 
 	now time.Time
 
-	assignment       *assignment.Assignment
-	staticAssignment *assignment.Assignment
-	partitions       []int32
-	partitionOwners  map[int32]string
-	replicas         []string
-	readcaches       []*dummyReadcache
-	workloads        map[string]TenantWorkload
-	lastHostedAt     map[string]map[string]time.Time
+	assignment            *assignment.Assignment
+	staticAssignment      *assignment.Assignment
+	partitions            []int32
+	partitionOwners       map[int32]string
+	staticPartitionOwners map[int32]string
+	replicas              []string
+	readcaches            []*dummyReadcache
+	workloads             map[string]TenantWorkload
+	lastHostedAt          map[string]map[string]time.Time
 }
 
 // newSimulator builds deterministic topology, initial placement, workloads, and locality history for a fixture.
@@ -136,16 +140,17 @@ func newSimulator(fixture Fixture) (*simulator, error) {
 
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sim := &simulator{
-		fixture:          fixture,
-		now:              start,
-		assignment:       cloneAssignment(initial),
-		staticAssignment: cloneAssignment(initial),
-		partitions:       partitions,
-		partitionOwners:  owners,
-		replicas:         replicas,
-		readcaches:       readcaches,
-		workloads:        workloads,
-		lastHostedAt:     map[string]map[string]time.Time{},
+		fixture:               fixture,
+		now:                   start,
+		assignment:            cloneAssignment(initial),
+		staticAssignment:      cloneAssignment(initial),
+		partitions:            partitions,
+		partitionOwners:       owners,
+		staticPartitionOwners: cloneOwners(owners),
+		replicas:              replicas,
+		readcaches:            readcaches,
+		workloads:             workloads,
+		lastHostedAt:          map[string]map[string]time.Time{},
 	}
 	sim.updateLocality(initial, start)
 	return sim, nil
@@ -163,7 +168,7 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 		if err != nil {
 			return SimulationResult{}, err
 		}
-		static, err := sim.observe(sim.staticAssignment, tick)
+		static, err := sim.observeWithOwners(sim.staticAssignment, tick, sim.staticPartitionOwners)
 		if err != nil {
 			return SimulationResult{}, err
 		}
@@ -181,6 +186,7 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 			return SimulationResult{}, fmt.Errorf("fixture %s tick %d: %w", fixture.Name, tick, err)
 		}
 		sim.assignment = cloneAssignment(plan.Assignment)
+		sim.setPartitionOwners(plan.PartitionOwners)
 		post, err := sim.observe(sim.assignment, tick)
 		if err != nil {
 			return SimulationResult{}, err
@@ -197,6 +203,7 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 			RangeCount:        len(sim.assignment.Entries),
 			TenantPartitions:  tenantPartitionCount(sim.assignment),
 			TenantRangeCounts: tenantRangeCounts(sim.assignment),
+			PartitionOwners:   cloneOwners(sim.partitionOwners),
 			Actions:           plan.Actions,
 			CandidateSearch:   plan.CandidateSearch,
 		})
@@ -225,6 +232,8 @@ func summarizeCandidateSearch(rounds []RoundRecord, limits scallop.CandidateSear
 		out.Iterations += diagnostics.Iterations
 		out.LegalMoveSources += diagnostics.LegalMoveSources
 		out.LegalMoveDestinations += diagnostics.LegalMoveDestinations
+		out.LegalPartitionMoveSources += diagnostics.LegalPartitionMoveSources
+		out.LegalPartitionMoveDestinations += diagnostics.LegalPartitionMoveDestinations
 		addCandidateCounts(&out.Legal, diagnostics.Legal)
 		addCandidateCounts(&out.Admitted, diagnostics.Admitted)
 		addCandidateCounts(&out.FullyScored, diagnostics.FullyScored)
@@ -233,6 +242,9 @@ func summarizeCandidateSearch(rounds []RoundRecord, limits scallop.CandidateSear
 		out.DiscardedByBudget.Destinations += diagnostics.DiscardedByBudget.Destinations
 		out.DiscardedByBudget.Splits += diagnostics.DiscardedByBudget.Splits
 		out.DiscardedByBudget.Merges += diagnostics.DiscardedByBudget.Merges
+		out.DiscardedByBudget.PartitionMoveSources += diagnostics.DiscardedByBudget.PartitionMoveSources
+		out.DiscardedByBudget.PartitionMoveDestinations += diagnostics.DiscardedByBudget.PartitionMoveDestinations
+		out.DiscardedByBudget.PartitionMoves += diagnostics.DiscardedByBudget.PartitionMoves
 		out.DiscardedByBudget.FullyScored += diagnostics.DiscardedByBudget.FullyScored
 	}
 	return out
@@ -242,11 +254,21 @@ func addCandidateCounts(dst *scallop.CandidateCounts, src scallop.CandidateCount
 	dst.Move += src.Move
 	dst.Split += src.Split
 	dst.Merge += src.Merge
+	dst.MovePartition += src.MovePartition
 	dst.Total += src.Total
 }
 
 // observe analytically computes the exact load each range, partition, and dummy readcache owns at a tick.
 func (s *simulator) observe(a *assignment.Assignment, tick int) (loadView, error) {
+	return s.observeWithOwners(a, tick, s.partitionOwners)
+}
+
+// observeWithOwners computes exact load against an explicit projected or static ownership map.
+func (s *simulator) observeWithOwners(
+	a *assignment.Assignment,
+	tick int,
+	owners map[int32]string,
+) (loadView, error) {
 	for _, readcache := range s.readcaches {
 		readcache.RangeLoads = map[scallop.RangeKey]float64{}
 		readcache.PartitionLoads = map[int32]float64{}
@@ -274,13 +296,13 @@ func (s *simulator) observe(a *assignment.Assignment, tick int) (loadView, error
 		if !ok {
 			return loadView{}, fmt.Errorf("tenant %q has no workload", entry.TenantID)
 		}
-		load := workload.integrate(entry.Range, tick)
+		load := workload.integrate(entry.Range, tick) * s.fixture.loadScale()
 		key := scallop.RangeKey{TenantID: entry.TenantID, Range: entry.Range}
 		view.RangeLoads[key] = load
 		view.PartitionLoads[entry.PartitionID] += load
 		view.TotalLoad += load
 
-		owner := s.partitionOwners[entry.PartitionID]
+		owner := owners[entry.PartitionID]
 		readcache := readcacheByID[owner]
 		readcache.RangeLoads[key] = load
 		readcache.PartitionLoads[entry.PartitionID] += load
@@ -290,6 +312,22 @@ func (s *simulator) observe(a *assignment.Assignment, tick int) (loadView, error
 		view.ReplicaLoads[readcache.ID] = readcache.TotalLoad
 	}
 	return view, nil
+}
+
+// setPartitionOwners applies projected logical ownership to simulator readcaches.
+func (s *simulator) setPartitionOwners(owners map[int32]string) {
+	s.partitionOwners = cloneOwners(owners)
+	for _, readcache := range s.readcaches {
+		readcache.Partitions = readcache.Partitions[:0]
+	}
+	byID := make(map[string]*dummyReadcache, len(s.readcaches))
+	for _, readcache := range s.readcaches {
+		byID[readcache.ID] = readcache
+	}
+	for _, partitionID := range s.partitions {
+		owner := s.partitionOwners[partitionID]
+		byID[owner].Partitions = append(byID[owner].Partitions, partitionID)
+	}
 }
 
 // updateLocality records which logical replicas currently host each tenant for future move-cost decisions.
